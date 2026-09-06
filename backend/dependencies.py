@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
 from backend.models import User, AuditLog
 from backend.tenant_runtime import set_authenticated_company, TenantAwareDatabase
 logger=logging.getLogger("dependencies")
@@ -14,9 +15,11 @@ def personal_birthday_candidates(client):
     candidates=[]
     if (client.get("client_type") or "").strip().lower()=="proprietor" and client.get("birthday"):candidates.append({"name":client.get("company_name") or "Valued Client","phone":client.get("phone"),"email":client.get("email"),"birthday":client["birthday"]})
     for cp in client.get("contact_persons") or []:
-        if cp.get("birthday"):candidates.append({"name":cp.get("name") or client.get("company_name") or "Friend","phone":cp.get("phone"),"email":cp.get("email"),"birthday":cp["birthday"]})
+        if cp.get("birthday"):candidates.append({"name":cp.get("name") or client.get("company_name") or "Friend","phone":cp.get("phone"),"email":cp.get("email"),"birthday":client["birthday"] if False else cp["birthday"]})
     return candidates
-MONGO_URL=os.getenv("MONGO_URL");DB_NAME=os.getenv("DB_NAME","taskosphere");import uuid
+MONGO_URL=os.getenv("MONGO_URL") or os.getenv("MONGODB_URI")
+DB_NAME=os.getenv("DB_NAME") or os.getenv("MONGODB_DB_NAME","taskosphere_commercial")
+import uuid
 class MockCursor:
     def __init__(self,data):self._data,self._index=data,0
     def limit(self,n):self._data=self._data[:n];return self
@@ -102,7 +105,7 @@ class MockMongoClient:
     def __getitem__(self,name):return self._db
     def __getattr__(self,name):return self._db
 if not MONGO_URL:
-    print("[AI Studio] MONGO_URL not provided. Using fallback in-memory MongoDB client.");client=MockMongoClient();db=client[DB_NAME]
+    print("[AI Studio] MONGO_URL/MONGODB_URI not provided. Using fallback in-memory MongoDB client.");client=MockMongoClient();db=client[DB_NAME]
 else:
     try:client=AsyncIOMotorClient(MONGO_URL);db=client[DB_NAME]
     except Exception as e:print(f"[AI Studio] Failed to connect to MongoDB, falling back to mock: {e}");client=MockMongoClient();db=client[DB_NAME]
@@ -131,10 +134,69 @@ def _normalize_permissions(d):
     if hasattr(perms,"model_dump"):perms=perms.model_dump()
     elif not isinstance(perms,dict):perms={}
     d["permissions"]={**template,**perms};return d
+
+async def _get_saas_session_user(token: str):
+    """Resolve the opaque SaaS session token created by saas-auth-runtime.cjs."""
+    if not token or not MONGO_URL:
+        return None
+    try:
+        import hashlib
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest()
+        raw_db = globals().get("_raw_db", db)
+        session=await raw_db.sessions.find_one({"token_hash": token_hash, "expires_at": {"$gt": datetime.now(timezone.utc)}})
+        if not session:
+            return None
+        user_id=session.get("user_id")
+        user=None
+        if user_id is not None:
+            try:
+                oid=user_id if isinstance(user_id,ObjectId) else ObjectId(str(user_id))
+                user=await raw_db.users.find_one({"_id": oid, "status": "active"})
+            except Exception:
+                user=await raw_db.users.find_one({"id": str(user_id), "status": "active"})
+        if not user:
+            return None
+        company_id=user.get("company_id") or session.get("company_id")
+        if not company_id:
+            return None
+        company=await raw_db.companies.find_one({"_id": company_id, "status": "active"})
+        if not company:
+            try: company=await raw_db.companies.find_one({"_id": ObjectId(str(company_id)), "status": "active"})
+            except Exception: pass
+        if not company:
+            return None
+        subscription=await raw_db.subscriptions.find_one({"company_id": company_id})
+        if not subscription:
+            try: subscription=await raw_db.subscriptions.find_one({"company_id": ObjectId(str(company_id))})
+            except Exception: pass
+        if not subscription or subscription.get("status") not in ("trial", "active"):
+            return None
+        expires_at=subscription.get("expires_at")
+        if expires_at and expires_at <= datetime.now(timezone.utc):
+            return None
+        await raw_db.sessions.update_one({"_id": session.get("_id")}, {"$set": {"last_seen_at": datetime.now(timezone.utc)}})
+        user_data={k:v for k,v in user.items() if k != "_id"}
+        user_data["id"]=str(user.get("_id") or user.get("id"))
+        user_data["company_id"]=str(company_id)
+        user_data["company_name"]=company.get("name")
+        user_data=_normalize_permissions(user_data)
+        return User(**user_data)
+    except Exception as error:
+        logger.exception("SaaS session resolution failed: %s", error)
+        return None
+
 async def get_current_user(credentials=Depends(security)):
     unauthorized=HTTPException(status_code=401,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
+    token=credentials.credentials
+    # Commercial SaaS login uses opaque, database-backed session tokens. Resolve
+    # those first; legacy JWT authentication remains supported for development
+    # and backward compatibility.
+    saas_user=await _get_saas_session_user(token)
+    if saas_user is not None:
+        set_authenticated_company(saas_user.company_id)
+        return saas_user
     try:
-        payload=jwt.decode(credentials.credentials,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
+        payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
         if user_id is None:raise unauthorized
     except JWTError:raise unauthorized
     d=await db.users.find_one({"id":user_id})
@@ -163,7 +225,6 @@ def require_manager_or_admin():
     async def checker(current_user=Depends(get_current_user)):
         if current_user.role not in ["admin","manager"]:raise HTTPException(status_code=403,detail="Manager or Admin access required")
         return current_user
-    return checker
 def can_view_task(u,t):return u.role=="admin" or _get_perm(u,"can_view_all_tasks") or t.get("assigned_to") in(_get_perm(u,"view_other_tasks",[]) or []) or t.get("assigned_to")==u.id or t.get("created_by")==u.id or u.id in t.get("sub_assignees",[])
 def can_edit_task(u,t):return u.role=="admin" or _get_perm(u,"can_edit_tasks") or t.get("created_by")==u.id or t.get("assigned_to")==u.id or u.id in t.get("sub_assignees",[])
 def can_delete_task(u,t):return u.role=="admin" or _get_perm(u,"can_delete_tasks") or t.get("created_by")==u.id
@@ -276,6 +337,5 @@ def get_user_permissions(current_user):
     return {}
 async def get_db():yield db
 admin_required=require_admin
-# All authenticated domain routes receive the tenant-aware proxy after the request company is established.
 _raw_db=db
 db=TenantAwareDatabase(_raw_db)
