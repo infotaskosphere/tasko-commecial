@@ -219,6 +219,7 @@ from backend.dependencies import (
     require_manager_or_admin,
     verify_record_access,
     verify_client_access,
+    can_view_client,
     get_team_user_ids,
     get_cross_visibility_union,
     get_user_permissions,   # moved to dependencies — single source of truth
@@ -7246,6 +7247,11 @@ async def get_upcoming_birthdays(
     today = date.today()
     upcoming = []
     for client in clients:
+        # Keep the existing tenant boundary from TenantAwareDatabase and
+        # additionally apply the same client-level visibility rules used by
+        # the rest of the client module.
+        if not can_view_client(current_user, client):
+            continue
         for person in personal_birthday_candidates(client):
             raw = person["birthday"]
             try:
