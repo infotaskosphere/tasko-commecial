@@ -8,16 +8,11 @@ import GifLoader, { ContentLoader } from '@/components/ui/GifLoader.jsx';
 import RouteErrorBoundary from '@/components/layout/RouteErrorBoundary.jsx';
 import { AnimatedOutlet as RouteAnimatedOutlet, PageTransition } from '@/components/layout/PageTransition.jsx';
 
-/* ── Auth pages (no sidebar) ─────────────────────────────────────────── */
 const Login = lazy(() => import('./pages/Login.jsx'));
 const Register = lazy(() => import('./pages/Register.jsx'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword.jsx'));
-
-/* ── Client portal (its own auth flow, no admin sidebar) ────────────── */
 const ClientPortalLogin = lazy(() => import('./pages/ClientPortalLogin.jsx'));
 const ClientPortalDashboard = lazy(() => import('./pages/ClientPortalDashboard.jsx'));
-
-/* ── Core ─────────────────────────────────────────────────────────────── */
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Tasks = lazy(() => import('./pages/Tasks.jsx'));
 const TodoDashboard = lazy(() => import('./pages/TodoDashboard.jsx'));
@@ -26,8 +21,6 @@ const Reminders = lazy(() => import('./pages/Reminders.jsx'));
 const ActionCenter = lazy(() => import('./pages/ActionCenter.jsx'));
 const VisitsPage = lazy(() => import('./pages/VisitsPage.jsx'));
 const AIDocumentReader = lazy(() => import('./pages/AIDocumentReader.jsx'));
-
-/* ── Compliance ───────────────────────────────────────────────────────── */
 const ComplianceDashboard = lazy(() => import('./pages/ComplianceDashboard.jsx'));
 const CompliancePage = lazy(() => import('./pages/CompliancePage.jsx'));
 const GSTReconciliation = lazy(() => import('./pages/GSTReconciliation.jsx'));
@@ -35,8 +28,6 @@ const TrademarkSphere = lazy(() => import('./pages/TrademarkSphere.jsx'));
 const MISReport = lazy(() => import('./pages/MISReport.jsx'));
 const SalarySlips = lazy(() => import('./pages/SalarySlips.jsx'));
 const ROCSpherePage = lazy(() => import('./pages/ROCSpherePage.jsx'));
-
-/* ── Records ──────────────────────────────────────────────────────────── */
 const ClientApprovals = lazy(() => import('./pages/ClientApprovals.jsx'));
 const RecordsDashboard = lazy(() => import('./pages/RecordsDashboard.jsx'));
 const PeopleMatrixDashboard = lazy(() => import('./pages/PeopleMatrixDashboard.jsx'));
@@ -44,13 +35,9 @@ const DSCRegister = lazy(() => import('./pages/DSCRegister.jsx'));
 const DocumentRegister = lazy(() => import('./pages/DocumentsRegister.jsx'));
 const Clients = lazy(() => import('./pages/Clients.jsx'));
 const PasswordRepository = lazy(() => import('./pages/Passvault.jsx'));
-
-/* ── Client proposals ─────────────────────────────────────────────────── */
 const ClientProposalsDashboard = lazy(() => import('./pages/ClientProposalsDashboard.jsx'));
 const LeadsPage = lazy(() => import('./pages/Leads.jsx'));
 const Quotations = lazy(() => import('./pages/Quotations.jsx'));
-
-/* ── Accounts (core + extended reports) ──────────────────────────────── */
 const FinixDashboard = lazy(() => import('./pages/FinixDashboard.jsx'));
 const Invoicing = lazy(() => import('./pages/Invoicing.jsx'));
 const Purchase = lazy(() => import('./pages/Purchase.jsx'));
@@ -64,16 +51,12 @@ const AccountingIntegrity = lazy(() => import('./pages/AccountingIntegrity.jsx')
 const ExtendedReports = lazy(() => import('./pages/ExtendedReports.jsx'));
 const DueDates = lazy(() => import('./pages/DueDates.jsx'));
 const ImportInvoices = lazy(() => import('./pages/ImportInvoices.jsx'));
-
-/* ── Admin ────────────────────────────────────────────────────────────── */
 const Reports = lazy(() => import('./pages/Reports.jsx'));
 const TaskAudit = lazy(() => import('./pages/TaskAudit.jsx'));
 const Users = lazy(() => import('./pages/Users.jsx'));
 const StaffActivity = lazy(() => import('./pages/StaffActivity.jsx'));
 const ClientPortalManagerPage = lazy(() => import('./pages/ClientPortalManagerPage.jsx'));
 const WhatsAppHub = lazy(() => import('./pages/WhatsAppHub.jsx'));
-
-/* ── Governed modules (new pages — see backend/governed_modules.py) ─── */
 const Leave = lazy(() => import('./pages/governed/Leave.jsx'));
 const Payroll = lazy(() => import('./pages/governed/Payroll.jsx'));
 const HR = lazy(() => import('./pages/governed/HR.jsx'));
@@ -84,148 +67,117 @@ const Roles = lazy(() => import('./pages/governed/Roles.jsx'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard.jsx'));
 const PermissionMatrix = lazy(() => import('./pages/PermissionMatrix.jsx'));
 const ContactDetails = lazy(() => import('./pages/ContactDetails.jsx'));
-
-/* ── Settings ─────────────────────────────────────────────────────────── */
 const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
 const EmailSettings = lazy(() => import('@/components/EmailSettings.jsx'));
 const PendingApprovals = lazy(() => import('@/components/PendingApprovalsPanel.jsx'));
+const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 
-/* ── Route guards ─────────────────────────────────────────────────────── */
-function AuthLoading() {
-  return <GifLoader />;
-}
-
+function AuthLoading() { return <GifLoader />; }
 function ProtectedLayout() {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
-  return (
-    <DashboardLayout>
-      <RouteErrorBoundary resetKey={location.pathname}>
-        <RouteAnimatedOutlet />
-      </RouteErrorBoundary>
-    </DashboardLayout>
-  );
+  return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><RouteAnimatedOutlet /></RouteErrorBoundary></DashboardLayout>;
 }
-
 function PublicOnly({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <AuthLoading />;
   if (user) return <Navigate to="/dashboard" replace />;
   return children;
 }
-
 function AdminOnly({ children }) {
   const { user } = useAuth();
   if (user?.role?.toLowerCase() !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
 }
 
-/* ── Router ───────────────────────────────────────────────────────────── */
 export default function AppRoutes() {
-  return (
-    <Suspense fallback={<AuthLoading />}>
-      <Routes>
-        <Route path="/login" element={<PageTransition><PublicOnly><Login /></PublicOnly></PageTransition>} />
-        <Route path="/register" element={<PageTransition><PublicOnly><Register /></PublicOnly></PageTransition>} />
-        <Route path="/forgot-password" element={<PageTransition><PublicOnly><ForgotPassword /></PublicOnly></PageTransition>} />
-
-        <Route path="/client-portal" element={<Navigate to="/client-portal/login" replace />} />
-        <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
-        <Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard /></PageTransition>} />
-
-        <Route element={<ProtectedLayout />}>
-
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/tasks" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_tasks"><Tasks /></PageGuard></ModuleGate>} />
-        <Route path="/todos" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_todo_dashboard"><TodoDashboard /></PageGuard></ModuleGate>} />
-        <Route path="/todo" element={<Navigate to="/todos" replace />} />
-        <Route path="/attendance" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_attendance"><Attendance /></PageGuard></ModuleGate>} />
-        <Route path="/reminders" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_reminders"><Reminders /></PageGuard></ModuleGate>} />
-        <Route path="/action-center" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_action_center"><ActionCenter /></PageGuard></ModuleGate>} />
-        <Route path="/visits" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_client_visits"><VisitsPage /></PageGuard></ModuleGate>} />
-        <Route path="/ai-reader" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_ai_document_reader"><AIDocumentReader /></PageGuard></ModuleGate>} />
-        <Route path="/client-portal-manager/*" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_client_portal"><ClientPortalManagerPage /></PageGuard></ModuleGate>} />
-
-        <Route path="/compliance-dashboard" element={<ModuleGate module="compliance"><ComplianceDashboard /></ModuleGate>} />
-        <Route path="/compliance" element={<ModuleGate module="compliance"><CompliancePage /></ModuleGate>} />
-        <Route path="/gst-reconciliation" element={<ModuleGate module="compliance"><GSTReconciliation /></ModuleGate>} />
-        <Route path="/trademark-sphere" element={<ModuleGate module="compliance"><TrademarkSphere /></ModuleGate>} />
-        <Route path="/mis-report" element={<ModuleGate module="compliance"><PageGuard module="compliance" page="can_view_mis_report"><MISReport /></PageGuard></ModuleGate>} />
-        <Route path="/salary-slips" element={<ModuleGate module="compliance"><PageGuard module="compliance" page="can_view_salary_slips"><SalarySlips /></PageGuard></ModuleGate>} />
-        <Route path="/roc-sphere" element={<ModuleGate module="compliance"><ROCSpherePage /></ModuleGate>} />
-
-        <Route path="/records-dashboard" element={<ModuleGate module="records"><RecordsDashboard /></ModuleGate>} />
-        <Route path="/client-approvals" element={<ModuleGate module="records"><ClientApprovals /></ModuleGate>} />
-        <Route path="/dsc" element={<ModuleGate module="records"><DSCRegister /></ModuleGate>} />
-        <Route path="/documents" element={<ModuleGate module="records"><DocumentRegister /></ModuleGate>} />
-        <Route path="/clients" element={<ModuleGate module="records"><Clients /></ModuleGate>} />
-        <Route path="/passwords" element={<ModuleGate module="records"><PasswordRepository /></ModuleGate>} />
-
-        <Route path="/client-proposals-dashboard" element={<ModuleGate module="proposals"><ClientProposalsDashboard /></ModuleGate>} />
-        <Route path="/leads" element={<ModuleGate module="proposals"><LeadsPage /></ModuleGate>} />
-        <Route path="/quotations" element={<ModuleGate module="proposals"><Quotations /></ModuleGate>} />
-
-        <Route path="/finix-dashboard" element={<ModuleGate module="finix"><FinixDashboard /></ModuleGate>} />
-        <Route path="/invoicing" element={<ModuleGate module="finix"><Invoicing /></ModuleGate>} />
-        <Route path="/purchase" element={<ModuleGate module="finix"><Purchase /></ModuleGate>} />
-        <Route path="/bank-accounts" element={<ModuleGate module="finix"><BankAccounts /></ModuleGate>} />
-        <Route path="/chart-of-accounts" element={<ModuleGate module="finix"><ChartOfAccounts /></ModuleGate>} />
-        <Route path="/journal-entries" element={<ModuleGate module="finix"><JournalEntries /></ModuleGate>} />
-        <Route path="/accounting-reports" element={<ModuleGate module="finix"><AccountingReports /></ModuleGate>} />
-        <Route path="/zero-touch-entry" element={<ModuleGate module="finix"><ZeroTouchEntry /></ModuleGate>} />
-        <Route path="/gst-portal-sync" element={<ModuleGate module="finix"><GSTPortalSync /></ModuleGate>} />
-        <Route path="/accounting-integrity" element={<ModuleGate module="finix"><AccountingIntegrity /></ModuleGate>} />
-        <Route path="/day-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/cash-bank-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/cash-flow" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/outstanding-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/bank-reconciliation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/depreciation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/tds-tcs" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/financial-ratios" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/comparative-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/yearly-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/opening-balances" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/accounting-audit-trail" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/bulk-import" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
-        <Route path="/due-dates" element={<ModuleGate module="finix"><DueDates /></ModuleGate>} />
-        <Route path="/import-invoices" element={<ModuleGate module="finix"><ImportInvoices /></ModuleGate>} />
-
-        <Route path="/people-matrix" element={<ModuleGate module="peopleMatrix"><PeopleMatrixDashboard /></ModuleGate>} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/task-audit" element={<AdminOnly><TaskAudit /></AdminOnly>} />
-        <Route path="/users" element={<ModuleGate module="peopleMatrix"><Users /></ModuleGate>} />
-        <Route path="/staff-activity" element={<StaffActivity />} />
-        <Route path="/whatsapp-hub" element={<AdminOnly><WhatsAppHub /></AdminOnly>} />
-
-        <Route path="/leave" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_leave"><Leave /></PageGuard></ModuleGate>} />
-        <Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><Payroll /></PageGuard></ModuleGate>} />
-        <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><HR /></PageGuard></ModuleGate>} />
-        <Route path="/recruitment" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_recruitment"><Recruitment /></PageGuard></ModuleGate>} />
-
-        <Route path="/client-discussion" element={<ModuleGate module="proposals"><PageGuard module="proposals" page="can_view_client_discussion"><ClientDiscussion /></PageGuard></ModuleGate>} />
-
-        <Route path="/admin-dashboard" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
-        <Route path="/permission-matrix" element={<AdminOnly><PermissionMatrix /></AdminOnly>} />
-        <Route path="/master-data" element={<AdminOnly><PageGuard module="admin" page="can_view_master_data"><MasterData /></PageGuard></AdminOnly>} />
-        <Route path="/roles" element={<AdminOnly><PageGuard module="admin" page="can_view_roles"><Roles /></PageGuard></AdminOnly>} />
-        <Route path="/contact-details" element={<AdminOnly><ContactDetails /></AdminOnly>} />
-
-        <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
-        <Route path="/settings/general" element={<GeneralSettings />} />
-        <Route path="/settings/email" element={<EmailSettings />} />
-        <Route path="/settings/whatsapp" element={<WhatsAppSettings />} />
-        <Route path="/settings/automation" element={<Navigate to="/settings/whatsapp" replace />} />
-        <Route path="/automation/approvals" element={<PendingApprovals />} />
-
-        </Route>
-
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
-    </Suspense>
-  );
+  return <Suspense fallback={<AuthLoading />}><Routes>
+    <Route path="/login" element={<PageTransition><PublicOnly><Login /></PublicOnly></PageTransition>} />
+    <Route path="/register" element={<PageTransition><PublicOnly><Register /></PublicOnly></PageTransition>} />
+    <Route path="/forgot-password" element={<PageTransition><PublicOnly><ForgotPassword /></PublicOnly></PageTransition>} />
+    <Route path="/client-portal" element={<Navigate to="/client-portal/login" replace />} />
+    <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
+    <Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard /></PageTransition>} />
+    <Route element={<ProtectedLayout />}>
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/tasks" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_tasks"><Tasks /></PageGuard></ModuleGate>} />
+      <Route path="/todos" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_todo_dashboard"><TodoDashboard /></PageGuard></ModuleGate>} />
+      <Route path="/todo" element={<Navigate to="/todos" replace />} />
+      <Route path="/attendance" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_attendance"><Attendance /></PageGuard></ModuleGate>} />
+      <Route path="/reminders" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_reminders"><Reminders /></PageGuard></ModuleGate>} />
+      <Route path="/action-center" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_action_center"><ActionCenter /></PageGuard></ModuleGate>} />
+      <Route path="/visits" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_client_visits"><VisitsPage /></PageGuard></ModuleGate>} />
+      <Route path="/ai-reader" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_ai_document_reader"><AIDocumentReader /></PageGuard></ModuleGate>} />
+      <Route path="/client-portal-manager/*" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_client_portal"><ClientPortalManagerPage /></PageGuard></ModuleGate>} />
+      <Route path="/compliance-dashboard" element={<ModuleGate module="compliance"><ComplianceDashboard /></ModuleGate>} />
+      <Route path="/compliance" element={<ModuleGate module="compliance"><CompliancePage /></ModuleGate>} />
+      <Route path="/gst-reconciliation" element={<ModuleGate module="compliance"><GSTReconciliation /></ModuleGate>} />
+      <Route path="/trademark-sphere" element={<ModuleGate module="compliance"><TrademarkSphere /></ModuleGate>} />
+      <Route path="/mis-report" element={<ModuleGate module="compliance"><PageGuard module="compliance" page="can_view_mis_report"><MISReport /></PageGuard></ModuleGate>} />
+      <Route path="/salary-slips" element={<ModuleGate module="compliance"><PageGuard module="compliance" page="can_view_salary_slips"><SalarySlips /></PageGuard></ModuleGate>} />
+      <Route path="/roc-sphere" element={<ModuleGate module="compliance"><ROCSpherePage /></ModuleGate>} />
+      <Route path="/records-dashboard" element={<ModuleGate module="records"><RecordsDashboard /></ModuleGate>} />
+      <Route path="/client-approvals" element={<ModuleGate module="records"><ClientApprovals /></ModuleGate>} />
+      <Route path="/dsc" element={<ModuleGate module="records"><DSCRegister /></ModuleGate>} />
+      <Route path="/documents" element={<ModuleGate module="records"><DocumentRegister /></ModuleGate>} />
+      <Route path="/clients" element={<ModuleGate module="records"><Clients /></ModuleGate>} />
+      <Route path="/passwords" element={<ModuleGate module="records"><PasswordRepository /></ModuleGate>} />
+      <Route path="/client-proposals-dashboard" element={<ModuleGate module="proposals"><ClientProposalsDashboard /></ModuleGate>} />
+      <Route path="/leads" element={<ModuleGate module="proposals"><LeadsPage /></ModuleGate>} />
+      <Route path="/quotations" element={<ModuleGate module="proposals"><Quotations /></ModuleGate>} />
+      <Route path="/finix-dashboard" element={<ModuleGate module="finix"><FinixDashboard /></ModuleGate>} />
+      <Route path="/invoicing" element={<ModuleGate module="finix"><Invoicing /></ModuleGate>} />
+      <Route path="/purchase" element={<ModuleGate module="finix"><Purchase /></ModuleGate>} />
+      <Route path="/bank-accounts" element={<ModuleGate module="finix"><BankAccounts /></ModuleGate>} />
+      <Route path="/chart-of-accounts" element={<ModuleGate module="finix"><ChartOfAccounts /></ModuleGate>} />
+      <Route path="/journal-entries" element={<ModuleGate module="finix"><JournalEntries /></ModuleGate>} />
+      <Route path="/accounting-reports" element={<ModuleGate module="finix"><AccountingReports /></ModuleGate>} />
+      <Route path="/zero-touch-entry" element={<ModuleGate module="finix"><ZeroTouchEntry /></ModuleGate>} />
+      <Route path="/gst-portal-sync" element={<ModuleGate module="finix"><GSTPortalSync /></ModuleGate>} />
+      <Route path="/accounting-integrity" element={<ModuleGate module="finix"><AccountingIntegrity /></ModuleGate>} />
+      <Route path="/day-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/cash-bank-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/cash-flow" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/outstanding-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/bank-reconciliation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/depreciation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/tds-tcs" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/financial-ratios" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/comparative-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/yearly-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/opening-balances" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/accounting-audit-trail" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/bulk-import" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
+      <Route path="/due-dates" element={<ModuleGate module="finix"><DueDates /></ModuleGate>} />
+      <Route path="/import-invoices" element={<ModuleGate module="finix"><ImportInvoices /></ModuleGate>} />
+      <Route path="/people-matrix" element={<ModuleGate module="peopleMatrix"><PeopleMatrixDashboard /></ModuleGate>} />
+      <Route path="/reports" element={<Reports />} />
+      <Route path="/task-audit" element={<AdminOnly><TaskAudit /></AdminOnly>} />
+      <Route path="/users" element={<ModuleGate module="peopleMatrix"><Users /></ModuleGate>} />
+      <Route path="/staff-activity" element={<StaffActivity />} />
+      <Route path="/whatsapp-hub" element={<AdminOnly><WhatsAppHub /></AdminOnly>} />
+      <Route path="/leave" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_leave"><Leave /></PageGuard></ModuleGate>} />
+      <Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><Payroll /></PageGuard></ModuleGate>} />
+      <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><HR /></PageGuard></ModuleGate>} />
+      <Route path="/recruitment" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_recruitment"><Recruitment /></PageGuard></ModuleGate>} />
+      <Route path="/client-discussion" element={<ModuleGate module="proposals"><PageGuard module="proposals" page="can_view_client_discussion"><ClientDiscussion /></PageGuard></ModuleGate>} />
+      <Route path="/admin-dashboard" element={<AdminOnly><AdminDashboard /></AdminOnly>} />
+      <Route path="/permission-matrix" element={<AdminOnly><PermissionMatrix /></AdminOnly>} />
+      <Route path="/master-data" element={<AdminOnly><PageGuard module="admin" page="can_view_master_data"><MasterData /></PageGuard></AdminOnly>} />
+      <Route path="/roles" element={<AdminOnly><PageGuard module="admin" page="can_view_roles"><Roles /></PageGuard></AdminOnly>} />
+      <Route path="/contact-details" element={<AdminOnly><ContactDetails /></AdminOnly>} />
+      <Route path="/master-console" element={<AdminOnly><MasterConsole /></AdminOnly>} />
+      <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
+      <Route path="/settings/general" element={<GeneralSettings />} />
+      <Route path="/settings/email" element={<EmailSettings />} />
+      <Route path="/settings/whatsapp" element={<WhatsAppSettings />} />
+      <Route path="/settings/automation" element={<Navigate to="/settings/whatsapp" replace />} />
+      <Route path="/automation/approvals" element={<PendingApprovals />} />
+    </Route>
+    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+  </Routes></Suspense>;
 }
