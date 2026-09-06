@@ -1,4 +1,4 @@
-import api from "@/lib/api";
+import axios from "axios";
 
 export const DEFAULT_PACKAGES = [
   { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", description: "Task Management + Invoicing", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 0, active: true },
@@ -6,65 +6,33 @@ export const DEFAULT_PACKAGES = [
   { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", description: "Task Management + Invoicing + Accounting + HRMS", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS"], max_users: 100, max_installations: 5, validity_days: 365, price: 0, active: true },
 ];
 
-export const getLicenseState = async () => {
-  const response = await api.get("/licensing/state");
-  return response.data;
-};
+const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+const local = hostname === "localhost" || hostname === "127.0.0.1";
+const LICENSE_API_URL = (import.meta.env.VITE_LICENSE_API_URL || (local ? "http://localhost:3100/api" : "/api")).replace(/\/$/, "");
+const licensing = axios.create({ baseURL: LICENSE_API_URL, timeout: 30000, headers: { "Content-Type": "application/json" } });
 
-export const createLicense = async (input) => {
-  const response = await api.post("/licensing/licenses", input);
-  return response.data;
-};
+licensing.interceptors.request.use((config) => {
+  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
 
-export const updateLicenseStatus = async (id, status) => {
-  const response = await api.patch(`/licensing/licenses/${id}/status`, { status });
-  return response.data;
-};
-
-export const upgradeLicense = async (id, packageId) => {
-  const response = await api.patch(`/licensing/licenses/${id}/package`, { package_id: packageId });
-  return response.data;
-};
-
-export const savePackage = async (pkg) => {
-  const response = await api.put(`/licensing/packages/${pkg.id}`, pkg);
-  return response.data;
-};
-
-export const activateLicense = async (licenseKey, installationId, installationName) => {
-  const response = await api.post("/licensing/activate", { license_key: licenseKey, installation_id: installationId, installation_name: installationName });
-  return response.data;
-};
-
-export const validateLicense = async (licenseKey) => {
-  const response = await api.post("/licensing/validate", { license_key: licenseKey });
-  return response.data;
-};
-
-export const heartbeatLicense = async (licenseKey, installationId) => {
-  const response = await api.post("/licensing/heartbeat", { license_key: licenseKey, installation_id: installationId });
-  return response.data;
-};
-
-export const revokeInstallation = async (licenseId, installationId) => {
-  const response = await api.post(`/licensing/licenses/${licenseId}/installations/${encodeURIComponent(installationId)}/revoke`);
-  return response.data;
-};
+export const getLicenseState = async () => (await licensing.get("/licensing/state")).data;
+export const createLicense = async (input) => (await licensing.post("/licensing/licenses", input)).data;
+export const updateLicenseStatus = async (id, status) => (await licensing.patch(`/licensing/licenses/${id}/status`, { status })).data;
+export const upgradeLicense = async (id, packageId) => (await licensing.patch(`/licensing/licenses/${id}/package`, { package_id: packageId })).data;
+export const savePackage = async (pkg) => (await licensing.put(`/licensing/packages/${pkg.id}`, pkg)).data;
+export const activateLicense = async (licenseKey, installationId, installationName) => (await licensing.post("/licensing/activate", { license_key: licenseKey, installation_id: installationId, installation_name: installationName })).data;
+export const validateLicense = async (licenseKey) => (await licensing.post("/licensing/validate", { license_key: licenseKey })).data;
+export const heartbeatLicense = async (licenseKey, installationId) => (await licensing.post("/licensing/heartbeat", { license_key: licenseKey, installation_id: installationId })).data;
+export const revokeInstallation = async (licenseId, installationId) => (await licensing.post(`/licensing/licenses/${licenseId}/installations/${encodeURIComponent(installationId)}/revoke`)).data;
 
 export const subscribeLicenseState = (callback) => {
   let cancelled = false;
-  const refresh = async () => {
-    try {
-      const state = await getLicenseState();
-      if (!cancelled) callback(state);
-    } catch {
-      // The caller keeps its last known state when the licensing API is unavailable.
-    }
-  };
+  const refresh = async () => { try { const state = await getLicenseState(); if (!cancelled) callback(state); } catch {} };
   refresh();
   const timer = window.setInterval(refresh, 30000);
-  return () => {
-    cancelled = true;
-    window.clearInterval(timer);
-  };
+  return () => { cancelled = true; window.clearInterval(timer); };
 };
+
+export { LICENSE_API_URL };
