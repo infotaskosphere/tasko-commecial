@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Mapping
 
@@ -10,9 +11,6 @@ from fastapi import HTTPException, status
 COMPANY_FIELD = "company_id"
 COMPANY_ID_FIELD = "id"
 
-# Collections confirmed by the server audit to contain tenant-owned data.
-# Global/system collections (users, holidays, templates, etc.) are deliberately
-# excluded and must use their own authorization rules.
 TENANT_COLLECTIONS = {
     "tasks", "todos", "clients", "invoices", "payments",
     "purchase_invoices", "purchase_payments", "purchases",
@@ -26,12 +24,10 @@ TENANT_COLLECTIONS = {
     "kpi_history", "workflow_audit",
 }
 
-# The company registry itself is global infrastructure, but an authenticated
-# tenant may only resolve its own company record. This closes endpoints that
-# accept a browser-supplied company_id and then query db.companies directly.
 COMPANY_REGISTRY_COLLECTION = "companies"
 
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
+_system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
 
 
 def set_authenticated_company(company_id: Any):
@@ -47,6 +43,24 @@ def reset_authenticated_company(token) -> None:
 
 def authenticated_company_id() -> str | None:
     return _current_company.get()
+
+
+def in_system_context() -> bool:
+    return _system_context.get()
+
+
+@contextmanager
+def system_context():
+    """Explicitly mark trusted internal jobs as system-scoped.
+
+    This is intentionally opt-in. It is not exposed to request handlers and
+    must only be used by trusted server-side maintenance/scheduler code.
+    """
+    token = _system_context.set(True)
+    try:
+        yield
+    finally:
+        _system_context.reset(token)
 
 
 def get_company_id(current_user: Any) -> str:
@@ -97,17 +111,13 @@ def _scope_query(query: Any) -> dict[str, Any]:
 
 
 def _scope_company_registry_query(query: Any) -> dict[str, Any]:
-    """Scope authenticated reads of the global company registry by company id."""
     company_id = authenticated_company_id()
     if not company_id:
         return query if isinstance(query, dict) else {}
     base = dict(query or {})
     requested = base.get(COMPANY_ID_FIELD)
     if requested is not None:
-        if isinstance(requested, dict):
-            # Do not allow operators on the tenant id to broaden company access.
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-        if str(requested) != company_id:
+        if isinstance(requested, dict) or str(requested) != company_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
     base[COMPANY_ID_FIELD] = company_id
     return base
@@ -121,12 +131,10 @@ def _scope_update(update: Any) -> Any:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant update pipelines are not permitted")
     if not isinstance(update, dict):
         return update
-
     result = dict(update)
     unset_values = dict(result.get("$unset") or {})
     if COMPANY_FIELD in unset_values:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="company_id cannot be removed")
-
     set_values = dict(result.get("$set") or {})
     if COMPANY_FIELD in set_values and str(set_values[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
@@ -152,113 +160,82 @@ class TenantAwareCollection:
         self._name = name
 
     def _enabled(self) -> bool:
-        return self._name in TENANT_COLLECTIONS and authenticated_company_id() is not None
+        return self._name in TENANT_COLLECTIONS and authenticated_company_id() is not None and not in_system_context()
 
     def _company_registry_enabled(self) -> bool:
-        return self._name == COMPANY_REGISTRY_COLLECTION and authenticated_company_id() is not None
+        return self._name == COMPANY_REGISTRY_COLLECTION and authenticated_company_id() is not None and not in_system_context()
 
     def find(self, query=None, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return self._collection.find(query, *args, **kwargs)
 
     async def find_one(self, query=None, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.find_one(query, *args, **kwargs)
 
     async def count_documents(self, query=None, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.count_documents(query, *args, **kwargs)
 
     async def distinct(self, key, query=None, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.distinct(key, query, *args, **kwargs)
 
     async def insert_one(self, document, *args, **kwargs):
-        if self._enabled():
-            document = _scope_replacement(document)
+        if self._enabled(): document = _scope_replacement(document)
         return await self._collection.insert_one(document, *args, **kwargs)
 
     async def insert_many(self, documents, *args, **kwargs):
-        if self._enabled():
-            documents = [_scope_replacement(document) for document in documents]
+        if self._enabled(): documents = [_scope_replacement(document) for document in documents]
         return await self._collection.insert_many(documents, *args, **kwargs)
 
     async def update_one(self, query, update, *args, **kwargs):
-        enabled = self._enabled()
-        registry = self._company_registry_enabled()
-        if enabled:
-            query, update = _scope_query(query), _scope_update(update)
-        elif registry:
-            query = _scope_company_registry_query(query)
+        enabled = self._enabled(); registry = self._company_registry_enabled()
+        if enabled: query, update = _scope_query(query), _scope_update(update)
+        elif registry: query = _scope_company_registry_query(query)
         return await self._collection.update_one(query, update, *args, **kwargs)
 
     async def update_many(self, query, update, *args, **kwargs):
-        enabled = self._enabled()
-        registry = self._company_registry_enabled()
-        if enabled:
-            query, update = _scope_query(query), _scope_update(update)
-        elif registry:
-            query = _scope_company_registry_query(query)
+        enabled = self._enabled(); registry = self._company_registry_enabled()
+        if enabled: query, update = _scope_query(query), _scope_update(update)
+        elif registry: query = _scope_company_registry_query(query)
         return await self._collection.update_many(query, update, *args, **kwargs)
 
     async def replace_one(self, query, replacement, *args, **kwargs):
-        enabled = self._enabled()
-        registry = self._company_registry_enabled()
-        if enabled:
-            query, replacement = _scope_query(query), _scope_replacement(replacement)
-        elif registry:
-            query = _scope_company_registry_query(query)
+        enabled = self._enabled(); registry = self._company_registry_enabled()
+        if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
+        elif registry: query = _scope_company_registry_query(query)
         return await self._collection.replace_one(query, replacement, *args, **kwargs)
 
     async def find_one_and_update(self, query, update, *args, **kwargs):
-        enabled = self._enabled()
-        registry = self._company_registry_enabled()
-        if enabled:
-            query, update = _scope_query(query), _scope_update(update)
-        elif registry:
-            query = _scope_company_registry_query(query)
+        enabled = self._enabled(); registry = self._company_registry_enabled()
+        if enabled: query, update = _scope_query(query), _scope_update(update)
+        elif registry: query = _scope_company_registry_query(query)
         return await self._collection.find_one_and_update(query, update, *args, **kwargs)
 
     async def find_one_and_replace(self, query, replacement, *args, **kwargs):
-        enabled = self._enabled()
-        registry = self._company_registry_enabled()
-        if enabled:
-            query, replacement = _scope_query(query), _scope_replacement(replacement)
-        elif registry:
-            query = _scope_company_registry_query(query)
+        enabled = self._enabled(); registry = self._company_registry_enabled()
+        if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
+        elif registry: query = _scope_company_registry_query(query)
         return await self._collection.find_one_and_replace(query, replacement, *args, **kwargs)
 
     async def find_one_and_delete(self, query, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.find_one_and_delete(query, *args, **kwargs)
 
     async def delete_one(self, query, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.delete_one(query, *args, **kwargs)
 
     async def delete_many(self, query, *args, **kwargs):
-        if self._enabled():
-            query = _scope_query(query)
-        elif self._company_registry_enabled():
-            query = _scope_company_registry_query(query)
+        if self._enabled(): query = _scope_query(query)
+        elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.delete_many(query, *args, **kwargs)
 
     def aggregate(self, pipeline, *args, **kwargs):
@@ -271,8 +248,7 @@ class TenantAwareCollection:
         return self._collection.aggregate(pipeline, *args, **kwargs)
 
     async def bulk_write(self, requests, *args, **kwargs):
-        if not self._enabled():
-            return await self._collection.bulk_write(requests, *args, **kwargs)
+        if not self._enabled(): return await self._collection.bulk_write(requests, *args, **kwargs)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bulk writes are not permitted on tenant collections")
 
     def __getattr__(self, name):
@@ -280,12 +256,6 @@ class TenantAwareCollection:
 
 
 class TenantAwareDatabase:
-    """Proxy that applies company scoping to selected SaaS collections."""
-    def __init__(self, database: Any):
-        self._database = database
-
-    def __getitem__(self, name):
-        return TenantAwareCollection(self._database[name], name)
-
-    def __getattr__(self, name):
-        return self[name]
+    def __init__(self, database: Any): self._database = database
+    def __getitem__(self, name): return TenantAwareCollection(self._database[name], name)
+    def __getattr__(self, name): return self[name]
