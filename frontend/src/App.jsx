@@ -1,4 +1,5 @@
 import React, { Suspense, memo, useEffect } from "react";
+import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -43,6 +44,7 @@ const ROUTE_PREFETCHERS = {
   "/reports": () => import("./pages/Reports.jsx"),
   "/users": () => import("./pages/Users.jsx"),
   "/master-console": () => import("./pages/MasterConsole.jsx"),
+  "/activate-license": () => import("./pages/LicenseActivation.jsx"),
 };
 
 const prefetchedRoutes = new Set();
@@ -73,32 +75,8 @@ function RoutePrefetcher() {
   return null;
 }
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false },
-  },
-});
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <MinimizedFormsProvider>
-            <BulkWASenderProvider>
-              <DocumentUploadProvider>
-                <BottomLoadingBar />
-                <RoutePrefetcher />
-                <ReminderPopupManager />
-                <BulkWASenderWidget />
-                <MinimizedFormsDock />
-                <Suspense fallback={<GifLoader />}><AppRoutes /></Suspense>
-                <Toaster position="top-right" richColors />
-              </DocumentUploadProvider>
-            </BulkWASenderProvider>
-          </MinimizedFormsProvider>
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }
