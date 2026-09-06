@@ -85,7 +85,55 @@ async function ensureBootstrap() {
     const subscriptions = database.collection("subscriptions");
 
     const existing = await users.findOne({ email: BOOTSTRAP_EMAIL });
-    if (existing) return;
+
+    // The bootstrap account is controlled by the bootstrap environment
+    // variables. If the account already exists, synchronize its password so
+    // changing SAAS_BOOTSTRAP_ADMIN_PASSWORD can recover the initial admin
+    // without requiring a manual MongoDB password-hash edit.
+    if (existing) {
+      if (existing.role !== "admin" && existing.bootstrap_managed !== true) return;
+
+      const passwordRecord = makePasswordRecord(BOOTSTRAP_PASSWORD);
+      await users.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            password_hash: passwordRecord.hash,
+            password_salt: passwordRecord.salt,
+            role: "admin",
+            status: "active",
+            bootstrap_managed: true,
+            updated_at: new Date()
+          }
+        }
+      );
+
+      if (existing.company_id) {
+        await companies.updateOne(
+          { _id: existing.company_id },
+          { $set: { status: "active", updated_at: new Date() } }
+        );
+
+        const subscription = await subscriptions.findOne({ company_id: existing.company_id });
+        if (!subscription) {
+          const now = new Date();
+          const pkg = packageDefinition(BOOTSTRAP_PACKAGE);
+          await subscriptions.insertOne({
+            company_id: existing.company_id,
+            package_id: BOOTSTRAP_PACKAGE,
+            status: "active",
+            max_users: pkg.max_users,
+            max_installations: pkg.max_installations,
+            modules: pkg.modules,
+            starts_at: now,
+            expires_at: new Date(now.getTime() + 365 * 86400000),
+            created_at: now,
+            updated_at: now
+          });
+        }
+      }
+      return;
+    }
 
     const now = new Date();
     const slugBase = BOOTSTRAP_COMPANY.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "taskosphere-commercial";
@@ -102,6 +150,7 @@ async function ensureBootstrap() {
       role: "admin",
       permissions: {},
       status: "active",
+      bootstrap_managed: true,
       created_at: now,
       updated_at: now
     };
@@ -119,9 +168,11 @@ async function ensureBootstrap() {
       created_at: now,
       updated_at: now
     });
-  })().catch((error) => {
+  })().finally(() => {
+    // Keep this as a concurrency guard, not a permanent cache. If the
+    // bootstrap account is removed or needs recovery after a restart, the
+    // next login can safely re-check and bootstrap it again.
     bootstrapPromise = null;
-    throw error;
   });
 
   return bootstrapPromise;
