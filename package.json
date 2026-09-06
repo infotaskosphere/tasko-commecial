@@ -6,11 +6,11 @@
     "frontend"
   ],
   "scripts": {
-    "dev": "node --require ./backend/license-runtime.cjs ./node_modules/tsx/dist/cli.mjs server.ts",
+    "dev": "node --require ./backend/saas-auth-preload.cjs --require ./backend/license-runtime.cjs ./node_modules/tsx/dist/cli.mjs server.ts",
     "dev:licensing": "tsx licensing-server.ts",
     "build": "npm run build --workspace=frontend && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild licensing-server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/licensing-server.cjs",
     "build:licensing": "esbuild licensing-server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/licensing-server.cjs",
-    "start": "node --require ./backend/license-runtime.cjs dist/server.cjs",
+    "start": "node --require ./backend/saas-auth-preload.cjs --require ./backend/license-runtime.cjs dist/server.cjs",
     "start:licensing": "node dist/licensing-server.cjs"
   },
   "dependencies": {
