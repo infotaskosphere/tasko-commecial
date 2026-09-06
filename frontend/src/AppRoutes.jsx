@@ -1,16 +1,17 @@
 import React, { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import DashboardLayout from '@/components/layout/DashboardLayout.jsx';
 import ModuleGate from '@/components/ModuleGate.jsx';
 import { PageGuard } from '@/components/governance/GovernanceGuards.jsx';
-import GifLoader, { ContentLoader } from '@/components/ui/GifLoader.jsx';
+import GifLoader from '@/components/ui/GifLoader.jsx';
 import RouteErrorBoundary from '@/components/layout/RouteErrorBoundary.jsx';
 import { AnimatedOutlet as RouteAnimatedOutlet, PageTransition } from '@/components/layout/PageTransition.jsx';
 
 const Login = lazy(() => import('./pages/Login.jsx'));
 const Register = lazy(() => import('./pages/Register.jsx'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword.jsx'));
+const LicenseActivation = lazy(() => import('./pages/LicenseActivation.jsx'));
 const ClientPortalLogin = lazy(() => import('./pages/ClientPortalLogin.jsx'));
 const ClientPortalDashboard = lazy(() => import('./pages/ClientPortalDashboard.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
@@ -98,6 +99,7 @@ export default function AppRoutes() {
     <Route path="/login" element={<PageTransition><PublicOnly><Login /></PublicOnly></PageTransition>} />
     <Route path="/register" element={<PageTransition><PublicOnly><Register /></PublicOnly></PageTransition>} />
     <Route path="/forgot-password" element={<PageTransition><PublicOnly><ForgotPassword /></PublicOnly></PageTransition>} />
+    <Route path="/activate-license" element={<PageTransition><LicenseActivation /></PageTransition>} />
     <Route path="/client-portal" element={<Navigate to="/client-portal/login" replace />} />
     <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
     <Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard /></PageTransition>} />
