@@ -4,6 +4,9 @@ import csv
 import uuid
 import json
 import base64
+import hashlib
+import hmac
+import secrets
 import logging
 import pytz
 import traceback
@@ -1947,6 +1950,167 @@ def get_password_hash(password):
     return pwd_context.hash(password)
 
 
+def _verify_saas_password(plain_password: str, user: dict) -> bool:
+    """Verify the scrypt password record used by the commercial SaaS account."""
+    salt_hex = user.get("password_salt")
+    expected_hex = user.get("password_hash")
+    if not salt_hex or not expected_hex:
+        return False
+
+    try:
+        derived = hashlib.scrypt(
+            str(plain_password).encode("utf-8"),
+            salt=str(salt_hex).encode("utf-8"),
+            n=16384,
+            r=8,
+            p=1,
+            dklen=64,
+        ).hex()
+        return hmac.compare_digest(derived, str(expected_hex))
+    except (TypeError, ValueError):
+        return False
+
+
+def _make_saas_password_record(password: str) -> tuple[str, str]:
+    salt = secrets.token_bytes(16).hex()
+    password_hash = hashlib.scrypt(
+        str(password).encode("utf-8"),
+        salt=salt.encode("utf-8"),
+        n=16384,
+        r=8,
+        p=1,
+        dklen=64,
+    ).hex()
+    return password_hash, salt
+
+
+def _saas_object_id(value):
+    """Return an ObjectId where possible, otherwise the original value."""
+    if isinstance(value, ObjectId):
+        return value
+    try:
+        return ObjectId(str(value))
+    except Exception:
+        return value
+
+
+async def _sync_saas_bootstrap_password() -> None:
+    """Synchronize the configured bootstrap password for an existing SaaS admin."""
+    bootstrap_email = str(
+        os.getenv("SAAS_BOOTSTRAP_ADMIN_EMAIL", "")
+    ).strip().lower()
+    bootstrap_password = str(
+        os.getenv("SAAS_BOOTSTRAP_ADMIN_PASSWORD", "")
+    )
+
+    if not bootstrap_email or not bootstrap_password:
+        return
+
+    existing = await db.users.find_one({"email": bootstrap_email})
+    if not existing:
+        return
+
+    # Only accounts explicitly managed as bootstrap admins may be changed by
+    # the bootstrap environment variables. Never overwrite a normal user.
+    if existing.get("role") != "admin" and existing.get("bootstrap_managed") is not True:
+        return
+
+    password_hash, password_salt = _make_saas_password_record(bootstrap_password)
+    update = {
+        "$set": {
+            "password_hash": password_hash,
+            "password_salt": password_salt,
+            "role": "admin",
+            "status": "active",
+            "bootstrap_managed": True,
+            "updated_at": datetime.now(timezone.utc),
+        }
+    }
+    await db.users.update_one({"_id": existing.get("_id")}, update)
+
+
+async def _create_saas_session(user: dict) -> tuple[str, str, User]:
+    """Create the opaque session consumed by dependencies.get_current_user()."""
+    company_id = user.get("company_id")
+    if company_id is None:
+        raise HTTPException(status_code=403, detail="Authenticated user is not associated with a company")
+
+    company_query_id = _saas_object_id(company_id)
+    company = await db.companies.find_one(
+        {"_id": company_query_id, "status": "active"}
+    )
+    if not company and company_query_id != company_id:
+        company = await db.companies.find_one(
+            {"_id": company_id, "status": "active"}
+        )
+    if not company:
+        raise HTTPException(status_code=403, detail="Commercial company is inactive or unavailable")
+
+    subscription = await db.subscriptions.find_one({"company_id": company_id})
+    if not subscription:
+        subscription = await db.subscriptions.find_one(
+            {"company_id": company_query_id}
+        )
+    if not subscription:
+        raise HTTPException(status_code=403, detail="Commercial subscription is unavailable")
+
+    subscription_status = subscription.get("status")
+    if subscription_status not in ("trial", "active"):
+        raise HTTPException(status_code=403, detail="Commercial subscription is not active")
+
+    expires_at = subscription.get("expires_at")
+    if expires_at:
+        if isinstance(expires_at, str):
+            try:
+                expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except Exception:
+                expires_at = None
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail="Commercial subscription has expired")
+
+    session_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    ttl_days = max(1, int(os.getenv("SAAS_SESSION_TTL_DAYS", "30") or 30))
+
+    await db.sessions.insert_one({
+        "user_id": user.get("_id") or user.get("id"),
+        "company_id": company_id,
+        "token_hash": token_hash,
+        "expires_at": now + timedelta(days=ttl_days),
+        "created_at": now,
+        "last_seen_at": now,
+    })
+
+    user_data = {
+        key: value
+        for key, value in user.items()
+        if key not in {"_id", "password", "password_hash", "password_salt", "bootstrap_managed"}
+    }
+    user_data["id"] = str(user.get("_id") or user.get("id"))
+    user_data["company_id"] = str(company_id)
+    user_data["company_name"] = company.get("name")
+    user_data["status"] = "active"
+    user_data["is_active"] = True
+    user_data.setdefault("created_at", now)
+
+    # The bootstrap SaaS account stores permissions as a plain dictionary.
+    # Merge them with the existing admin defaults so all existing permission
+    # checks continue to behave exactly as they do for legacy users.
+    role_defaults = DEFAULT_ROLE_PERMISSIONS.get(
+        str(user_data.get("role") or "admin"), {}
+    )
+    stored_permissions = user_data.get("permissions") or {}
+    if hasattr(stored_permissions, "model_dump"):
+        stored_permissions = stored_permissions.model_dump()
+    user_data["permissions"] = {**role_defaults, **stored_permissions}
+
+    return session_token, str(user_data["id"]), User(**user_data)
+
+
 async def send_email(to_email: str, subject: str, body: str):
     """Send plain text email via Brevo API (async)."""
     try:
@@ -2598,15 +2762,64 @@ async def self_register(user_data: UserCreate, request: Request):
 async def login(credentials: UserLogin, request: Request):
     await _enforce_auth_rate_limit(request, credentials.email, limit_per_minute=10)
     client_ip = request.client.host if request and request.client else "unknown"
+    normalized_email = str(credentials.email or "").strip().lower()
 
-    user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
+    # Commercial SaaS bootstrap credentials are stored as scrypt
+    # password_hash/password_salt records, not as the legacy bcrypt
+    # `password` field. Synchronize an existing bootstrap-managed admin first
+    # so changing SAAS_BOOTSTRAP_ADMIN_PASSWORD actually takes effect.
+    try:
+        await _sync_saas_bootstrap_password()
+    except Exception:
+        logger.exception("SaaS bootstrap password synchronization failed.")
 
-    if not user or not verify_password(credentials.password, user["password"]):
+    user = await db.users.find_one({"email": normalized_email})
+
+    # ── Commercial SaaS account path ────────────────────────────────────────
+    if user and user.get("password_hash") and user.get("password_salt"):
+        if not _verify_saas_password(credentials.password, user):
+            try:
+                await AuditSecurity.log_security_event(
+                    event_type="login_failed",
+                    actor_id=normalized_email,
+                    company_id=str(user.get("company_id") or ""),
+                    severity="warning",
+                    details=f"Failed SaaS login attempt from {client_ip}.",
+                )
+            except Exception:
+                pass
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        session_token, _, user_obj = await _create_saas_session(user)
+
+        try:
+            await AuditSecurity.log_security_event(
+                event_type="login_success",
+                actor_id=user_obj.id,
+                company_id=str(user_obj.company_id or ""),
+                severity="info",
+                details=f"SaaS login from {client_ip}",
+            )
+        except Exception:
+            logger.warning("SaaS login audit log failed; continuing.")
+
+        return {
+            "access_token": session_token,
+            "token_type": "bearer",
+            "user": user_obj,
+            "consent_given": True,
+            "session_token": session_token,
+        }
+
+    # ── Existing legacy account path ────────────────────────────────────────
+    if not user or not user.get("password") or not verify_password(
+        credentials.password, user["password"]
+    ):
         try:
             await AuditSecurity.log_security_event(
                 event_type="login_failed",
-                actor_id=credentials.email,
-                company_id="",
+                actor_id=normalized_email,
+                company_id=str(user.get("company_id") or "") if user else "",
                 severity="warning",
                 details=f"Failed login attempt from {client_ip}.",
             )
@@ -2626,6 +2839,7 @@ async def login(credentials: UserLogin, request: Request):
     if "created_at" in user and isinstance(user["created_at"], str):
         user["created_at"] = datetime.fromisoformat(user["created_at"])
 
+    user.pop("_id", None)
     user_obj = User(**{k: v for k, v in user.items() if k != "password"})
     access_token = create_access_token({"sub": user_obj.id})
 
@@ -2643,7 +2857,7 @@ async def login(credentials: UserLogin, request: Request):
         await AuditSecurity.log_security_event(
             event_type="login_success",
             actor_id=user_obj.id,
-            company_id="",
+            company_id=str(user_obj.company_id or ""),
             severity="info" if not is_off_hours else "warning",
             details=f"Login from {client_ip}" + (" (off-hours access)" if is_off_hours else ""),
         )
