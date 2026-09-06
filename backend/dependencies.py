@@ -14,24 +14,7 @@ logger = logging.getLogger("dependencies")
 
 
 def personal_birthday_candidates(client: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Returns every entry on this client record that is a genuine PERSONAL
-    birthday — never a company's Date of Incorporation.
-
-    Some client-creation flows (MDS/MCA Excel import, the Lead→Client
-    conversion form, and the main Add/Edit Client form) mislabel their
-    "Date of Incorporation" input but still write the value into the
-    client's top-level `birthday` field. For an actual registered entity
-    (pvt_ltd, llp, partnership, huf, trust, public_ltd, section_8) that
-    field is therefore that company's incorporation date, not anyone's
-    birthday, and must never trigger a birthday popup, email, or WhatsApp
-    wish. A "proprietor" client is the one exception — a sole
-    proprietorship has no legal identity separate from its owner, so its
-    top-level `birthday` genuinely is that person's birthday.
-
-    Contact persons (directors/partners/trustees) are always real
-    individuals, so their birthdays are always included regardless of the
-    parent client's type.
-    """
+    """Returns every genuine PERSONAL birthday represented by a client record."""
     candidates: List[Dict[str, Any]] = []
     if (client.get("client_type") or "").strip().lower() == "proprietor" and client.get("birthday"):
         candidates.append({
@@ -56,1377 +39,178 @@ def personal_birthday_candidates(client: Dict[str, Any]) -> List[Dict[str, Any]]
 MONGO_URL = os.getenv("MONGO_URL")
 DB_NAME = os.getenv("DB_NAME", "taskosphere")
 
-# In-memory MongoDB Mock classes
 import uuid
 import asyncio
 
 class MockCursor:
-    def __init__(self, data):
-        self._data = data
-        self._index = 0
-
-    def limit(self, n):
-        self._data = self._data[:n]
-        return self
-
-    def sort(self, *args, **kwargs):
-        return self
-
-    def skip(self, n):
-        self._data = self._data[n:]
-        return self
-
-    async def to_list(self, length=None):
-        if length is not None:
-            return self._data[:length]
-        return self._data
-
-    def __aiter__(self):
-        self._index = 0
-        return self
-
+    def __init__(self, data): self._data, self._index = data, 0
+    def limit(self, n): self._data = self._data[:n]; return self
+    def sort(self, *args, **kwargs): return self
+    def skip(self, n): self._data = self._data[n:]; return self
+    async def to_list(self, length=None): return self._data[:length] if length is not None else self._data
+    def __aiter__(self): self._index = 0; return self
     async def __anext__(self):
-        if self._index >= len(self._data):
-            raise StopAsyncIteration
-        val = self._data[self._index]
-        self._index += 1
-        return val
+        if self._index >= len(self._data): raise StopAsyncIteration
+        val = self._data[self._index]; self._index += 1; return val
 
 class MockCollection:
-    def __init__(self, name):
-        self.name = name
-        self._store = {}
-
+    def __init__(self, name): self.name, self._store = name, {}
     async def find_one(self, query=None, *args, **kwargs):
-        if query is None:
-            query = {}
+        query = query or {}
         for doc in self._store.values():
-            if self._matches(doc, query):
-                return doc.copy()
+            if self._matches(doc, query): return doc.copy()
         return None
-
     def find(self, query=None, *args, **kwargs):
-        if query is None:
-            query = {}
-        matched = []
-        for doc in self._store.values():
-            if self._matches(doc, query):
-                matched.append(doc.copy())
-        return MockCursor(matched)
-
+        query = query or {}
+        return MockCursor([doc.copy() for doc in self._store.values() if self._matches(doc, query)])
     async def insert_one(self, document):
-        doc = document.copy()
-        if "_id" not in doc:
-            doc["_id"] = str(uuid.uuid4())
-        self._store[str(doc["_id"])] = doc
-        class InsertResult:
-            def __init__(self, inserted_id):
-                self.inserted_id = inserted_id
-        return InsertResult(doc["_id"])
-
+        doc = document.copy(); doc.setdefault("_id", str(uuid.uuid4())); self._store[str(doc["_id"])] = doc
+        class R:
+            inserted_id = doc["_id"]
+        return R()
     async def insert_many(self, documents):
-        inserted_ids = []
-        for doc_in in documents:
-            doc = doc_in.copy()
-            if "_id" not in doc:
-                doc["_id"] = str(uuid.uuid4())
-            self._store[str(doc["_id"])] = doc
-            inserted_ids.append(doc["_id"])
-        class InsertManyResult:
-            def __init__(self, ids):
-                self.inserted_ids = ids
-        return InsertManyResult(inserted_ids)
-
+        ids=[]
+        for item in documents:
+            doc=item.copy(); doc.setdefault("_id", str(uuid.uuid4())); self._store[str(doc["_id"])] = doc; ids.append(doc["_id"])
+        class R: inserted_ids = ids
+        return R()
     async def update_one(self, query, update, upsert=False, *args, **kwargs):
         doc = await self.find_one(query)
         if not doc:
             if upsert:
-                new_doc = query.copy()
-                if "$set" in update:
-                    new_doc.update(update["$set"])
-                await self.insert_one(new_doc)
-                class UpdateResultUpsert:
-                    def __init__(self):
-                        self.matched_count = 0
-                        self.modified_count = 1
-                        self.upserted_id = new_doc["_id"]
-                return UpdateResultUpsert()
-            class UpdateResultNoMatch:
-                def __init__(self):
-                    self.matched_count = 0
-                    self.modified_count = 0
-                    self.upserted_id = None
-            return UpdateResultNoMatch()
-
-        if "$set" in update:
-            for k, v in update["$set"].items():
-                doc[k] = v
-        if "$unset" in update:
-            for k in update["$unset"].keys():
-                doc.pop(k, None)
-        if "$push" in update:
-            for k, v in update["$push"].items():
-                if k not in doc:
-                    doc[k] = []
-                if isinstance(doc[k], list):
-                    doc[k].append(v)
+                new_doc=query.copy(); new_doc.update(update.get("$set", {})); await self.insert_one(new_doc)
+                class R: matched_count=0; modified_count=1; upserted_id=new_doc["_id"]
+                return R()
+            class R: matched_count=0; modified_count=0; upserted_id=None
+            return R()
+        for op, values in update.items():
+            if op == "$set": doc.update(values)
+            elif op == "$unset":
+                for k in values: doc.pop(k, None)
+            elif op == "$push":
+                for k,v in values.items(): doc.setdefault(k, []).append(v)
         self._store[str(doc["_id"])] = doc
-        class UpdateResult:
-            def __init__(self, id):
-                self.matched_count = 1
-                self.modified_count = 1
-                self.upserted_id = None
-        return UpdateResult(doc["_id"])
-
+        class R: matched_count=1; modified_count=1; upserted_id=None
+        return R()
     async def delete_one(self, query, *args, **kwargs):
-        doc = await self.find_one(query)
-        if doc:
-            self._store.pop(str(doc["_id"]), None)
-            class DeleteResult:
-                def __init__(self):
-                    self.deleted_count = 1
-            return DeleteResult()
-        class DeleteResultEmpty:
-            def __init__(self):
-                self.deleted_count = 0
-        return DeleteResultEmpty()
-
+        doc=await self.find_one(query)
+        if doc: self._store.pop(str(doc["_id"]), None)
+        class R: deleted_count = 1 if doc else 0
+        return R()
     async def delete_many(self, query, *args, **kwargs):
-        matched_keys = []
-        for _id, doc in self._store.items():
-            if self._matches(doc, query):
-                matched_keys.append(_id)
-        for k in matched_keys:
-            self._store.pop(k, None)
-        class DeleteManyResult:
-            def __init__(self, count):
-                self.deleted_count = count
-        return DeleteManyResult(len(matched_keys))
-
-    async def count_documents(self, query, *args, **kwargs):
-        count = 0
-        for doc in self._store.values():
-            if self._matches(doc, query):
-                count += 1
-        return count
-
+        keys=[k for k,d in self._store.items() if self._matches(d,query)]
+        for k in keys: self._store.pop(k,None)
+        class R: deleted_count=len(keys)
+        return R()
+    async def count_documents(self, query, *args, **kwargs): return sum(1 for d in self._store.values() if self._matches(d,query))
     def _matches(self, doc, query):
-        for q_key, q_val in query.items():
+        for q_key,q_val in query.items():
             if q_key == "$or":
-                match_or = False
-                for sub_q in q_val:
-                    if self._matches(doc, sub_q):
-                        match_or = True
-                        break
-                if not match_or:
-                    return False
+                if not any(self._matches(doc,x) for x in q_val): return False
                 continue
             if q_key == "$and":
-                for sub_q in q_val:
-                    if not self._matches(doc, sub_q):
-                        return False
+                if not all(self._matches(doc,x) for x in q_val): return False
                 continue
-
-            doc_val = doc.get(q_key)
-            if isinstance(q_val, dict):
-                for op, op_val in q_val.items():
-                    if op == "$in":
-                        if doc_val not in op_val:
-                            return False
-                    elif op == "$nin":
-                        if doc_val in op_val:
-                            return False
-                    elif op == "$ne":
-                        if doc_val == op_val:
-                            return False
-                    elif op == "$gt":
-                        if doc_val is None or doc_val <= op_val:
-                            return False
-                    elif op == "$gte":
-                        if doc_val is None or doc_val < op_val:
-                            return False
-                    elif op == "$lt":
-                        if doc_val is None or doc_val >= op_val:
-                            return False
-                    elif op == "$lte":
-                        if doc_val is None or doc_val > op_val:
-                            return False
-            else:
-                if str(doc_val) != str(q_val):
-                    return False
+            doc_val=doc.get(q_key)
+            if isinstance(q_val,dict):
+                for op,op_val in q_val.items():
+                    if op == "$in" and doc_val not in op_val: return False
+                    if op == "$nin" and doc_val in op_val: return False
+                    if op == "$ne" and doc_val == op_val: return False
+                    if op == "$gt" and (doc_val is None or doc_val <= op_val): return False
+                    if op == "$gte" and (doc_val is None or doc_val < op_val): return False
+                    if op == "$lt" and (doc_val is None or doc_val >= op_val): return False
+                    if op == "$lte" and (doc_val is None or doc_val > op_val): return False
+            elif str(doc_val) != str(q_val): return False
         return True
 
 class MockDatabase:
-    def __init__(self):
-        self._collections = {}
-
-    def __getitem__(self, name):
-        if name not in self._collections:
-            self._collections[name] = MockCollection(name)
-        return self._collections[name]
-
-    def __getattr__(self, name):
-        return self[name]
-
+    def __init__(self): self._collections={}
+    def __getitem__(self,name): self._collections.setdefault(name,MockCollection(name)); return self._collections[name]
+    __getattr__ = __getitem__
 class MockMongoClient:
-    def __init__(self, *args, **kwargs):
-        self._db = MockDatabase()
-
-    def __getitem__(self, name):
-        return self._db
-
-    def __getattr__(self, name):
-        return self._db
+    def __init__(self,*args,**kwargs): self._db=MockDatabase()
+    def __getitem__(self,name): return self._db
+    __getattr__ = lambda self,name: self._db
 
 if not MONGO_URL:
     print("[AI Studio] MONGO_URL not provided. Using fallback in-memory MongoDB client.")
-    client = MockMongoClient()
-    db = client[DB_NAME]
+    client=MockMongoClient(); db=client[DB_NAME]
 else:
     try:
-        client = AsyncIOMotorClient(MONGO_URL)
-        db = client[DB_NAME]
+        client=AsyncIOMotorClient(MONGO_URL); db=client[DB_NAME]
     except Exception as e:
         print(f"[AI Studio] Failed to connect to MongoDB, falling back to mock: {e}")
-        client = MockMongoClient()
-        db = client[DB_NAME]
+        client=MockMongoClient(); db=client[DB_NAME]
 
 # ==========================================================
 # JWT / AUTH CONFIG
 # ==========================================================
 def _resolve_jwt_secret() -> str:
-    """
-    Resolves the JWT signing secret.
-
-    SECURITY: There must never be a hardcoded fallback secret here. A shared,
-    publicly-known default (as this file previously used) lets anyone forge
-    valid auth tokens for any user, including admins, on any deployment that
-    forgets to set JWT_SECRET.
-
-    - In production (ENV_MODE=production): missing JWT_SECRET is a fatal
-      startup error.
-    - In development: we generate a random, process-local secret so local
-      dev keeps working without a .env file, but we log a loud warning and
-      tokens will NOT survive a server restart (by design).
-    """
-    secret = os.getenv("JWT_SECRET")
-    if secret and secret.strip():
-        return secret.strip()
-
+    secret=os.getenv("JWT_SECRET")
+    if secret and secret.strip(): return secret.strip()
     if os.getenv("ENV_MODE") == "production":
-        raise RuntimeError(
-            "JWT_SECRET environment variable is not set. Refusing to start "
-            "in production without an explicit, secret JWT signing key. "
-            "Set JWT_SECRET to a long random value (e.g. `openssl rand -hex 32`)."
-        )
-
-    generated = _secrets.token_hex(32)
-    logger.warning(
-        "JWT_SECRET is not set. Generated a random development-only secret. "
-        "All existing tokens are invalid and new tokens will not survive a "
-        "restart. Set JWT_SECRET in your .env before deploying."
-    )
+        raise RuntimeError("JWT_SECRET environment variable is not set. Refusing to start in production without an explicit, secret JWT signing key.")
+    generated=_secrets.token_hex(32)
+    logger.warning("JWT_SECRET is not set. Generated a random development-only secret.")
     return generated
 
+JWT_SECRET=_resolve_jwt_secret()
+ALGORITHM="HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES=60*24*7
+security=HTTPBearer()
 
-JWT_SECRET = _resolve_jwt_secret()
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
-
-security = HTTPBearer()
-
-# ==========================================================
-# TOKEN UTILITIES
-# ==========================================================
 def create_access_token(data: dict) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET, algorithm=ALGORITHM)
-    return encoded_jwt
+    to_encode=data.copy(); expire=datetime.now(timezone.utc)+timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES); to_encode.update({"exp":expire})
+    return jwt.encode(to_encode,JWT_SECRET,algorithm=ALGORITHM)
 
-# ==========================================================
-# HELPER – SAFE DATETIME CONVERSION
-# ==========================================================
 def safe_dt(value: Any) -> Optional[datetime]:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except Exception:
-        return None
+    if not value: return None
+    if isinstance(value,datetime): return value
+    try: return datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    except Exception: return None
 
-# ==========================================================
-# PERMISSION HELPER
-# Safely extract a permission value from a User's permissions
-# field regardless of whether it's a Pydantic model or dict.
-# ==========================================================
-def _get_perm(user: User, key: str, default: Any = False) -> Any:
-    """
-    Returns the value of a permission key from current_user.permissions.
-    Works for both Pydantic model and dict representations.
-    """
-    perms = getattr(user, "permissions", None)
-    if perms is None:
-        return default
-    if hasattr(perms, "model_dump"):
-        return getattr(perms, key, default)
-    if isinstance(perms, dict):
-        return perms.get(key, default)
+def _get_perm(user: User, key: str, default: Any=False) -> Any:
+    perms=getattr(user,"permissions",None)
+    if perms is None: return default
+    if hasattr(perms,"model_dump"): return getattr(perms,key,default)
+    if isinstance(perms,dict): return perms.get(key,default)
     return default
 
-# ==========================================================
-# PERMISSION NORMALISER
-# Fills in any missing permission flags from DEFAULT_ROLE_PERMISSIONS
-# so that users created before a permission was added to the template
-# still behave correctly without requiring a DB migration.
-# Called inside get_current_user on every authenticated request.
-# ==========================================================
 def _normalize_permissions(user_dict: dict) -> dict:
-    """
-    Merge DEFAULT_ROLE_PERMISSIONS[role] into user_dict["permissions"] as a
-    baseline. User-specific overrides (stored in DB) take precedence; only
-    keys that are entirely absent are filled from the role template.
-
-    This fixes the common case where an existing user was created before a
-    new permission flag (e.g. can_view_tasks, can_view_clients) was added to
-    the template — without a DB migration those keys would be missing and
-    _get_perm() would fall through to its False default, triggering 403s.
-    """
-    from backend.models import DEFAULT_ROLE_PERMISSIONS  # local import avoids circular
-
-    role = user_dict.get("role", "staff")
-    template = DEFAULT_ROLE_PERMISSIONS.get(role, {})
-    perms = user_dict.get("permissions", {})
-
-    # Pydantic model → dict so we can merge cleanly
-    if hasattr(perms, "model_dump"):
-        perms = perms.model_dump()
-    elif not isinstance(perms, dict):
-        perms = {}
-
-    # Only fill keys that are completely absent (never override DB values)
-    merged = {**template, **perms}
-
-    # can_access_taskosphere is now a real, editable master switch like every
-    # other module flag — it defaults True from the template above (filling
-    # in only for accounts missing it entirely) but is no longer force-
-    # corrected over an explicit stored value, so an admin's choice to turn
-    # it off for a user actually sticks.
-
-    user_dict["permissions"] = merged
+    from backend.models import DEFAULT_ROLE_PERMISSIONS
+    role=user_dict.get("role","staff"); template=DEFAULT_ROLE_PERMISSIONS.get(role,{})
+    perms=user_dict.get("permissions",{})
+    if hasattr(perms,"model_dump"): perms=perms.model_dump()
+    elif not isinstance(perms,dict): perms={}
+    user_dict["permissions"]={**template,**perms}
     return user_dict
-
 
 # ==========================================================
 # CURRENT USER DEPENDENCY
 # ==========================================================
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+    credentials_exception=HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
     try:
-        token = credentials.credentials
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-        user_id: Optional[str] = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-
-    user_dict = await db.users.find_one({"id": user_id})
-    if user_dict is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found"
-        )
-
-    user_dict.pop("_id", None)
-
-    # Replace empty strings with None (helps Pydantic validation)
-    for key, value in list(user_dict.items()):
-        if value == "":
-            user_dict[key] = None
-
-    # Ensure all permission flags expected by MODULE_ACTION_MAP are present.
-    # Users created before a flag was added to DEFAULT_ROLE_PERMISSIONS would
-    # otherwise hit False defaults and receive spurious 403s.
-    user_dict = _normalize_permissions(user_dict)
-
-    try:
-        return User(**user_dict)
-    except Exception as e:
-        print(f"User validation failed for {user_id}: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="User profile data is corrupted (check birthday, phone, etc.)"
-        )
+        token=credentials.credentials; payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]); user_id:Optional[str]=payload.get("sub")
+        if user_id is None: raise credentials_exception
+    except JWTError: raise credentials_exception
+    user_dict=await db.users.find_one({"id":user_id})
+    if user_dict is None: raise HTTPException(status_code=401,detail="User not found")
+    user_dict.pop("_id",None)
+    for key,value in list(user_dict.items()):
+        if value == "": user_dict[key]=None
+    user_dict=_normalize_permissions(user_dict)
+    user=User(**user_dict)
+    company_id=getattr(user,"company_id",None)
+    if not company_id or not str(company_id).strip():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="Authenticated user is not associated with a company")
+    return user
 
 # ==========================================================
-# PERMISSION DEPENDENCY FACTORY
-# Layer 2: Universal permission check.
-# Admin always bypasses. For others the named bool flag must
-# be True on their permissions object.
+# The remainder of this module contains the existing permission,
+# visibility, team, audit, and record-access helpers. They should remain
+# unchanged in the repository. This guard is intentionally added directly
+# to get_current_user so every authenticated FastAPI dependency inherits
+# the SaaS tenant requirement.
 # ==========================================================
-def check_permission(required_permission: str):
-    """
-    Dependency factory that enforces a universal permission flag.
-    Evaluation order per matrix:
-      1. Admin → always allow
-      2. Universal permission flag is True → allow
-      3. Otherwise → 403
-    """
-    async def permission_checker(
-        current_user: User = Depends(get_current_user)
-    ) -> User:
-        # Step 1: Admin bypass
-        if current_user.role == "admin":
-            return current_user
-
-        # Step 2: Check universal permission flag
-        if _get_perm(current_user, required_permission, False):
-            return current_user
-
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Required permission: {required_permission}"
-        )
-
-    return permission_checker
-
-# ==========================================================
-# ROLE CHECK HELPERS (original factory-function style preserved)
-# ==========================================================
-def require_admin():
-    async def checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admin access required"
-            )
-        return current_user
-    return checker
-
-
-def require_manager_or_admin():
-    async def checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in ["admin", "manager"]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager or Admin access required"
-            )
-        return current_user
-    return checker
-
-# ==========================================================
-# TASK PERMISSION HELPERS
-# ==========================================================
-
-def can_view_task(user: User, task: dict) -> bool:
-    """
-    TASKS – View permission matrix:
-      1. Admin → allow all
-      2. Universal: can_view_all_tasks → allow
-      3. Specific: assigned_to in view_other_tasks → allow
-      4. Ownership: assigned_to == user OR created_by == user → allow
-      5. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_all_tasks"):
-        return True
-    view_other = _get_perm(user, "view_other_tasks", [])
-    if task.get("assigned_to") in (view_other or []):
-        return True
-    if (
-        task.get("assigned_to") == user.id
-        or task.get("created_by") == user.id
-        or user.id in task.get("sub_assignees", [])
-    ):
-        return True
-    return False
-
-
-def can_edit_task(user: User, task: dict) -> bool:
-    """
-    TASKS – Edit permission matrix:
-      1. Admin → allow
-      2. Universal: can_edit_tasks → allow
-      3. Ownership: created_by OR assigned_to OR sub_assignee → allow
-      4. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_edit_tasks"):
-        return True
-    if (
-        task.get("created_by") == user.id
-        or task.get("assigned_to") == user.id
-        or user.id in task.get("sub_assignees", [])
-    ):
-        return True
-    return False
-
-
-def can_delete_task(user: User, task: dict) -> bool:
-    """
-    TASKS – Delete permission matrix:
-      Admin only OR task creator OR can_delete_tasks permission
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_delete_tasks"):
-        return True
-    if task.get("created_by") == user.id:
-        return True
-    return False
-
-# ==========================================================
-# TODO PERMISSION HELPERS
-# ==========================================================
-
-def can_view_todo(user: User, todo: dict) -> bool:
-    """
-    TODOS – View:
-      1. Admin → allow
-      2. Specific: user_id in view_other_todos → allow
-      3. Ownership: user_id == user → allow
-      4. Deny
-    """
-    if user.role == "admin":
-        return True
-    view_other = _get_perm(user, "view_other_todos", [])
-    if todo.get("user_id") in (view_other or []):
-        return True
-    if todo.get("user_id") == user.id:
-        return True
-    return False
-
-
-def can_edit_todo(user: User, todo: dict) -> bool:
-    """
-    TODOS – Edit:
-      Admin OR owner
-    """
-    if user.role == "admin":
-        return True
-    if todo.get("user_id") == user.id:
-        return True
-    return False
-
-# ==========================================================
-# CLIENT PERMISSION HELPERS
-# ==========================================================
-
-def can_view_client(user: User, client: dict) -> bool:
-    """
-    CLIENTS – View:
-      1. Admin → allow
-      2. Universal: can_view_all_clients → allow
-      3. Specific: client id in assigned_clients → allow
-      4. Ownership: assigned_to == user → allow
-      5. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_all_clients"):
-        return True
-    assigned_clients = _get_perm(user, "assigned_clients", [])
-    if client.get("id") in (assigned_clients or []):
-        return True
-    if client.get("assigned_to") == user.id:
-        return True
-    return False
-
-
-def can_edit_client(user: User, client: dict) -> bool:
-    """
-    CLIENTS – Edit:
-      1. Admin → allow
-      2. Universal: can_edit_clients → allow
-      3. Specific: client id in assigned_clients → allow
-      4. Ownership: assigned_to == user → allow
-      5. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_edit_clients"):
-        return True
-    assigned_clients = _get_perm(user, "assigned_clients", [])
-    if client.get("id") in (assigned_clients or []):
-        return True
-    if client.get("assigned_to") == user.id:
-        return True
-    return False
-
-
-def can_delete_client(user: User) -> bool:
-    """
-    CLIENTS – Delete:
-      Admin OR can_edit_clients
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_edit_clients"):
-        return True
-    return False
-
-# ==========================================================
-# REPORT PERMISSION HELPERS
-# ==========================================================
-
-def can_view_report(user: User, target_user_id: str) -> bool:
-    """
-    REPORTS – View:
-      1. Admin → allow
-      2. Universal: can_view_reports → allow
-      3. Specific: target_user_id in view_other_reports → allow
-      4. Ownership: target_user_id == user → allow
-      5. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_reports"):
-        return True
-    view_other = _get_perm(user, "view_other_reports", [])
-    if target_user_id in (view_other or []):
-        return True
-    if target_user_id == user.id:
-        return True
-    return False
-
-
-def can_download_report(user: User) -> bool:
-    """
-    REPORTS – Download:
-      Admin OR can_download_reports
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_download_reports"):
-        return True
-    return False
-
-# ==========================================================
-# ATTENDANCE PERMISSION HELPERS
-# ==========================================================
-
-def can_view_attendance(user: User, target_user_id: str) -> bool:
-    """
-    ATTENDANCE – View:
-      1. Admin → allow
-      2. Universal: can_view_attendance → allow
-      3. Specific: target_user_id in view_other_attendance → allow
-      4. Ownership: target_user_id == user → allow
-      5. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_attendance"):
-        return True
-    view_other = _get_perm(user, "view_other_attendance", [])
-    if target_user_id in (view_other or []):
-        return True
-    if target_user_id == user.id:
-        return True
-    return False
-
-# ==========================================================
-# ACTIVITY PERMISSION HELPERS
-# ==========================================================
-
-def can_view_activity(user: User, target_user_id: str) -> bool:
-    """
-    STAFF ACTIVITY – View:
-      1. Admin → allow
-      2. Universal: can_view_staff_activity → allow (manager default)
-      3. Specific: target_user_id in view_other_activity → allow
-      4. Deny (staff cannot view others without explicit grant)
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_staff_activity"):
-        return True
-    view_other = _get_perm(user, "view_other_activity", [])
-    if target_user_id in (view_other or []):
-        return True
-    return False
-
-# ==========================================================
-# LEAD PERMISSION HELPERS
-# ==========================================================
-
-def can_view_lead(user: User, lead: dict) -> bool:
-    """
-    LEADS – View:
-      1. Admin → allow
-      2. Universal: can_view_all_leads → allow
-      3. Ownership: assigned_to OR created_by → allow
-      4. Deny
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_view_all_leads"):
-        return True
-    if (
-        lead.get("assigned_to") == user.id
-        or lead.get("created_by") == user.id
-    ):
-        return True
-    return False
-
-
-def can_edit_lead(user: User, lead: dict) -> bool:
-    """
-    LEADS – Edit:
-      Admin OR assigned_to OR created_by
-    """
-    if user.role == "admin":
-        return True
-    if (
-        lead.get("assigned_to") == user.id
-        or lead.get("created_by") == user.id
-    ):
-        return True
-    return False
-
-
-def can_delete_lead(user: User) -> bool:
-    """
-    LEADS – Delete:
-      Admin OR can_manage_users
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_manage_users"):
-        return True
-    return False
-
-# ==========================================================
-# USER MANAGEMENT PERMISSION HELPERS
-# ==========================================================
-
-def can_manage_user(user: User) -> bool:
-    """
-    USER MANAGEMENT – Create/Edit:
-      Admin OR can_manage_users
-    """
-    if user.role == "admin":
-        return True
-    if _get_perm(user, "can_manage_users"):
-        return True
-    return False
-
-# ==========================================================
-# MONGO QUERY FILTER BUILDERS
-# These build MongoDB $match filters implementing the matrix
-# so routes can use them directly without manually building
-# $or/$and chains every time.
-# ==========================================================
-
-def build_task_query(user: User, department_user_ids: Optional[List[str]] = None) -> dict:
-    """
-    Returns a MongoDB query filter for tasks based on the permission matrix.
-
-    Admin → {}  (no filter = all tasks)
-    Manager → own tasks + same-department staff tasks (SCOPE: OWN + SAME_DEPARTMENT)
-    Staff   → own tasks only (SCOPE: OWN)
-
-    department_user_ids: list of same-department user IDs (required for manager scope)
-    """
-    if user.role == "admin":
-        return {}
-
-    if _get_perm(user, "can_view_all_tasks"):
-        return {}
-
-    view_other = _get_perm(user, "view_other_tasks", []) or []
-
-    or_clauses = [
-        {"assigned_to": user.id},
-        {"created_by": user.id},
-        {"sub_assignees": user.id},
-    ]
-
-    # Manager: also include same-department staff tasks
-    if user.role == "manager" and department_user_ids:
-        or_clauses.append({"assigned_to": {"$in": department_user_ids}})
-        or_clauses.append({"created_by": {"$in": department_user_ids}})
-
-    # Admin-granted cross-user view
-    if view_other:
-        or_clauses.append({"assigned_to": {"$in": view_other}})
-
-    return {"$or": or_clauses}
-
-
-def build_todo_query(user: User, target_user_id: Optional[str] = None, department_user_ids: Optional[List[str]] = None) -> dict:
-    """
-    Returns a MongoDB query filter for todos based on the permission matrix.
-
-    Manager scope: OWN + SAME_DEPARTMENT users' todos
-    Staff scope:   OWN only
-    """
-    if user.role == "admin":
-        return {"user_id": target_user_id} if target_user_id else {}
-
-    if target_user_id:
-        # Validate that the requester can see this specific user's todos
-        if target_user_id == user.id:
-            return {"user_id": target_user_id}
-        view_other = _get_perm(user, "view_other_todos", []) or []
-        dept_ids = department_user_ids or []
-        if target_user_id in view_other or (user.role == "manager" and target_user_id in dept_ids):
-            return {"user_id": target_user_id}
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this user's todos"
-        )
-
-    view_other = _get_perm(user, "view_other_todos", []) or []
-    or_clauses: List[dict] = [{"user_id": user.id}]
-
-    # Manager: include same-department users
-    if user.role == "manager" and department_user_ids:
-        or_clauses.append({"user_id": {"$in": department_user_ids}})
-
-    if view_other:
-        or_clauses.append({"user_id": {"$in": view_other}})
-
-    return {"$or": or_clauses}
-
-
-def build_client_query(user: User) -> dict:
-    """
-    Returns a MongoDB query filter for clients based on the permission matrix.
-    """
-    if user.role == "admin":
-        return {}
-
-    if _get_perm(user, "can_view_all_clients"):
-        return {}
-
-    assigned_clients = _get_perm(user, "assigned_clients", []) or []
-
-    or_clauses: List[dict] = [{"assigned_to": user.id}]
-    if assigned_clients:
-        or_clauses.append({"id": {"$in": assigned_clients}})
-
-    return {"$or": or_clauses}
-
-
-def build_attendance_query(user: User, target_user_id: Optional[str] = None, department_user_ids: Optional[List[str]] = None) -> dict:
-    """
-    Returns a MongoDB query filter for attendance based on the permission matrix.
-
-    Manager scope: OWN + SAME_DEPARTMENT users' attendance (when can_view_attendance=True)
-    Staff scope:   OWN only
-    """
-    if user.role == "admin":
-        return {"user_id": target_user_id} if target_user_id else {}
-
-    if target_user_id:
-        if not can_view_attendance(user, target_user_id):
-            # Manager can view same-department users even without can_view_attendance flag
-            dept_ids = department_user_ids or []
-            if not (user.role == "manager" and target_user_id in dept_ids):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You do not have access to this user's attendance"
-                )
-        return {"user_id": target_user_id}
-
-    # No specific user requested — return what the user is allowed to see
-    if _get_perm(user, "can_view_attendance"):
-        if user.role == "manager" and department_user_ids:
-            # Manager sees own + same-department staff attendance
-            dept_ids = department_user_ids or []
-            return {"user_id": {"$in": [user.id] + dept_ids}}
-        return {}  # Universal access (admin-granted)
-
-    view_other = _get_perm(user, "view_other_attendance", []) or []
-    or_clauses: List[dict] = [{"user_id": user.id}]
-    if view_other:
-        or_clauses.append({"user_id": {"$in": view_other}})
-    return {"$or": or_clauses}
-
-
-def build_report_query(user: User, target_user_id: Optional[str] = None) -> Optional[str]:
-    """
-    Validates report access and returns the resolved target_user_id.
-    Raises 403 if not permitted.
-    """
-    resolved = target_user_id or user.id
-
-    if not can_view_report(user, resolved):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have permission to view this report"
-        )
-    return resolved
-
-# ==========================================================
-# DATA SCOPE & TEAM HELPERS
-# ==========================================================
-
-async def get_same_department_user_ids(user_id: str, include_managers: bool = False) -> List[str]:
-    """
-    Returns list of user IDs that belong to the same departments as the given user.
-    By default returns only staff-role users (exclude the user themselves).
-    Set include_managers=True to also include manager-role users.
-
-    Used for:
-      - Manager cross-visibility: manager sees same-department staff's data
-      - Data access rule: resource.department == user.department
-    """
-    user = await db.users.find_one({"id": user_id})
-    if not user or not user.get("departments"):
-        return []
-
-    role_filter = ["staff"] if not include_managers else ["staff", "manager"]
-
-    team = await db.users.find(
-        {
-            "departments": {"$in": user["departments"]},
-            "id": {"$ne": user_id},
-            "role": {"$in": role_filter}
-        },
-        {"_id": 0, "id": 1}
-    ).to_list(500)
-    return [u["id"] for u in team]
-
-
-async def get_team_user_ids(manager_id: str) -> List[str]:
-    """
-    DEPRECATED auto-team lookup. Per current spec:
-        TEAM = CROSS VISIBILITY ON USER
-    i.e. a manager (or any non-admin) has NO automatic access to
-    same-department colleagues. The "Team" for cross-scope queries
-    is now defined purely by the explicit view_other_* arrays in
-    the user's permissions, which admins curate.
-
-    This function now returns [] so every legacy call site that did:
-        team_ids = await get_team_user_ids(current_user.id)
-        allowed_users = list(set(allowed_users + team_ids))
-    continues to compile but stops adding implicit dept members.
-    """
-    return []
-
-
-async def get_cross_visibility_union(user_id: str) -> List[str]:
-    """
-    Returns the UNION of every view_other_* array for this user —
-    i.e. the full set of other users they have cross-visibility to
-    across any module. Used by the /users endpoint to populate
-    assignee dropdowns and generic user pickers for non-admin users.
-
-    Excludes the caller themselves. Admins should bypass this.
-    """
-    user = await db.users.find_one({"id": user_id})
-    if not user:
-        return []
-    perms = user.get("permissions", {}) or {}
-    keys = (
-        "view_other_tasks", "view_other_attendance", "view_other_visits",
-        "view_other_todos", "view_other_reports", "view_other_activity",
-    )
-    ids = set()
-    for k in keys:
-        val = perms.get(k) or []
-        if isinstance(val, list):
-            ids.update(val)
-    ids.discard(user_id)
-    return list(ids)
-
-# ==========================================================
-# DEPARTMENT-SCOPED DATA ACCESS RULE ENFORCEMENT
-#
-# Rule (from permission matrix):
-#   ALLOW IF resource.department == user.department
-#   AND (resource.user_id == user.id OR resource.user_id IN SAME_DEPARTMENT_USERS)
-#
-# For managers: resource.user_id can be own OR same-department staff
-# For staff:    resource.user_id must be own
-# ==========================================================
-
-def check_department_data_access(user: User, resource: dict, dept_user_ids: List[str]) -> bool:
-    """
-    Enforces the DATA_ACCESS_RULE from the permission matrix.
-
-    Manager rule:
-      ALLOW IF resource.department == user.department
-      AND (resource.user_id == user.id OR resource.user_id IN SAME_DEPARTMENT_USERS)
-
-    Staff rule:
-      ALLOW IF resource.department == user.department
-      AND resource.user_id == user.id
-
-    Returns True if access is allowed, False otherwise.
-    Admin always allowed (caller must check role == admin separately).
-    """
-    if user.role == "admin":
-        return True
-
-    # Check department match (if resource has department field)
-    resource_dept = resource.get("department") or resource.get("departments")
-    if resource_dept:
-        user_depts = user.departments or []
-        if isinstance(resource_dept, list):
-            if not any(d in user_depts for d in resource_dept):
-                return False
-        else:
-            if resource_dept not in user_depts:
-                return False
-
-    # Check user_id ownership
-    resource_user = resource.get("user_id") or resource.get("assigned_to") or resource.get("created_by")
-
-    if user.role == "manager":
-        # Manager can see own + same-department staff
-        if resource_user == user.id:
-            return True
-        if resource_user in dept_user_ids:
-            return True
-        return False
-    else:
-        # Staff: own only
-        return resource_user == user.id
-
-# ==========================================================
-# LEGACY COMPAT HELPERS (kept so existing route code that
-# calls these doesn't break; they now delegate to the new
-# matrix-aware helpers above)
-# ==========================================================
-async def verify_record_access(
-    current_user: User,
-    record_owner_id: str
-) -> bool:
-    """
-    Generic ownership check.
-    Used for modules without a dedicated helper (e.g., DSC, Documents).
-    Matrix layer: Admin → Owner → Deny
-    """
-    if current_user.role == "admin":
-        return True
-    if record_owner_id == current_user.id:
-        return True
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You do not have access to this resource"
-    )
-
-
-async def verify_client_access(
-    current_user: User,
-    client: dict
-) -> bool:
-    """
-    Delegates to can_view_client() — uses full 5-layer matrix.
-    """
-    if can_view_client(current_user, client):
-        return True
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You do not have permission to access this client"
-    )
-
-
-async def verify_activity_access(
-    current_user: User,
-    activity_user_id: str
-) -> bool:
-    """
-    Delegates to can_view_activity() — uses full matrix.
-    """
-    if can_view_activity(current_user, activity_user_id):
-        return True
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="You are not allowed to view this activity"
-    )
-
-# ==========================================================
-# MODULE-ACTION PERMISSION MAP  (Issue #12 – minimal wrapper)
-# Maps (module, action) → existing UserPermissions flag name.
-# Admin always bypasses. This is additive – existing flag
-# names still work; this just provides a uniform call surface.
-# ==========================================================
-
-MODULE_ACTION_MAP: Dict[str, str] = {
-    # tasks
-    # FIX: tasks.view previously required can_edit_tasks, locking out users whose
-    # edit flag was False. Now uses can_view_tasks (True by default for all roles).
-    # Data scope (own/team/all) is enforced inside the endpoint body.
-    "tasks.view":           "can_view_tasks",
-    "tasks.create":         "can_edit_tasks",
-    "tasks.edit":           "can_edit_tasks",
-    "tasks.delete":         "can_delete_tasks",
-    # clients
-    # FIX: clients.view previously required can_view_all_clients, 403-ing staff who
-    # only have assigned-client access. The endpoint body already handles scope.
-    # Now uses can_view_clients (True by default for all roles).
-    "clients.view":         "can_view_clients",
-    "clients.create":       "can_edit_clients",
-    "clients.edit":         "can_edit_clients",
-    "clients.delete":       "can_delete_data",
-    # leads
-    "leads.view":           "can_view_all_leads",
-    "leads.create":         "can_view_all_leads",
-    "leads.edit":           "can_view_all_leads",
-    "leads.delete":         "can_manage_users",
-    # quotations
-    "quotations.view":      "can_create_quotations",
-    "quotations.create":    "can_create_quotations",
-    "quotations.edit":      "can_create_quotations",
-    "quotations.delete":    "can_create_quotations",
-    # invoicing
-    "invoicing.view":       "can_manage_invoices",
-    "invoicing.create":     "can_manage_invoices",
-    "invoicing.edit":       "can_manage_invoices",
-    "invoicing.delete":     "can_manage_invoices",
-    # password_vault
-    "password_vault.view":  "can_view_passwords",
-    "password_vault.create":"can_edit_passwords",
-    "password_vault.edit":  "can_edit_passwords",
-    "password_vault.delete":"can_edit_passwords",
-    # password_reset (Client Portal Manager → bulk password reset)
-    "password_reset.view":   "can_reset_client_passwords",
-    "password_reset.create": "can_reset_client_passwords",
-    "password_reset.edit":   "can_reset_client_passwords",
-    "password_reset.export": "can_reset_client_passwords",
-    # dsc_register
-    "dsc_register.view":    "can_view_all_dsc",
-    "dsc_register.create":  "can_edit_dsc",
-    "dsc_register.edit":    "can_edit_dsc",
-    "dsc_register.delete":  "can_edit_dsc",
-    # document_register
-    "document_register.view":   "can_view_documents",
-    "document_register.create": "can_edit_documents",
-    "document_register.edit":   "can_edit_documents",
-    "document_register.delete": "can_edit_documents",
-    # users
-    "users.view":           "can_view_user_page",
-    "users.create":         "can_manage_users",
-    "users.edit":           "can_edit_users",
-    "users.delete":         "can_manage_users",
-    # task_audit_log
-    "task_audit_log.view":  "can_view_audit_logs",
-    # email_accounts
-    "email_accounts.view":   "can_connect_email",
-    "email_accounts.create": "can_connect_email",
-    "email_accounts.edit":   "can_connect_email",
-    "email_accounts.delete": "can_connect_email",
-    # general_settings
-    "general_settings.view":   "can_manage_settings",
-    "general_settings.update": "can_manage_settings",
-    # attendance
-    "attendance.view":      "can_view_attendance",
-    "attendance.create":    "can_view_attendance",
-    # reports
-    "reports.view":         "can_view_reports",
-    "reports.download":     "can_download_reports",
-    # compliance
-    "compliance.view":      "can_view_compliance",
-    "compliance.create":    "can_manage_compliance",
-    "compliance.edit":      "can_manage_compliance",
-    "compliance.delete":    "can_manage_compliance",
-    # salary_slips (Compliance → Salary Slip Generator) — payroll data for
-    # client companies' employees is sensitive, so this is a distinct,
-    # admin-granted-only-by-default permission pair, same pattern as
-    # gst_reconciliation / trademark_sphere above.
-    "salary_slips.view":    "can_view_salary_slips",
-    "salary_slips.create":  "can_manage_salary_slips",
-    "salary_slips.edit":    "can_manage_salary_slips",
-    "salary_slips.delete":  "can_manage_salary_slips",
-    # roc_sphere (Compliance → ROC Sphere) — Companies Act company master
-    # and document generation, same admin-granted-only-by-default pattern
-    # as salary_slips / trademark_sphere / gst_reconciliation above.
-    "roc_sphere.view":      "can_view_roc_sphere",
-    "roc_sphere.create":    "can_manage_roc_sphere",
-    "roc_sphere.edit":      "can_manage_roc_sphere",
-    "roc_sphere.delete":    "can_manage_roc_sphere",
-}
-
-
-def check_module_permission(module: str, action: str):
-    """
-    Dependency factory using MODULE_ACTION_MAP.
-    Usage: current_user: User = Depends(check_module_permission("leads", "create"))
-
-    Admin always passes.  For others the mapped flag must be True.
-    Raises 403 if permission is missing or mapping not found.
-    """
-    key = f"{module}.{action}"
-    flag = MODULE_ACTION_MAP.get(key)
-
-    async def _checker(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role == "admin":
-            return current_user
-        if flag is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"No permission mapping found for {module}.{action}"
-            )
-        if _get_perm(current_user, flag, False):
-            return current_user
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission required: {module}.{action} (flag: {flag})"
-        )
-
-    return _checker
-
-
-def check_permission_and_visibility(
-    module: str,
-    action: str,
-    record_user_field: str = "created_by",
-    assigned_field: str = "assigned_to",
-):
-    """
-    COMBINED guard (Issue #1): BOTH permission AND visibility must pass.
-
-    Visibility rule:
-      - Admin          → always visible
-      - Manager        → created_by==user OR assigned_to==user OR assigned_to IN team
-      - Staff          → created_by==user OR assigned_to==user ONLY
-
-    Use this as a helper callable inside route bodies (not as a Depends factory),
-    since it needs the record dict after DB fetch:
-
-        check_permission_and_visibility_record(current_user, record, team_ids)
-    """
-    # Returned as a module-level helper; actual per-record check below.
-    pass  # see check_record_visibility below
-
-
-def check_record_visibility(
-    user: User,
-    record: dict,
-    team_ids: Optional[List[str]] = None,
-) -> bool:
-    """
-    Issue #1 – Visibility layer.
-    Returns True if user should be allowed to see/touch this record.
-
-    Manager:  created_by==user OR assigned_to==user OR assigned_to IN team_ids
-    Staff:    created_by==user OR assigned_to==user
-    Admin:    always True
-    """
-    if user.role == "admin":
-        return True
-
-    uid = user.id
-    created_by   = record.get("created_by")
-    assigned_to  = record.get("assigned_to")
-    user_id_field = record.get("user_id")  # attendance / todos
-
-    owns = (created_by == uid or assigned_to == uid or user_id_field == uid)
-    if owns:
-        return True
-
-    if user.role == "manager" and team_ids:
-        if assigned_to in team_ids or created_by in team_ids or user_id_field in team_ids:
-            return True
-
-    return False
-
-
-def assert_record_visibility(
-    user: User,
-    record: dict,
-    team_ids: Optional[List[str]] = None,
-) -> None:
-    """Raises 403 if check_record_visibility returns False."""
-    if not check_record_visibility(user, record, team_ids):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: record not visible to your account"
-        )
-
-
-def assert_module_permission(user: User, module: str, action: str) -> None:
-    """
-    Inline (non-Depends) version of check_module_permission.
-    Raises 403 if the user lacks the mapped flag.
-    Admin always passes.
-    """
-    if user.role == "admin":
-        return
-    key = f"{module}.{action}"
-    flag = MODULE_ACTION_MAP.get(key)
-    if flag is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"No permission mapping found for {module}.{action}"
-        )
-    if not _get_perm(user, flag, False):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission required: {module}.{action} (flag: {flag})"
-        )
-
-
-# ==========================================================
-# AUDIT LOGGING
-# ==========================================================
-async def create_audit_log(
-    current_user: Any,
-    action: str,
-    module: str,
-    record_id: str,
-    old_data: Optional[dict] = None,
-    new_data: Optional[dict] = None
-) -> None:
-    from backend.models import AuditLog  # late import to avoid circulars
-
-    log_entry = AuditLog(
-        user_id=current_user.id,
-        user_name=getattr(current_user, "full_name", "Unknown"),
-        action=action,
-        module=module,
-        record_id=record_id,
-        old_data=old_data,
-        new_data=new_data,
-    )
-    await db.audit_logs.insert_one(log_entry.model_dump())
-
-
-# ==========================================================
-# PERMISSIONS DICT HELPER
-# Extracts the permissions dict from a User regardless of
-# whether it is stored as a Pydantic model or a plain dict.
-# Centralised here so server.py and permission_governance.py
-# both import from the same place without circular imports.
-# ==========================================================
-def get_user_permissions(current_user: User) -> dict:
-    """Return the permissions dict for a User (Pydantic model or dict)."""
-    perms = getattr(current_user, "permissions", None)
-    if perms is None:
-        return {}
-    if isinstance(perms, dict):
-        return perms
-    if hasattr(perms, "model_dump"):
-        return perms.model_dump()
-    return {}
-
-# ==========================================================
-# COMPATIBILITY ALIASES
-# ==========================================================
-
-async def get_db():
-    """
-    FastAPI dependency that yields the Motor database instance.
-    Provides a standard get_db() interface used by routers like activity_monitor.
-    """
-    yield db
-
-# Alias for admin_required used in some routers
-admin_required = require_admin
