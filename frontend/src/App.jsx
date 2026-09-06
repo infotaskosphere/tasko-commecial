@@ -1,5 +1,4 @@
 import React, { Suspense, memo, useEffect } from "react";
-import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -13,34 +12,12 @@ import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 
-/* ── Bottom loading bar ─────────────────────────────────────────────── */
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
   if (!loading) return null;
-  return (
-    <div
-      className="taskosphere-loading-bar"
-      style={{
-        position: "fixed",
-        bottom: 0,
-        left: 0,
-        width: "30%",
-        height: 3,
-        background: "linear-gradient(90deg, #7F77DD, #1F6FB2)",
-        zIndex: 9999,
-        pointerEvents: "none",
-      }}
-    />
-  );
+  return <div className="taskosphere-loading-bar" style={{ position: "fixed", bottom: 0, left: 0, width: "30%", height: 3, background: "linear-gradient(90deg, #7F77DD, #1F6FB2)", zIndex: 9999, pointerEvents: "none" }} />;
 });
 
-/*
- * Route chunk prefetching:
- * Navigation links/buttons in DashboardLayout remain unchanged. This
- * listener warms the most-used page chunks when the pointer/focus reaches
- * a normal <a href="/..."> navigation item. The import is cached by the
- * browser, so the later React.lazy() import resolves immediately.
- */
 const ROUTE_PREFETCHERS = {
   "/dashboard": () => import("./pages/Dashboard.jsx"),
   "/tasks": () => import("./pages/Tasks.jsx"),
@@ -60,24 +37,21 @@ const ROUTE_PREFETCHERS = {
   "/quotations": () => import("./pages/Quotations.jsx"),
   "/finix-dashboard": () => import("./pages/FinixDashboard.jsx"),
   "/invoicing": () => import("./pages/Invoicing.jsx"),
-  "/purchase": () => import("./pages/Purchase.jsx"),
   "/bank-accounts": () => import("./pages/BankAccounts.jsx"),
   "/accounting-reports": () => import("./pages/AccountingReports.jsx"),
   "/people-matrix": () => import("./pages/PeopleMatrixDashboard.jsx"),
   "/reports": () => import("./pages/Reports.jsx"),
   "/users": () => import("./pages/Users.jsx"),
+  "/master-console": () => import("./pages/MasterConsole.jsx"),
 };
 
 const prefetchedRoutes = new Set();
-
 function prefetchRoute(path) {
   if (prefetchedRoutes.has(path)) return;
   const loader = ROUTE_PREFETCHERS[path];
   if (!loader) return;
   prefetchedRoutes.add(path);
-  loader().catch(() => {
-    prefetchedRoutes.delete(path);
-  });
+  loader().catch(() => prefetchedRoutes.delete(path));
 }
 
 function RoutePrefetcher() {
@@ -85,40 +59,26 @@ function RoutePrefetcher() {
     const warm = (event) => {
       const target = event.target?.closest?.("a[href]");
       if (!target) return;
-
       const href = target.getAttribute("href");
       if (!href || !href.startsWith("/")) return;
-
-      const pathname = href.split("?")[0].split("#")[0];
-      prefetchRoute(pathname);
+      prefetchRoute(href.split("?")[0].split("#")[0]);
     };
-
     document.addEventListener("pointerover", warm, { passive: true });
     document.addEventListener("focusin", warm);
-
     return () => {
       document.removeEventListener("pointerover", warm);
       document.removeEventListener("focusin", warm);
     };
   }, []);
-
   return null;
 }
 
-/* ── Query client ──────────────────────────────────────────────────── */
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-      retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-    },
+    queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false },
   },
 });
 
-/* ── App ───────────────────────────────────────────────────────────── */
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -132,11 +92,7 @@ export default function App() {
                 <ReminderPopupManager />
                 <BulkWASenderWidget />
                 <MinimizedFormsDock />
-
-                <Suspense fallback={<GifLoader />}>
-                  <AppRoutes />
-                </Suspense>
-
+                <Suspense fallback={<GifLoader />}><AppRoutes /></Suspense>
                 <Toaster position="top-right" richColors />
               </DocumentUploadProvider>
             </BulkWASenderProvider>
