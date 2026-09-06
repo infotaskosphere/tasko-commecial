@@ -8,112 +8,104 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from motor.motor_asyncio import AsyncIOMotorClient
 from backend.models import User, AuditLog
-from backend.tenant_runtime import set_authenticated_company
-
-logger = logging.getLogger("dependencies")
-
-def personal_birthday_candidates(client: Dict[str, Any]) -> List[Dict[str, Any]]:
+from backend.tenant_runtime import set_authenticated_company, TenantAwareDatabase
+logger=logging.getLogger("dependencies")
+def personal_birthday_candidates(client):
     candidates=[]
-    if (client.get("client_type") or "").strip().lower()=="proprietor" and client.get("birthday"):
-        candidates.append({"name":client.get("company_name") or "Valued Client","phone":client.get("phone"),"email":client.get("email"),"birthday":client["birthday"]})
+    if (client.get("client_type") or "").strip().lower()=="proprietor" and client.get("birthday"):candidates.append({"name":client.get("company_name") or "Valued Client","phone":client.get("phone"),"email":client.get("email"),"birthday":client["birthday"]})
     for cp in client.get("contact_persons") or []:
-        if cp.get("birthday"):
-            candidates.append({"name":cp.get("name") or client.get("company_name") or "Friend","phone":cp.get("phone"),"email":cp.get("email"),"birthday":cp["birthday"]})
+        if cp.get("birthday"):candidates.append({"name":cp.get("name") or client.get("company_name") or "Friend","phone":cp.get("phone"),"email":cp.get("email"),"birthday":cp["birthday"]})
     return candidates
-
-MONGO_URL=os.getenv("MONGO_URL"); DB_NAME=os.getenv("DB_NAME","taskosphere")
-import uuid
+MONGO_URL=os.getenv("MONGO_URL");DB_NAME=os.getenv("DB_NAME","taskosphere");import uuid
 class MockCursor:
-    def __init__(self,data): self._data,self._index=data,0
-    def limit(self,n): self._data=self._data[:n]; return self
-    def sort(self,*args,**kwargs): return self
-    def skip(self,n): self._data=self._data[n:]; return self
-    async def to_list(self,length=None): return self._data[:length] if length is not None else self._data
-    def __aiter__(self): self._index=0; return self
+    def __init__(self,data):self._data,self._index=data,0
+    def limit(self,n):self._data=self._data[:n];return self
+    def sort(self,*a,**k):return self
+    def skip(self,n):self._data=self._data[n:];return self
+    async def to_list(self,length=None):return self._data[:length] if length is not None else self._data
+    def __aiter__(self):self._index=0;return self
     async def __anext__(self):
-        if self._index>=len(self._data): raise StopAsyncIteration
-        value=self._data[self._index]; self._index+=1; return value
+        if self._index>=len(self._data):raise StopAsyncIteration
+        v=self._data[self._index];self._index+=1;return v
 class MockCollection:
-    def __init__(self,name): self.name=name; self._store={}
-    async def find_one(self,query=None,*args,**kwargs):
-        query=query or {}
-        for doc in self._store.values():
-            if self._matches(doc,query): return doc.copy()
+    def __init__(self,name):self.name=name;self._store={}
+    async def find_one(self,q=None,*a,**k):
+        for d in self._store.values():
+            if self._matches(d,q or {}):return d.copy()
         return None
-    def find(self,query=None,*args,**kwargs): return MockCursor([d.copy() for d in self._store.values() if self._matches(d,query or {})])
-    async def insert_one(self,document):
-        doc=document.copy(); doc.setdefault("_id",str(uuid.uuid4())); self._store[str(doc["_id"])]=doc
-        class R: pass
-        r=R(); r.inserted_id=doc["_id"]; return r
-    async def insert_many(self,documents):
+    def find(self,q=None,*a,**k):return MockCursor([d.copy() for d in self._store.values() if self._matches(d,q or {})])
+    async def insert_one(self,d):
+        d=d.copy();d.setdefault("_id",str(uuid.uuid4()));self._store[str(d["_id"])]=d
+        class R:pass
+        r=R();r.inserted_id=d["_id"];return r
+    async def insert_many(self,docs):
         ids=[]
-        for item in documents:
-            doc=item.copy(); doc.setdefault("_id",str(uuid.uuid4())); self._store[str(doc["_id"])]=doc; ids.append(doc["_id"])
-        class R: pass
-        r=R(); r.inserted_ids=ids; return r
-    async def update_one(self,query,update,upsert=False,*args,**kwargs):
-        doc=await self.find_one(query)
-        if not doc:
+        for d in docs:
+            d=d.copy();d.setdefault("_id",str(uuid.uuid4()));self._store[str(d["_id"])]=d;ids.append(d["_id"])
+        class R:pass
+        r=R();r.inserted_ids=ids;return r
+    async def update_one(self,q,u,upsert=False,*a,**k):
+        d=await self.find_one(q)
+        if not d:
             if upsert:
-                new_doc=query.copy(); new_doc.update(update.get("$set",{})); await self.insert_one(new_doc)
-                class R: pass
-                r=R(); r.matched_count=0; r.modified_count=1; r.upserted_id=new_doc["_id"]; return r
-            class R: pass
-            r=R(); r.matched_count=0; r.modified_count=0; r.upserted_id=None; return r
-        for op,values in update.items():
-            if op=="$set": doc.update(values)
+                nd=q.copy();nd.update(u.get("$set",{}));await self.insert_one(nd)
+                class R:pass
+                r=R();r.matched_count=0;r.modified_count=1;r.upserted_id=nd["_id"];return r
+            class R:pass
+            r=R();r.matched_count=0;r.modified_count=0;r.upserted_id=None;return r
+        for op,vals in u.items():
+            if op=="$set":d.update(vals)
             elif op=="$unset":
-                for key in values: doc.pop(key,None)
+                for key in vals:d.pop(key,None)
             elif op=="$push":
-                for key,value in values.items(): doc.setdefault(key,[]).append(value)
-        self._store[str(doc["_id"])]=doc
-        class R: pass
-        r=R(); r.matched_count=1; r.modified_count=1; r.upserted_id=None; return r
-    async def delete_one(self,query,*args,**kwargs):
-        doc=await self.find_one(query)
-        if doc:self._store.pop(str(doc["_id"]),None)
-        class R: pass
-        r=R(); r.deleted_count=1 if doc else 0; return r
-    async def delete_many(self,query,*args,**kwargs):
-        keys=[k for k,d in self._store.items() if self._matches(d,query)]
+                for key,val in vals.items():d.setdefault(key,[]).append(val)
+        self._store[str(d["_id"])]=d
+        class R:pass
+        r=R();r.matched_count=1;r.modified_count=1;r.upserted_id=None;return r
+    async def delete_one(self,q,*a,**k):
+        d=await self.find_one(q)
+        if d:self._store.pop(str(d["_id"]),None)
+        class R:pass
+        r=R();r.deleted_count=1 if d else 0;return r
+    async def delete_many(self,q,*a,**k):
+        keys=[key for key,d in self._store.items() if self._matches(d,q)]
         for key in keys:self._store.pop(key,None)
-        class R: pass
-        r=R(); r.deleted_count=len(keys); return r
-    async def count_documents(self,query,*args,**kwargs):return sum(1 for d in self._store.values() if self._matches(d,query))
-    def _matches(self,doc,query):
-        for key,value in query.items():
+        class R:pass
+        r=R();r.deleted_count=len(keys);return r
+    async def count_documents(self,q,*a,**k):return sum(1 for d in self._store.values() if self._matches(d,q))
+    def _matches(self,d,q):
+        for key,val in q.items():
             if key=="$or":
-                if not any(self._matches(doc,q) for q in value):return False
+                if not any(self._matches(d,x) for x in val):return False
                 continue
             if key=="$and":
-                if not all(self._matches(doc,q) for q in value):return False
+                if not all(self._matches(d,x) for x in val):return False
                 continue
-            actual=doc.get(key)
-            if isinstance(value,dict):
-                for op,target in value.items():
+            actual=d.get(key)
+            if isinstance(val,dict):
+                for op,target in val.items():
                     if op=="$in" and actual not in target:return False
                     if op=="$nin" and actual in target:return False
                     if op=="$ne" and actual==target:return False
-                    if op=="$gt" and (actual is None or actual<=target):return False
-                    if op=="$gte" and (actual is None or actual<target):return False
-                    if op=="$lt" and (actual is None or actual>=target):return False
-                    if op=="$lte" and (actual is None or actual>target):return False
-            elif str(actual)!=str(value):return False
+                    if op=="$gt" and(actual is None or actual<=target):return False
+                    if op=="$gte" and(actual is None or actual<target):return False
+                    if op=="$lt" and(actual is None or actual>=target):return False
+                    if op=="$lte" and(actual is None or actual>target):return False
+            elif str(actual)!=str(val):return False
         return True
 class MockDatabase:
     def __init__(self):self._collections={}
     def __getitem__(self,name):self._collections.setdefault(name,MockCollection(name));return self._collections[name]
     def __getattr__(self,name):return self[name]
 class MockMongoClient:
-    def __init__(self,*args,**kwargs):self._db=MockDatabase()
+    def __init__(self,*a,**k):self._db=MockDatabase()
     def __getitem__(self,name):return self._db
     def __getattr__(self,name):return self._db
 if not MONGO_URL:
-    print("[AI Studio] MONGO_URL not provided. Using fallback in-memory MongoDB client."); client=MockMongoClient(); db=client[DB_NAME]
+    print("[AI Studio] MONGO_URL not provided. Using fallback in-memory MongoDB client.");client=MockMongoClient();db=client[DB_NAME]
 else:
-    try:client=AsyncIOMotorClient(MONGO_URL); db=client[DB_NAME]
-    except Exception as e:print(f"[AI Studio] Failed to connect to MongoDB, falling back to mock: {e}"); client=MockMongoClient(); db=client[DB_NAME]
-
+    try:client=AsyncIOMotorClient(MONGO_URL);db=client[DB_NAME]
+    except Exception as e:print(f"[AI Studio] Failed to connect to MongoDB, falling back to mock: {e}");client=MockMongoClient();db=client[DB_NAME]
 def _resolve_jwt_secret():
     secret=os.getenv("JWT_SECRET")
     if secret and secret.strip():return secret.strip()
@@ -133,30 +125,29 @@ def _get_perm(user,key,default=False):
     if hasattr(perms,"model_dump"):return getattr(perms,key,default)
     if isinstance(perms,dict):return perms.get(key,default)
     return default
-def _normalize_permissions(user_dict):
+def _normalize_permissions(d):
     from backend.models import DEFAULT_ROLE_PERMISSIONS
-    role=user_dict.get("role","staff");template=DEFAULT_ROLE_PERMISSIONS.get(role,{});perms=user_dict.get("permissions",{})
+    role=d.get("role","staff");template=DEFAULT_ROLE_PERMISSIONS.get(role,{});perms=d.get("permissions",{})
     if hasattr(perms,"model_dump"):perms=perms.model_dump()
     elif not isinstance(perms,dict):perms={}
-    user_dict["permissions"]={**template,**perms};return user_dict
-async def get_current_user(credentials:HTTPAuthorizationCredentials=Depends(security)):
+    d["permissions"]={**template,**perms};return d
+async def get_current_user(credentials=Depends(security)):
     unauthorized=HTTPException(status_code=401,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
     try:
         payload=jwt.decode(credentials.credentials,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
         if user_id is None:raise unauthorized
     except JWTError:raise unauthorized
-    user_dict=await db.users.find_one({"id":user_id})
-    if user_dict is None:raise HTTPException(status_code=401,detail="User not found")
-    user_dict.pop("_id",None)
-    for key,value in list(user_dict.items()):
-        if value=="":user_dict[key]=None
-    user_dict=_normalize_permissions(user_dict)
-    try:user=User(**user_dict)
+    d=await db.users.find_one({"id":user_id})
+    if d is None:raise HTTPException(status_code=401,detail="User not found")
+    d.pop("_id",None)
+    for key,value in list(d.items()):
+        if value=="":d[key]=None
+    d=_normalize_permissions(d)
+    try:user=User(**d)
     except Exception as e:logger.error("User validation failed for %s: %s",user_id,e);raise HTTPException(status_code=500,detail="User profile data is corrupted")
     company_id=getattr(user,"company_id",None)
     if not company_id or not str(company_id).strip():raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
-    set_authenticated_company(company_id)
-    return user
+    set_authenticated_company(company_id);return user
 
 def check_permission(required_permission):
     async def checker(current_user=Depends(get_current_user)):
@@ -173,61 +164,60 @@ def require_manager_or_admin():
         if current_user.role not in ["admin","manager"]:raise HTTPException(status_code=403,detail="Manager or Admin access required")
         return current_user
     return checker
-def can_view_task(user,task):return user.role=="admin" or _get_perm(user,"can_view_all_tasks") or task.get("assigned_to") in (_get_perm(user,"view_other_tasks",[]) or []) or task.get("assigned_to")==user.id or task.get("created_by")==user.id or user.id in task.get("sub_assignees",[])
-def can_edit_task(user,task):return user.role=="admin" or _get_perm(user,"can_edit_tasks") or task.get("created_by")==user.id or task.get("assigned_to")==user.id or user.id in task.get("sub_assignees",[])
-def can_delete_task(user,task):return user.role=="admin" or _get_perm(user,"can_delete_tasks") or task.get("created_by")==user.id
-def can_view_todo(user,todo):return user.role=="admin" or todo.get("user_id") in (_get_perm(user,"view_other_todos",[]) or []) or todo.get("user_id")==user.id
-def can_edit_todo(user,todo):return user.role=="admin" or todo.get("user_id")==user.id
-def can_view_client(user,client):return user.role=="admin" or _get_perm(user,"can_view_all_clients") or client.get("id") in (_get_perm(user,"assigned_clients",[]) or []) or client.get("assigned_to")==user.id
-def can_edit_client(user,client):return user.role=="admin" or _get_perm(user,"can_edit_clients") or client.get("id") in (_get_perm(user,"assigned_clients",[]) or []) or client.get("assigned_to")==user.id
-def can_delete_client(user):return user.role=="admin" or _get_perm(user,"can_edit_clients")
-def can_view_report(user,target_user_id):return user.role=="admin" or _get_perm(user,"can_view_reports") or target_user_id in (_get_perm(user,"view_other_reports",[]) or []) or target_user_id==user.id
-def can_download_report(user):return user.role=="admin" or _get_perm(user,"can_download_reports")
-def can_view_attendance(user,target_user_id):return user.role=="admin" or _get_perm(user,"can_view_attendance") or target_user_id in (_get_perm(user,"view_other_attendance",[]) or []) or target_user_id==user.id
-def can_view_activity(user,target_user_id):return user.role=="admin" or _get_perm(user,"can_view_staff_activity") or target_user_id in (_get_perm(user,"view_other_activity",[]) or [])
-def can_view_lead(user,lead):return user.role=="admin" or _get_perm(user,"can_view_all_leads") or lead.get("assigned_to")==user.id or lead.get("created_by")==user.id
-def can_edit_lead(user,lead):return user.role=="admin" or lead.get("assigned_to")==user.id or lead.get("created_by")==user.id
-def can_delete_lead(user):return user.role=="admin" or _get_perm(user,"can_manage_users")
-def can_manage_user(user):return user.role=="admin" or _get_perm(user,"can_manage_users")
-def build_task_query(user,department_user_ids=None):
-    if user.role=="admin" or _get_perm(user,"can_view_all_tasks"):return {}
-    ors=[{"assigned_to":user.id},{"created_by":user.id},{"sub_assignees":user.id}];view=_get_perm(user,"view_other_tasks",[]) or []
-    if user.role=="manager" and department_user_ids:ors += [{"assigned_to":{"$in":department_user_ids}},{"created_by":{"$in":department_user_ids}}]
+def can_view_task(u,t):return u.role=="admin" or _get_perm(u,"can_view_all_tasks") or t.get("assigned_to") in(_get_perm(u,"view_other_tasks",[]) or []) or t.get("assigned_to")==u.id or t.get("created_by")==u.id or u.id in t.get("sub_assignees",[])
+def can_edit_task(u,t):return u.role=="admin" or _get_perm(u,"can_edit_tasks") or t.get("created_by")==u.id or t.get("assigned_to")==u.id or u.id in t.get("sub_assignees",[])
+def can_delete_task(u,t):return u.role=="admin" or _get_perm(u,"can_delete_tasks") or t.get("created_by")==u.id
+def can_view_todo(u,t):return u.role=="admin" or t.get("user_id") in(_get_perm(u,"view_other_todos",[]) or []) or t.get("user_id")==u.id
+def can_edit_todo(u,t):return u.role=="admin" or t.get("user_id")==u.id
+def can_view_client(u,c):return u.role=="admin" or _get_perm(u,"can_view_all_clients") or c.get("id") in(_get_perm(u,"assigned_clients",[]) or []) or c.get("assigned_to")==u.id
+def can_edit_client(u,c):return u.role=="admin" or _get_perm(u,"can_edit_clients") or c.get("id") in(_get_perm(u,"assigned_clients",[]) or []) or c.get("assigned_to")==u.id
+def can_delete_client(u):return u.role=="admin" or _get_perm(u,"can_edit_clients")
+def can_view_report(u,target):return u.role=="admin" or _get_perm(u,"can_view_reports") or target in(_get_perm(u,"view_other_reports",[]) or []) or target==u.id
+def can_download_report(u):return u.role=="admin" or _get_perm(u,"can_download_reports")
+def can_view_attendance(u,target):return u.role=="admin" or _get_perm(u,"can_view_attendance") or target in(_get_perm(u,"view_other_attendance",[]) or []) or target==u.id
+def can_view_activity(u,target):return u.role=="admin" or _get_perm(u,"can_view_staff_activity") or target in(_get_perm(u,"view_other_activity",[]) or [])
+def can_view_lead(u,l):return u.role=="admin" or _get_perm(u,"can_view_all_leads") or l.get("assigned_to")==u.id or l.get("created_by")==u.id
+def can_edit_lead(u,l):return u.role=="admin" or l.get("assigned_to")==u.id or l.get("created_by")==u.id
+def can_delete_lead(u):return u.role=="admin" or _get_perm(u,"can_manage_users")
+def can_manage_user(u):return u.role=="admin" or _get_perm(u,"can_manage_users")
+def build_task_query(u,department_user_ids=None):
+    if u.role=="admin" or _get_perm(u,"can_view_all_tasks"):return {}
+    ors=[{"assigned_to":u.id},{"created_by":u.id},{"sub_assignees":u.id}];view=_get_perm(u,"view_other_tasks",[]) or []
+    if u.role=="manager" and department_user_ids:ors +=[{"assigned_to":{"$in":department_user_ids}},{"created_by":{"$in":department_user_ids}}]
     if view:ors.append({"assigned_to":{"$in":view}})
     return {"$or":ors}
-def build_todo_query(user,target_user_id=None,department_user_ids=None):
-    if user.role=="admin":return {"user_id":target_user_id} if target_user_id else {}
+def build_todo_query(u,target_user_id=None,department_user_ids=None):
+    if u.role=="admin":return {"user_id":target_user_id} if target_user_id else {}
     if target_user_id:
-        if target_user_id!=user.id and target_user_id not in (_get_perm(user,"view_other_todos",[]) or []) and not(user.role=="manager" and target_user_id in(department_user_ids or [])):raise HTTPException(status_code=403,detail="You do not have access to this user's todos")
+        if target_user_id!=u.id and target_user_id not in(_get_perm(u,"view_other_todos",[]) or []) and not(u.role=="manager" and target_user_id in(department_user_ids or [])):raise HTTPException(status_code=403,detail="You do not have access to this user's todos")
         return {"user_id":target_user_id}
-    ors=[{"user_id":user.id}];view=_get_perm(user,"view_other_todos",[]) or []
-    if user.role=="manager" and department_user_ids:ors.append({"user_id":{"$in":department_user_ids}})
+    ors=[{"user_id":u.id}];view=_get_perm(u,"view_other_todos",[]) or []
+    if u.role=="manager" and department_user_ids:ors.append({"user_id":{"$in":department_user_ids}})
     if view:ors.append({"user_id":{"$in":view}})
     return {"$or":ors}
-def build_client_query(user):
-    if user.role=="admin" or _get_perm(user,"can_view_all_clients"):return {}
-    ors=[{"assigned_to":user.id}];assigned=_get_perm(user,"assigned_clients",[]) or []
+def build_client_query(u):
+    if u.role=="admin" or _get_perm(u,"can_view_all_clients"):return {}
+    ors=[{"assigned_to":u.id}];assigned=_get_perm(u,"assigned_clients",[]) or []
     if assigned:ors.append({"id":{"$in":assigned}})
     return {"$or":ors}
-def build_attendance_query(user,target_user_id=None,department_user_ids=None):
-    if user.role=="admin":return {"user_id":target_user_id} if target_user_id else {}
+def build_attendance_query(u,target_user_id=None,department_user_ids=None):
+    if u.role=="admin":return {"user_id":target_user_id} if target_user_id else {}
     if target_user_id:
-        if not can_view_attendance(user,target_user_id) and not(user.role=="manager" and target_user_id in(department_user_ids or [])):raise HTTPException(status_code=403,detail="You do not have access to this user's attendance")
+        if not can_view_attendance(u,target_user_id) and not(u.role=="manager" and target_user_id in(department_user_ids or [])):raise HTTPException(status_code=403,detail="You do not have access to this user's attendance")
         return {"user_id":target_user_id}
-    if _get_perm(user,"can_view_attendance"):
-        if user.role=="manager" and department_user_ids:return {"user_id":{"$in":[user.id]+department_user_ids}}
+    if _get_perm(u,"can_view_attendance"):
+        if u.role=="manager" and department_user_ids:return {"user_id":{"$in":[u.id]+department_user_ids}}
         return {}
-    ids=[user.id]+(_get_perm(user,"view_other_attendance",[]) or []);return {"user_id":{"$in":ids}} if len(ids)>1 else {"user_id":user.id}
-def build_report_query(user,target_user_id=None):
-    resolved=target_user_id or user.id
-    if not can_view_report(user,resolved):raise HTTPException(status_code=403,detail="You do not have permission to view this report")
+    ids=[u.id]+(_get_perm(u,"view_other_attendance",[]) or []);return {"user_id":{"$in":ids}} if len(ids)>1 else {"user_id":u.id}
+def build_report_query(u,target_user_id=None):
+    resolved=target_user_id or u.id
+    if not can_view_report(u,resolved):raise HTTPException(status_code=403,detail="You do not have permission to view this report")
     return resolved
 async def get_same_department_user_ids(user_id,include_managers=False):
     user=await db.users.find_one({"id":user_id})
     if not user or not user.get("departments"):return []
     roles=["staff"] if not include_managers else ["staff","manager"]
-    rows=await db.users.find({"departments":{"$in":user["departments"]},"id":{"$ne":user_id},"role":{"$in":roles}},{"_id":0,"id":1}).to_list(500)
-    return [u["id"] for u in rows]
+    rows=await db.users.find({"departments":{"$in":user["departments"]},"id":{"$ne":user_id},"role":{"$in":roles}},{"_id":0,"id":1}).to_list(500);return [u["id"] for u in rows]
 async def get_team_user_ids(manager_id):return []
 async def get_cross_visibility_union(user_id):
     user=await db.users.find_one({"id":user_id})
@@ -237,16 +227,15 @@ async def get_cross_visibility_union(user_id):
         value=perms.get(key) or []
         if isinstance(value,list):ids.update(value)
     ids.discard(user_id);return list(ids)
-def check_department_data_access(user,resource,dept_user_ids):
-    if user.role=="admin":return True
-    resource_dept=resource.get("department") or resource.get("departments")
-    if resource_dept:
-        user_depts=user.departments or []
-        if isinstance(resource_dept,list):
-            if not any(d in user_depts for d in resource_dept):return False
-        elif resource_dept not in user_depts:return False
-    owner=resource.get("user_id") or resource.get("assigned_to") or resource.get("created_by")
-    return owner==user.id or(user.role=="manager" and owner in dept_user_ids)
+def check_department_data_access(u,r,dept_user_ids):
+    if u.role=="admin":return True
+    rd=r.get("department") or r.get("departments")
+    if rd:
+        ud=u.departments or []
+        if isinstance(rd,list):
+            if not any(x in ud for x in rd):return False
+        elif rd not in ud:return False
+    owner=r.get("user_id") or r.get("assigned_to") or r.get("created_by");return owner==u.id or(u.role=="manager" and owner in dept_user_ids)
 async def verify_record_access(current_user,record_owner_id):
     if current_user.role=="admin" or record_owner_id==current_user.id:return True
     raise HTTPException(status_code=403,detail="You do not have access to this resource")
@@ -287,3 +276,6 @@ def get_user_permissions(current_user):
     return {}
 async def get_db():yield db
 admin_required=require_admin
+# All authenticated domain routes receive the tenant-aware proxy after the request company is established.
+_raw_db=db
+db=TenantAwareDatabase(_raw_db)
