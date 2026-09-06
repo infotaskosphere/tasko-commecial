@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { attach: attachSaasAuth } = require('./saas-auth-runtime.cjs');
 
 const LICENSE_ENFORCEMENT = String(process.env.LICENSE_ENFORCEMENT || 'false').toLowerCase() === 'true';
 const LICENSE_API_URL = String(process.env.LICENSE_API_URL || 'http://localhost:3100/api').replace(/\/$/, '');
@@ -103,6 +104,7 @@ function patchExpress() {
   function wrappedExpress(...args) {
     const app = originalExpress(...args);
     if (!app.__taskosphereLicenseInstalled) {
+      app.__taskosphereLicenseInstalled = true;
       const originalUse = app.use.bind(app);
       const middleware = createEnforcementMiddleware();
       let useCount = 0;
@@ -110,14 +112,18 @@ function patchExpress() {
         const result = originalUse(...useArgs);
         useCount += 1;
         // server.ts installs express.json(), express.urlencoded(), then CORS.
-        // Install licensing after those parsers so activation requests have req.body.
-        if (useCount === 3) originalUse(async (req, res, next) => {
-          if (req.path === '/api/licensing/installation-activate' || req.path === '/licensing/installation-activate' || req.path === '/api/licensing/status' || req.path === '/licensing/status') {
-            const handled = await handleLocalLicenseRoute(req, res);
-            if (handled !== false) return;
-          }
-          return middleware(req, res, next);
-        });
+        // Install SaaS authentication and licensing after those parsers so auth
+        // requests have req.body before the API router is mounted.
+        if (useCount === 3) {
+          attachSaasAuth(app);
+          originalUse(async (req, res, next) => {
+            if (req.path === '/api/licensing/installation-activate' || req.path === '/licensing/installation-activate' || req.path === '/api/licensing/status' || req.path === '/licensing/status') {
+              const handled = await handleLocalLicenseRoute(req, res);
+              if (handled !== false) return;
+            }
+            return middleware(req, res, next);
+          });
+        }
         return result;
       };
     }
