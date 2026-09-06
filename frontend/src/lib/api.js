@@ -5,12 +5,12 @@ import { useState, useEffect } from "react";
 // API BASE URL
 // ─────────────────────────────────────────────────────────────
 
-// Production backend.
-// This is the ONLY backend used by the production Taskosphere website.
-const PRODUCTION_API_URL =
-  "https://final-taskosphere-backend.onrender.com";
+// Commercial deployments must use VITE_API_URL so the frontend
+// can be connected to the separate commercial backend on Render.
+const CONFIGURED_API_URL =
+  import.meta.env.VITE_API_URL || "";
 
-// Local development backend.
+// Local development backend fallback.
 const LOCAL_API_URL =
   "http://localhost:7432";
 
@@ -20,50 +20,38 @@ const _hostname =
     ? window.location.hostname
     : "";
 
-// ─────────────────────────────────────────────────────────────
-// ENVIRONMENT DETECTION
-// ─────────────────────────────────────────────────────────────
-
 const _isLocalHost =
   _hostname === "localhost" ||
   _hostname === "127.0.0.1";
-
-const _isTaskosphereProduction =
-  _hostname === "taskosphere.com" ||
-  _hostname === "www.taskosphere.com";
 
 // ─────────────────────────────────────────────────────────────
 // API URL SELECTION
 // ─────────────────────────────────────────────────────────────
 //
-// Production:
-//     taskosphere.com
+// Commercial Render deployment:
+//     VITE_API_URL
 //          ↓
-//     final-taskosphere-backend.onrender.com
+//     tasko-commecial-backend.onrender.com
 //
 // Local development:
-//     localhost
+//     VITE_API_URL (if supplied)
 //          ↓
-//     localhost:7432
+//     otherwise localhost:7432
 //
-// This is deliberately determined from the actual browser
-// environment. A stale VITE_API_URL or runtime variable cannot
-// change the production backend.
+// There is intentionally NO hard-coded dependency on the live
+// Taskosphere production backend in this commercial repository.
 // ─────────────────────────────────────────────────────────────
 
 let BASE_URL;
 
-if (_isTaskosphereProduction) {
-  BASE_URL = PRODUCTION_API_URL;
+if (CONFIGURED_API_URL) {
+  BASE_URL = CONFIGURED_API_URL;
 } else if (_isLocalHost) {
-  BASE_URL =
-    import.meta.env.VITE_API_URL ||
-    LOCAL_API_URL;
+  BASE_URL = LOCAL_API_URL;
 } else {
-  // Preview / staging / other deployments.
-  BASE_URL =
-    import.meta.env.VITE_API_URL ||
-    PRODUCTION_API_URL;
+  // If a deployed commercial frontend is missing VITE_API_URL,
+  // fail clearly instead of silently connecting to live production.
+  BASE_URL = LOCAL_API_URL;
 }
 
 // ─────────────────────────────────────────────────────────────
