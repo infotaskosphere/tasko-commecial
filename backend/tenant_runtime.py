@@ -8,10 +8,23 @@ from typing import Any, Mapping
 from fastapi import HTTPException, status
 
 COMPANY_FIELD = "company_id"
+
+# Collections confirmed by the server audit to contain tenant-owned data.
+# Global/system collections (users, companies, holidays, templates, etc.) are
+# deliberately excluded and must use their own authorization rules.
 TENANT_COLLECTIONS = {
-    "tasks", "todos", "clients", "invoices", "purchase_invoices", "purchases",
-    "bank_accounts", "bank_transactions",
+    "tasks", "todos", "clients", "invoices", "payments",
+    "purchase_invoices", "purchase_payments", "purchases",
+    "bank_accounts", "bank_transactions", "chart_of_accounts",
+    "journal_entries", "journal_lines",
+    "knowledge_base", "learning_events", "manual_corrections",
+    "recommendation_history", "learning_audit",
+    "workflow_definitions", "workflow_instances", "workflow_history",
+    "approval_requests", "approval_history", "automation_rules",
+    "business_events", "notification_history", "analytics_data",
+    "kpi_history", "workflow_audit",
 }
+
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
 
 
@@ -79,9 +92,21 @@ def _scope_query(query: Any) -> dict[str, Any]:
 
 def _scope_update(update: Any) -> Any:
     company_id = authenticated_company_id()
-    if not company_id or not isinstance(update, dict):
+    if not company_id:
         return update
+    if isinstance(update, list):
+        # Update pipelines can otherwise rewrite company_id after the query
+        # boundary has been enforced. Reject them until every pipeline stage
+        # is explicitly tenant-aware.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant update pipelines are not permitted")
+    if not isinstance(update, dict):
+        return update
+
     result = dict(update)
+    unset_values = dict(result.get("$unset") or {})
+    if COMPANY_FIELD in unset_values:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="company_id cannot be removed")
+
     set_values = dict(result.get("$set") or {})
     if COMPANY_FIELD in set_values and str(set_values[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
@@ -188,6 +213,11 @@ class TenantAwareCollection:
             pipeline = list(pipeline or [])
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
         return self._collection.aggregate(pipeline, *args, **kwargs)
+
+    async def bulk_write(self, requests, *args, **kwargs):
+        if not self._enabled():
+            return await self._collection.bulk_write(requests, *args, **kwargs)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bulk writes are not permitted on tenant collections")
 
     def __getattr__(self, name):
         return getattr(self._collection, name)
