@@ -204,6 +204,7 @@ from backend.models import (
     ReminderCreate,
     OffboardRequest,
 )
+from backend.tenant_runtime import system_context
 from backend.dependencies import (
     db,
     client,
@@ -471,9 +472,10 @@ def mark_absent_users_task():
             )
             return
         today_str = datetime.now(IST).date().isoformat()
-        future = asyncio.run_coroutine_threadsafe(
-            _mark_absent_for_date(today_str), loop
-        )
+        with system_context():
+            future = asyncio.run_coroutine_threadsafe(
+                _mark_absent_for_date(today_str), loop
+            )
         result = future.result(timeout=120)
         logger.info(f"Scheduled absent job result: {result}")
     except Exception as e:
@@ -592,9 +594,10 @@ def force_punch_out_11pm_task():
             )
             return
         today_str = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-        future = asyncio.run_coroutine_threadsafe(
-            _force_punch_out_at_7pm(today_str), loop
-        )
+        with system_context():
+            future = asyncio.run_coroutine_threadsafe(
+                _force_punch_out_at_7pm(today_str), loop
+            )
         result = future.result(timeout=120)
         logger.info(f"force_punch_out_11pm job result: {result}")
     except Exception as e:
