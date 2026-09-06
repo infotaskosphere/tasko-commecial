@@ -10,34 +10,39 @@ export const useAuth = () => {
   return context;
 };
 
-/* ── Helper: is "Keep me signed in" active for this session? ────────── */
 const isKeepSignedIn = () => localStorage.getItem('taskosphere_keep_signed_in') === 'true';
 
 export const AuthProvider = ({ children }) => {
-  const [user,    setUser]    = useState(null);
+  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  /* ============================================================
-  Helpers
-  ============================================================ */
-
   const normalizePermissions = (permissions) => {
-    if (permissions && typeof permissions === "object" && !Array.isArray(permissions)) {
-      return permissions;
-    }
+    if (permissions && typeof permissions === "object" && !Array.isArray(permissions)) return permissions;
     return {};
   };
 
+  const normalizeTenantContext = (userData) => {
+    if (!userData || typeof userData !== "object") return userData;
+    return {
+      ...userData,
+      permissions: normalizePermissions(userData.permissions),
+      company_id: userData.company_id ? String(userData.company_id) : null,
+      company: userData.company || null,
+      subscription: userData.subscription || null,
+    };
+  };
+
   const getStoredAuth = () => {
-    const token      = localStorage.getItem("token")      || sessionStorage.getItem("token");
-    const storedUser = localStorage.getItem("user")       || sessionStorage.getItem("user");
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+    const storedUser = localStorage.getItem("user") || sessionStorage.getItem("user");
     return { token, storedUser };
   };
 
   const persistAuth = (token, userData, rememberMe = false, sessionToken = null) => {
     const storage = rememberMe ? localStorage : sessionStorage;
+    const normalizedUser = normalizeTenantContext(userData);
     storage.setItem("token", token);
-    storage.setItem("user", JSON.stringify(userData));
+    storage.setItem("user", JSON.stringify(normalizedUser));
     if (sessionToken) storage.setItem("session_token", sessionToken);
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
   };
@@ -48,130 +53,79 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("session_token");
     localStorage.removeItem("taskosphere_last_active");
     localStorage.removeItem("taskosphere_tab_closed");
-    localStorage.removeItem("taskosphere_keep_signed_in"); // ← clear flag on logout
+    localStorage.removeItem("taskosphere_keep_signed_in");
     sessionStorage.removeItem("token");
     sessionStorage.removeItem("user");
     sessionStorage.removeItem("session_token");
     delete api.defaults.headers.common["Authorization"];
   };
 
-  /* ============================================================
-  Auto-logout: inactivity + tab/browser CLOSE
-  Both are SKIPPED when "Keep me signed in" is active.
-  ============================================================ */
-
-  const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000; // 6 hours
-  const LAST_ACTIVE_KEY     = 'taskosphere_last_active';
+  const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
+  const LAST_ACTIVE_KEY = 'taskosphere_last_active';
 
   useEffect(() => {
     const handleBeforeUnload = () => {
-      // Only mark tab-closed when NOT in keep-signed-in mode
-      if (!isKeepSignedIn() && localStorage.getItem('token')) {
-        localStorage.setItem('taskosphere_tab_closed', Date.now().toString());
-      }
+      if (!isKeepSignedIn() && localStorage.getItem('token')) localStorage.setItem('taskosphere_tab_closed', Date.now().toString());
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-
-    // Skip inactivity timer entirely when keep-signed-in is active
-    if (isKeepSignedIn()) return;
-
-    const updateActivity = () => {
-      localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString());
-    };
-
+    if (!user || isKeepSignedIn()) return;
+    const updateActivity = () => localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString());
     const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
     events.forEach(e => window.addEventListener(e, updateActivity, { passive: true }));
     updateActivity();
-
     const interval = setInterval(() => {
       const lastActive = parseInt(localStorage.getItem(LAST_ACTIVE_KEY) || '0', 10);
-      if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) {
-        logout();
-      }
+      if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) logout();
     }, 60 * 1000);
-
     return () => {
       events.forEach(e => window.removeEventListener(e, updateActivity));
       clearInterval(interval);
     };
   }, [user]);
 
-  /* ============================================================
-  Restore Session
-  ============================================================ */
-
   useEffect(() => {
     const restoreSession = async () => {
       const { token, storedUser } = getStoredAuth();
-
       if (!token || !storedUser) {
         setLoading(false);
         return;
       }
 
-      const navType =
-        window.performance?.getEntriesByType?.('navigation')?.[0]?.type
-        ?? (window.performance?.navigation?.type === 1 ? 'reload' : 'navigate');
-
+      const navType = window.performance?.getEntriesByType?.('navigation')?.[0]?.type ?? (window.performance?.navigation?.type === 1 ? 'reload' : 'navigate');
       const isReload = navType === 'reload';
-
       const tabClosedAt = localStorage.getItem('taskosphere_tab_closed');
       if (tabClosedAt && localStorage.getItem('token')) {
         localStorage.removeItem('taskosphere_tab_closed');
-
-        // If "keep signed in" is active → ignore the tab-closed flag entirely,
-        // session should persist until punch-out.
         if (!isKeepSignedIn() && !isReload) {
           clearStorage();
           setLoading(false);
           return;
         }
-        // Hard refresh OR keep-signed-in → keep the session
       }
 
       try {
-        const parsedUser = JSON.parse(storedUser);
-        parsedUser.permissions = normalizePermissions(parsedUser.permissions);
-
+        const parsedUser = normalizeTenantContext(JSON.parse(storedUser));
         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-
         const meRes = await api.get("/auth/me");
-        const freshUser = meRes.data;
-        freshUser.permissions = normalizePermissions(freshUser.permissions);
+        const freshUser = normalizeTenantContext(meRes.data);
 
-        // Back-fill any permission flags that were missing from this user's DB
-        // record (e.g. new flags added to DEFAULT_ROLE_PERMISSIONS after the user
-        // was created). The endpoint writes missing keys to the DB once and returns
-        // the merged permissions object. Non-fatal — _normalize_permissions() in
-        // get_current_user already covers this in-memory for the current request.
         try {
           const syncRes = await api.post("/auth/sync-permissions", {}, { _silent: true });
-          if (syncRes?.data?.permissions) {
-            freshUser.permissions = normalizePermissions(syncRes.data.permissions);
-          }
-        } catch (_) {
-          // Non-fatal: in-memory normalisation in get_current_user is the safety net
-        }
+          if (syncRes?.data?.permissions) freshUser.permissions = normalizePermissions(syncRes.data.permissions);
+        } catch (_) {}
 
         const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
         storage.setItem("user", JSON.stringify(freshUser));
-
         setUser(freshUser);
-
-        // ── Auto-authenticate desktop agent (non-blocking) ──
         autoAuthenticateAgent(token, freshUser.id).catch(() => {});
-
       } catch (error) {
         if (error.message === "Network Error") {
           console.warn("Backend unreachable, keeping stored session.");
-          const parsedUser = JSON.parse(storedUser);
-          parsedUser.permissions = normalizePermissions(parsedUser.permissions);
-          setUser(parsedUser);
+          setUser(normalizeTenantContext(JSON.parse(storedUser)));
         } else if (error.response && error.response.status === 401) {
           console.warn("Token expired.");
           clearStorage();
@@ -183,53 +137,28 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
       }
     };
-
     restoreSession();
   }, []);
 
-  /* ============================================================
-  Login
-  ============================================================ */
-
   const login = (responseData, rememberMe = false) => {
-    const token       = responseData?.access_token || responseData?.token;
-    const userData    = responseData?.user || responseData?.data?.user;
+    const token = responseData?.access_token || responseData?.token;
+    const userData = responseData?.user || responseData?.data?.user;
     const sessionToken = responseData?.session_token || responseData?.data?.session_token || null;
-
     if (!token || !userData) {
       console.error("Invalid login response:", responseData);
       return false;
     }
-
-    userData.permissions = normalizePermissions(userData.permissions);
-    persistAuth(token, userData, rememberMe, sessionToken);
-    setUser(userData);
-
-    // ── Auto-authenticate desktop agent (non-blocking) ──
-    autoAuthenticateAgent(token, userData.id).catch(() => {});
-
+    const normalizedUser = normalizeTenantContext(userData);
+    persistAuth(token, normalizedUser, rememberMe, sessionToken);
+    setUser(normalizedUser);
+    autoAuthenticateAgent(token, normalizedUser.id).catch(() => {});
     return true;
   };
 
-  /* ============================================================
-  Logout
-  Also revokes the server-side session record via POST /auth/logout
-  (see backend/server.py). Called on manual logout, 6h inactivity,
-  and — per Dashboard.jsx's handlePunchAction — automatically after
-  a successful Punch Out, so "keep signed in" sessions are properly
-  terminated once the workday ends.
-  ============================================================ */
-
   const logout = async () => {
-    const sessionToken =
-      localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
-
+    const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
     try {
       window.__STOP_ACTIVITY__ = true;
-      // Best-effort: revoke the session record on the backend so it no
-      // longer shows as "active" (e.g. in a super-admin sessions view).
-      // Fails silently if the token is already expired/missing/offline —
-      // local storage is cleared regardless so the user is logged out either way.
       try {
         await api.post("/auth/logout", { session_token: sessionToken || undefined });
       } catch (revokeErr) {
@@ -246,30 +175,19 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  /* ============================================================
-  Refresh User
-  ============================================================ */
-
   const refreshUser = useCallback(async () => {
     try {
-      const response   = await api.get("/auth/me");
-      const updatedUser = response.data;
-      updatedUser.permissions = normalizePermissions(updatedUser.permissions);
-
+      const response = await api.get("/auth/me");
+      const updatedUser = normalizeTenantContext(response.data);
       const isLocal = !!localStorage.getItem("token");
       const storage = isLocal ? localStorage : sessionStorage;
       storage.setItem("user", JSON.stringify(updatedUser));
-
       setUser(updatedUser);
       console.log("User context synchronized with database.");
     } catch (error) {
       console.error("Failed to refresh user:", error);
     }
   }, []);
-
-  /* ============================================================
-  Permission Helpers
-  ============================================================ */
 
   const hasPermission = (permission) => {
     if (!user) return false;
@@ -296,15 +214,20 @@ export const AuthProvider = ({ children }) => {
     return ownerId === user.id;
   };
 
-  /* ============================================================
-  Context Value
-  ============================================================ */
-
   return (
     <AuthContext.Provider value={{
-      user, loading,
-      login, logout, refreshUser,
-      hasPermission, hasAnyPermission, canAccessUser, isOwner,
+      user,
+      loading,
+      company: user?.company || null,
+      companyId: user?.company_id || null,
+      subscription: user?.subscription || null,
+      login,
+      logout,
+      refreshUser,
+      hasPermission,
+      hasAnyPermission,
+      canAccessUser,
+      isOwner,
     }}>
       {children}
     </AuthContext.Provider>
