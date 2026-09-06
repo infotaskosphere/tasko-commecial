@@ -96,9 +96,9 @@ function AdminOnly({ children }) {
 
 export default function AppRoutes() {
   return <Suspense fallback={<AuthLoading />}><Routes>
-    <Route path="/login" element={<PageTransition><PublicOnly><Login /></PublicOnly></PageTransition>} />
-    <Route path="/register" element={<PageTransition><PublicOnly><Register /></PublicOnly></PageTransition>} />
-    <Route path="/forgot-password" element={<PageTransition><PublicOnly><ForgotPassword /></PublicOnly></PageTransition>} />
+    <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
+    <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
+    <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
     <Route path="/activate-license" element={<PageTransition><LicenseActivation /></PageTransition>} />
     <Route path="/client-portal" element={<Navigate to="/client-portal/login" replace />} />
     <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
