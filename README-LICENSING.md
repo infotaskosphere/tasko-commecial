@@ -24,6 +24,25 @@ The licensing API supports:
 - Package configuration
 - Master Console authentication
 
+## API-level enforcement
+
+`backend/license-runtime.cjs` is loaded before the Taskosphere application starts. When `LICENSE_ENFORCEMENT=true`, it installs an Express middleware layer and checks the central licensing service before protected Taskosphere API requests are allowed to reach the application's existing routes.
+
+The enforcement layer:
+
+- Rejects an unactivated installation
+- Rejects expired, suspended or revoked licenses
+- Checks the package's module entitlements server-side
+- Blocks Accounting endpoints for packages without `ACCOUNTING`
+- Blocks HRMS endpoints for packages without `HRMS`
+- Blocks Invoicing endpoints for packages without `INVOICING`
+- Blocks Task Management endpoints for packages without `TASKS`
+- Registers the installation with the licensing authority during activation
+- Performs periodic heartbeat validation
+- Supports a configurable offline grace period
+
+This is deliberately server-side; hiding menu items in React is not treated as a security boundary.
+
 ## URLs
 
 - Master Console: `/master-console`
@@ -35,6 +54,8 @@ The licensing API supports:
 Copy `.env.example` and configure the licensing service. In production, set a strong random `MASTER_CONSOLE_TOKEN`; do not use the development default.
 
 The frontend uses `VITE_LICENSE_API_URL` to locate the dedicated licensing API. For local development it defaults to `http://localhost:3100/api`.
+
+The Taskosphere application uses `LICENSE_API_URL` to call the central licensing service for activation and heartbeat checks. Configure the licensing URL before enabling enforcement.
 
 ## Deployment architecture
 
@@ -55,20 +76,30 @@ Start:
 
 `npm run start:licensing`
 
-## Current enforcement status
+### Taskosphere application commands
 
-The licensing authority and activation workflow are now server-side, but **production API module enforcement is intentionally not enabled yet**. `LICENSE_ENFORCEMENT=false` is the safe default while the activation flow is being tested.
+Build:
 
-The next hardening phase should connect every Taskosphere API request to the licensing authority and enforce:
+`npm run build`
 
-- TASKS entitlement
-- INVOICING entitlement
-- ACCOUNTING entitlement
-- HRMS entitlement
-- User limits
-- Expiry / grace periods
-- Revoked installation handling
-- Offline validation policy
-- Audit events
+Start:
 
-Do not set `LICENSE_ENFORCEMENT=true` in a customer deployment until those API-level checks have been tested end-to-end.
+`npm run start`
+
+The normal application start command now preloads the licensing runtime. Enforcement remains disabled unless `LICENSE_ENFORCEMENT=true` is explicitly configured.
+
+## Important production persistence note
+
+The current licensing registry uses a JSON file. This is suitable for development and controlled testing, but a commercial licensing authority should use durable storage or a persistent disk before launch so licenses are not lost during service replacement or redeployment.
+
+## Recommended rollout
+
+1. Deploy the licensing service with `LICENSE_ENFORCEMENT=false`.
+2. Configure the Taskosphere application with `LICENSE_API_URL` pointing to the licensing service.
+3. Generate a test Essential license from Master Console.
+4. Activate a clean Taskosphere installation with that license.
+5. Confirm Tasks and Invoicing work.
+6. Confirm Accounting and HRMS API calls return `403 MODULE_NOT_LICENSED`.
+7. Test suspension, revocation and expiry.
+8. Test the configured offline grace period.
+9. Only then enable `LICENSE_ENFORCEMENT=true` for customer deployments.
