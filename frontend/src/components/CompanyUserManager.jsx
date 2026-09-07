@@ -1,8 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  UserPlus, Pencil, CheckCircle2, XCircle, UserX, Search, Loader2,
-  Users2, ShieldCheck, Building2, Mail, Phone, CalendarDays,
-} from 'lucide-react';
+import { UserPlus, Pencil, CheckCircle2, XCircle, UserX, Search, Loader2, Users2, ShieldCheck, Building2, Mail, Phone, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,270 +9,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
-const EMPTY = {
-  full_name: '', email: '', password: '', role: 'staff', departments: [], phone: '', birthday: '',
-  telegram_id: '', punch_in_time: '10:30', grace_time: '00:10', punch_out_time: '19:00',
-  joining_date: '', training_period_end: '', payroll_date: '', monthly_salary: '',
-  employee_code: '', designation: '', department_id: '', reporting_manager_id: '',
-  employment_type: '', confirmation_date: '', grade: '', cost_centre: '',
-  pan_number: '', aadhaar_number: '', uan_number: '', pf_number: '', esic_number: '',
-  bank_account_number: '', bank_name: '', ifsc_code: '',
-};
+const EMPTY = { full_name:'', email:'', password:'', role:'staff', departments:[], phone:'', birthday:'', telegram_id:'', punch_in_time:'10:30', grace_time:'00:10', punch_out_time:'19:00', joining_date:'', training_period_end:'', payroll_date:'', monthly_salary:'', employee_code:'', designation:'', department_id:'', reporting_manager_id:'', employment_type:'', confirmation_date:'', grade:'', cost_centre:'', pan_number:'', aadhaar_number:'', uan_number:'', pf_number:'', esic_number:'', bank_account_number:'', bank_name:'', ifsc_code:'' };
+const STATUS={active:['Active','bg-emerald-100 text-emerald-700'],pending_approval:['Pending approval','bg-amber-100 text-amber-700'],rejected:['Rejected','bg-red-100 text-red-700'],inactive:['Inactive','bg-slate-100 text-slate-600']};
+const Field=({label,children})=><div className="space-y-1.5"><Label className="text-[11px] font-semibold text-slate-600">{label}</Label>{children}</div>;
+const StatusBadge=({status})=>{const [label,cls]=STATUS[status]||STATUS.inactive;return <Badge className={`border-0 text-[10px] ${cls}`}>{label}</Badge>};
 
-const STATUS = {
-  active: ['Active', 'bg-emerald-100 text-emerald-700'],
-  pending_approval: ['Pending approval', 'bg-amber-100 text-amber-700'],
-  rejected: ['Rejected', 'bg-red-100 text-red-700'],
-  inactive: ['Inactive', 'bg-slate-100 text-slate-600'],
-};
-
-function StatusBadge({ status }) {
-  const [label, cls] = STATUS[status] || ['Inactive', 'bg-slate-100 text-slate-600'];
-  return <Badge className={`border-0 text-[10px] ${cls}`}>{label}</Badge>;
-}
-
-function Field({ label, children }) {
-  return <div className="space-y-1.5"><Label className="text-[11px] font-semibold text-slate-600">{label}</Label>{children}</div>;
-}
-
-export default function CompanyUserManager() {
-  const [users, setUsers] = useState([]);
-  const [license, setLicense] = useState(null);
-  const [company, setCompany] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState(null);
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState(EMPTY);
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get('/commercial-master-data/users');
-      setUsers(Array.isArray(data?.users) ? data.users : []);
-      setLicense(data?.license || null);
-      setCompany(data?.company || null);
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Failed to load company users');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const managers = useMemo(() => users.filter(u => u.role === 'manager' && u.status !== 'rejected'), [users]);
-  const visible = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return users.filter(u => {
-      if (statusFilter !== 'all' && (u.status || 'inactive') !== statusFilter) return false;
-      if (!q) return true;
-      return [u.full_name, u.email, u.phone, u.employee_code, u.designation, u.department_id]
-        .filter(Boolean).some(v => String(v).toLowerCase().includes(q));
-    });
-  }, [users, search, statusFilter]);
-
-  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
-  const openNew = () => { setEditing(null); setForm(EMPTY); };
-  const openEdit = (u) => {
-    const next = { ...EMPTY };
-    Object.keys(next).forEach(k => { next[k] = u[k] ?? next[k]; });
-    next.password = '';
-    next.departments = Array.isArray(u.departments) ? u.departments : [];
-    setEditing(u);
-    setForm(next);
-  };
-
-  const save = async () => {
-    if (!form.full_name.trim() || !form.email.trim()) {
-      toast.error('Full name and email are required'); return;
-    }
-    if (!editing && form.password.length < 8) {
-      toast.error('Password must be at least 8 characters'); return;
-    }
-    setSaving(true);
-    try {
-      const payload = { ...form, telegram_id: form.telegram_id ? Number(form.telegram_id) : null };
-      if (payload.monthly_salary === '') payload.monthly_salary = null;
-      else if (payload.monthly_salary != null) payload.monthly_salary = Number(payload.monthly_salary);
-      if (!payload.password) delete payload.password;
-      if (editing) {
-        await api.put(`/commercial-master-data/users/${editing.id}`, payload);
-        toast.success('User details updated');
-      } else {
-        await api.post('/commercial-master-data/users', payload);
-        toast.success('User added — pending approval');
-      }
-      setEditing(null);
-      setForm(EMPTY);
-      await load();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Could not save user');
-    } finally { setSaving(false); }
-  };
-
-  const changeStatus = async (u, action) => {
-    setBusyId(u.id);
-    try {
-      await api.post(`/commercial-master-data/users/${u.id}/${action}`);
-      toast.success(action === 'approve' ? 'User approved' : action === 'reject' ? 'User rejected' : 'User deactivated');
-      await load();
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Could not update user status');
-    } finally { setBusyId(null); }
-  };
-
-  const activeCount = users.filter(u => u.status === 'active').length;
-  const pendingCount = users.filter(u => u.status === 'pending_approval').length;
-
-  return (
-    <section className="border border-slate-200 bg-white overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0">
-          <div className="p-2 bg-blue-50 shrink-0"><Users2 className="h-5 w-5 text-[#1F6FB2]" /></div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-sm font-bold text-slate-800">User Details &amp; Access</h2>
-              <Badge className="rounded-none bg-blue-50 text-[#1F6FB2] border-0 text-[10px]">{users.length}</Badge>
-              {pendingCount > 0 && <Badge className="rounded-none bg-amber-50 text-amber-700 border-0 text-[10px]">{pendingCount} pending</Badge>}
-            </div>
-            <p className="text-xs mt-1 leading-relaxed text-slate-500 max-w-3xl">
-              Central company user master. These accounts are shared by every licensed module; People Matrix is not required to create, edit or approve users.
-            </p>
-          </div>
-        </div>
-        <Button onClick={openNew} className="h-9 rounded-none bg-[#0D3B66] hover:bg-[#0D3B66]">
-          <UserPlus className="h-3.5 w-3.5 mr-1.5" /> Add User
-        </Button>
-      </div>
-
-      <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="h-4 w-4 absolute left-2.5 top-2.5 text-slate-400" />
-          <Input className="pl-8 h-9 rounded-none bg-white" placeholder="Search name, email, phone, employee code…" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[155px] h-9 rounded-none bg-white"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="pending_approval">Pending approval</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="rejected">Rejected</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-        {license && <div className="text-[11px] font-semibold text-slate-500 ml-auto">Active users: {activeCount} / {license.max_users}</div>}
-      </div>
-
-      {loading ? <div className="py-12 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400" /></div> : visible.length === 0 ? (
-        <div className="py-12 text-center text-slate-400 text-sm">No users found.</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-slate-50 border-b border-slate-200 text-left">
-              <th className="px-4 py-3 font-semibold text-slate-600">User</th>
-              <th className="px-4 py-3 font-semibold text-slate-600">Role</th>
-              <th className="px-4 py-3 font-semibold text-slate-600">Employee</th>
-              <th className="px-4 py-3 font-semibold text-slate-600">Department / Designation</th>
-              <th className="px-4 py-3 font-semibold text-slate-600">Status</th>
-              <th className="px-4 py-3 font-semibold text-slate-600 text-right">Actions</th>
-            </tr></thead>
-            <tbody>
-              {visible.map(u => (
-                <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50/70">
-                  <td className="px-4 py-3"><div className="font-semibold text-slate-800">{u.full_name || '—'}</div><div className="text-xs text-slate-500 flex items-center gap-1"><Mail className="h-3 w-3" />{u.email}</div>{u.phone && <div className="text-[11px] text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3" />{u.phone}</div>}</td>
-                  <td className="px-4 py-3"><Badge variant="outline" className="rounded-none capitalize">{u.role || 'staff'}</Badge></td>
-                  <td className="px-4 py-3 text-xs text-slate-600">{u.employee_code || '—'}<div className="text-[11px] text-slate-400">{u.employment_type || ''}</div></td>
-                  <td className="px-4 py-3 text-xs text-slate-600">{u.department_id || (u.departments || []).join(', ') || '—'}<div className="text-[11px] text-slate-400">{u.designation || '—'}</div></td>
-                  <td className="px-4 py-3"><StatusBadge status={u.status} /></td>
-                  <td className="px-4 py-3"><div className="flex justify-end gap-1">
-                    <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" title="Edit" onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5" /></Button>
-                    {u.status === 'pending_approval' && <>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-emerald-600" title="Approve" disabled={busyId === u.id} onClick={() => changeStatus(u, 'approve')}><CheckCircle2 className="h-4 w-4" /></Button>
-                      <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-red-500" title="Reject" disabled={busyId === u.id} onClick={() => changeStatus(u, 'reject')}><XCircle className="h-4 w-4" /></Button>
-                    </>}
-                    {u.status === 'active' && <Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-slate-500" title="Deactivate" disabled={busyId === u.id} onClick={() => changeStatus(u, 'deactivate')}><UserX className="h-4 w-4" /></Button>}
-                  </div></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500 flex flex-wrap gap-x-5 gap-y-1">
-        <span className="flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" /> User access is capped by the company's purchased license.</span>
-        <span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5 text-[#1F6FB2]" /> {company?.name || 'Licensed company'}</span>
-        <span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5" /> Shared master data for all modules.</span>
-      </div>
-
-      <Dialog open={!!(editing || !editing && form.full_name !== undefined && form !== EMPTY)} onOpenChange={open => { if (!open) { setEditing(null); setForm(EMPTY); } }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none">
-          <DialogHeader>
-            <DialogTitle>{editing ? `Edit User — ${editing.full_name}` : 'Add Company User'}</DialogTitle>
-            <DialogDescription>{editing ? 'Update the shared company user record. Module access remains capped by the active license.' : 'Create a user in the company master. The new account starts as Pending Approval.'}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <Field label="Full Name *"><Input className="rounded-none" value={form.full_name} onChange={e => set('full_name', e.target.value)} /></Field>
-              <Field label="Email *"><Input className="rounded-none" type="email" value={form.email} onChange={e => set('email', e.target.value)} /></Field>
-              <Field label={editing ? 'New Password (optional)' : 'Password *'}><Input className="rounded-none" type="password" value={form.password} onChange={e => set('password', e.target.value)} /></Field>
-              <Field label="Role"><Select value={form.role} onValueChange={v => set('role', v)}><SelectTrigger className="rounded-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="staff">User / Staff</SelectItem><SelectItem value="manager">Manager</SelectItem></SelectContent></Select></Field>
-              <Field label="Phone"><Input className="rounded-none" value={form.phone} onChange={e => set('phone', e.target.value)} /></Field>
-              <Field label="Birthday"><Input className="rounded-none" type="date" value={form.birthday || ''} onChange={e => set('birthday', e.target.value)} /></Field>
-            </div>
-
-            <div className="border border-slate-200 p-4 space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Employment &amp; Organisation</div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Field label="Employee Code"><Input className="rounded-none" value={form.employee_code} onChange={e => set('employee_code', e.target.value)} /></Field>
-                <Field label="Designation"><Input className="rounded-none" value={form.designation} onChange={e => set('designation', e.target.value)} /></Field>
-                <Field label="Department"><Input className="rounded-none" value={form.department_id} onChange={e => set('department_id', e.target.value)} placeholder="Department / ID" /></Field>
-                <Field label="Reporting Manager"><Select value={form.reporting_manager_id || '__none__'} onValueChange={v => set('reporting_manager_id', v === '__none__' ? '' : v)}><SelectTrigger className="rounded-none"><SelectValue placeholder="Select manager" /></SelectTrigger><SelectContent><SelectItem value="__none__">None</SelectItem>{managers.filter(m => m.id !== editing?.id).map(m => <SelectItem key={m.id} value={m.id}>{m.full_name || m.email}</SelectItem>)}</SelectContent></Select></Field>
-                <Field label="Employment Type"><Select value={form.employment_type || '__none__'} onValueChange={v => set('employment_type', v === '__none__' ? '' : v)}><SelectTrigger className="rounded-none"><SelectValue placeholder="Select type" /></SelectTrigger><SelectContent><SelectItem value="__none__">Not set</SelectItem>{['full_time','part_time','contract','intern'].map(v => <SelectItem key={v} value={v}>{v.replace('_',' ')}</SelectItem>)}</SelectContent></Select></Field>
-                <Field label="Grade"><Input className="rounded-none" value={form.grade} onChange={e => set('grade', e.target.value)} /></Field>
-                <Field label="Cost Centre"><Input className="rounded-none" value={form.cost_centre} onChange={e => set('cost_centre', e.target.value)} /></Field>
-                <Field label="Monthly Salary (₹)"><Input className="rounded-none" type="number" value={form.monthly_salary} onChange={e => set('monthly_salary', e.target.value)} /></Field>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Field label="Joining Date"><Input className="rounded-none" type="date" value={form.joining_date || ''} onChange={e => set('joining_date', e.target.value)} /></Field>
-                <Field label="Training / Probation End"><Input className="rounded-none" type="date" value={form.training_period_end || ''} onChange={e => set('training_period_end', e.target.value)} /></Field>
-                <Field label="Confirmation Date"><Input className="rounded-none" type="date" value={form.confirmation_date || ''} onChange={e => set('confirmation_date', e.target.value)} /></Field>
-                <Field label="Payroll Date"><Input className="rounded-none" type="date" value={form.payroll_date || ''} onChange={e => set('payroll_date', e.target.value)} /></Field>
-              </div>
-            </div>
-
-            <div className="border border-slate-200 p-4 space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Attendance &amp; Statutory Details</div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Field label="Punch In"><Input className="rounded-none" type="time" value={form.punch_in_time} onChange={e => set('punch_in_time', e.target.value)} /></Field>
-                <Field label="Grace Time"><Input className="rounded-none" type="text" value={form.grace_time} onChange={e => set('grace_time', e.target.value)} placeholder="00:10" /></Field>
-                <Field label="Punch Out"><Input className="rounded-none" type="time" value={form.punch_out_time} onChange={e => set('punch_out_time', e.target.value)} /></Field>
-                <Field label="PAN"><Input className="rounded-none" value={form.pan_number} onChange={e => set('pan_number', e.target.value)} /></Field>
-                <Field label="Aadhaar"><Input className="rounded-none" value={form.aadhaar_number} onChange={e => set('aadhaar_number', e.target.value)} /></Field>
-                <Field label="UAN"><Input className="rounded-none" value={form.uan_number} onChange={e => set('uan_number', e.target.value)} /></Field>
-                <Field label="PF Number"><Input className="rounded-none" value={form.pf_number} onChange={e => set('pf_number', e.target.value)} /></Field>
-                <Field label="ESIC Number"><Input className="rounded-none" value={form.esic_number} onChange={e => set('esic_number', e.target.value)} /></Field>
-              </div>
-            </div>
-
-            <div className="border border-slate-200 p-4 space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">Bank Details</div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Field label="Bank Account Number"><Input className="rounded-none" value={form.bank_account_number} onChange={e => set('bank_account_number', e.target.value)} /></Field>
-                <Field label="Bank Name"><Input className="rounded-none" value={form.bank_name} onChange={e => set('bank_name', e.target.value)} /></Field>
-                <Field label="IFSC Code"><Input className="rounded-none" value={form.ifsc_code} onChange={e => set('ifsc_code', e.target.value)} /></Field>
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-none" onClick={() => { setEditing(null); setForm(EMPTY); }}>Cancel</Button>
-            <Button className="rounded-none bg-[#0D3B66] hover:bg-[#0D3B66]" onClick={save} disabled={saving}>{saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}{editing ? 'Save User' : 'Create User'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
-  );
+export default function CompanyUserManager(){
+  const [users,setUsers]=useState([]),[license,setLicense]=useState(null),[company,setCompany]=useState(null),[loading,setLoading]=useState(true),[busyId,setBusyId]=useState(null),[search,setSearch]=useState(''),[statusFilter,setStatusFilter]=useState('all'),[editing,setEditing]=useState(null),[form,setForm]=useState(EMPTY),[saving,setSaving]=useState(false);
+  const load=useCallback(async()=>{setLoading(true);try{const {data}=await api.get('/commercial-master-data/users');setUsers(data?.users||[]);setLicense(data?.license||null);setCompany(data?.company||null)}catch(e){toast.error(e?.response?.data?.detail||'Failed to load company users')}finally{setLoading(false)}},[]);
+  useEffect(()=>{load()},[load]);
+  const managers=useMemo(()=>users.filter(u=>u.role==='manager'&&u.status!=='rejected'),[users]);
+  const visible=useMemo(()=>{const q=search.trim().toLowerCase();return users.filter(u=>{if(statusFilter!=='all'&&(u.status||'inactive')!==statusFilter)return false;if(!q)return true;return [u.full_name,u.email,u.phone,u.employee_code,u.designation,u.department_id].filter(Boolean).some(v=>String(v).toLowerCase().includes(q))})},[users,search,statusFilter]);
+  const set=(k,v)=>setForm(p=>({...p,[k]:v}));
+  const openNew=()=>{setEditing(null);setForm({...EMPTY,departments:[]})};
+  const openEdit=u=>{const n={...EMPTY};Object.keys(n).forEach(k=>{n[k]=u[k]??n[k]});n.password='';n.departments=Array.isArray(u.departments)?u.departments:[];setEditing(u);setForm(n)};
+  const save=async()=>{if(!form.full_name.trim()||!form.email.trim())return toast.error('Full name and email are required');if(!editing&&form.password.length<8)return toast.error('Password must be at least 8 characters');setSaving(true);try{const payload={...form,telegram_id:form.telegram_id?Number(form.telegram_id):null};if(payload.monthly_salary==='')payload.monthly_salary=null;else if(payload.monthly_salary!=null)payload.monthly_salary=Number(payload.monthly_salary);if(!payload.password)delete payload.password;if(editing){await api.put(`/commercial-master-data/users/${editing.id}`,payload);toast.success('User details updated')}else{await api.post('/commercial-master-data/users',payload);toast.success('User added — pending approval')}setEditing(null);setForm(EMPTY);await load()}catch(e){toast.error(e?.response?.data?.detail||'Could not save user')}finally{setSaving(false)}};
+  const changeStatus=async(u,action)=>{setBusyId(u.id);try{await api.post(`/commercial-master-data/users/${u.id}/${action}`);toast.success(action==='approve'?'User approved':action==='reject'?'User rejected':'User deactivated');await load()}catch(e){toast.error(e?.response?.data?.detail||'Could not update user status')}finally{setBusyId(null)}};
+  const activeCount=users.filter(u=>u.status==='active').length,pendingCount=users.filter(u=>u.status==='pending_approval').length;
+  return <section className="border border-slate-200 bg-white overflow-hidden">
+    <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3 min-w-0"><div className="p-2 bg-blue-50 shrink-0"><Users2 className="h-5 w-5 text-[#1F6FB2]"/></div><div><div className="flex items-center gap-2 flex-wrap"><h2 className="text-sm font-bold text-slate-800">User Details &amp; Access</h2><Badge className="rounded-none bg-blue-50 text-[#1F6FB2] border-0 text-[10px]">{users.length}</Badge>{pendingCount>0&&<Badge className="rounded-none bg-amber-50 text-amber-700 border-0 text-[10px]">{pendingCount} pending</Badge>}</div><p className="text-xs mt-1 leading-relaxed text-slate-500 max-w-3xl">Central company user master. These accounts are shared by every licensed module; People Matrix is not required to create, edit or approve users.</p></div></div><Button onClick={openNew} className="h-9 rounded-none bg-[#0D3B66] hover:bg-[#0D3B66]"><UserPlus className="h-3.5 w-3.5 mr-1.5"/> Add User</Button></div>
+    <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center gap-3"><div className="relative flex-1 min-w-[220px]"><Search className="h-4 w-4 absolute left-2.5 top-2.5 text-slate-400"/><Input className="pl-8 h-9 rounded-none bg-white" placeholder="Search name, email, phone, employee code…" value={search} onChange={e=>setSearch(e.target.value)}/></div><Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-[155px] h-9 rounded-none bg-white"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="pending_approval">Pending approval</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="rejected">Rejected</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent></Select>{license&&<div className="text-[11px] font-semibold text-slate-500 ml-auto">Active users: {activeCount} / {license.max_users}</div>}</div>
+    {loading?<div className="py-12 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400"/></div>:visible.length===0?<div className="py-12 text-center text-slate-400 text-sm">No users found.</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-slate-50 border-b border-slate-200 text-left"><th className="px-4 py-3 font-semibold text-slate-600">User</th><th className="px-4 py-3 font-semibold text-slate-600">Role</th><th className="px-4 py-3 font-semibold text-slate-600">Employee</th><th className="px-4 py-3 font-semibold text-slate-600">Department / Designation</th><th className="px-4 py-3 font-semibold text-slate-600">Status</th><th className="px-4 py-3 font-semibold text-slate-600 text-right">Actions</th></tr></thead><tbody>{visible.map(u=><tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50/70"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{u.full_name||'—'}</div><div className="text-xs text-slate-500 flex items-center gap-1"><Mail className="h-3 w-3"/>{u.email}</div>{u.phone&&<div className="text-[11px] text-slate-400 flex items-center gap-1"><Phone className="h-3 w-3"/>{u.phone}</div>}</td><td className="px-4 py-3"><Badge variant="outline" className="rounded-none capitalize">{u.role||'staff'}</Badge></td><td className="px-4 py-3 text-xs text-slate-600">{u.employee_code||'—'}<div className="text-[11px] text-slate-400">{u.employment_type||''}</div></td><td className="px-4 py-3 text-xs text-slate-600">{u.department_id||(u.departments||[]).join(', ')||'—'}<div className="text-[11px] text-slate-400">{u.designation||'—'}</div></td><td className="px-4 py-3"><StatusBadge status={u.status}/></td><td className="px-4 py-3"><div className="flex justify-end gap-1"><Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" title="Edit" onClick={()=>openEdit(u)}><Pencil className="h-3.5 w-3.5"/></Button>{u.status==='pending_approval'&&<><Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-emerald-600" title="Approve" disabled={busyId===u.id} onClick={()=>changeStatus(u,'approve')}><CheckCircle2 className="h-4 w-4"/></Button><Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-red-500" title="Reject" disabled={busyId===u.id} onClick={()=>changeStatus(u,'reject')}><XCircle className="h-4 w-4"/></Button></>}{u.status==='active'&&<Button size="icon" variant="ghost" className="h-8 w-8 rounded-none text-slate-500" title="Deactivate" disabled={busyId===u.id} onClick={()=>changeStatus(u,'deactivate')}><UserX className="h-4 w-4"/></Button>}</div></td></tr>)}</tbody></table></div>}
+    <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500 flex flex-wrap gap-x-5 gap-y-1"><span className="flex items-center gap-1"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600"/> User access is capped by the company's purchased license.</span><span className="flex items-center gap-1"><Building2 className="h-3.5 w-3.5 text-[#1F6FB2]"/> {company?.name||'Licensed company'}</span><span className="flex items-center gap-1"><CalendarDays className="h-3.5 w-3.5"/> Shared master data for all modules.</span></div>
+    <Dialog open={!!(editing||form!==EMPTY)} onOpenChange={open=>{if(!open){setEditing(null);setForm(EMPTY)}}}><DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto rounded-none"><DialogHeader><DialogTitle>{editing?`Edit User — ${editing.full_name}`:'Add Company User'}</DialogTitle><DialogDescription>{editing?'Update the shared company user record. Module access remains capped by the active license.':'Create a user in the company master. The new account starts as Pending Approval.'}</DialogDescription></DialogHeader>
+      <div className="space-y-5"><div className="grid grid-cols-1 md:grid-cols-3 gap-3"><Field label="Full Name *"><Input className="rounded-none" value={form.full_name} onChange={e=>set('full_name',e.target.value)}/></Field><Field label="Email *"><Input className="rounded-none" type="email" value={form.email} onChange={e=>set('email',e.target.value)}/></Field><Field label={editing?'New Password (optional)':'Password *'}><Input className="rounded-none" type="password" value={form.password} onChange={e=>set('password',e.target.value)}/></Field><Field label="Role"><Select value={form.role} onValueChange={v=>set('role',v)}><SelectTrigger className="rounded-none"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="staff">User / Staff</SelectItem><SelectItem value="manager">Manager</SelectItem></SelectContent></Select></Field><Field label="Phone"><Input className="rounded-none" value={form.phone} onChange={e=>set('phone',e.target.value)}/></Field><Field label="Birthday"><Input className="rounded-none" type="date" value={form.birthday||''} onChange={e=>set('birthday',e.target.value)}/></Field></div>
+      <div className="border border-slate-200 p-4 space-y-3"><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Employment &amp; Organisation</div><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><Field label="Employee Code"><Input className="rounded-none" value={form.employee_code} onChange={e=>set('employee_code',e.target.value)}/></Field><Field label="Designation"><Input className="rounded-none" value={form.designation} onChange={e=>set('designation',e.target.value)}/></Field><Field label="Department"><Input className="rounded-none" value={form.department_id} onChange={e=>set('department_id',e.target.value)} placeholder="Department / ID"/></Field><Field label="Reporting Manager"><Select value={form.reporting_manager_id||'__none__'} onValueChange={v=>set('reporting_manager_id',v==='__none__'?'':v)}><SelectTrigger className="rounded-none"><SelectValue placeholder="Select manager"/></SelectTrigger><SelectContent><SelectItem value="__none__">None</SelectItem>{managers.filter(m=>m.id!==editing?.id).map(m=><SelectItem key={m.id} value={m.id}>{m.full_name||m.email}</SelectItem>)}</SelectContent></Select></Field><Field label="Employment Type"><Select value={form.employment_type||'__none__'} onValueChange={v=>set('employment_type',v==='__none__'?'':v)}><SelectTrigger className="rounded-none"><SelectValue placeholder="Select type"/></SelectTrigger><SelectContent><SelectItem value="__none__">Not set</SelectItem>{['full_time','part_time','contract','intern'].map(v=><SelectItem key={v} value={v}>{v.replace('_',' ')}</SelectItem>)}</SelectContent></Select></Field><Field label="Grade"><Input className="rounded-none" value={form.grade} onChange={e=>set('grade',e.target.value)}/></Field><Field label="Cost Centre"><Input className="rounded-none" value={form.cost_centre} onChange={e=>set('cost_centre',e.target.value)}/></Field><Field label="Monthly Salary (₹)"><Input className="rounded-none" type="number" value={form.monthly_salary} onChange={e=>set('monthly_salary',e.target.value)}/></Field></div><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><Field label="Joining Date"><Input className="rounded-none" type="date" value={form.joining_date||''} onChange={e=>set('joining_date',e.target.value)}/></Field><Field label="Training / Probation End"><Input className="rounded-none" type="date" value={form.training_period_end||''} onChange={e=>set('training_period_end',e.target.value)}/></Field><Field label="Confirmation Date"><Input className="rounded-none" type="date" value={form.confirmation_date||''} onChange={e=>set('confirmation_date',e.target.value)}/></Field><Field label="Payroll Date"><Input className="rounded-none" type="date" value={form.payroll_date||''} onChange={e=>set('payroll_date',e.target.value)}/></Field></div></div>
+      <div className="border border-slate-200 p-4 space-y-3"><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Attendance &amp; Statutory Details</div><div className="grid grid-cols-1 md:grid-cols-4 gap-3"><Field label="Punch In"><Input className="rounded-none" type="time" value={form.punch_in_time} onChange={e=>set('punch_in_time',e.target.value)}/></Field><Field label="Grace Time"><Input className="rounded-none" value={form.grace_time} onChange={e=>set('grace_time',e.target.value)} placeholder="00:10"/></Field><Field label="Punch Out"><Input className="rounded-none" type="time" value={form.punch_out_time} onChange={e=>set('punch_out_time',e.target.value)}/></Field><Field label="PAN"><Input className="rounded-none" value={form.pan_number} onChange={e=>set('pan_number',e.target.value)}/></Field><Field label="Aadhaar"><Input className="rounded-none" value={form.aadhaar_number} onChange={e=>set('aadhaar_number',e.target.value)}/></Field><Field label="UAN"><Input className="rounded-none" value={form.uan_number} onChange={e=>set('uan_number',e.target.value)}/></Field><Field label="PF Number"><Input className="rounded-none" value={form.pf_number} onChange={e=>set('pf_number',e.target.value)}/></Field><Field label="ESIC Number"><Input className="rounded-none" value={form.esic_number} onChange={e=>set('esic_number',e.target.value)}/></Field></div></div>
+      <div className="border border-slate-200 p-4 space-y-3"><div className="text-xs font-bold uppercase tracking-wider text-slate-500">Bank Details</div><div className="grid grid-cols-1 md:grid-cols-3 gap-3"><Field label="Bank Account Number"><Input className="rounded-none" value={form.bank_account_number} onChange={e=>set('bank_account_number',e.target.value)}/></Field><Field label="Bank Name"><Input className="rounded-none" value={form.bank_name} onChange={e=>set('bank_name',e.target.value)}/></Field><Field label="IFSC Code"><Input className="rounded-none" value={form.ifsc_code} onChange={e=>set('ifsc_code',e.target.value)}/></Field></div></div></div>
+      <DialogFooter><Button variant="outline" className="rounded-none" onClick={()=>{setEditing(null);setForm(EMPTY)}}>Cancel</Button><Button className="rounded-none bg-[#0D3B66] hover:bg-[#0D3B66]" onClick={save} disabled={saving}>{saving?<Loader2 className="h-4 w-4 mr-2 animate-spin"/>:null}{editing?'Save User':'Create User'}</Button></DialogFooter>
+    </DialogContent></Dialog>
+  </section>;
 }
