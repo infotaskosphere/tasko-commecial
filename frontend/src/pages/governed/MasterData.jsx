@@ -33,7 +33,14 @@ export default function MasterData(){
  return <PageShell className="master-data-page-shell">
    <PageBanner icon={Database} eyebrow="Admin" title="Master Data" subtitle="One place for company profiles, clients, users and the shared reference lists every other module reads from."/>
    <StatRow items={[{icon:Building2,label:'Company profiles',value:companyCount??'—',color:HUB_COLORS.mediumBlue},{icon:ListTree,label:'Reference entries',value:items.length,color:'#7C3AED'},{icon:Check,label:'Active',value:active,color:HUB_COLORS.emeraldGreen},{icon:Archive,label:'Archived',value:items.length-active,color:'#F59E0B'}]}/>
-   <SectionCard icon={Building2} title="Company Profiles" badge={companyCount??undefined} description="The shared company master. Company records created or edited here remain the same company records used by Quotations, Invoicing, Trademark Sphere, WhatsApp/Email settings and GST Portal Sync."><CompanyProfilesList/></SectionCard>
+
+   {/* CompanyProfilesList already owns the Company Profiles header, actions and list.
+       Do not wrap it in another SectionCard: the previous nested card produced the
+       duplicated title and the solid blue/white bar visible in production. */}
+   <div className="master-data-company-section">
+     <CompanyProfilesList/>
+   </div>
+
    <MasterDataClientManager/>
    {platformOwner ? <div id="users"><PlatformUserManager companies={companies}/></div> : <div id="users"><CompanyUserManager/></div>}
    <ReferenceData items={items} loading={loading} reload={load} categories={categories}/>
