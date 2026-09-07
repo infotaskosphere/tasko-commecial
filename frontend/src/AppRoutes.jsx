@@ -77,6 +77,23 @@ const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
+
+function LicensedDashboardHome() {
+  const { user, loading } = useAuth();
+  if (loading) return <AuthLoading />;
+  const isInternalAdmin = user?.role?.toLowerCase() === 'admin' && !user?.company_id;
+  if (isInternalAdmin || user?.permissions?.can_access_taskosphere === true) return <Dashboard />;
+  const fallbacks = [
+    ['can_access_finix', '/finix-dashboard'],
+    ['can_access_compliance', '/compliance-dashboard'],
+    ['can_access_records', '/records-dashboard'],
+    ['can_access_proposals', '/client-proposals-dashboard'],
+    ['can_access_people_matrix', '/people-matrix'],
+  ];
+  const destination = fallbacks.find(([flag]) => user?.permissions?.[flag] === true)?.[1];
+  return <Navigate to={destination || '/login'} replace />;
+}
+
 function ProtectedLayout() {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -108,7 +125,7 @@ export default function AppRoutes() {
     <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
     <Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard /></PageTransition>} />
     <Route element={<ProtectedLayout />}>
-      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/dashboard" element={<LicensedDashboardHome />} />
       <Route path="/tasks" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_tasks"><Tasks /></PageGuard></ModuleGate>} />
       <Route path="/todos" element={<ModuleGate module="taskosphere"><PageGuard module="taskosphere" page="can_view_todo_dashboard"><TodoDashboard /></PageGuard></ModuleGate>} />
       <Route path="/todo" element={<Navigate to="/todos" replace />} />
