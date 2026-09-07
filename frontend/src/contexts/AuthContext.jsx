@@ -6,6 +6,15 @@ const AuthContext = createContext(null);
 export const useAuth = () => { const context = useContext(AuthContext); if (!context) throw new Error("useAuth must be used within an AuthProvider"); return context; };
 const isKeepSignedIn = () => localStorage.getItem('taskosphere_keep_signed_in') === 'true';
 
+const COMMERCIAL_MODULE_FLAGS = new Set([
+  "can_access_taskosphere",
+  "can_access_finix",
+  "can_access_compliance",
+  "can_access_records",
+  "can_access_proposals",
+  "can_access_people_matrix",
+]);
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -67,8 +76,6 @@ export const AuthProvider = ({ children }) => {
         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
         const meRes = await api.get("/auth/me");
         const freshUser = normalizeTenantContext(meRes.data);
-        // /auth/me is already the authoritative user/permission payload.
-        // Do not make session restore dependent on a second endpoint.
         const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
         storage.setItem("user", JSON.stringify(freshUser));
         setUser(freshUser);
@@ -97,8 +104,6 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
-    // Tear down local auth FIRST. This immediately unmounts protected pages,
-    // preventing dashboard effects from issuing 403 requests during logout.
     window.__STOP_ACTIVITY__ = true;
     resetAgentAuth();
     clearStorage();
@@ -106,7 +111,6 @@ export const AuthProvider = ({ children }) => {
     try {
       if (sessionToken) await api.post("/auth/logout", { session_token: sessionToken }, { _silent: true, _skipReadyGate: true });
     } catch (error) {
-      // Server-side session revocation is best-effort after local sign-out.
       console.warn("Session revoke on logout failed (non-fatal).", error);
     }
   };
@@ -121,8 +125,19 @@ export const AuthProvider = ({ children }) => {
     } catch (error) { console.error("Failed to refresh user:", error); }
   }, []);
 
-  const hasPermission = (permission) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false; };
-  const hasAnyPermission = (...permissionList) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; return permissionList.some(p => user.permissions?.[p] === true); };
+  const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id;
+  const hasPermission = (permission) => {
+    if (!user) return false;
+    if (isCommercialAdmin()) {
+      // Commercial admins have full page/action access only inside purchased
+      // modules. Module flags themselves are the license entitlement gates.
+      if (COMMERCIAL_MODULE_FLAGS.has(permission)) return user.permissions?.[permission] === true;
+      return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : true;
+    }
+    if (user.role?.toLowerCase() === "admin") return true;
+    return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
+  };
+  const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
   const canAccessUser = (permissionKey, targetUserId) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; const allowedIds = (user.permissions || {})[permissionKey]; return Array.isArray(allowedIds) && allowedIds.includes(targetUserId); };
   const isOwner = (ownerId) => !!user && ownerId === user.id;
 
