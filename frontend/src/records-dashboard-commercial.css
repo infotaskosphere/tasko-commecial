@@ -1,0 +1,212 @@
+/* Records Dashboard: isolated card treatment.
+   These rules deliberately do not use the shared dark-blue card surfaces for
+   panel bodies. The panel header is the only strong visual surface; content
+   stays readable and is never clipped by an inherited fixed-height/overflow rule. */
+.records-dashboard-root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  box-sizing: border-box;
+  overflow: visible;
+  padding-bottom: 2rem;
+}
+
+.records-dashboard-panel {
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  height: auto !important;
+  max-height: none !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden !important;
+  box-sizing: border-box;
+  border: 1px solid #dbe3ea !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  color: #172033;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 6%);
+}
+
+.records-dashboard-panel-header {
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  background: #fff !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-bottom: 1px solid #e5eaf0 !important;
+  color: #172033 !important;
+  overflow: visible !important;
+}
+
+.records-dashboard-panel-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+}
+
+.records-dashboard-panel-title {
+  margin: 0;
+  color: #172033 !important;
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.records-dashboard-panel-subtitle {
+  margin: 3px 0 0;
+  color: #64748b !important;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.records-dashboard-panel-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0 !important;
+  background: transparent !important;
+  color: #2563eb !important;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 800;
+  white-space: nowrap;
+  padding: 4px 0;
+  cursor: pointer;
+  box-shadow: none !important;
+}
+
+.records-dashboard-panel-action:hover {
+  color: #1d4ed8 !important;
+  background: transparent !important;
+}
+
+.records-dashboard-panel-body {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 68px;
+  height: auto !important;
+  max-height: none !important;
+  box-sizing: border-box;
+  padding: 8px !important;
+  background: #fff !important;
+  background-image: none !important;
+  color: #334155 !important;
+  overflow: visible !important;
+  position: relative;
+  z-index: 1;
+}
+
+.records-dashboard-panel-body > * {
+  max-width: 100%;
+}
+
+.records-dashboard-panel-body .text-slate-500 {
+  color: #64748b !important;
+}
+
+.records-dashboard-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 68px;
+  margin: 0;
+  padding: 20px 12px;
+  box-sizing: border-box;
+  color: #64748b !important;
+  background: #fff !important;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.records-dashboard-approval-empty {
+  min-height: 68px;
+  padding: 18px 12px;
+  box-sizing: border-box;
+  text-align: center;
+  background: #fff !important;
+}
+
+.records-dashboard-bar {
+  width: 100%;
+  min-height: 50px;
+  padding: 9px 12px;
+  box-sizing: border-box;
+  background: #fff !important;
+}
+
+.records-dashboard-panel-body .records-dashboard-bar + .records-dashboard-bar {
+  border-top: 1px solid #f1f5f9;
+}
+
+.records-dashboard-panel-dark {
+  background: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e2e8f0;
+}
+
+.records-dashboard-panel-dark .records-dashboard-panel-header {
+  background: #1e293b !important;
+  border-bottom-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+.records-dashboard-panel-dark .records-dashboard-panel-title {
+  color: #f8fafc !important;
+}
+
+.records-dashboard-panel-dark .records-dashboard-panel-subtitle {
+  color: #94a3b8 !important;
+}
+
+.records-dashboard-panel-dark .records-dashboard-panel-body,
+.records-dashboard-panel-dark .records-dashboard-empty,
+.records-dashboard-panel-dark .records-dashboard-approval-empty,
+.records-dashboard-panel-dark .records-dashboard-bar {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+}
+
+.records-dashboard-panel-dark .records-dashboard-panel-body .records-dashboard-bar + .records-dashboard-bar {
+  border-top-color: #1e293b;
+}
+
+.records-dashboard-root .grid {
+  min-width: 0;
+}
+
+.records-dashboard-root .grid > * {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .records-dashboard-panel-header {
+    min-height: 60px;
+    padding: 11px 13px;
+  }
+
+  .records-dashboard-panel-title,
+  .records-dashboard-panel-subtitle {
+    white-space: normal;
+  }
+}
