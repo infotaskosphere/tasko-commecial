@@ -5,9 +5,10 @@ import "./App.css";
 import "./enterprise-design.css";
 // Explicit extensions for Vite
 import App from "./App.jsx";
-// Install permission-aware and commercial workflow request guards before the application mounts.
+// Install permission-aware, commercial workflow, and compatibility request guards before the application mounts.
 import "./lib/permissionRequestGuard.js";
 import "./lib/commercialStaffGuard.js";
+import "./lib/profileUpdateCompat.js";
 
 /**
  * Taskosphere - Main Entry Point
