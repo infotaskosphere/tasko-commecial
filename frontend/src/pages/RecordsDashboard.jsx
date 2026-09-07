@@ -61,45 +61,38 @@ const fmtDate = (d) => {
 
 function Panel({ title, subtitle, icon: Icon, color, isDark, action, onAction, children }) {
   return (
-    <section
-      className={`rounded-2xl border overflow-hidden ${
-        isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100 shadow-sm'
-      }`}
-    >
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-inherit">
+    <section className={`records-dashboard-panel ${isDark ? 'records-dashboard-panel-dark' : ''}`}>
+      <header className="records-dashboard-panel-header">
         {Icon && (
-          <div className="p-2 rounded-lg shrink-0" style={{ background: `${color}18` }}>
+          <div className="records-dashboard-panel-icon" style={{ background: `${color}18` }}>
             <Icon className="h-4 w-4" style={{ color }} />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <h3 className={`text-sm font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{title}</h3>
-          {subtitle && <p className="text-[11px] text-slate-500 truncate">{subtitle}</p>}
+          <h3 className="records-dashboard-panel-title">{title}</h3>
+          {subtitle && <p className="records-dashboard-panel-subtitle">{subtitle}</p>}
         </div>
         {action && (
-          <button
-            onClick={onAction}
-            className="text-[11px] font-bold text-blue-500 hover:text-blue-600 inline-flex items-center gap-1 shrink-0"
-          >
+          <button onClick={onAction} className="records-dashboard-panel-action">
             {action} <ArrowRight className="h-3 w-3" />
           </button>
         )}
       </header>
-      <div className="p-2">{children}</div>
+      <div className="records-dashboard-panel-body">{children}</div>
     </section>
   );
 }
 
 function EmptyRow({ text, isDark }) {
   return (
-    <p className={`px-3 py-6 text-center text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{text}</p>
+    <p className={`records-dashboard-empty ${isDark ? 'records-dashboard-empty-dark' : ''}`}>{text}</p>
   );
 }
 
 function Bar({ label, value, max, color, isDark }) {
   const pct = max > 0 ? Math.max(4, Math.round((value / max) * 100)) : 0;
   return (
-    <div className="px-3 py-2">
+    <div className="records-dashboard-bar">
       <div className="flex items-center justify-between mb-1.5">
         <span className={`text-xs font-semibold truncate pr-2 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{label}</span>
         <span className="text-xs font-extrabold shrink-0" style={{ color }}>{value}</span>
@@ -134,14 +127,6 @@ export default function RecordsDashboard() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      // Vault credentials count.
-      // The dashboard only needs a NUMBER, so ask the cheap aggregate
-      // endpoint (/passwords/stats -> { total }) first. Older/rolling
-      // backend deployments that do not serve the collection route answered
-      // `GET /api/passwords?limit=500` with a 404, which spammed the console
-      // and left this tile blank. Fall back to the collection (and finally to
-      // a neutral empty payload) so a missing route can never surface as an
-      // uncaught 404 on the Records dashboard.
       const passwordsCountRequest = api
         .get('/passwords/stats', { _silent: true })
         .catch(() =>
@@ -187,7 +172,6 @@ export default function RecordsDashboard() {
 
   const fmt = (v) => (v === null || v === undefined ? '—' : v);
 
-  /* Derived, actionable slices */
   const dscInsight = useMemo(() => {
     const withDays = dscList
       .map((d) => ({ ...d, _days: daysLeft(d.expiry_date) }))
@@ -229,7 +213,7 @@ export default function RecordsDashboard() {
   }`;
 
   return (
-    <div className="pb-4">
+    <div className={`records-dashboard-root pb-4 ${isDark ? 'records-dashboard-root-dark' : ''}`}>
       <HubBanner
         icon={Archive}
         eyebrow="Records"
@@ -239,7 +223,6 @@ export default function RecordsDashboard() {
         stats={stats}
       />
 
-      {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard icon={AlertTriangle} label="DSC Expired" value={loading ? '' : dscInsight.expired.length} loading={loading} color="#EF4444" isDark={isDark} />
         <StatCard icon={Clock} label="DSC Expiring ≤30d" value={loading ? '' : dscInsight.expiring30.length} loading={loading} color="#F59E0B" isDark={isDark} />
@@ -254,17 +237,8 @@ export default function RecordsDashboard() {
         <StatCard icon={KeyRound} label="Vault Credentials" value={fmt(counts.passwords)} loading={loading} color="#7C3AED" isDark={isDark} />
       </div>
 
-      {/* Data panels */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
-        <Panel
-          title="DSCs needing attention"
-          subtitle="Soonest expiry first"
-          icon={AlertTriangle}
-          color="#EF4444"
-          isDark={isDark}
-          action="DSC Register"
-          onAction={() => navigate('/dsc')}
-        >
+        <Panel title="DSCs needing attention" subtitle="Soonest expiry first" icon={AlertTriangle} color="#EF4444" isDark={isDark} action="DSC Register" onAction={() => navigate('/dsc')}>
           {loading ? (
             <EmptyRow text="Loading…" isDark={isDark} />
           ) : dscInsight.soon.length === 0 ? (
@@ -278,12 +252,8 @@ export default function RecordsDashboard() {
                 <div key={d.id || i} className={rowBase}>
                   <div className="w-1.5 h-8 rounded-full shrink-0" style={{ background: color }} />
                   <div className="min-w-0 flex-1">
-                    <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
-                      {d.holder_name || 'Unnamed holder'}
-                    </p>
-                    <p className="text-[11px] text-slate-500 truncate">
-                      {[d.client_name, d.certificate_type, fmtDate(d.expiry_date)].filter(Boolean).join(' · ')}
-                    </p>
+                    <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{d.holder_name || 'Unnamed holder'}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{[d.client_name, d.certificate_type, fmtDate(d.expiry_date)].filter(Boolean).join(' · ')}</p>
                   </div>
                   <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0" style={{ background: `${color}18`, color }}>
                     {overdue ? `${Math.abs(d._days)}d overdue` : `${d._days}d left`}
@@ -294,15 +264,7 @@ export default function RecordsDashboard() {
           )}
         </Panel>
 
-        <Panel
-          title="Recent documents"
-          subtitle="Latest entries in the register"
-          icon={Archive}
-          color="#F59E0B"
-          isDark={isDark}
-          action="Document Register"
-          onAction={() => navigate('/documents')}
-        >
+        <Panel title="Recent documents" subtitle="Latest entries in the register" icon={Archive} color="#F59E0B" isDark={isDark} action="Document Register" onAction={() => navigate('/documents')}>
           {loading ? (
             <EmptyRow text="Loading…" isDark={isDark} />
           ) : docInsight.recent.length === 0 ? (
@@ -310,86 +272,53 @@ export default function RecordsDashboard() {
           ) : (
             docInsight.recent.map((d, i) => (
               <div key={d.id || i} className={rowBase}>
-                <div className="p-1.5 rounded-lg shrink-0" style={{ background: '#F59E0B18' }}>
-                  <FileText className="h-3.5 w-3.5" style={{ color: '#F59E0B' }} />
-                </div>
+                <div className="p-1.5 rounded-lg shrink-0" style={{ background: '#F59E0B18' }}><FileText className="h-3.5 w-3.5" style={{ color: '#F59E0B' }} /></div>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
-                    {d.document_type || 'Document'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {[d.holder_name, d.associated_with, d.current_location].filter(Boolean).join(' · ') || '—'}
-                  </p>
+                  <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{d.document_type || 'Document'}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{[d.holder_name, d.associated_with, d.current_location].filter(Boolean).join(' · ') || '—'}</p>
                 </div>
                 {d.current_status && (
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                    isDark ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {d.current_status}
-                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isDark ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-600'}`}>{d.current_status}</span>
                 )}
               </div>
             ))
           )}
         </Panel>
 
-        <Panel
-          title="Clients awaiting approval"
-          subtitle="Added by the team, pending admin sign-off"
-          icon={UserPlus}
-          color="#EC4899"
-          isDark={isDark}
-          action="Review"
-          onAction={() => navigate('/client-approvals')}
-        >
+        <Panel title="Clients awaiting approval" subtitle="Added by the team, pending admin sign-off" icon={UserPlus} color="#EC4899" isDark={isDark} action="Review" onAction={() => navigate('/client-approvals')}>
           {loading ? (
             <EmptyRow text="Loading…" isDark={isDark} />
           ) : pendingList.length === 0 ? (
-            <div className="px-3 py-6 text-center">
+            <div className="records-dashboard-approval-empty">
               <CheckCircle2 className="h-5 w-5 mx-auto mb-2 text-emerald-500" />
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>All clients are approved.</p>
             </div>
           ) : (
             pendingList.slice(0, 6).map((c, i) => (
               <div key={c.id || i} className={rowBase}>
-                <div className="p-1.5 rounded-lg shrink-0" style={{ background: '#EC489918' }}>
-                  <Users className="h-3.5 w-3.5" style={{ color: '#EC4899' }} />
-                </div>
+                <div className="p-1.5 rounded-lg shrink-0" style={{ background: '#EC489918' }}><Users className="h-3.5 w-3.5" style={{ color: '#EC4899' }} /></div>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
-                    {c.company_name || 'Unnamed client'}
-                  </p>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {[c.client_type, fmtDate(c.created_at)].filter(Boolean).join(' · ')}
-                  </p>
+                  <p className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{c.company_name || 'Unnamed client'}</p>
+                  <p className="text-[11px] text-slate-500 truncate">{[c.client_type, fmtDate(c.created_at)].filter(Boolean).join(' · ')}</p>
                 </div>
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-700">
-                  Pending
-                </span>
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0 bg-amber-100 text-amber-700">Pending</span>
               </div>
             ))
           )}
         </Panel>
       </div>
 
-      {/* Distributions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <Panel title="Document status mix" subtitle="Where every registered document stands" icon={TrendingUp} color={HUB_COLORS.mediumBlue} isDark={isDark}>
           {docInsight.statuses.length === 0
             ? <EmptyRow text={loading ? 'Loading…' : 'No status data yet.'} isDark={isDark} />
-            : docInsight.statuses.map(([label, value]) => (
-                <Bar key={label} label={label} value={value} max={maxStatus} color={HUB_COLORS.mediumBlue} isDark={isDark} />
-              ))}
+            : docInsight.statuses.map(([label, value]) => <Bar key={label} label={label} value={value} max={maxStatus} color={HUB_COLORS.mediumBlue} isDark={isDark} />)}
         </Panel>
-
         <Panel title="Document locations" subtitle="Top physical locations in use" icon={MapPin} color="#0EA5E9" isDark={isDark}>
           {docInsight.locations.length === 0
             ? <EmptyRow text={loading ? 'Loading…' : 'No location data yet.'} isDark={isDark} />
-            : docInsight.locations.map(([label, value]) => (
-                <Bar key={label} label={label} value={value} max={maxLoc} color="#0EA5E9" isDark={isDark} />
-              ))}
+            : docInsight.locations.map(([label, value]) => <Bar key={label} label={label} value={value} max={maxLoc} color="#0EA5E9" isDark={isDark} />)}
         </Panel>
-
         <Panel title="DSC health" subtitle="Certificate validity spread" icon={ShieldCheck} color={HUB_COLORS.emeraldGreen} isDark={isDark}>
           {loading ? (
             <EmptyRow text="Loading…" isDark={isDark} />
@@ -404,18 +333,12 @@ export default function RecordsDashboard() {
         </Panel>
       </div>
 
-      <h2 className={`text-sm font-extrabold uppercase tracking-widest mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-        Record Modules
-      </h2>
+      <h2 className={`text-sm font-extrabold uppercase tracking-widest mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Record Modules</h2>
       {visibleModules.length === 0 ? (
-        <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          You don't have access to any record modules yet. Contact your admin to request access.
-        </p>
+        <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>You don't have access to any record modules yet. Contact your admin to request access.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {visibleModules.map((m) => (
-            <LinkCard key={m.path} {...m} badge={fmt(counts[m.countKey])} isDark={isDark} />
-          ))}
+          {visibleModules.map((m) => <LinkCard key={m.path} {...m} badge={fmt(counts[m.countKey])} isDark={isDark} />)}
         </div>
       )}
     </div>
