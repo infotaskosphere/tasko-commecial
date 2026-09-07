@@ -11,6 +11,11 @@ import os
 
 import uvicorn
 
+# Compatibility bootstrap MUST run before backend.server imports any routers.
+# It normalizes legacy admin role casing and stale admin permission documents
+# without granting any additional access to manager/staff users.
+import backend.admin_identity_compat  # noqa: F401,E402
+
 from backend.server import app
 from backend.licensing_api import create_licensing_indexes, router as licensing_router
 
