@@ -1,0 +1,334 @@
+/*
+ * Taskosphere commercial business UI layer.
+ *
+ * This is an additive visual layer: it does not remove routes, controls,
+ * modules, permissions, or existing brand assets. It standardises the shell
+ * across every authenticated page so the product reads like one enterprise
+ * business-management application.
+ */
+
+:root {
+  --biz-blue: #0D3B66;
+  --biz-blue-2: #1F6FB2;
+  --biz-border: #D8E1EA;
+  --biz-surface: #FFFFFF;
+  --biz-surface-muted: #F6F8FB;
+  --biz-text: #172033;
+  --biz-muted: #64748B;
+  --biz-control-h: 40px;
+  --biz-page-header-h: 76px;
+  --biz-gap: 14px;
+}
+
+/* -------------------------------------------------------------------------
+   Shell geometry
+   ------------------------------------------------------------------------- */
+#root main {
+  color: var(--biz-text);
+}
+
+#root main > div {
+  min-width: 0;
+}
+
+/* Replace soft, rounded card shells with precise business-software panels.
+   Keep tiny 4px corners on controls so the interface remains readable. */
+#root main .rounded-xs,
+#root main .rounded-sm,
+#root main .rounded-md,
+#root main .rounded-lg,
+#root main .rounded-xl,
+#root main .rounded-2xl,
+#root main .rounded-3xl {
+  border-radius: 4px !important;
+}
+
+#root main [class*="rounded-["] {
+  border-radius: 4px !important;
+}
+
+/* Pills/capsules are deliberately flattened. */
+#root main .rounded-full,
+#root main [class*="rounded-full"] {
+  border-radius: 2px !important;
+}
+
+/* Preserve circular avatars/status dots where the shape is semantic rather
+   than a UI container. */
+#root main img.rounded-full,
+#root main .rounded-full img,
+#root main .avatar.rounded-full,
+#root main [data-avatar].rounded-full,
+#root main [data-status-dot].rounded-full {
+  border-radius: 9999px !important;
+}
+
+/* Card-like surfaces: square border, restrained enterprise shadow. */
+#root main .bg-white.border,
+#root main .bg-white[class*="border-"],
+#root main .dark\\:bg-slate-800[class*="border-"],
+#root main [class*="bg-white"][class*="shadow"] {
+  border-radius: 4px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 5px 18px rgba(15, 23, 42, 0.045) !important;
+}
+
+/* No decorative rounded border on ordinary containers. */
+#root main [class*="border"][class*="rounded-"] {
+  border-radius: 4px !important;
+}
+
+/* -------------------------------------------------------------------------
+   Consistent page banner
+   ------------------------------------------------------------------------- */
+#root main::before {
+  content: var(--business-page-title, "Business Workspace");
+  display: block;
+  width: 100%;
+  min-height: var(--biz-page-header-h);
+  box-sizing: border-box;
+  margin: 0 0 var(--biz-gap) 0;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  background: linear-gradient(90deg, var(--biz-blue) 0%, var(--biz-blue-2) 100%);
+  border: 1px solid rgba(13, 59, 102, 0.18);
+  border-radius: 4px;
+  color: #FFFFFF;
+  font-size: clamp(1rem, 1.35vw, 1.25rem);
+  line-height: 1.25;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  box-shadow: 0 4px 14px rgba(13, 59, 102, 0.14);
+}
+
+/* Existing landing dashboards already have their own blue hero. Do not add a
+   second banner there. */
+body.biz-dashboard-home #root main::before,
+body.biz-dashboard-home #root main::before,
+body.biz-section-landing #root main::before,
+body.biz-master-console #root main::before {
+  display: none;
+}
+
+/* -------------------------------------------------------------------------
+   Tabs: one consistent two-line grid everywhere
+   ------------------------------------------------------------------------- */
+#root main [role="tablist"] {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  align-items: stretch;
+  gap: 1px;
+  padding: 2px;
+  background: #E2E8F0;
+  border: 1px solid #D8E1EA;
+  border-radius: 4px !important;
+  overflow: hidden;
+}
+
+#root main [role="tablist"] > * {
+  min-width: 0;
+}
+
+#root main [role="tab"] {
+  min-height: 48px !important;
+  height: 48px !important;
+  width: 100% !important;
+  padding: 6px 10px !important;
+  border-radius: 2px !important;
+  border: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+}
+
+/* Common non-Radix tab button groups also become equal two-line controls. */
+#root main [data-tabs="true"],
+#root main .tabs-list,
+#root main .tab-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  align-items: stretch;
+  gap: 1px;
+  padding: 2px;
+  background: #E2E8F0;
+  border: 1px solid #D8E1EA;
+  border-radius: 4px !important;
+}
+
+#root main [data-tabs="true"] > button,
+#root main .tabs-list > button,
+#root main .tab-list > button {
+  min-height: 48px;
+  height: 48px;
+  border-radius: 2px !important;
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------
+   Controls, badges, filters and form density
+   ------------------------------------------------------------------------- */
+#root main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+#root main select,
+#root main [role="combobox"] {
+  min-height: var(--biz-control-h);
+  border-radius: 4px !important;
+}
+
+#root main textarea {
+  border-radius: 4px !important;
+}
+
+#root main button {
+  border-radius: 4px !important;
+}
+
+#root main button[class*="rounded-full"] {
+  border-radius: 4px !important;
+}
+
+#root main [class*="badge"],
+#root main [data-badge] {
+  border-radius: 2px !important;
+}
+
+/* Keep hover motion subtle; remove the "floating card" feel. */
+#root main [class*="hover:scale"],
+#root main [class*="hover:-translate"],
+#root main [class*="active:scale"] {
+  transform: none !important;
+}
+
+/* -------------------------------------------------------------------------
+   Table consistency
+   ------------------------------------------------------------------------- */
+#root main table {
+  width: 100%;
+  table-layout: fixed;
+  border: 1px solid var(--biz-border);
+  background: var(--biz-surface);
+  border-radius: 4px !important;
+  overflow: hidden;
+}
+
+#root main thead th {
+  min-height: 40px;
+  height: 40px;
+  padding: 8px 10px;
+  background: #F1F5F9;
+  color: #475569;
+  border-bottom: 1px solid var(--biz-border);
+}
+
+#root main tbody td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #E8EDF3;
+}
+
+#root main tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* -------------------------------------------------------------------------
+   Dialogs/dropdowns
+   ------------------------------------------------------------------------- */
+#root [role="dialog"],
+#root [data-radix-dialog-content],
+#root [data-radix-popper-content-wrapper] > * {
+  border-radius: 4px !important;
+}
+
+/* -------------------------------------------------------------------------
+   Responsive behaviour
+   ------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  #root main::before {
+    min-height: 64px;
+    padding: 0 16px;
+  }
+
+  #root main [role="tablist"],
+  #root main [data-tabs="true"],
+  #root main .tabs-list,
+  #root main .tab-list {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  }
+
+  #root main [role="tab"] {
+    min-height: 46px !important;
+    height: 46px !important;
+    font-size: 11px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  #root main::before {
+    min-height: 58px;
+    margin-bottom: 10px;
+    padding: 0 12px;
+    font-size: 1rem;
+  }
+
+  #root main [role="tablist"],
+  #root main [data-tabs="true"],
+  #root main .tabs-list,
+  #root main .tab-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #root main [role="tab"] {
+    min-height: 44px !important;
+    height: 44px !important;
+    padding: 5px 7px !important;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Commercial Console utility tab
+   ------------------------------------------------------------------------- */
+#root [data-commercial-console] {
+  position: fixed !important;
+  top: 64px !important;
+  right: 178px !important;
+  height: 40px !important;
+  min-width: 150px;
+  justify-content: center;
+  border: 0 !important;
+  border-left: 1px solid #E2E8F0 !important;
+  border-right: 1px solid #E2E8F0 !important;
+  background: #FFFFFF !important;
+  color: #0D3B66 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  z-index: 46 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+#root [data-commercial-console]:hover {
+  background: #F6F8FB !important;
+  color: #1F6FB2 !important;
+}
+
+@media (max-width: 1100px) {
+  #root [data-commercial-console] {
+    right: 170px !important;
+    min-width: 132px;
+  }
+}
+
+@media (max-width: 800px) {
+  #root [data-commercial-console] {
+    top: 104px !important;
+    right: 8px !important;
+    height: 36px !important;
+    min-width: 132px;
+    border: 1px solid #D8E1EA !important;
+  }
+}
