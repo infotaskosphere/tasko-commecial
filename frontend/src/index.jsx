@@ -4,6 +4,8 @@ import "./index.css";
 import "./App.css";
 // ✅ FIXED: Explicit extensions for Vite
 import App from "./App.jsx";
+// Install permission-aware request guards before the application mounts.
+import "./lib/permissionRequestGuard.js";
 
 /**
  * Taskosphere - Main Entry Point
