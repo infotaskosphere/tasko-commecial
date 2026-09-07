@@ -1,0 +1,88 @@
+/* Final commercial UI corrections.
+   This file is intentionally separate from the broad enterprise stylesheet so
+   future page-specific styling cannot accidentally restore the blue module bar.
+*/
+
+/* The module switcher keeps the original multi-colour identity of each product.
+   It is NOT a single blue navigation strip. */
+body:not(.website-surface) #root header + div{
+  background:#fff!important;
+  color:#172033!important;
+  border-top:1px solid #e2e8f0!important;
+  border-bottom:1px solid #d8e1ea!important;
+}
+
+body:not(.website-surface) #root header + div > button{
+  height:40px!important;
+  min-height:40px!important;
+  background:#fff!important;
+  border-radius:0!important;
+  border-bottom:2px solid transparent!important;
+  box-shadow:none!important;
+  font-weight:700!important;
+}
+
+/* Original module identity colours. */
+body:not(.website-surface) #root header + div > button:nth-of-type(1){color:#159447!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(2){color:#7c3aed!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(3){color:#f97316!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(4){color:#0f766e!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(5){color:#7c3aed!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(6){color:#2563eb!important}
+
+body:not(.website-surface) #root header + div > button:hover{
+  background:#f8fafc!important;
+  filter:none!important;
+}
+body:not(.website-surface) #root header + div > button:nth-of-type(1):hover{border-bottom-color:#159447!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(2):hover{border-bottom-color:#7c3aed!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(3):hover{border-bottom-color:#f97316!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(4):hover{border-bottom-color:#0f766e!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(5):hover{border-bottom-color:#7c3aed!important}
+body:not(.website-surface) #root header + div > button:nth-of-type(6):hover{border-bottom-color:#2563eb!important}
+
+/* Keep the right-side Admin / Settings controls neutral and square. */
+body:not(.website-surface) #root header + div > div:last-child{
+  background:#fff!important;
+  border-left:1px solid #e2e8f0!important;
+}
+body:not(.website-surface) #root header + div > div:last-child button{
+  height:40px!important;
+  min-height:40px!important;
+  background:#fff!important;
+  color:#173f66!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+body:not(.website-surface) #root header + div > div:last-child button:hover{
+  background:#f8fafc!important;
+}
+
+/* Master Data remains a tenant-data page; don't let the global module bar
+   colour bleed into its company/client/user sections. */
+body:not(.website-surface) #root .master-data-page-shell .border-b,
+body:not(.website-surface) #root .master-data-page-shell .border-t{
+  border-color:#e2e8f0!important;
+}
+
+/* Square geometry for portal-rendered forms and dialogs, including components
+   mounted outside #root. */
+body:not(.website-surface) [role="dialog"],
+body:not(.website-surface) [role="dialog"] *,
+body:not(.website-surface) [data-radix-dialog-content],
+body:not(.website-surface) [data-radix-dialog-content] *,
+body:not(.website-surface) [data-floating-ui-portal] > *,
+body:not(.website-surface) [data-floating-ui-portal] > * *{
+  border-radius:0!important;
+}
+
+/* Consistent popup controls. */
+body:not(.website-surface) [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body:not(.website-surface) [role="dialog"] select,
+body:not(.website-surface) [role="dialog"] button:not([aria-label="Close"]),
+body:not(.website-surface) [data-radix-dialog-content] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+body:not(.website-surface) [data-radix-dialog-content] select,
+body:not(.website-surface) [data-radix-dialog-content] button:not([aria-label="Close"]){
+  min-height:40px!important;
+  height:40px!important;
+}
