@@ -26,7 +26,161 @@
 #root [role="dialog"],#root [data-radix-dialog-content],#root [data-radix-popper-content-wrapper]>*{border-radius:var(--biz-radius)!important}
 #root [data-commercial-console]{position:fixed!important;top:64px!important;right:178px!important;height:40px!important;min-width:150px;justify-content:center;border:0!important;border-left:1px solid #E2E8F0!important;border-right:1px solid #E2E8F0!important;background:#FFF!important;color:#0D3B66!important;box-shadow:none!important;border-radius:0!important;z-index:46!important;font-size:12px!important;font-weight:700!important}
 #root [data-commercial-console]:hover{background:#F6F8FB!important;color:#1F6FB2!important}
+
+/* -------------------------------------------------------------------------
+   APP CHROME: flat enterprise geometry + floating sidebar navigation.
+   This intentionally targets the shared application shell, not the public
+   website surface. Logos, colours, navigation order and functionality stay
+   unchanged. Cards remain square; sidebar items get separation/shadow so
+   they read as floating rectangular controls instead of pills.
+   ------------------------------------------------------------------------- */
+#root header,
+#root header *:not(img):not(svg):not(path),
+#root aside,
+#root aside *:not(img):not(svg):not(path),
+#root [role="dialog"],
+#root [role="dialog"] *,
+#root [data-radix-dialog-content],
+#root [data-radix-dialog-content] *,
+#root [data-radix-popper-content-wrapper] > *,
+#root [data-radix-popper-content-wrapper] > * *{
+  border-radius:0!important;
+}
+
+/* Keep human identity imagery circular; controls and containers stay square. */
+#root header img.rounded-full,
+#root header .rounded-full img,
+#root header [data-avatar],
+#root aside img.rounded-full,
+#root aside .rounded-full img,
+#root [role="dialog"] img.rounded-full,
+#root [data-radix-dialog-content] img.rounded-full{
+  border-radius:9999px!important;
+}
+
+/* Header: fixed 64px geometry, square utility controls, no pill-shaped toggle. */
+#root header{height:64px!important;min-height:64px!important;border-radius:0!important;backdrop-filter:blur(10px)}
+#root header button,
+#root header a,
+#root header [role="button"]{border-radius:0!important;box-shadow:none;transform:none!important}
+#root header button{min-height:36px}
+#root header .p-2{width:36px;height:36px;padding:0!important}
+#root header .w-8.sm\\:w-\[54px\]{width:54px!important;height:32px!important}
+#root header [data-user-menu] > button{height:40px!important;min-height:40px!important;padding-top:4px!important;padding-bottom:4px!important}
+#root header [data-user-menu] > button > div:first-child{width:30px!important;height:30px!important}
+#root header .rounded-full{border-radius:0!important}
+#root header .rounded-full > *{border-radius:0!important}
+#root header .rounded-full img,
+#root header [data-user-menu] img{border-radius:9999px!important}
+
+/* Top module/section bar: flat rectangular tabs with exact 40px height. */
+#root header + * [data-section-switcher],
+#root [data-section-switcher]{border-radius:0!important}
+#root [data-section-switcher] button,
+#root [data-section-switcher] a,
+#root nav button[aria-current],
+#root nav a[aria-current]{border-radius:0!important;min-height:40px!important;height:40px!important;box-shadow:none!important;transform:none!important}
+
+/* Sidebar itself remains the existing 280/80px shell. */
+#root aside{border-radius:0!important;box-shadow:10px 0 30px rgba(0,0,0,.22)!important}
+#root aside .sidebar-scroll{padding-top:10px!important;padding-bottom:10px!important}
+#root aside .sidebar-scroll > div > div.space-y-1{gap:4px!important}
+
+/* Floating sidebar tabs: every item is a square, separated rectangle with a
+   restrained shadow. Active items sit slightly above the sidebar surface. */
+#root aside .sidebar-scroll a{
+  min-height:40px!important;
+  height:40px!important;
+  margin:0!important;
+  padding-top:0!important;
+  padding-bottom:0!important;
+  border-radius:0!important;
+  border:1px solid transparent!important;
+  box-shadow:0 2px 7px rgba(0,0,0,.10)!important;
+  transition:background-color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease!important;
+}
+#root aside .sidebar-scroll a:hover{
+  transform:translateX(3px)!important;
+  box-shadow:0 4px 12px rgba(0,0,0,.16)!important;
+}
+#root aside .sidebar-scroll a[class*="bg-white/[0.09]"]{
+  border-color:rgba(255,255,255,.12)!important;
+  box-shadow:0 4px 14px rgba(0,0,0,.18)!important;
+}
+#root aside .sidebar-scroll a > span.absolute{border-radius:0!important}
+#root aside .sidebar-scroll a .absolute.left-full{border-radius:0!important}
+#root aside > div:last-child{padding:10px!important}
+#root aside > div:last-child button{height:40px!important;min-height:40px!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important}
+
+/* Sidebar section labels/dividers remain flat and aligned to the same grid. */
+#root aside .sidebar-scroll p,
+#root aside .sidebar-scroll div[class*="border-t"]{border-radius:0!important}
+
+/* Popups, dropdowns, dialogs and their internal controls: square geometry,
+   consistent 40px controls, and a clean enterprise shadow. */
+#root [role="dialog"],
+#root [data-radix-dialog-content]{
+  border:1px solid #D8E1EA!important;
+  box-shadow:0 18px 50px rgba(15,23,42,.22)!important;
+}
+#root [role="dialog"] button,
+#root [role="dialog"] input,
+#root [role="dialog"] select,
+#root [role="dialog"] textarea,
+#root [role="dialog"] [role="tab"],
+#root [data-radix-dialog-content] button,
+#root [data-radix-dialog-content] input,
+#root [data-radix-dialog-content] select,
+#root [data-radix-dialog-content] textarea,
+#root [data-radix-dialog-content] [role="tab"]{
+  border-radius:0!important;
+}
+#root [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+#root [role="dialog"] select,
+#root [role="dialog"] button:not([aria-label="Close"]),
+#root [data-radix-dialog-content] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+#root [data-radix-dialog-content] select,
+#root [data-radix-dialog-content] button:not([aria-label="Close"]){
+  min-height:40px!important;
+  height:40px;
+}
+#root [role="dialog"] [role="tablist"],
+#root [data-radix-dialog-content] [role="tablist"]{border-radius:0!important;box-shadow:none!important}
+#root [role="dialog"] [role="tab"],
+#root [data-radix-dialog-content] [role="tab"]{min-height:40px!important;height:40px!important}
+
+/* Common dropdown/popup surfaces, including custom absolute menus. */
+#root [data-radix-popper-content-wrapper] > *,
+#root [data-radix-menu-content],
+#root [data-radix-select-content],
+#root [data-radix-dropdown-menu-content],
+#root [data-radix-popover-content],
+#root [data-user-menu] > div.absolute{
+  border-radius:0!important;
+  box-shadow:0 14px 34px rgba(15,23,42,.18)!important;
+}
+#root [data-radix-popper-content-wrapper] button,
+#root [data-radix-menu-content] button,
+#root [data-radix-dropdown-menu-content] button,
+#root [data-radix-select-content] button,
+#root [data-radix-popover-content] button,
+#root [data-user-menu] > div.absolute button{
+  border-radius:0!important;
+}
+
+/* Toasts and floating application widgets should use the same geometry. */
+#root [data-sonner-toaster] [data-sonner-toast],
+#root [data-sonner-toast],
+#root [data-floating-ui-portal] > *{border-radius:0!important}
+
+/* Never let generic rounded utility classes reintroduce capsules in the app
+   shell. Avatars/profile images are explicitly restored above. */
+#root:not(body.website-surface) [class*="rounded-"]{border-radius:0!important}
+#root:not(body.website-surface) img.rounded-full,
+#root:not(body.website-surface) [data-avatar] img,
+#root:not(body.website-surface) [data-user-menu] img{border-radius:9999px!important}
+
 @media(max-width:1100px){#root [data-commercial-console]{right:170px!important;min-width:132px}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
-@media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}}
+@media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}#root aside .sidebar-scroll a{height:40px!important;min-height:40px!important}}
 @media(max-width:800px){#root [data-commercial-console]{top:104px!important;right:8px!important;height:36px!important;min-width:132px;border:1px solid var(--biz-border)!important}}
 @media(max-width:640px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(2,minmax(0,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:44px!important;height:44px!important;padding:5px 7px!important}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto;width:100%}}
