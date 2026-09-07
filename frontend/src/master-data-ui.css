@@ -1,0 +1,54 @@
+/* Commercial app correction layer: preserve module identity colors while keeping the enterprise square geometry. */
+body:not(.website-surface) #root header + div,
+body:not(.website-surface) #root [data-section-switcher]{
+  background:#fff!important;
+  color:#334155!important;
+  height:40px!important;
+  min-height:40px!important;
+  border-bottom:1px solid #e2e8f0!important;
+}
+body:not(.website-surface) #root header + div button,
+body:not(.website-surface) #root header + div a,
+body:not(.website-surface) #root [data-section-switcher] button,
+body:not(.website-surface) #root [data-section-switcher] a{
+  background:transparent!important;
+  height:40px!important;
+  min-height:40px!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  font-weight:650!important;
+}
+/* Original module identity is restored as text/icon accents rather than a single blue strip. */
+body:not(.website-surface) #root header + div button:nth-child(1){color:#16824a!important}
+body:not(.website-surface) #root header + div button:nth-child(2){color:#6d28d9!important}
+body:not(.website-surface) #root header + div button:nth-child(3){color:#b45309!important}
+body:not(.website-surface) #root header + div button:nth-child(4){color:#0f766e!important}
+body:not(.website-surface) #root header + div button:nth-child(5){color:#7c3aed!important}
+body:not(.website-surface) #root header + div button:nth-child(6){color:#2563eb!important}
+body:not(.website-surface) #root header + div button:nth-child(7),
+body:not(.website-surface) #root header + div button:nth-child(8){color:#334155!important}
+body:not(.website-surface) #root header + div button:hover,
+body:not(.website-surface) #root [data-section-switcher] button:hover{background:#f6f8fb!important}
+body:not(.website-surface) #root header + div button.border-blue-600,
+body:not(.website-surface) #root [data-section-switcher] button.border-blue-600{background:#f8fafc!important}
+
+/* Shared master-data sections: square, compact and visually consistent. */
+#root .master-data-page-shell [class*="rounded-"]{border-radius:0!important}
+#root .master-data-page-shell [role="dialog"],
+#root .master-data-page-shell input,
+#root .master-data-page-shell select,
+#root .master-data-page-shell textarea,
+#root .master-data-page-shell button{border-radius:0!important}
+#root .master-data-page-shell input:not([type="checkbox"]):not([type="radio"]),
+#root .master-data-page-shell select,
+#root .master-data-page-shell [role="combobox"],
+#root .master-data-page-shell button:not([aria-label="Close"]){min-height:40px}
+#root .master-data-page-shell #clients,
+#root .master-data-page-shell #users{scroll-margin-top:120px}
+
+/* People Matrix and Master Data use the same square form geometry. */
+body:not(.website-surface) [data-radix-dialog-content],
+body:not(.website-surface) [role="dialog"]{border-radius:0!important}
+body:not(.website-surface) [data-radix-dialog-content] .rounded-xl,
+body:not(.website-surface) [data-radix-dialog-content] .rounded-2xl,
+body:not(.website-surface) [data-radix-dialog-content] .rounded-lg{border-radius:0!important}
