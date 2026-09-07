@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import "./App.css";
+import "./enterprise-design.css";
 // Explicit extensions for Vite
 import App from "./App.jsx";
 // Install permission-aware and commercial workflow request guards before the application mounts.
