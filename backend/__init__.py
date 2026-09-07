@@ -3,6 +3,12 @@
 # `uvicorn backend.server:app` instead of backend/run.py.
 import backend.admin_identity_compat  # noqa: F401
 
+# Commercial administrator accounts created before feature-level licensing may
+# not have the current module/page flags persisted. Hydrate them from the
+# active commercial license before installing the API entitlement guard.
+import backend.commercial_admin_permission_compat as _commercial_admin_permission_compat
+_commercial_admin_permission_compat.install()
+
 # Install the commercial tenant module cap before route modules import
 # get_current_user. Internal admins remain unrestricted; licensed company
 # accounts are denied at the API boundary when a request targets an unlicensed
@@ -12,7 +18,7 @@ _commercial_module_guard.install()
 
 # Load the commercial licensing extension before governed_modules registers the
 # legacy commercial router. The extension registers the same public prefix
-# first, so its feature-level licensing and invoice workflow take precedence.
+# first, so its feature-level licensing and invoice workflow takes precedence.
 import backend.commercial_onboarding_extensions  # noqa: F401
 
 # Compatibility shims must load before backend.server imports its routers.
@@ -44,3 +50,4 @@ class EnterpriseLicense:
             "status": "active",
             "expires_at": expires.isoformat()
         }
+    }
