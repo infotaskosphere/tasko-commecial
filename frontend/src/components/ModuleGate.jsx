@@ -2,17 +2,6 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 
-/**
- * Wraps a route element and only renders it if the current user's role has
- * the corresponding module master flag switched on. Admin always passes
- * (handled inside useAuth().hasPermission). Everyone else is bounced back to
- * /dashboard — the Dashboard route is intentionally left out of the module
- * hierarchy (see backend/permission_governance.py) so this can never create
- * a redirect loop.
- *
- * `module` must be one of the keys below, matching backend/permission_governance.py's
- * MODULE_HIERARCHY (note: "peopleMatrix" here maps to the backend's "people_matrix").
- */
 const MODULE_FLAGS = {
   taskosphere: 'can_access_taskosphere',
   finix: 'can_access_finix',
@@ -22,16 +11,26 @@ const MODULE_FLAGS = {
   peopleMatrix: 'can_access_people_matrix',
 };
 
+const MODULE_HOME = [
+  ['can_access_taskosphere', '/dashboard'],
+  ['can_access_finix', '/finix-dashboard'],
+  ['can_access_compliance', '/compliance-dashboard'],
+  ['can_access_records', '/records-dashboard'],
+  ['can_access_proposals', '/client-proposals-dashboard'],
+  ['can_access_people_matrix', '/people-matrix'],
+];
+
 function ModuleGate({ module, children }) {
   const { hasPermission } = useAuth();
-
   const flag = MODULE_FLAGS[module];
-  // Unknown module key — fail closed rather than silently granting access.
   const granted = flag ? hasPermission(flag) : false;
 
-  if (!granted) return <Navigate to="/dashboard" replace />;
+  if (granted) return children;
 
-  return children;
+  // Do not bounce a customer without Taskosphere back to /dashboard. Pick the
+  // first licensed module instead so a module-limited license never loops.
+  const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
+  return <Navigate to={fallback} replace />;
 }
 
 export default ModuleGate;
