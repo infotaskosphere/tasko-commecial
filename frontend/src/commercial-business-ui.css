@@ -2,7 +2,7 @@
  * Taskosphere commercial enterprise UI layer.
  * Visual-only: routes, features, permissions, branding and navigation remain
  * unchanged. Existing page-specific blue header cards are the single source
- * of truth for page headers; this layer must never generate a second header.
+ * of truth for page headers; this layer never generates a second header.
  */
 
 :root {
@@ -12,6 +12,7 @@
   --biz-text: #172033;
   --biz-muted: #64748B;
   --biz-control-h: 40px;
+  --biz-radius: 0px;
 }
 
 #root main,
@@ -23,7 +24,9 @@
   color: var(--biz-text);
 }
 
-/* Straight enterprise panels: remove the decorative/soft card curvature. */
+/* -------------------------------------------------------------------------
+   Square enterprise surfaces
+   ------------------------------------------------------------------------- */
 #root main .rounded-xs,
 #root main .rounded-sm,
 #root main .rounded-md,
@@ -32,15 +35,16 @@
 #root main .rounded-2xl,
 #root main .rounded-3xl,
 #root main [class*="rounded-["] {
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
-/* Flatten capsule UI while retaining genuinely circular avatars/status dots. */
+/* No capsule styling anywhere in the application. */
 #root main .rounded-full,
 #root main [class*="rounded-full"] {
-  border-radius: 2px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
+/* Preserve circular avatars/status dots because their shape is semantic. */
 #root main img.rounded-full,
 #root main .rounded-full img,
 #root main .avatar.rounded-full,
@@ -53,19 +57,20 @@
 #root main .bg-white[class*="border-"],
 #root main [class*="bg-white"][class*="shadow"],
 #root main [class*="border"][class*="rounded-"] {
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 5px 18px rgba(15, 23, 42, 0.045) !important;
 }
 
-/* IMPORTANT: do not create a synthetic main::before header. Every page keeps
-   its own existing blue header card, preventing the duplicate-header problem. */
+/* The old generated main::before banner caused duplicate page headers.
+   Existing page-specific blue header cards remain untouched except for the
+   square geometry above. */
 #root main::before {
   content: none !important;
   display: none !important;
 }
 
 /* -------------------------------------------------------------------------
-   Tabs — identical geometry everywhere
+   Tabs — equal dimensions, square, two-line-safe text
    ------------------------------------------------------------------------- */
 #root main [role="tablist"],
 #root main [data-tabs="true"],
@@ -78,7 +83,7 @@
   padding: 2px;
   background: #E2E8F0;
   border: 1px solid var(--biz-border);
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
   overflow: hidden;
 }
 
@@ -97,7 +102,7 @@
   height: 48px !important;
   width: 100% !important;
   padding: 6px 10px !important;
-  border-radius: 2px !important;
+  border-radius: var(--biz-radius) !important;
   border: 0 !important;
   display: flex !important;
   align-items: center !important;
@@ -117,18 +122,18 @@
 #root main select,
 #root main [role="combobox"] {
   min-height: var(--biz-control-h);
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
 #root main textarea,
 #root main button,
 #root main button[class*="rounded-full"] {
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
 #root main [class*="badge"],
 #root main [data-badge] {
-  border-radius: 2px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
 #root main [class*="hover:scale"],
@@ -145,7 +150,7 @@
   table-layout: fixed;
   border: 1px solid var(--biz-border);
   background: var(--biz-surface);
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
   overflow: hidden;
 }
 
@@ -167,11 +172,11 @@
   border-bottom: 0;
 }
 
-/* Dialogs and dropdowns use the same straight business geometry. */
+/* Dialogs and dropdowns use the same square business geometry. */
 #root [role="dialog"],
 #root [data-radix-dialog-content],
 #root [data-radix-popper-content-wrapper] > * {
-  border-radius: 4px !important;
+  border-radius: var(--biz-radius) !important;
 }
 
 /* -------------------------------------------------------------------------
@@ -208,16 +213,6 @@
   }
 }
 
-@media (max-width: 800px) {
-  #root [data-commercial-console] {
-    top: 104px !important;
-    right: 8px !important;
-    height: 36px !important;
-    min-width: 132px;
-    border: 1px solid var(--biz-border) !important;
-  }
-}
-
 @media (max-width: 900px) {
   #root main [role="tablist"],
   #root main [data-tabs="true"],
@@ -233,6 +228,16 @@
     min-height: 46px !important;
     height: 46px !important;
     font-size: 11px !important;
+  }
+}
+
+@media (max-width: 800px) {
+  #root [data-commercial-console] {
+    top: 104px !important;
+    right: 8px !important;
+    height: 36px !important;
+    min-width: 132px;
+    border: 1px solid var(--biz-border) !important;
   }
 }
 
