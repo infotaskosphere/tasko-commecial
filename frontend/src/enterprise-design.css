@@ -2,7 +2,7 @@
    This layer upgrades shared primitives without changing brand colours,
    navigation placement, logos, or feature behaviour. */
 
-.enterprise-ui {
+#root {
   --ui-header-height: 64px;
   --ui-section-height: 40px;
   --ui-sidebar-expanded: 280px;
@@ -14,43 +14,43 @@
   font-feature-settings: "cv11" 1, "ss01" 1;
 }
 
-.enterprise-ui *,
-.enterprise-ui *::before,
-.enterprise-ui *::after {
+#root *,
+#root *::before,
+#root *::after {
   min-width: 0;
 }
 
 /* Never let labels, navigation or data values visually escape their box. */
-.enterprise-ui h1,
-.enterprise-ui h2,
-.enterprise-ui h3,
-.enterprise-ui h4,
-.enterprise-ui h5,
-.enterprise-ui h6,
-.enterprise-ui p,
-.enterprise-ui label,
-.enterprise-ui th,
-.enterprise-ui td,
-.enterprise-ui button,
-.enterprise-ui a,
-.enterprise-ui span {
+#root h1,
+#root h2,
+#root h3,
+#root h4,
+#root h5,
+#root h6,
+#root p,
+#root label,
+#root th,
+#root td,
+#root button,
+#root a,
+#root span {
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
 /* Navigation is allowed to remain on one line, but gets clipped safely. */
-.enterprise-ui nav a,
-.enterprise-ui header a,
-.enterprise-ui [role="tab"],
-.enterprise-ui .whitespace-nowrap {
+#root nav a,
+#root header a,
+#root [role="tab"],
+#root .whitespace-nowrap {
   overflow-wrap: normal;
   word-break: normal;
 }
 
 /* Shared form-control geometry. Existing colour classes continue to win. */
-.enterprise-ui input,
-.enterprise-ui select,
-.enterprise-ui textarea {
+#root input,
+#root select,
+#root textarea {
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -59,32 +59,32 @@
   box-sizing: border-box;
 }
 
-.enterprise-ui input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-.enterprise-ui select {
+#root input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+#root select {
   min-height: var(--ui-control-height);
 }
 
-.enterprise-ui textarea {
+#root textarea {
   min-height: 96px;
   resize: vertical;
 }
 
-.enterprise-ui input:focus-visible,
-.enterprise-ui select:focus-visible,
-.enterprise-ui textarea:focus-visible,
-.enterprise-ui button:focus-visible,
-.enterprise-ui a:focus-visible {
+#root input:focus-visible,
+#root select:focus-visible,
+#root textarea:focus-visible,
+#root button:focus-visible,
+#root a:focus-visible {
   outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 
 /* Data tables: predictable rhythm and safe long-value behaviour. */
-.enterprise-ui table {
+#root table {
   border-collapse: separate;
   border-spacing: 0;
 }
 
-.enterprise-ui th {
+#root th {
   font-size: 0.6875rem;
   line-height: 1rem;
   letter-spacing: 0.055em;
@@ -92,88 +92,88 @@
   font-weight: 700;
 }
 
-.enterprise-ui td {
+#root td {
   vertical-align: middle;
   line-height: 1.35;
 }
 
-.enterprise-ui td > div,
-.enterprise-ui td > span,
-.enterprise-ui td > p {
+#root td > div,
+#root td > span,
+#root td > p {
   min-width: 0;
   max-width: 100%;
 }
 
-.enterprise-ui code,
-.enterprise-ui .font-mono {
+#root code,
+#root .font-mono {
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
 /* Keep common card grids from producing uneven children at intermediate zooms. */
-.enterprise-ui main [class*="grid"] > * {
+#root main [class*="grid"] > * {
   min-width: 0;
 }
 
 /* Shared card treatment for the app's existing white/slate cards. */
-.enterprise-ui main .border-slate-200.bg-white,
-.enterprise-ui main .border-slate-200\/80.bg-white {
+#root main .border-slate-200.bg-white,
+#root main .border-slate-200\/80.bg-white {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.035);
 }
 
 /* Keep modals usable at 90–200% browser zoom. */
-.enterprise-ui [role="dialog"],
-.enterprise-ui [data-radix-dialog-content] {
+#root [role="dialog"],
+#root [data-radix-dialog-content] {
   max-width: min(96vw, 1100px);
   max-height: min(92vh, 900px);
   overflow: auto;
 }
 
 /* Prevent fixed header/section switcher contents from pushing outside the viewport. */
-.enterprise-ui header,
-.enterprise-ui header > *,
-.enterprise-ui header nav,
-.enterprise-ui [data-section-switcher] {
+#root header,
+#root header > *,
+#root header nav,
+#root [data-section-switcher] {
   min-width: 0;
 }
 
-.enterprise-ui header nav {
+#root header nav {
   overflow-x: auto;
   scrollbar-width: none;
 }
 
-.enterprise-ui header nav::-webkit-scrollbar {
+#root header nav::-webkit-scrollbar {
   display: none;
 }
 
 /* At compact widths, preserve the existing placement but reduce only internal gaps. */
 @media (max-width: 1100px) {
-  .enterprise-ui header .gap-4 { gap: 0.5rem; }
-  .enterprise-ui header .gap-5 { gap: 0.625rem; }
+  #root header .gap-4 { gap: 0.5rem; }
+  #root header .gap-5 { gap: 0.625rem; }
 }
 
 /* Mobile: forms, tables and dialogs remain inside the viewport. */
 @media (max-width: 640px) {
-  .enterprise-ui main {
+  #root main {
     min-width: 0;
     width: 100%;
   }
 
-  .enterprise-ui [role="dialog"],
-  .enterprise-ui [data-radix-dialog-content] {
+  #root [role="dialog"],
+  #root [data-radix-dialog-content] {
     width: calc(100vw - 1.5rem);
     max-width: calc(100vw - 1.5rem);
     max-height: calc(100vh - 1.5rem);
   }
 
-  .enterprise-ui table {
+  #root table {
     min-width: max-content;
   }
 }
 
 /* Large browser zoom / narrow effective viewport: never force desktop grids. */
 @media (max-width: 900px) {
-  .enterprise-ui .overflow-x-auto {
+  #root .overflow-x-auto {
     max-width: 100%;
   }
 }
