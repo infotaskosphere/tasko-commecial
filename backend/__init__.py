@@ -10,6 +10,11 @@ import backend.admin_identity_compat  # noqa: F401
 import backend.commercial_module_guard as _commercial_module_guard
 _commercial_module_guard.install()
 
+# Load the commercial licensing extension before governed_modules registers the
+# legacy commercial router. The extension registers the same public prefix
+# first, so its feature-level licensing and invoice workflow take precedence.
+import backend.commercial_onboarding_extensions  # noqa: F401
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
