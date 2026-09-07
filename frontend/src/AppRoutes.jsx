@@ -81,7 +81,11 @@ function LicensedDashboardHome() { const { user, loading } = useAuth(); if (load
 function ProtectedLayout(){const {user,loading}=useAuth();const location=useLocation();if(loading)return <AuthLoading/>;if(!user)return <Navigate to="/login" replace/>;return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><RouteAnimatedOutlet/></RouteErrorBoundary></DashboardLayout>}
 function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user)return <Navigate to="/dashboard" replace/>;return children}
 function AdminOnly({children}){const {user}=useAuth();if(user?.role?.toLowerCase()!=='admin')return <Navigate to="/dashboard" replace/>;return children}
-function UsersEntry(){const {user}=useAuth();if(user?.role?.toLowerCase()==='admin')return <Navigate to="/master-data#users" replace/>;return <Users/>}
+
+// /users is the native People Matrix user page for every authorized user,
+// including admins. Admin → Master Data provides a second, company-master
+// maintenance surface instead of hijacking the People Matrix route.
+function UsersEntry(){ return <Users/>; }
 
 export default function AppRoutes(){return <Suspense fallback={<AuthLoading/>}><Routes>
 <Route path="/" element={<WebsiteHome/>}/><Route path="/website" element={<WebsiteHome/>}/><Route path="/login" element={<PublicOnly><Login/></PublicOnly>}/><Route path="/register" element={<PublicOnly><Register/></PublicOnly>}/><Route path="/forgot-password" element={<PublicOnly><ForgotPassword/></PublicOnly>}/><Route path="/activate-license" element={<PageTransition><LicenseActivation/></PageTransition>}/><Route path="/client-portal" element={<Navigate to="/client-portal/login" replace/>}/><Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin/></PageTransition>}/><Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard/></PageTransition>}/>
