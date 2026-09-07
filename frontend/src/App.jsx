@@ -178,7 +178,7 @@ function CommercialConsoleShortcut() {
     <Link
       to="/master-console"
       data-commercial-console
-      className="fixed right-[180px] top-[64px] z-[46] inline-flex h-10 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+      className="fixed right-[180px] top-[64px] z-[46] inline-flex h-10 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-semibold text-[#1F6FB2] shadow-sm transition-colors hover:bg-slate-50 hover:text-[#0D3B66]"
       title="Open Commercial Master Console"
     >
       <span aria-hidden="true">🔐</span>
