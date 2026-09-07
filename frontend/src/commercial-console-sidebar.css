@@ -1,0 +1,59 @@
+/* Commercial Console belongs with the sidebar controls, directly above Collapse Sidebar. */
+body:not(.website-surface) #root aside > div.p-4.border-t.hidden.lg\:block {
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 12px !important;
+}
+
+/* Visual console control — aligned with the existing sidebar navigation language. */
+body:not(.website-surface) #root aside > div.p-4.border-t.hidden.lg\:block::before {
+  content: "▣  Commercial Console";
+  width: 100% !important;
+  min-height: 42px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 0 12px !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  background: rgba(255,255,255,0.045) !important;
+  color: #e2e8f0 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  border-radius: 8px !important;
+  box-sizing: border-box !important;
+}
+
+body:not(.website-surface) #root aside > div.p-4.border-t.hidden.lg\:block::before:hover {
+  background: rgba(255,255,255,0.08) !important;
+}
+
+/* Keep the actual Collapse Sidebar control immediately underneath. */
+body:not(.website-surface) #root aside > div.p-4.border-t.hidden.lg\:block > button {
+  margin: 0 !important;
+}
+
+/* Collapsed sidebar: retain only the console symbol, centered like other icon controls. */
+body:not(.website-surface) #root aside[style*="width: 80px"] > div.p-4.border-t.hidden.lg\:block::before {
+  content: "▣" !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+}
+
+body:not(.website-surface) #root aside[style*="width: 80px"] > div.p-4.border-t.hidden.lg\:block {
+  padding-left: 10px !important;
+  padding-right: 10px !important;
+}
+
+/* Mobile sidebar is hidden by the desktop-only collapse container, so do not affect it. */
+@media (max-width: 1023px) {
+  body:not(.website-surface) #root aside > div.p-4.border-t.hidden.lg\:block {
+    display: none !important;
+  }
+}
