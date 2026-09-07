@@ -11,7 +11,6 @@
   --ui-control-radius: 10px;
   --ui-card-radius: 16px;
   --ui-focus: rgba(31, 111, 178, 0.28);
-  /* Keep legacy tokens aligned with DashboardLayout's actual geometry. */
   --header-height: 64px;
   --sidebar-width: 280px;
   --sidebar-col: 80px;
@@ -24,7 +23,6 @@
   min-width: 0;
 }
 
-/* Never let labels, navigation or data values visually escape their box. */
 #root h1,
 #root h2,
 #root h3,
@@ -42,7 +40,6 @@
   overflow-wrap: anywhere;
 }
 
-/* Navigation is allowed to remain on one line, but gets clipped safely. */
 #root nav a,
 #root header a,
 #root [role="tab"],
@@ -51,7 +48,6 @@
   word-break: normal;
 }
 
-/* Shared form-control geometry. Existing colour classes continue to win. */
 #root input,
 #root select,
 #root textarea {
@@ -82,7 +78,6 @@
   outline-offset: 2px;
 }
 
-/* Data tables: predictable rhythm and safe long-value behaviour. */
 #root table {
   border-collapse: separate;
   border-spacing: 0;
@@ -114,18 +109,15 @@
   word-break: break-word;
 }
 
-/* Keep common card grids from producing uneven children at intermediate zooms. */
 #root main [class*="grid"] > * {
   min-width: 0;
 }
 
-/* Shared card treatment for the app's existing white/slate cards. */
 #root main .border-slate-200.bg-white,
 #root main .border-slate-200\/80.bg-white {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.035);
 }
 
-/* Keep modals usable at 90–200% browser zoom. */
 #root [role="dialog"],
 #root [data-radix-dialog-content] {
   max-width: min(96vw, 1100px);
@@ -133,7 +125,6 @@
   overflow: auto;
 }
 
-/* Prevent fixed header/section switcher contents from pushing outside the viewport. */
 #root header,
 #root header > *,
 #root header nav,
@@ -150,34 +141,193 @@
   display: none;
 }
 
-/* At compact widths, preserve the existing placement but reduce only internal gaps. */
 @media (max-width: 1100px) {
   #root header .gap-4 { gap: 0.5rem; }
   #root header .gap-5 { gap: 0.625rem; }
 }
 
-/* Mobile: forms, tables and dialogs remain inside the viewport. */
 @media (max-width: 640px) {
-  #root main {
-    min-width: 0;
-    width: 100%;
-  }
-
+  #root main { min-width: 0; width: 100%; }
   #root [role="dialog"],
   #root [data-radix-dialog-content] {
     width: calc(100vw - 1.5rem);
     max-width: calc(100vw - 1.5rem);
     max-height: calc(100vh - 1.5rem);
   }
+  #root table { min-width: max-content; }
+}
 
-  #root table {
-    min-width: max-content;
+@media (max-width: 900px) {
+  #root .overflow-x-auto { max-width: 100%; }
+}
+
+/* -------------------------------------------------------------------------
+   Public website / website-preview business design layer.
+   The existing logo, brand colours, sections, widgets and links are kept;
+   only the visual treatment is made flatter, denser and more professional.
+   ------------------------------------------------------------------------- */
+body.website-surface {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+body.website-surface #root [class*="rounded-"] {
+  border-radius: 4px !important;
+}
+
+body.website-surface #root [class*="rounded-full"] {
+  border-radius: 4px !important;
+}
+
+body.website-surface #root header {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #ffffff !important;
+  border-bottom: 1px solid #d9e1ea !important;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+body.website-surface #root header nav a {
+  position: relative;
+  white-space: nowrap;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+
+body.website-surface #root header nav a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -11px;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: center;
+  background: currentColor;
+  transition: transform 160ms ease;
+}
+
+body.website-surface #root header nav a:hover::after,
+body.website-surface #root header nav a:focus-visible::after {
+  transform: scaleX(1);
+}
+
+body.website-surface #root main > section {
+  scroll-margin-top: 72px;
+}
+
+body.website-surface #root main article,
+body.website-surface #root main details,
+body.website-surface #root main form,
+body.website-surface #root main img,
+body.website-surface #root main input,
+body.website-surface #root main textarea,
+body.website-surface #root main button,
+body.website-surface #root main a {
+  transition: box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease, background-color 180ms ease;
+}
+
+body.website-surface #root main article:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+}
+
+body.website-surface #root main details:hover,
+body.website-surface #root main form:hover {
+  border-color: #b8c4d1;
+}
+
+body.website-surface #root main button:hover,
+body.website-surface #root main a:hover {
+  transform: translateY(-1px);
+}
+
+body.website-surface #root main section {
+  animation: website-business-enter 360ms ease both;
+}
+
+@keyframes website-business-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body.website-surface #root footer {
+  background: #f8fafc;
+  border-top-color: #d9e1ea !important;
+}
+
+body.website-surface #root footer a {
+  color: inherit;
+}
+
+/* Keep public navigation usable at tablet/mobile widths instead of simply
+   disappearing. It becomes a compact horizontal business navigation strip. */
+@media (max-width: 1023px) {
+  body.website-surface #root header > div {
+    gap: 0.75rem;
+    overflow: hidden;
+  }
+
+  body.website-surface #root header nav {
+    display: flex !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 48vw;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  body.website-surface #root header nav a::after {
+    bottom: -5px;
   }
 }
 
-/* Large browser zoom / narrow effective viewport: never force desktop grids. */
+@media (max-width: 640px) {
+  body.website-surface #root header > div {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  body.website-surface #root header nav {
+    max-width: 38vw;
+    gap: 0.75rem;
+  }
+
+  body.website-surface #root header nav a {
+    font-size: 0.75rem;
+  }
+}
+
+/* Business-software control density for the builder/preview without changing
+   any builder capabilities or section types. */
+body.website-builder-surface #root button,
+body.website-builder-surface #root input,
+body.website-builder-surface #root select,
+body.website-builder-surface #root textarea {
+  border-radius: 4px !important;
+}
+
+body.website-builder-surface #root [class*="rounded-"] {
+  border-radius: 6px !important;
+}
+
+body.website-builder-surface #root [class*="rounded-full"] {
+  border-radius: 4px !important;
+}
+
+/* Move the commercial-console shortcut into the same top utility band as
+   Admin/Settings instead of leaving it as a floating bottom-right widget. */
+#root [data-commercial-console] {
+  bottom: auto !important;
+  top: var(--ui-header-height) !important;
+  right: 180px !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 @media (max-width: 900px) {
-  #root .overflow-x-auto {
-    max-width: 100%;
+  #root [data-commercial-console] {
+    right: 8px !important;
+    top: calc(var(--ui-header-height) + var(--ui-section-height) + 8px) !important;
   }
 }
