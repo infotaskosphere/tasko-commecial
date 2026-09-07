@@ -1,8 +1,9 @@
 """Production launcher for the Python/FastAPI commercial backend.
 
-This is the migration bridge that keeps backend/server.py focused on application
-routes while registering the commercial licensing API and its MongoDB indexes
-before Uvicorn starts accepting traffic.
+This launcher keeps backend/server.py focused on the main application while
+ensuring the commercial licensing API is registered before Uvicorn starts.
+The registration is idempotent so the launcher remains safe if the licensing
+router is also registered by the main application module.
 """
 
 import asyncio
@@ -14,8 +15,10 @@ from backend.server import app
 from backend.licensing_api import create_licensing_indexes, router as licensing_router
 
 
-# Licensing is now a normal FastAPI router; there is no second Node server.
-app.include_router(licensing_router, prefix="/api")
+# Licensing is a normal FastAPI router; there is no second Node server.
+# Avoid duplicate registration if server.py also registers it.
+if not any(route.path == "/api/licensing/state" for route in app.routes):
+    app.include_router(licensing_router, prefix="/api")
 
 
 async def _prepare_licensing() -> None:
