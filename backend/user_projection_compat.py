@@ -1,10 +1,13 @@
 """Compatibility fix for legacy user projections.
 
-Some attendance/HR handlers read user records by ``id`` after requesting a
-narrow Mongo projection that omitted the ``id`` field.  That turns into a
-KeyError at response time.  This additive shim keeps the existing queries and
-behavior intact while guaranteeing ``id`` is present whenever the users
-collection is queried with a projection.
+Some HR/task handlers use Mongo projections that exclude fields and later read
+our application-level ``id`` field.  The previous shim force-added ``id: 1``
+to every projection, which is invalid when the caller uses an exclusion
+projection (MongoDB rejects mixing inclusion and exclusion fields).
+
+This shim is intentionally narrow: for a users projection it only removes an
+explicit ``id: 0`` exclusion.  Inclusion projections remain inclusion
+projections, while exclusion projections remain exclusion projections.
 """
 
 from backend.tenant_runtime import TenantAwareCollection
@@ -14,31 +17,42 @@ _original_find = TenantAwareCollection.find
 _original_find_one = TenantAwareCollection.find_one
 
 
-def _with_user_id_projection(collection, args, kwargs):
+def _fix_user_projection(collection, args, kwargs):
     if collection._name != "users":
         return args, kwargs
 
     updated_args = list(args)
-    if updated_args and isinstance(updated_args[0], dict):
+    projection = None
+    projection_in_args = bool(updated_args and isinstance(updated_args[0], dict))
+
+    if projection_in_args:
         projection = dict(updated_args[0])
-        projection["id"] = 1
-        updated_args[0] = projection
     elif isinstance(kwargs.get("projection"), dict):
         projection = dict(kwargs["projection"])
-        projection["id"] = 1
-        kwargs = dict(kwargs)
-        kwargs["projection"] = projection
+
+    if projection is None or "id" not in projection:
+        return args, kwargs
+
+    # Only remove an explicit exclusion. Do NOT add id=1 to exclusion
+    # projections, because MongoDB forbids mixing inclusion and exclusion.
+    if projection.get("id") == 0:
+        projection.pop("id", None)
+        if projection_in_args:
+            updated_args[0] = projection
+        else:
+            kwargs = dict(kwargs)
+            kwargs["projection"] = projection
 
     return tuple(updated_args), kwargs
 
 
 def _find(self, query=None, *args, **kwargs):
-    args, kwargs = _with_user_id_projection(self, args, kwargs)
+    args, kwargs = _fix_user_projection(self, args, kwargs)
     return _original_find(self, query, *args, **kwargs)
 
 
 async def _find_one(self, query=None, *args, **kwargs):
-    args, kwargs = _with_user_id_projection(self, args, kwargs)
+    args, kwargs = _fix_user_projection(self, args, kwargs)
     return await _original_find_one(self, query, *args, **kwargs)
 
 
