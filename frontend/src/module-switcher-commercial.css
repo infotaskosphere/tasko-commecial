@@ -1,0 +1,174 @@
+/* Commercial module switcher — final visual treatment. */
+
+/* The section switcher stays a clean white enterprise bar in light mode. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] {
+  background: #fff !important;
+  color: #1F6FB2 !important;
+  border-top: 1px solid #e2e8f0 !important;
+  border-bottom: 2px solid #dbeafe !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+}
+
+/* Every tab has the same height and a slim, quiet blue baseline. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button {
+  position: relative !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  padding-left: 13px !important;
+  padding-right: 13px !important;
+  background: transparent !important;
+  color: #1F6FB2 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-weight: 700 !important;
+  overflow: hidden !important;
+  transform: none !important;
+  transition: background-color .18s ease, color .18s ease !important;
+}
+
+/* The underline is always present; the selected tab owns the full-width blue line. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 2px !important;
+  border-radius: 0 !important;
+  background: #bfdbfe !important;
+  transform: scaleX(1) !important;
+  transform-origin: center !important;
+  opacity: 1 !important;
+  transition: background-color .2s ease, height .2s ease, transform .22s ease !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover {
+  background: #f8fbff !important;
+  color: #0D3B66 !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover::after {
+  background: #60a5fa !important;
+}
+
+/* Active state: blue text/background tint + full tab-width blue underline. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"] {
+  background: #eff6ff !important;
+  color: #0D3B66 !important;
+  font-weight: 800 !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"]::after,
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]::after {
+  background: #1F6FB2 !important;
+  height: 3px !important;
+  transform: scaleX(1) !important;
+}
+
+/* Keep the baseline visually continuous through the empty middle area. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div.flex-1 {
+  align-self: stretch !important;
+  min-height: 40px !important;
+  border-bottom: 2px solid #dbeafe !important;
+}
+
+/* Admin + Settings cluster: wider, easier to click, same continuous baseline. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child {
+  align-self: stretch !important;
+  background: #fff !important;
+  border-left: 1px solid #e2e8f0 !important;
+  border-bottom: 0 !important;
+  margin-left: 4px !important;
+  padding-left: 4px !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button {
+  min-width: 108px !important;
+  width: 108px !important;
+  padding-left: 16px !important;
+  padding-right: 16px !important;
+  justify-content: center !important;
+}
+
+/* If Admin/Settings are rendered through the inner tab map, preserve the same underline. */
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button::after {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: 2px !important;
+  background: #bfdbfe !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button:hover::after {
+  background: #60a5fa !important;
+}
+
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[aria-current="page"]::after,
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[class*="text-[#0D3B66"]::after {
+  background: #1F6FB2 !important;
+  height: 3px !important;
+}
+
+/* AI Search status indicator: a true circular green dot, not a pill. */
+body:not(.website-surface) #root button[title="AI Search"] > span {
+  width: 8px !important;
+  min-width: 8px !important;
+  max-width: 8px !important;
+  height: 8px !important;
+  min-height: 8px !important;
+  max-height: 8px !important;
+  aspect-ratio: 1 / 1 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: block !important;
+  border-radius: 50% !important;
+  border: 2px solid #fff !important;
+  box-sizing: border-box !important;
+  line-height: 0 !important;
+}
+
+/* Preserve the requested dark-mode treatment from the earlier dashboard work. */
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+  border-top-color: #1e293b !important;
+  border-bottom-color: #334155 !important;
+}
+
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button {
+  color: #cbd5e1 !important;
+  background: transparent !important;
+}
+
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button:hover {
+  background: #172033 !important;
+  color: #fff !important;
+}
+
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[aria-current="page"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[class*="text-[#0D3B66"] {
+  background: #172033 !important;
+  color: #fff !important;
+}
+
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button::after {
+  background: #334155 !important;
+}
+
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"]::after,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]::after,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[aria-current="page"]::after,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child > button[class*="text-[#0D3B66"]::after {
+  background: #1F6FB2 !important;
+  height: 3px !important;
+}
