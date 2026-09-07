@@ -1,6 +1,6 @@
 // Admin → Master Data: canonical company, client, user and reference-data hub.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, Loader2, Database, Building2, Download, Upload, Copy, Archive, RotateCcw, Check, X, ListTree, Tag, Search, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Pencil, Loader2, Database, Building2, Download, Upload, Copy, Archive, RotateCcw, Check, X, ListTree, Tag, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
@@ -10,8 +10,10 @@ import { useAuth } from '@/contexts/AuthContext.jsx';
 import { ActionGuard } from '@/components/governance/GovernanceGuards';
 import { CompanyProfilesList } from '@/components/CompanyProfiles';
 import CompanyUserManager from '@/components/CompanyUserManager';
+import PlatformUserManager from '@/components/PlatformUserManager';
 import MasterDataClientManager from '@/components/MasterDataClientManager';
 import { PageShell, PageBanner, StatRow, SectionCard, EmptyState, LoadingState, Toolbar, HUB_COLORS } from '@/components/ui/PageKit';
+import '../../master-data-commercial.css';
 
 const MODULE='admin';
 const VIEW_FLAG='can_view_master_data';
@@ -22,10 +24,10 @@ const PLATFORM_OWNER_EMAIL='info.taskosphere@gmail.com';
 export default function MasterData(){
  const { user } = useAuth();
  const platformOwner=String(user?.email||'').trim().toLowerCase()===PLATFORM_OWNER_EMAIL;
- const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[companyCount,setCompanyCount]=useState(null);
+ const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[companyCount,setCompanyCount]=useState(null),[companies,setCompanies]=useState([]);
  const load=useCallback(async()=>{setLoading(true);try{const r=await api.get(API_PATH);setItems(Array.isArray(r.data)?r.data:[])}catch{}finally{setLoading(false)}},[]);
  useEffect(()=>{load()},[load]);
- useEffect(()=>{api.get('/companies').then(r=>setCompanyCount(Array.isArray(r.data)?r.data.length:0)).catch(()=>setCompanyCount(null))},[]);
+ useEffect(()=>{api.get('/companies').then(r=>{const list=Array.isArray(r.data)?r.data:[];setCompanyCount(list.length);if(platformOwner)setCompanies(list)}).catch(()=>setCompanyCount(null))},[platformOwner]);
  const active=items.filter(i=>(i.status||'open')!=='archived').length;
  const categories=useMemo(()=>{const s=new Set(DEFAULT_CATEGORIES);items.forEach(i=>i.extra?.category&&s.add(i.extra.category));return [...s].sort()},[items]);
  return <PageShell className="master-data-page-shell">
@@ -33,19 +35,9 @@ export default function MasterData(){
    <StatRow items={[{icon:Building2,label:'Company profiles',value:companyCount??'—',color:HUB_COLORS.mediumBlue},{icon:ListTree,label:'Reference entries',value:items.length,color:'#7C3AED'},{icon:Check,label:'Active',value:active,color:HUB_COLORS.emeraldGreen},{icon:Archive,label:'Archived',value:items.length-active,color:'#F59E0B'}]}/>
    <SectionCard icon={Building2} title="Company Profiles" badge={companyCount??undefined} description="The shared company master. Company records created or edited here remain the same company records used by Quotations, Invoicing, Trademark Sphere, WhatsApp/Email settings and GST Portal Sync."><CompanyProfilesList/></SectionCard>
    <MasterDataClientManager/>
-   {platformOwner ? <PlatformOwnerUserNotice/> : <div id="users"><CompanyUserManager/></div>}
+   {platformOwner ? <div id="users"><PlatformUserManager companies={companies}/></div> : <div id="users"><CompanyUserManager/></div>}
    <ReferenceData items={items} loading={loading} reload={load} categories={categories}/>
  </PageShell>;
-}
-
-function PlatformOwnerUserNotice(){
- return <section id="users" className="border border-slate-200 bg-white overflow-hidden">
-   <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-     <div className="p-2 bg-slate-100"><ShieldCheck className="h-5 w-5 text-[#0D3B66]"/></div>
-     <div><h2 className="text-sm font-bold text-slate-800">User Details &amp; Access</h2><p className="text-xs mt-1 text-slate-500">Platform Owner account detected. Customer user records are tenant-scoped and are managed from Master Data after entering the licensed customer workspace.</p></div>
-   </div>
-   <div className="px-5 py-10 text-center text-sm text-slate-500">This account is the software platform owner, not a customer company. No customer-user license is required for the platform owner.</div>
- </section>;
 }
 
 function ReferenceData({items,loading,reload,categories}){

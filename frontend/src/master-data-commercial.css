@@ -1,0 +1,143 @@
+/* Master Data commercial page — keep the screen fluid inside DashboardLayout. */
+.master-data-page-shell {
+  width: 100%;
+  max-width: 100% !important;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.master-data-page-shell > * { min-width: 0; }
+.master-data-page-shell .rounded-2xl { min-width: 0; }
+.master-data-page-shell .overflow-x-auto { max-width: 100%; }
+
+.master-data-users-card {
+  border: 1px solid rgb(226 232 240);
+  border-radius: 1rem;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 5%);
+}
+
+.master-data-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid rgb(241 245 249);
+}
+
+.master-data-section-heading { display: flex; gap: .75rem; min-width: 0; }
+.master-data-section-heading > div { min-width: 0; }
+.master-data-section-heading h2 { margin: 0; color: #0f172a; font-size: .95rem; font-weight: 800; }
+.master-data-section-heading p { margin: .25rem 0 0; color: #64748b; font-size: .75rem; line-height: 1.55; max-width: 48rem; }
+.master-data-icon { display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; flex: 0 0 auto; border-radius: .75rem; }
+.master-data-icon svg { width: 1.15rem; height: 1.15rem; }
+.master-data-icon-blue { background: rgb(31 111 178 / 10%); color: #1f6fb2; }
+.master-data-badge { border: 0 !important; border-radius: 999px !important; background: rgb(31 111 178 / 10%) !important; color: #1f6fb2 !important; font-size: 10px !important; }
+.master-data-section-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; flex-wrap: wrap; }
+.master-data-primary-button { background: #0d3b66 !important; }
+.master-data-company-picker { display: flex; align-items: center; gap: .45rem; min-width: 220px; height: 2.25rem; padding: 0 .65rem; border: 1px solid rgb(226 232 240); border-radius: .65rem; background: #fff; color: #64748b; }
+.master-data-company-picker svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
+.master-data-company-picker select { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #334155; font-size: .75rem; }
+
+.master-data-user-toolbar { display: flex; align-items: center; gap: .75rem; padding: .75rem 1.25rem; background: #f8fafc; border-bottom: 1px solid rgb(241 245 249); }
+.master-data-search { position: relative; flex: 1; min-width: 200px; }
+.master-data-search > svg { position: absolute; left: .7rem; top: .65rem; width: 1rem; height: 1rem; color: #94a3b8; pointer-events: none; }
+.master-data-search input { height: 2.35rem; padding-left: 2.15rem; border-radius: .65rem; background: #fff; }
+.master-data-license-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .7rem; border: 1px solid rgb(16 185 129 / 18%); border-radius: 999px; background: rgb(16 185 129 / 7%); color: #047857; font-size: .7rem; font-weight: 700; white-space: nowrap; }
+.master-data-license-pill svg { width: .85rem; height: .85rem; }
+
+.master-data-user-table-wrap { width: 100%; overflow-x: auto; }
+.master-data-user-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: .8rem; }
+.master-data-user-table th { padding: .75rem 1rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #64748b; text-align: left; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+.master-data-user-table td { padding: .8rem 1rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; color: #334155; }
+.master-data-user-table tbody tr:hover { background: #f8fafc; }
+.master-data-user-name { color: #0f172a; font-weight: 750; }
+.master-data-user-email { display: flex; align-items: center; gap: .3rem; margin-top: .2rem; color: #64748b; font-size: .7rem; }
+.master-data-user-email svg { width: .75rem; height: .75rem; }
+.master-data-user-table td small { display: block; margin-top: .15rem; color: #94a3b8; font-size: .65rem; }
+.master-data-status { display: inline-flex; padding: .25rem .55rem; border-radius: 999px; font-size: .65rem; font-weight: 750; text-transform: capitalize; }
+.master-data-status-active { background: #dcfce7; color: #15803d; }
+.master-data-status-inactive { background: #f1f5f9; color: #64748b; }
+.master-data-status-pending_approval { background: #fef3c7; color: #b45309; }
+.master-data-status-rejected { background: #fee2e2; color: #b91c1c; }
+.master-data-user-empty, .master-data-user-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .45rem; min-height: 210px; padding: 2rem; text-align: center; color: #94a3b8; }
+.master-data-user-empty svg, .master-data-user-loading svg { width: 1.5rem; height: 1.5rem; }
+.master-data-user-empty strong { color: #334155; font-size: .85rem; }
+.master-data-user-empty span { max-width: 28rem; font-size: .72rem; line-height: 1.5; }
+.master-data-section-footer { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; padding: .7rem 1.25rem; background: #f8fafc; color: #64748b; font-size: .68rem; }
+.master-data-section-footer span { display: inline-flex; align-items: center; gap: .35rem; }
+.master-data-section-footer svg { width: .8rem; height: .8rem; color: #1f6fb2; }
+.master-data-dialog-header { display: flex; align-items: center; gap: .75rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid #e2e8f0; background: linear-gradient(180deg, #f8fbff, #fff); }
+.master-data-dialog-avatar { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: .75rem; background: #0d3b66; color: #fff; }
+.master-data-dialog-avatar svg { width: 1.1rem; height: 1.1rem; }
+.master-data-native-select { display: block; width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid #e2e8f0; border-radius: .5rem; background: #fff; color: #334155; outline: none; }
+
+/*
+ * Circular controls / status indicators.
+ * Some of the application's legacy/global button rules can override Tailwind's
+ * rounded-full utility in the production bundle. Keep these controls explicitly
+ * circular so the Master Data screen never renders square switches or badges.
+ */
+body:has(.master-data-page-shell) button[role="switch"] {
+  width: 2.75rem !important;
+  height: 1.5rem !important;
+  min-width: 2.75rem !important;
+  min-height: 1.5rem !important;
+  padding: 0 !important;
+  border-radius: 9999px !important;
+  border: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body:has(.master-data-page-shell) button[role="switch"] > span {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  min-height: 1.25rem !important;
+  border-radius: 50% !important;
+  display: block !important;
+}
+
+body:has(.master-data-page-shell) [data-testid="notification-count"],
+body:has(.master-data-page-shell) [data-testid="notification-leave-count"] {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+  min-width: 0.55rem !important;
+  min-height: 0.55rem !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  border-width: 1.5px !important;
+}
+
+body:has(.master-data-page-shell) button[title="AI Search"] > span {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+  min-width: 0.55rem !important;
+  min-height: 0.55rem !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 900px) {
+  .master-data-section-header { flex-direction: column; }
+  .master-data-section-actions { width: 100%; justify-content: stretch; }
+  .master-data-company-picker { flex: 1; }
+}
+
+@media (max-width: 640px) {
+  .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; }
+  .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem; padding-right: .9rem; }
+  .master-data-section-actions { flex-direction: column; align-items: stretch; }
+  .master-data-company-picker { width: 100%; }
+  .master-data-section-actions button { width: 100%; }
+  .master-data-user-toolbar { flex-direction: column; align-items: stretch; }
+  .master-data-search { width: 100%; }
+  .master-data-license-pill { width: fit-content; }
+}
