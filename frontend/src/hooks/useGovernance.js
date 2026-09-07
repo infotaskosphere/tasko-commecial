@@ -1,11 +1,5 @@
 // useGovernance.js — centralized frontend permission hooks.
-//
-// Mirrors backend/governance_core.py exactly: MODULE → PAGE → ACTION →
-// VISIBILITY, admin always bypasses everything first. This is the ONE place
-// that should ever contain permission-decision logic on the frontend —
-// components should call these hooks, not read `user.permissions` directly.
-//
-// Keep MODULE_FLAGS in sync with backend/models.py::MODULE_HIERARCHY.
+// Mirrors backend/governance_core.py and adds the commercial license cap.
 
 import { useAuth } from "@/contexts/AuthContext.jsx";
 
@@ -16,7 +10,7 @@ export const MODULE_FLAGS = {
   records: "can_access_records",
   proposals: "can_access_proposals",
   people_matrix: "can_access_people_matrix",
-  admin: null, // role-gated only — see backend note in MODULE_HIERARCHY["admin"]
+  admin: null,
 };
 
 const VIEW_ONLY_ACTIONS = new Set(["view", "export"]);
@@ -25,25 +19,29 @@ const MANAGE_ACTIONS = new Set(["create", "edit", "delete", "approve", "print", 
 export function useGovernance() {
   const { user } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === "admin";
+  const isCommercialAdmin = isAdmin && !!user?.company_id;
   const perms = user?.permissions || {};
 
   const hasModuleAccess = (moduleKey) => {
-    if (isAdmin) return true;
-    if (moduleKey === "admin") return false;
+    if (isAdmin && !isCommercialAdmin) return true;
+    if (moduleKey === "admin") return isAdmin;
     const flag = MODULE_FLAGS[moduleKey];
     if (!flag) return false;
-    return !!perms[flag];
+    return perms[flag] === true;
   };
 
   const hasPageAccess = (moduleKey, pageFlag) => {
-    if (isAdmin) return true;
+    if (isAdmin && !isCommercialAdmin) return true;
     if (!hasModuleAccess(moduleKey)) return false;
+    // Commercial admin is fully empowered inside an entitled module.
+    if (isCommercialAdmin) return true;
     return !!perms[pageFlag];
   };
 
   const hasActionAccess = (moduleKey, pageFlag, action) => {
-    if (isAdmin) return true;
+    if (isAdmin && !isCommercialAdmin) return true;
     if (!hasPageAccess(moduleKey, pageFlag)) return false;
+    if (isCommercialAdmin) return true;
 
     const matrixKey = `${moduleKey}.${pageFlag}`;
     const matrix = perms.governance_matrix || {};
@@ -94,12 +92,5 @@ export function useGovernance() {
     return ownerId === user?.id;
   };
 
-  return {
-    isAdmin,
-    hasModuleAccess,
-    hasPageAccess,
-    hasActionAccess,
-    getVisibilityScope,
-    hasVisibilityAccess,
-  };
+  return { isAdmin, isCommercialAdmin, hasModuleAccess, hasPageAccess, hasActionAccess, getVisibilityScope, hasVisibilityAccess };
 }
