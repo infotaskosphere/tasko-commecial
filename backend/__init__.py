@@ -16,6 +16,13 @@ _commercial_admin_permission_compat.install()
 import backend.commercial_module_guard as _commercial_module_guard
 _commercial_module_guard.install()
 
+# FastAPI compatibility shim: the original commercial guard's Request
+# annotation was being interpreted as a required query parameter in the
+# deployed runtime, causing authenticated GET endpoints to return 422.
+# Replace only that wrapper before route modules import get_current_user.
+import backend.commercial_guard_request_compat as _commercial_guard_request_compat
+_commercial_guard_request_compat.install()
+
 # Load the commercial licensing extension before governed_modules registers the
 # legacy commercial router. The extension registers the same public prefix
 # first, so its feature-level licensing and invoice workflow takes precedence.
