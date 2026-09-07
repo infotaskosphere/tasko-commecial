@@ -5,9 +5,16 @@ licensing was introduced, so their persisted permission dictionary can be
 missing the new module/page flags. The SaaS session itself is authoritative
 for the company; this shim hydrates the admin's permissions from the active
 commercial license before governance checks run.
+
+Important FastAPI compatibility note: this dependency must preserve the
+HTTPBearer dependency on ``credentials``. Without ``Depends(security)``,
+FastAPI interprets ``credentials`` as a required query parameter and governed
+GET routes return HTTP 422 before their handlers execute.
 """
 
 from datetime import datetime, timezone
+
+from fastapi import Depends
 
 from backend import dependencies as _dependencies
 from backend.models import User
@@ -89,7 +96,9 @@ async def _hydrate(user: User) -> User:
         return user
 
 
-async def get_current_user_with_commercial_admin_permissions(credentials):
+async def get_current_user_with_commercial_admin_permissions(
+    credentials=Depends(_dependencies.security),
+):
     user = await _original_get_current_user(credentials)
     return await _hydrate(user)
 
