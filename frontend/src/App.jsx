@@ -1,4 +1,4 @@
-import React, { Suspense, memo, useEffect } from "react";
+import React, { Suspense, memo, useEffect, useState } from "react";
 import { BrowserRouter, Link, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -172,17 +172,28 @@ function WebsiteSurfaceScope() {
 
 function CommercialConsoleShortcut() {
   const { user, loading } = useAuth();
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "true");
+
+  useEffect(() => {
+    if (loading || user?.role?.toLowerCase() !== "admin") return undefined;
+    const syncSidebarState = () => setCollapsed(localStorage.getItem("sidebarCollapsed") === "true");
+    syncSidebarState();
+    const interval = window.setInterval(syncSidebarState, 250);
+    return () => window.clearInterval(interval);
+  }, [loading, user]);
+
   if (loading || user?.role?.toLowerCase() !== "admin") return null;
 
   return (
     <Link
       to="/master-console"
       data-commercial-console
-      className="fixed right-[180px] top-[64px] z-[46] inline-flex h-10 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-semibold text-[#1F6FB2] shadow-sm transition-colors hover:bg-slate-50 hover:text-[#0D3B66]"
-      title="Open Commercial Master Console"
+      className={`commercial-console-sidebar-link ${collapsed ? "is-collapsed" : "is-expanded"}`}
+      title={collapsed ? "Commercial Console" : "Open Commercial Console"}
+      aria-label="Open Commercial Console"
     >
-      <span aria-hidden="true">🔐</span>
-      Commercial Console
+      <span className="commercial-console-sidebar-icon" aria-hidden="true">▣</span>
+      {!collapsed && <span>Commercial Console</span>}
     </Link>
   );
 }
