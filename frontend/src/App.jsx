@@ -1,5 +1,5 @@
 import React, { Suspense, memo, useEffect } from "react";
-import { BrowserRouter, Link } from "react-router-dom";
+import { BrowserRouter, Link, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -75,15 +75,27 @@ function RoutePrefetcher() {
   return null;
 }
 
+function WebsiteSurfaceScope() {
+  const location = useLocation();
+  useEffect(() => {
+    const isWebsite = location.pathname === "/" || location.pathname === "/website";
+    const isBuilder = location.pathname.startsWith("/master-console/website");
+    document.body.classList.toggle("website-surface", isWebsite || isBuilder);
+    document.body.classList.toggle("website-builder-surface", isBuilder);
+    return () => document.body.classList.remove("website-surface", "website-builder-surface");
+  }, [location.pathname]);
+  return null;
+}
+
 function CommercialConsoleShortcut() {
   const { user, loading } = useAuth();
-  if (loading || user?.role?.toLowerCase() !== "admin") return null;
+  if (loading || user?.role?.toLowerCase() !== "admin" || user?.company_id) return null;
 
   return (
     <Link
       to="/master-console"
-      className="fixed right-5 bottom-5 z-[9998] inline-flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition-transform hover:-translate-y-0.5"
-      style={{ background: "linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)" }}
+      data-commercial-console
+      className="fixed right-[180px] top-[64px] z-[46] inline-flex h-10 items-center gap-2 border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
       title="Open Commercial Master Console"
     >
       <span aria-hidden="true">🔐</span>
@@ -95,5 +107,5 @@ function CommercialConsoleShortcut() {
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><CommercialConsoleShortcut /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><CommercialConsoleShortcut /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }
