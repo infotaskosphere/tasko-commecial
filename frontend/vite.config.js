@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      // Unified Inbox uses the backend's SSE stream for authenticated
+      // real-time updates. The commercial backend has no Socket.IO server,
+      // so avoid unsupported WebSocket handshakes while retaining the same
+      // UI behavior through SSE/polling.
+      'socket.io-client': path.resolve(__dirname, './src/lib/socketIoRealtimeFallback.js'),
     },
   },
   server: {
