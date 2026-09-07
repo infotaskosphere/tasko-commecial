@@ -7,10 +7,7 @@ export const DEFAULT_PACKAGES = [
   { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", description: "Task Management + Invoicing + Accounting + HRMS", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS"], max_users: 100, max_installations: 5, validity_days: 365, price: 0, active: true },
 ];
 
-// Licensing is now part of the Python/FastAPI backend. Do not use localhost:3100
-// or a separate Node licensing service in production.
 const LICENSE_API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:7432").replace(/\/+$/, "");
-
 const licensingApi = axios.create({
   baseURL: LICENSE_API_BASE.endsWith("/api") ? LICENSE_API_BASE : `${LICENSE_API_BASE}/api`,
   timeout: 30000,
@@ -28,9 +25,15 @@ licensingApi.interceptors.request.use((config) => {
 
 export const getLicenseState = async () => (await licensingApi.get("/licensing/state")).data;
 export const createLicense = async (input) => (await licensingApi.post("/licensing/licenses", input)).data;
+export const generateCommercialLicense = async (input) => (await licensingApi.post("/commercial-onboarding/generate-license", input)).data;
 export const updateLicenseStatus = async (id, status) => (await licensingApi.patch(`/licensing/licenses/${id}/status`, { status })).data;
 export const upgradeLicense = async (id, packageId) => (await licensingApi.patch(`/licensing/licenses/${id}/package`, { package_id: packageId })).data;
 export const savePackage = async (pkg) => (await licensingApi.put(`/licensing/packages/${pkg.id}`, pkg)).data;
+
+export const lookupLicensedCompany = async (companyName, licenseKey) => (await licensingApi.post("/commercial-onboarding/lookup", { company_name: companyName, license_key: licenseKey })).data;
+export const createLicensedAdmin = async (payload) => (await licensingApi.post("/commercial-onboarding/create-admin", payload)).data;
+export const createLicensedStaff = async (payload) => (await licensingApi.post("/commercial-onboarding/create-staff", payload)).data;
+export const getMyLicensedCompany = async () => (await licensingApi.get("/commercial-onboarding/my-company")).data;
 
 export const activateLicense = async (licenseKey, installationId, installationName) => {
   const response = await api.post("/licensing/installation-activate", {
