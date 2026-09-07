@@ -1,19 +1,22 @@
 """Compatibility bootstrap for commercial deployments.
 
-Older tenant records can contain role values with different casing or a
-partially-populated permissions object.  The authorization system treats
-``admin`` as a hard bypass, so normalize the role before the rest of the
-backend constructs User models.  For admins, the canonical admin template is
-also authoritative so stale/false stored flags cannot accidentally turn an
-admin into a restricted user.
-
-This module is intentionally tiny and only patches the Pydantic User
-constructor. It does not grant anything to manager/staff users.
+Normalize admin role values and restore the canonical admin permission template,
+while preserving the six commercial module entitlement flags when an admin is
+attached to a licensed company. Internal/system admins keep the old full-access
+behaviour.
 """
 
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
 
 _original_user_init = User.__init__
+_MODULE_FLAGS = (
+    "can_access_taskosphere",
+    "can_access_finix",
+    "can_access_compliance",
+    "can_access_records",
+    "can_access_proposals",
+    "can_access_people_matrix",
+)
 
 
 def _normalized_user_init(self, **data):
@@ -29,11 +32,21 @@ def _normalized_user_init(self, **data):
             stored = stored.model_dump()
         elif not isinstance(stored, dict):
             stored = {}
-        # Canonical admin permissions win over stale database values.
-        data["permissions"] = {
-            **stored,
-            **DEFAULT_ROLE_PERMISSIONS.get("admin", {}),
-        }
+
+        canonical = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
+        # A commercial admin is identified by company_id and has the six
+        # module flags deliberately restricted by the license generator.
+        # Preserve those flags instead of allowing the canonical admin
+        # template to turn every module back on during model construction.
+        is_commercial_admin = bool(data.get("company_id")) and any(
+            flag in stored for flag in _MODULE_FLAGS
+        )
+        if is_commercial_admin:
+            for flag in _MODULE_FLAGS:
+                if flag in stored:
+                    canonical[flag] = bool(stored[flag])
+
+        data["permissions"] = canonical
 
     _original_user_init(self, **data)
 
