@@ -75,6 +75,56 @@
 .master-data-dialog-avatar svg { width: 1.1rem; height: 1.1rem; }
 .master-data-native-select { display: block; width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid #e2e8f0; border-radius: .5rem; background: #fff; color: #334155; outline: none; }
 
+/*
+ * Circular controls / status indicators.
+ * Some of the application's legacy/global button rules can override Tailwind's
+ * rounded-full utility in the production bundle. Keep these controls explicitly
+ * circular so the Master Data screen never renders square switches or badges.
+ */
+body:has(.master-data-page-shell) button[role="switch"] {
+  width: 2.75rem !important;
+  height: 1.5rem !important;
+  min-width: 2.75rem !important;
+  min-height: 1.5rem !important;
+  padding: 0 !important;
+  border-radius: 9999px !important;
+  border: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body:has(.master-data-page-shell) button[role="switch"] > span {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  min-width: 1.25rem !important;
+  min-height: 1.25rem !important;
+  border-radius: 50% !important;
+  display: block !important;
+}
+
+body:has(.master-data-page-shell) [data-testid="notification-count"],
+body:has(.master-data-page-shell) [data-testid="notification-leave-count"] {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+  min-width: 0.55rem !important;
+  min-height: 0.55rem !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+  border-width: 1.5px !important;
+}
+
+body:has(.master-data-page-shell) button[title="AI Search"] > span {
+  width: 0.55rem !important;
+  height: 0.55rem !important;
+  min-width: 0.55rem !important;
+  min-height: 0.55rem !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  display: block !important;
+  box-sizing: border-box !important;
+}
+
 @media (max-width: 900px) {
   .master-data-section-header { flex-direction: column; }
   .master-data-section-actions { width: 100%; justify-content: stretch; }
