@@ -81,5 +81,79 @@ body:has(.master-data-page-shell) button[role="switch"] > span { width: 1.25rem 
 body:has(.master-data-page-shell) [data-testid="notification-count"], body:has(.master-data-page-shell) [data-testid="notification-leave-count"] { width: .55rem !important; height: .55rem !important; min-width: .55rem !important; min-height: .55rem !important; padding: 0 !important; border-radius: 50% !important; font-size: 0 !important; line-height: 0 !important; border-width: 1.5px !important; }
 body:has(.master-data-page-shell) button[title="AI Search"] > span { width: .55rem !important; height: .55rem !important; min-width: .55rem !important; min-height: .55rem !important; padding: 0 !important; border-radius: 50% !important; display: block !important; box-sizing: border-box !important; }
 
+/* Company profile dialog: use the available desktop width instead of the old
+   narrow max-w-3xl shell. Keep it responsive on laptops and smaller screens. */
+body:has(.master-data-company-section) [role="dialog"].max-w-3xl {
+  width: min(1080px, calc(100vw - 48px)) !important;
+  max-width: min(1080px, calc(100vw - 48px)) !important;
+}
+
+/* GST Registered: present the existing binary control as a clear Yes/No radio
+   choice. The state and persistence remain backed by form.has_gst. */
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"] {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  width: 108px !important;
+  min-width: 108px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 2px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 9999px !important;
+  background: #f8fafc !important;
+  box-sizing: border-box !important;
+  box-shadow: none !important;
+}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"] > span { display: none !important; }
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::before,
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::after {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 50% !important;
+  height: 26px !important;
+  border-radius: 9999px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  box-sizing: border-box !important;
+}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-emerald-500::before {
+  content: "●  Yes" !important;
+  color: #047857 !important;
+  background: #ecfdf5 !important;
+}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-emerald-500::after {
+  content: "○  No" !important;
+  color: #64748b !important;
+  background: transparent !important;
+}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-slate-300::before {
+  content: "○  Yes" !important;
+  color: #64748b !important;
+  background: transparent !important;
+}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-slate-300::after {
+  content: "●  No" !important;
+  color: #b45309 !important;
+  background: #fffbeb !important;
+}
+
 @media (max-width: 900px) { .master-data-section-header { flex-direction: column; } .master-data-section-actions { width: 100%; justify-content: stretch; } .master-data-company-picker { flex: 1; } }
-@media (max-width: 640px) { .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; } .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem; padding-right: .9rem; } .master-data-section-actions { flex-direction: column; align-items: stretch; } .master-data-company-picker { width: 100%; } .master-data-section-actions button { width: 100%; } .master-data-user-toolbar { flex-direction: column; align-items: stretch; } .master-data-search { width: 100%; } .master-data-license-pill { width: fit-content; } }
+@media (max-width: 640px) {
+  .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; }
+  .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem; padding-right: .9rem; }
+  .master-data-section-actions { flex-direction: column; align-items: stretch; }
+  .master-data-company-picker { width: 100%; }
+  .master-data-section-actions button { width: 100%; }
+  .master-data-user-toolbar { flex-direction: column; align-items: stretch; }
+  .master-data-search { width: 100%; }
+  .master-data-license-pill { width: fit-content; }
+  body:has(.master-data-company-section) [role="dialog"].max-w-3xl {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+  }
+}
