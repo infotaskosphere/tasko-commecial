@@ -1,16 +1,14 @@
-/* Master Data commercial page — keep the screen fluid inside DashboardLayout. */
+/* Master Data commercial page — DashboardLayout owns vertical scrolling. */
 .master-data-page-shell {
   width: 100%;
   max-width: 100% !important;
   min-width: 0;
-  min-height: 0;
+  min-height: 100%;
   box-sizing: border-box;
-  overflow-x: hidden !important;
-  overflow-y: auto !important;
-  height: calc(100vh - 176px) !important;
-  max-height: calc(100vh - 176px) !important;
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
   padding-bottom: 3rem !important;
-  scrollbar-gutter: stable;
 }
 .master-data-page-shell > * { min-width: 0; }
 .master-data-page-shell .rounded-2xl { min-width: 0; }
@@ -18,17 +16,8 @@
 
 /* CompanyProfilesList is a complete section by itself. The page only supplies
    spacing; it must not add another card/header around the component. */
-.master-data-company-section {
-  width: 100%;
-  min-width: 0;
-  margin: 0;
-}
-.master-data-company-section > * {
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
+.master-data-company-section { width: 100%; min-width: 0; margin: 0; }
+.master-data-company-section > * { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .master-data-company-section button,
 .master-data-company-section input,
 .master-data-company-section textarea,
@@ -49,7 +38,29 @@
 .master-data-company-picker { display: flex; align-items: center; gap: .45rem; min-width: 220px; height: 2.25rem; padding: 0 .65rem; border: 1px solid rgb(226 232 240); border-radius: .65rem; background: #fff; color: #64748b; }
 .master-data-company-picker svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 .master-data-company-picker select { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #334155; font-size: .75rem; }
-.master-data-user-toolbar { display: flex; align-items: center; gap: .75rem; padding: .75rem 1.25rem; background: #f8fafc !important; border-bottom: 1px solid rgb(241 245 249); }
+
+/* User search row: a plain white enterprise toolbar with no inherited
+   pseudo-elements, gradients, shadows or edge strips. */
+.master-data-user-toolbar {
+  position: relative !important;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: .75rem 1.25rem !important;
+  background: #fff !important;
+  background-image: none !important;
+  border: 0 !important;
+  border-bottom: 1px solid rgb(241 245 249) !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+.master-data-user-toolbar::before,
+.master-data-user-toolbar::after { content: none !important; display: none !important; background: transparent !important; box-shadow: none !important; }
+.master-data-user-toolbar > * { position: relative; z-index: 2; }
 .master-data-search { position: relative; flex: 1; min-width: 200px; }
 .master-data-search > svg { position: absolute; left: .7rem; top: .65rem; width: 1rem; height: 1rem; color: #94a3b8; pointer-events: none; }
 .master-data-search input { height: 2.35rem; padding-left: 2.15rem; border-radius: .65rem; background: #fff; }
@@ -81,35 +92,34 @@
 .master-data-dialog-avatar svg { width: 1.1rem; height: 1.1rem; }
 .master-data-native-select { display: block; width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid #e2e8f0; border-radius: .5rem; background: #fff; color: #334155; outline: none; }
 
-/* Keep Master Data toolbars inside their cards. The dark edge blocks visible
-   in production came from inherited toolbar/overflow styling, not from data. */
+/* Reference Data toolbar is deliberately independent from PageKit Toolbar
+   styling. DashboardLayout is the only scroll owner; this row never becomes
+   a dark strip or an inner scrolling region. */
 .master-data-reference-card { overflow: hidden !important; }
 .master-data-reference-card > div { min-width: 0; }
 .master-data-reference-toolbar {
   position: relative !important;
+  isolation: isolate;
   z-index: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: .5rem !important;
   width: 100% !important;
   min-width: 0 !important;
-  margin-left: 0 !important;
-  margin-right: 0 !important;
+  margin: 0 0 1rem 0 !important;
   padding: .75rem 0 !important;
   background: #fff !important;
+  background-image: none !important;
   border: 0 !important;
   box-shadow: none !important;
   overflow: visible !important;
 }
-.master-data-reference-search { min-width: 0 !important; }
-.master-data-reference-filter {
-  min-width: 150px;
-  border-color: #e2e8f0 !important;
-  border-radius: .5rem;
-  color: #334155;
-  background: #fff !important;
-}
 .master-data-reference-toolbar::before,
-.master-data-reference-toolbar::after,
-.master-data-user-toolbar::before,
-.master-data-user-toolbar::after { content: none !important; display: none !important; }
+.master-data-reference-toolbar::after { content: none !important; display: none !important; background: transparent !important; box-shadow: none !important; }
+.master-data-reference-toolbar > * { position: relative; z-index: 2; }
+.master-data-reference-search { min-width: 0 !important; }
+.master-data-reference-filter { min-width: 150px; border-color: #e2e8f0 !important; border-radius: .5rem; color: #334155; background: #fff !important; }
 
 /* Circular controls / status indicators. */
 body:has(.master-data-page-shell) button[role="switch"] { width: 2.75rem !important; height: 1.5rem !important; min-width: 2.75rem !important; min-height: 1.5rem !important; padding: 0 !important; border-radius: 9999px !important; border: 0 !important; box-sizing: border-box !important; }
@@ -119,44 +129,18 @@ body:has(.master-data-page-shell) button[title="AI Search"] > span { width: .55r
 
 /* Company profile dialog: use the available desktop width instead of the old
    narrow max-w-3xl shell. Keep it responsive on laptops and smaller screens. */
-body:has(.master-data-company-section) [role="dialog"].max-w-3xl {
-  width: min(1080px, calc(100vw - 48px)) !important;
-  max-width: min(1080px, calc(100vw - 48px)) !important;
-}
+body:has(.master-data-company-section) [role="dialog"].max-w-3xl { width: min(1080px, calc(100vw - 48px)) !important; max-width: min(1080px, calc(100vw - 48px)) !important; }
 
 /* GST Registered: present the existing binary control as a clear Yes/No radio
    choice. The state and persistence remain backed by form.has_gst. */
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"] {
-  position: relative !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 0 !important;
-  width: 108px !important;
-  min-width: 108px !important;
-  height: 32px !important;
-  min-height: 32px !important;
-  padding: 2px !important;
-  border: 1px solid #cbd5e1 !important;
-  border-radius: 9999px !important;
-  background: #f8fafc !important;
-  box-sizing: border-box !important;
-  box-shadow: none !important;
+  position: relative !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 0 !important;
+  width: 108px !important; min-width: 108px !important; height: 32px !important; min-height: 32px !important; padding: 2px !important;
+  border: 1px solid #cbd5e1 !important; border-radius: 9999px !important; background: #f8fafc !important; box-sizing: border-box !important; box-shadow: none !important;
 }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"] > span { display: none !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::before,
-body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::after {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  width: 50% !important;
-  height: 26px !important;
-  border-radius: 9999px !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  line-height: 1 !important;
-  box-sizing: border-box !important;
-}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::after { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 50% !important; height: 26px !important; border-radius: 9999px !important; font-size: 11px !important; font-weight: 700 !important; line-height: 1 !important; box-sizing: border-box !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-emerald-500::before { content: "●  Yes" !important; color: #047857 !important; background: #ecfdf5 !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-emerald-500::after { content: "○  No" !important; color: #64748b !important; background: transparent !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-slate-300::before { content: "○  Yes" !important; color: #64748b !important; background: transparent !important; }
@@ -169,8 +153,8 @@ body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-
   .master-data-reference-filter { flex: 1 1 150px; }
 }
 @media (max-width: 640px) {
-  .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; height: calc(100vh - 150px) !important; max-height: calc(100vh - 150px) !important; }
-  .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem; padding-right: .9rem; }
+  .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; height: auto !important; max-height: none !important; overflow: visible !important; }
+  .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem !important; padding-right: .9rem !important; }
   .master-data-section-actions { flex-direction: column; align-items: stretch; }
   .master-data-company-picker { width: 100%; }
   .master-data-section-actions button { width: 100%; }
