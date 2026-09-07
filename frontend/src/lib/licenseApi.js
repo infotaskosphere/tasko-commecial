@@ -2,9 +2,9 @@ import axios from "axios";
 import api, { getToken } from "@/lib/api";
 
 export const DEFAULT_PACKAGES = [
-  { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", description: "Task Management + Invoicing", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 0, active: true },
-  { id: "professional", code: "TSO-PRO", name: "Taskosphere Professional", description: "Task Management + Invoicing + HRMS", modules: ["TASKS", "INVOICING", "HRMS"], max_users: 25, max_installations: 2, validity_days: 365, price: 0, active: true },
-  { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", description: "Task Management + Invoicing + Accounting + HRMS", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS"], max_users: 100, max_installations: 5, validity_days: 365, price: 0, active: true },
+  { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", description: "Legacy Task Management + Invoicing", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 0, active: true },
+  { id: "professional", code: "TSO-PRO", name: "Taskosphere Professional", description: "Legacy Task Management + Invoicing + HRMS", modules: ["TASKS", "INVOICING", "HRMS"], max_users: 25, max_installations: 2, validity_days: 365, price: 0, active: true },
+  { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", description: "Legacy Task Management + Invoicing + Accounting + HRMS", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS"], max_users: 100, max_installations: 5, validity_days: 365, price: 0, active: true },
 ];
 
 const LICENSE_API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:7432").replace(/\/+$/, "");
@@ -29,6 +29,8 @@ export const generateCommercialLicense = async (input) => (await licensingApi.po
 export const updateLicenseStatus = async (id, status) => (await licensingApi.patch(`/licensing/licenses/${id}/status`, { status })).data;
 export const upgradeLicense = async (id, packageId) => (await licensingApi.patch(`/licensing/licenses/${id}/package`, { package_id: packageId })).data;
 export const savePackage = async (pkg) => (await licensingApi.put(`/licensing/packages/${pkg.id}`, pkg)).data;
+export const getCommercialModuleCatalog = async () => (await licensingApi.get("/commercial-onboarding/module-catalog")).data;
+export const updateCommercialModulePrice = async (moduleId, monthlyPrice, active = true) => (await licensingApi.put(`/commercial-onboarding/module-catalog/${moduleId}`, { monthly_price: monthlyPrice, active })).data;
 
 export const lookupLicensedCompany = async (companyName, licenseKey) => (await licensingApi.post("/commercial-onboarding/lookup", { company_name: companyName, license_key: licenseKey })).data;
 export const createLicensedAdmin = async (payload) => (await licensingApi.post("/commercial-onboarding/create-admin", payload)).data;
