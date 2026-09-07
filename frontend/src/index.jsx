@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import "./App.css";
 import "./enterprise-design.css";
+import "./general-settings-commercial.css";
 // Explicit extensions for Vite
 import App from "./App.jsx";
 // Install permission-aware, commercial workflow, and compatibility request guards before the application mounts.
