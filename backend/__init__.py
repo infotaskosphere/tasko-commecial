@@ -26,6 +26,13 @@ import backend.commercial_onboarding_extensions  # noqa: F401
 # can share one company-scoped user source of truth.
 import backend.commercial_master_data  # noqa: F401
 
+# AI Document Reader workspace: persistent company-scoped memory for multiple
+# documents and cross-document reasoning. It is mounted onto the existing AI
+# reader router so the existing /api/ai/analyze-document route is unchanged.
+from backend.ai_document_reader import router as _ai_document_reader_router
+from backend.ai.workspace_router import router as _ai_workspace_router
+_ai_document_reader_router.include_router(_ai_workspace_router)
+
 # Compatibility shims must load before backend.server imports its routers.
 # The user projection shim prevents legacy HR/attendance handlers from losing
 # the UUID `id` field in narrow Mongo projections. The WhatsApp SSE shim lets
