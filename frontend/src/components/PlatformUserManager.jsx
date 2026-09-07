@@ -40,6 +40,27 @@ export default function PlatformUserManager({ companies = [] }) {
   }, [companyId]);
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const page = document.querySelector('.master-data-page-shell');
+    if (!page) return;
+    const previous = {
+      maxHeight: page.style.maxHeight,
+      overflowY: page.style.overflowY,
+      overflowX: page.style.overflowX,
+      scrollbarGutter: page.style.scrollbarGutter,
+    };
+    page.style.maxHeight = 'calc(100vh - 176px)';
+    page.style.overflowY = 'auto';
+    page.style.overflowX = 'hidden';
+    page.style.scrollbarGutter = 'stable';
+    return () => {
+      page.style.maxHeight = previous.maxHeight;
+      page.style.overflowY = previous.overflowY;
+      page.style.overflowX = previous.overflowX;
+      page.style.scrollbarGutter = previous.scrollbarGutter;
+    };
+  }, []);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return users;
