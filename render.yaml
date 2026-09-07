@@ -2,7 +2,7 @@
 # render.yaml — Taskosphere Commercial service definitions
 #
 # Production architecture:
-#   Backend  -> Python / FastAPI (backend/server.py)
+#   Backend  -> Python / FastAPI (backend/server.py via backend.run)
 #   Frontend -> React / Vite static site (frontend/)
 #   WA Hub   -> Node / Baileys bridge (wa-bridge/)
 ##############################################################################
@@ -15,25 +15,18 @@ services:
     env: python
     rootDir: .
     buildCommand: bash build.sh
-    startCommand: uvicorn backend.server:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m backend.run
     envVars:
-      # Pin the backend to Python 3.12. The current pandas dependency in
-      # backend/requirements.txt is not compatible with Render's Python 3.14
-      # build environment and otherwise falls back to a source compilation.
       - key: PYTHON_VERSION
         value: "3.12.10"
-      # MongoDB aliases used by backend/dependencies.py and the SaaS auth path.
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB_NAME
         value: taskosphere_commercial
-      # backend/dependencies.py requires JWT_SECRET when ENV_MODE=production.
       - key: JWT_SECRET
         generateValue: true
       - key: ENV_MODE
         value: production
-      # Bootstrap credentials are intentionally configured in Render's
-      # environment dashboard rather than committed to this repository.
       - key: SAAS_BOOTSTRAP_ADMIN_EMAIL
         sync: false
       - key: SAAS_BOOTSTRAP_ADMIN_PASSWORD
@@ -56,7 +49,6 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
-      # This is baked into the Vite build and must point to the Python API.
       - key: VITE_API_URL
         value: https://tasko-commercial-backend.onrender.com
     headers:
