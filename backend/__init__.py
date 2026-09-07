@@ -21,6 +21,11 @@ _commercial_module_guard.install()
 # first, so its feature-level licensing and invoice workflow takes precedence.
 import backend.commercial_onboarding_extensions  # noqa: F401
 
+# Company Master user administration is deliberately outside People Matrix
+# licensing. It uses the same users collection and HR fields so every module
+# can share one company-scoped user source of truth.
+import backend.commercial_master_data  # noqa: F401
+
 # Compatibility shims must load before backend.server imports its routers.
 # The user projection shim prevents legacy HR/attendance handlers from losing
 # the UUID `id` field in narrow Mongo projections. The WhatsApp SSE shim lets
