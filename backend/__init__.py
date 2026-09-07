@@ -15,6 +15,15 @@ _commercial_module_guard.install()
 # first, so its feature-level licensing and invoice workflow take precedence.
 import backend.commercial_onboarding_extensions  # noqa: F401
 
+# Compatibility shims must load before backend.server imports its routers.
+# The user projection shim prevents legacy HR/attendance handlers from losing
+# the UUID `id` field in narrow Mongo projections. The WhatsApp SSE shim lets
+# EventSource authenticate commercial opaque SaaS session tokens as well as
+# legacy JWT tokens.
+import backend.user_projection_compat  # noqa: F401
+import backend.whatsapp_sse_compat as _whatsapp_sse_compat
+_whatsapp_sse_compat.install()
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
