@@ -4,6 +4,7 @@
 body:not(.website-surface) #root .commercial-console-sidebar-link {
   position: fixed !important;
   left: 12px !important;
+  top: auto !important;
   bottom: 76px !important;
   z-index: 47 !important;
   height: 42px !important;
