@@ -4,8 +4,8 @@ User administration is intentionally kept outside People Matrix licensing. A
 commercial customer may buy Taskosphere, Finix, Compliance, Records or any
 other module individually, but the licensed company's administrator must
 always be able to maintain the company's user directory from Admin → Master
-Data. People Matrix consumes the same users collection and HR fields when it
-is licensed; it does not own the user accounts.
+Data. People Matrix consumes the same users collection and HR fields when
+it is licensed; it does not own the user accounts.
 """
 import uuid
 from datetime import datetime
@@ -17,11 +17,10 @@ from backend.dependencies import db, get_current_user, create_audit_log
 from backend.models import User
 from backend.commercial_onboarding import _active_company_license, pwd_context
 from backend.commercial_onboarding_extensions import _apply_feature_entitlements
+from backend.platform_owner import is_platform_owner
 
 router = APIRouter(prefix="/commercial-master-data", tags=["commercial-master-data"])
 
-# Existing Users + People Matrix Employee Master fields. These stay on the
-# same users document so every module consumes one source of truth.
 USER_FIELDS = {
     "full_name", "email", "role", "departments", "phone", "birthday",
     "telegram_id", "punch_in_time", "grace_time", "punch_out_time",
@@ -38,6 +37,11 @@ def _now() -> str:
 
 
 async def _company_context(current_user: User):
+    # The platform owner is the software seller, not a commercial customer
+    # tenant. Keep this endpoint harmless for that account so a stale frontend
+    # bundle cannot turn an owner visit into a misleading 403.
+    if is_platform_owner(current_user):
+        return None, None
     if getattr(current_user, "role", None) != "admin" or not getattr(current_user, "company_id", None):
         raise HTTPException(status_code=403, detail="Company Master user administration is available only to a licensed company administrator.")
     license_doc = await _active_company_license(current_user)
@@ -73,6 +77,13 @@ def _license_permissions(role: str, license_doc: Dict[str, Any]) -> Dict[str, An
 @router.get("/users")
 async def list_company_users(current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user):
+        return {
+            "company": None,
+            "license": None,
+            "users": [],
+            "platform_owner": True,
+        }
     users = await db.users.find(
         {"company_id": str(company["id"])},
         {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
@@ -93,6 +104,8 @@ async def list_company_users(current_user: User = Depends(get_current_user)):
 @router.post("/users", status_code=201)
 async def create_company_user(payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user):
+        raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant and cannot create customer users here.")
     email = str(payload.get("email") or "").strip().lower()
     full_name = str(payload.get("full_name") or "").strip()
     password = str(payload.get("password") or "")
@@ -169,6 +182,8 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
 @router.put("/users/{user_id}")
 async def update_company_user(user_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user):
+        raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant and cannot edit customer users here.")
     company_id = str(company["id"])
     existing = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
     if not existing:
@@ -212,6 +227,8 @@ async def update_company_user(user_id: str, payload: Dict[str, Any], current_use
 
 async def _change_user_status(user_id: str, status: str, current_user: User):
     license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user):
+        raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
     company_id = str(company["id"])
     existing = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
     if not existing:
