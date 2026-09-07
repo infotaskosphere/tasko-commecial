@@ -1,0 +1,86 @@
+/* Final Commercial Console tab treatment: deliberately mirrors the native DashboardLayout sidebar NavItem. */
+body:not(.website-surface) #root .commercial-console-sidebar-link {
+  position: fixed !important;
+  left: 12px !important;
+  top: auto !important;
+  bottom: 76px !important;
+  z-index: 47 !important;
+  width: 256px !important;
+  min-height: 40px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 10px 12px !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: #cbd5e1 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  letter-spacing: -0.01em !important;
+  line-height: 20px !important;
+  text-decoration: none !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  transition: background-color 150ms ease, color 150ms ease !important;
+}
+body:not(.website-surface) #root .commercial-console-sidebar-link:hover {
+  background: rgba(255,255,255,0.07) !important;
+  color: #ffffff !important;
+}
+body:not(.website-surface).biz-master-console #root .commercial-console-sidebar-link {
+  background: rgba(255,255,255,0.09) !important;
+  color: #ffffff !important;
+}
+body:not(.website-surface).biz-master-console #root .commercial-console-sidebar-link::before {
+  content: "" !important;
+  position: absolute !important;
+  left: 0 !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 3px !important;
+  height: 20px !important;
+  border-radius: 0 999px 999px 0 !important;
+  background: #2B8CD1 !important;
+}
+body:not(.website-surface) #root .commercial-console-sidebar-link:focus-visible {
+  outline: 2px solid #2B8CD1 !important;
+  outline-offset: 2px !important;
+}
+body:not(.website-surface) #root .commercial-console-sidebar-link.is-collapsed {
+  left: 10px !important;
+  width: 60px !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding: 10px 0 !important;
+}
+body:not(.website-surface).biz-master-console #root .commercial-console-sidebar-link.is-collapsed::before {
+  height: 28px !important;
+}
+body:not(.website-surface) #root .commercial-console-sidebar-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 16px !important;
+  min-width: 16px !important;
+  height: 16px !important;
+  color: #94a3b8 !important;
+  line-height: 1 !important;
+}
+body:not(.website-surface).biz-master-console #root .commercial-console-sidebar-icon,
+body:not(.website-surface) #root .commercial-console-sidebar-link:hover .commercial-console-sidebar-icon {
+  color: #f8fafc !important;
+}
+body:not(.website-surface) #root .commercial-console-sidebar-icon svg {
+  display: block !important;
+  width: 16px !important;
+  height: 16px !important;
+  stroke: currentColor !important;
+}
+@media (max-width: 1023px) {
+  body:not(.website-surface) #root .commercial-console-sidebar-link {
+    display: none !important;
+  }
+}
