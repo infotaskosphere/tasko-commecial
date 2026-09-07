@@ -1,260 +1,30 @@
-/*
- * Taskosphere commercial enterprise UI layer.
- * Visual-only: routes, features, permissions, branding and navigation remain
- * unchanged. Existing page-specific blue header cards are the single source
- * of truth for page headers; this layer never generates a second header.
- */
-
-:root {
-  --biz-border: #D8E1EA;
-  --biz-surface: #FFFFFF;
-  --biz-surface-muted: #F6F8FB;
-  --biz-text: #172033;
-  --biz-muted: #64748B;
-  --biz-control-h: 40px;
-  --biz-radius: 0px;
-}
-
-#root main,
-#root main > div {
-  min-width: 0;
-}
-
-#root main {
-  color: var(--biz-text);
-}
-
-/* -------------------------------------------------------------------------
-   Square enterprise surfaces
-   ------------------------------------------------------------------------- */
-#root main .rounded-xs,
-#root main .rounded-sm,
-#root main .rounded-md,
-#root main .rounded-lg,
-#root main .rounded-xl,
-#root main .rounded-2xl,
-#root main .rounded-3xl,
-#root main [class*="rounded-["] {
-  border-radius: var(--biz-radius) !important;
-}
-
-/* No capsule styling anywhere in the application. */
-#root main .rounded-full,
-#root main [class*="rounded-full"] {
-  border-radius: var(--biz-radius) !important;
-}
-
-/* Preserve circular avatars/status dots because their shape is semantic. */
-#root main img.rounded-full,
-#root main .rounded-full img,
-#root main .avatar.rounded-full,
-#root main [data-avatar].rounded-full,
-#root main [data-status-dot].rounded-full {
-  border-radius: 9999px !important;
-}
-
-#root main .bg-white.border,
-#root main .bg-white[class*="border-"],
-#root main [class*="bg-white"][class*="shadow"],
-#root main [class*="border"][class*="rounded-"] {
-  border-radius: var(--biz-radius) !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 5px 18px rgba(15, 23, 42, 0.045) !important;
-}
-
-/* The old generated main::before banner caused duplicate page headers.
-   Existing page-specific blue header cards remain untouched except for the
-   square geometry above. */
-#root main::before {
-  content: none !important;
-  display: none !important;
-}
-
-/* -------------------------------------------------------------------------
-   Tabs — equal dimensions, square, two-line-safe text
-   ------------------------------------------------------------------------- */
-#root main [role="tablist"],
-#root main [data-tabs="true"],
-#root main .tabs-list,
-#root main .tab-list {
-  display: grid !important;
-  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
-  align-items: stretch;
-  gap: 1px;
-  padding: 2px;
-  background: #E2E8F0;
-  border: 1px solid var(--biz-border);
-  border-radius: var(--biz-radius) !important;
-  overflow: hidden;
-}
-
-#root main [role="tablist"] > *,
-#root main [data-tabs="true"] > *,
-#root main .tabs-list > *,
-#root main .tab-list > * {
-  min-width: 0;
-}
-
-#root main [role="tab"],
-#root main [data-tabs="true"] > button,
-#root main .tabs-list > button,
-#root main .tab-list > button {
-  min-height: 48px !important;
-  height: 48px !important;
-  width: 100% !important;
-  padding: 6px 10px !important;
-  border-radius: var(--biz-radius) !important;
-  border: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center !important;
-  white-space: normal !important;
-  overflow-wrap: anywhere;
-  line-height: 1.15 !important;
-  font-size: 12px !important;
-  font-weight: 650 !important;
-}
-
-/* -------------------------------------------------------------------------
-   Controls / filters / badges
-   ------------------------------------------------------------------------- */
-#root main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-#root main select,
-#root main [role="combobox"] {
-  min-height: var(--biz-control-h);
-  border-radius: var(--biz-radius) !important;
-}
-
-#root main textarea,
-#root main button,
-#root main button[class*="rounded-full"] {
-  border-radius: var(--biz-radius) !important;
-}
-
-#root main [class*="badge"],
-#root main [data-badge] {
-  border-radius: var(--biz-radius) !important;
-}
-
-#root main [class*="hover:scale"],
-#root main [class*="hover:-translate"],
-#root main [class*="active:scale"] {
-  transform: none !important;
-}
-
-/* -------------------------------------------------------------------------
-   Tables
-   ------------------------------------------------------------------------- */
-#root main table {
-  width: 100%;
-  table-layout: fixed;
-  border: 1px solid var(--biz-border);
-  background: var(--biz-surface);
-  border-radius: var(--biz-radius) !important;
-  overflow: hidden;
-}
-
-#root main thead th {
-  min-height: 40px;
-  height: 40px;
-  padding: 8px 10px;
-  background: #F1F5F9;
-  color: #475569;
-  border-bottom: 1px solid var(--biz-border);
-}
-
-#root main tbody td {
-  padding: 9px 10px;
-  border-bottom: 1px solid #E8EDF3;
-}
-
-#root main tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-/* Dialogs and dropdowns use the same square business geometry. */
-#root [role="dialog"],
-#root [data-radix-dialog-content],
-#root [data-radix-popper-content-wrapper] > * {
-  border-radius: var(--biz-radius) !important;
-}
-
-/* -------------------------------------------------------------------------
-   Commercial Console utility tab
-   ------------------------------------------------------------------------- */
-#root [data-commercial-console] {
-  position: fixed !important;
-  top: 64px !important;
-  right: 178px !important;
-  height: 40px !important;
-  min-width: 150px;
-  justify-content: center;
-  border: 0 !important;
-  border-left: 1px solid #E2E8F0 !important;
-  border-right: 1px solid #E2E8F0 !important;
-  background: #FFFFFF !important;
-  color: #0D3B66 !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  z-index: 46 !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-}
-
-#root [data-commercial-console]:hover {
-  background: #F6F8FB !important;
-  color: #1F6FB2 !important;
-}
-
-@media (max-width: 1100px) {
-  #root [data-commercial-console] {
-    right: 170px !important;
-    min-width: 132px;
-  }
-}
-
-@media (max-width: 900px) {
-  #root main [role="tablist"],
-  #root main [data-tabs="true"],
-  #root main .tabs-list,
-  #root main .tab-list {
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  }
-
-  #root main [role="tab"],
-  #root main [data-tabs="true"] > button,
-  #root main .tabs-list > button,
-  #root main .tab-list > button {
-    min-height: 46px !important;
-    height: 46px !important;
-    font-size: 11px !important;
-  }
-}
-
-@media (max-width: 800px) {
-  #root [data-commercial-console] {
-    top: 104px !important;
-    right: 8px !important;
-    height: 36px !important;
-    min-width: 132px;
-    border: 1px solid var(--biz-border) !important;
-  }
-}
-
-@media (max-width: 640px) {
-  #root main [role="tablist"],
-  #root main [data-tabs="true"],
-  #root main .tabs-list,
-  #root main .tab-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  #root main [role="tab"],
-  #root main [data-tabs="true"] > button,
-  #root main .tabs-list > button,
-  #root main .tab-list > button {
-    min-height: 44px !important;
-    height: 44px !important;
-    padding: 5px 7px !important;
-  }
-}
+/* Taskosphere commercial enterprise UI layer. Existing page headers remain the single source of truth. */
+:root{--biz-border:#D8E1EA;--biz-surface:#FFF;--biz-surface-muted:#F6F8FB;--biz-text:#172033;--biz-muted:#64748B;--biz-control-h:40px;--biz-radius:0px}
+#root main,#root main>div{min-width:0}#root main{color:var(--biz-text)}
+#root main .rounded-xs,#root main .rounded-sm,#root main .rounded-md,#root main .rounded-lg,#root main .rounded-xl,#root main .rounded-2xl,#root main .rounded-3xl,#root main [class*="rounded-["]{border-radius:var(--biz-radius)!important}
+#root main .rounded-full,#root main [class*="rounded-full"]{border-radius:var(--biz-radius)!important}
+#root main img.rounded-full,#root main .rounded-full img,#root main .avatar.rounded-full,#root main [data-avatar].rounded-full,#root main [data-status-dot].rounded-full{border-radius:9999px!important}
+#root main .bg-white.border,#root main .bg-white[class*="border-"],#root main [class*="bg-white"][class*="shadow"],#root main [class*="border"][class*="rounded-"]{border-radius:var(--biz-radius)!important;box-shadow:0 1px 2px rgba(15,23,42,.04),0 5px 18px rgba(15,23,42,.045)!important}
+#root main::before{content:none!important;display:none!important}
+/* Existing blue header action strips: two equal rows, equal button geometry. */
+#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:repeat(2,minmax(40px,auto));align-items:stretch!important;gap:6px!important;width:min(100%,760px);min-width:0}
+#root main [style*="linear-gradient"]>div[class*="flex-wrap"]>button,#root main [style*="linear-gradient"]>div[class*="flex-wrap"]>[role="button"]{width:100%!important;min-width:0!important;min-height:40px!important;height:40px!important;padding:5px 8px!important;border-radius:var(--biz-radius)!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;white-space:normal!important;overflow-wrap:anywhere;line-height:1.15!important;font-size:11px!important}
+#root main [style*="linear-gradient"]>div[class*="flex-wrap"]>button:has(svg:only-child){padding-left:8px!important;padding-right:8px!important}
+/* Standard tabs. */
+#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));align-items:stretch;gap:1px;padding:2px;background:#E2E8F0;border:1px solid var(--biz-border);border-radius:var(--biz-radius)!important;overflow:hidden}
+#root main [role="tablist"]>*,#root main [data-tabs="true"]>*,#root main .tabs-list>*,#root main .tab-list>*{min-width:0}
+#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:48px!important;height:48px!important;width:100%!important;padding:6px 10px!important;border-radius:var(--biz-radius)!important;border:0!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;white-space:normal!important;overflow-wrap:anywhere;line-height:1.15!important;font-size:12px!important;font-weight:650!important}
+#root main input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),#root main select,#root main [role="combobox"]{min-height:var(--biz-control-h);border-radius:var(--biz-radius)!important}
+#root main textarea,#root main button,#root main button[class*="rounded-full"]{border-radius:var(--biz-radius)!important}
+#root main [class*="badge"],#root main [data-badge]{border-radius:var(--biz-radius)!important}
+#root main [class*="hover:scale"],#root main [class*="hover:-translate"],#root main [class*="active:scale"]{transform:none!important}
+#root main table{width:100%;table-layout:fixed;border:1px solid var(--biz-border);background:var(--biz-surface);border-radius:var(--biz-radius)!important;overflow:hidden}
+#root main thead th{min-height:40px;height:40px;padding:8px 10px;background:#F1F5F9;color:#475569;border-bottom:1px solid var(--biz-border)}
+#root main tbody td{padding:9px 10px;border-bottom:1px solid #E8EDF3}#root main tbody tr:last-child td{border-bottom:0}
+#root [role="dialog"],#root [data-radix-dialog-content],#root [data-radix-popper-content-wrapper]>*{border-radius:var(--biz-radius)!important}
+#root [data-commercial-console]{position:fixed!important;top:64px!important;right:178px!important;height:40px!important;min-width:150px;justify-content:center;border:0!important;border-left:1px solid #E2E8F0!important;border-right:1px solid #E2E8F0!important;background:#FFF!important;color:#0D3B66!important;box-shadow:none!important;border-radius:0!important;z-index:46!important;font-size:12px!important;font-weight:700!important}
+#root [data-commercial-console]:hover{background:#F6F8FB!important;color:#1F6FB2!important}
+@media(max-width:1100px){#root [data-commercial-console]{right:170px!important;min-width:132px}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
+@media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}}
+@media(max-width:800px){#root [data-commercial-console]{top:104px!important;right:8px!important;height:36px!important;min-width:132px;border:1px solid var(--biz-border)!important}}
+@media(max-width:640px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(2,minmax(0,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:44px!important;height:44px!important;padding:5px 7px!important}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto;width:100%}}
