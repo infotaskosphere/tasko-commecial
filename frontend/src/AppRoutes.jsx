@@ -9,6 +9,7 @@ import RouteErrorBoundary from '@/components/layout/RouteErrorBoundary.jsx';
 import { AnimatedOutlet as RouteAnimatedOutlet, PageTransition } from '@/components/layout/PageTransition.jsx';
 
 const Login = lazy(() => import('./pages/Login.jsx'));
+const WebsiteHome = lazy(() => import('./pages/WebsiteHome.jsx'));
 const Register = lazy(() => import('./pages/Register.jsx'));
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword.jsx'));
 const LicenseActivation = lazy(() => import('./pages/LicenseActivation.jsx'));
@@ -73,6 +74,7 @@ const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
 const EmailSettings = lazy(() => import('@/components/EmailSettings.jsx'));
 const PendingApprovals = lazy(() => import('@/components/PendingApprovalsPanel.jsx'));
 const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
+const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
 function ProtectedLayout() {
@@ -96,6 +98,8 @@ function AdminOnly({ children }) {
 
 export default function AppRoutes() {
   return <Suspense fallback={<AuthLoading />}><Routes>
+    <Route path="/" element={<WebsiteHome />} />
+    <Route path="/website" element={<WebsiteHome />} />
     <Route path="/login" element={<PublicOnly><Login /></PublicOnly>} />
     <Route path="/register" element={<PublicOnly><Register /></PublicOnly>} />
     <Route path="/forgot-password" element={<PublicOnly><ForgotPassword /></PublicOnly>} />
@@ -172,6 +176,7 @@ export default function AppRoutes() {
       <Route path="/roles" element={<AdminOnly><PageGuard module="admin" page="can_view_roles"><Roles /></PageGuard></AdminOnly>} />
       <Route path="/contact-details" element={<AdminOnly><ContactDetails /></AdminOnly>} />
       <Route path="/master-console" element={<AdminOnly><MasterConsole /></AdminOnly>} />
+      <Route path="/master-console/website" element={<AdminOnly><WebsiteBuilder /></AdminOnly>} />
       <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
       <Route path="/settings/general" element={<GeneralSettings />} />
       <Route path="/settings/email" element={<EmailSettings />} />
@@ -179,7 +184,6 @@ export default function AppRoutes() {
       <Route path="/settings/automation" element={<Navigate to="/settings/whatsapp" replace />} />
       <Route path="/automation/approvals" element={<PendingApprovals />} />
     </Route>
-    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-    <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></Suspense>;
 }
