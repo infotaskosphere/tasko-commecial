@@ -43,6 +43,15 @@ from backend.governance_core import (
 )
 from backend.models import User
 from backend.licensing_api import router as licensing_router
+from backend.permission_governance import router as permission_governance_router
+
+# The main server mounts permission_governance_router into api_router before
+# this module's governed routers. Mount licensing into that already-mounted
+# router as well, so the commercial licensing API cannot disappear because
+# of router-registration order. This produces the required /api/licensing/*
+# paths when server.py includes /api/permission_governance_router.
+if not any(getattr(r, "path", "") == "/licensing" for r in getattr(permission_governance_router, "routes", [])):
+    permission_governance_router.include_router(licensing_router)
 
 
 # AuthContext restores an existing session and explicitly synchronizes
@@ -220,8 +229,4 @@ ALL_GOVERNED_ROUTERS: List[APIRouter] = [
     client_discussion_router,
     master_data_router, roles_router,
     auth_sync_router,
-    # Commercial licensing is mounted by server.py through this centralized
-    # router list, guaranteeing /api/licensing/* is present regardless of
-    # which production launcher imports the FastAPI app.
-    licensing_router,
 ]
