@@ -2,7 +2,7 @@
 
 Some commercial administrator accounts were created before feature-level
 licensing was introduced, so their persisted permission dictionary can be
-missing the new module/page flags.  The SaaS session itself is authoritative
+missing the new module/page flags. The SaaS session itself is authoritative
 for the company; this shim hydrates the admin's permissions from the active
 commercial license before governance checks run.
 """
@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from backend import dependencies as _dependencies
 from backend.models import User
+from backend.platform_owner import is_platform_owner
 
 _original_get_current_user = _dependencies.get_current_user
 
@@ -28,6 +29,11 @@ def _aware(value):
 
 
 async def _hydrate(user: User) -> User:
+    # Platform owner permissions come from the canonical admin role, not from
+    # any customer's purchased module/feature license.
+    if is_platform_owner(user):
+        return user
+
     if str(getattr(user, "role", "")).lower() != "admin":
         return user
     company_id = str(getattr(user, "company_id", "") or "").strip()
@@ -58,14 +64,11 @@ async def _hydrate(user: User) -> User:
         if not active:
             return user
 
-        # Prefer the most recently issued active license when multiple records
-        # exist for the same commercial customer.
         active.sort(key=lambda x: str(x.get("issued_at") or ""), reverse=True)
         license_doc = active[0]
         modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
         selected_features = license_doc.get("selected_features")
 
-        # Import lazily to avoid a module-initialization cycle.
         from backend.commercial_onboarding_extensions import _apply_feature_entitlements
 
         permissions = _apply_feature_entitlements("admin", modules, selected_features)
@@ -73,9 +76,6 @@ async def _hydrate(user: User) -> User:
         if hasattr(current, "model_dump"):
             current = current.model_dump()
         if isinstance(current, dict):
-            # The license is the hard upper bound. For an admin, permissions
-            # inside the purchased features are restored from the canonical
-            # admin template; unlicensed modules remain disabled.
             permissions = {**current, **permissions}
 
         data = user.model_dump()
@@ -86,8 +86,6 @@ async def _hydrate(user: User) -> User:
         data["license_key"] = license_doc.get("license_key")
         return User.model_validate(data)
     except Exception:
-        # Never make login fail because this compatibility layer cannot hydrate
-        # an optional commercial entitlement record.
         return user
 
 
