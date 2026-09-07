@@ -50,4 +50,3 @@ class EnterpriseLicense:
             "status": "active",
             "expires_at": expires.isoformat()
         }
-    }
