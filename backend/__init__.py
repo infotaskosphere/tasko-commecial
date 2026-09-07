@@ -1,3 +1,8 @@
+# Load the admin identity compatibility layer before backend.server imports
+# route dependencies. This is required for Render deployments that start via
+# `uvicorn backend.server:app` instead of backend/run.py.
+import backend.admin_identity_compat  # noqa: F401
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
