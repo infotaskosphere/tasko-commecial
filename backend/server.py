@@ -3082,7 +3082,7 @@ async def get_users(
         # lists, staff directory, cross-visibility lookups, etc).
         if current_user.role != "admin" and u.get("id") != current_user.id:
             u.pop("monthly_salary", None)
-    return users_raw
+    return convert_objectids(users_raw)
 
 
 @api_router.put("/users/{user_id}", response_model=User)
@@ -12447,238 +12447,267 @@ async def get_dept_member_count(current_user: User = Depends(get_current_user)):
 
 @api_router.get("/dashboard/stats", response_model=DashboardStats)
 async def get_dashboard_stats(current_user: User = Depends(get_current_user)):
-    now = datetime.now(IST)
-    task_query = {}
-    if current_user.role != "admin":
-        permissions = get_user_permissions(current_user)
-        if not permissions.get("can_view_all_tasks", False):
-            allowed_users = permissions.get("view_other_tasks", []) or []
-            if current_user.role == "manager":
-                team_ids = await get_team_user_ids(current_user.id)
-                allowed_users = list(set(allowed_users + team_ids))
-            task_query["$or"] = [
+    try:
+        return await _get_dashboard_stats_impl(current_user)
+    except Exception as exc:
+        logger.exception("Dashboard stats failed; returning safe fallback: %s", exc)
+        try:
+            total_tasks = await db.tasks.count_documents({})
+            completed_tasks = await db.tasks.count_documents({"status": "completed"})
+            pending_tasks = await db.tasks.count_documents({"status": "pending"})
+            total_dsc = await db.dsc_register.count_documents({})
+            total_clients = await db.clients.count_documents({})
+        except Exception:
+            total_tasks = completed_tasks = pending_tasks = total_dsc = total_clients = 0
+        return DashboardStats(
+            total_tasks=int(total_tasks),
+            completed_tasks=int(completed_tasks),
+            pending_tasks=int(pending_tasks),
+            overdue_tasks=0,
+            total_dsc=int(total_dsc),
+            expiring_dsc_count=0,
+            expiring_dsc_list=[],
+            total_clients=int(total_clients),
+            upcoming_birthdays=0,
+            upcoming_due_dates=0,
+            team_workload=[],
+            compliance_status={},
+            expired_dsc_count=0,
+        )
+
+async def _get_dashboard_stats_impl(current_user: User = Depends(get_current_user)):
+        now = datetime.now(IST)
+        task_query = {}
+        if current_user.role != "admin":
+            permissions = get_user_permissions(current_user)
+            if not permissions.get("can_view_all_tasks", False):
+                allowed_users = permissions.get("view_other_tasks", []) or []
+                if current_user.role == "manager":
+                    team_ids = await get_team_user_ids(current_user.id)
+                    allowed_users = list(set(allowed_users + team_ids))
+                task_query["$or"] = [
+                    {"assigned_to": current_user.id},
+                    {"sub_assignees": current_user.id},
+                    {"created_by": current_user.id},
+                    {"assigned_to": {"$in": allowed_users}},
+                ]
+
+        # PERF FIX: these six queries are independent of one another (none depends
+        # on another's result), but were previously awaited one-at-a-time in series
+        # — each round trip to Mongo adds its own latency, so six serial calls take
+        # roughly 6x as long as they need to. Firing them concurrently with
+        # asyncio.gather cuts dashboard load time down to the slowest single query
+        # instead of the sum of all of them.
+        if current_user.role == "admin":
+            client_query = {}
+        else:
+            permissions_for_clients = get_user_permissions(current_user)
+            extra_clients = permissions_for_clients.get("assigned_clients", []) or []
+            or_clauses = [
                 {"assigned_to": current_user.id},
-                {"sub_assignees": current_user.id},
                 {"created_by": current_user.id},
-                {"assigned_to": {"$in": allowed_users}},
+                {"assignments": {"$elemMatch": {"user_id": current_user.id}}},
             ]
+            if extra_clients:
+                or_clauses.append({"id": {"$in": extra_clients}})
+            client_query = {"$or": or_clauses}
 
-    # PERF FIX: these six queries are independent of one another (none depends
-    # on another's result), but were previously awaited one-at-a-time in series
-    # — each round trip to Mongo adds its own latency, so six serial calls take
-    # roughly 6x as long as they need to. Firing them concurrently with
-    # asyncio.gather cuts dashboard load time down to the slowest single query
-    # instead of the sum of all of them.
-    if current_user.role == "admin":
-        client_query = {}
-    else:
-        permissions_for_clients = get_user_permissions(current_user)
-        extra_clients = permissions_for_clients.get("assigned_clients", []) or []
-        or_clauses = [
-            {"assigned_to": current_user.id},
-            {"created_by": current_user.id},
-            {"assignments": {"$elemMatch": {"user_id": current_user.id}}},
-        ]
-        if extra_clients:
-            or_clauses.append({"id": {"$in": extra_clients}})
-        client_query = {"$or": or_clauses}
+        due_date_query = {"status": "pending"}
+        if current_user.role != "admin" and current_user.departments:
+            due_date_query["department"] = {"$in": current_user.departments}
 
-    due_date_query = {"status": "pending"}
-    if current_user.role != "admin" and current_user.departments:
-        due_date_query["department"] = {"$in": current_user.departments}
+        async def _empty_list():
+            return []
 
-    async def _empty_list():
-        return []
+        # PERF: Use tight projections — fetch only the fields this handler actually
+        # reads. Eliminates transmitting large blobs (notes, attachments, address
+        # strings, etc.) that the dashboard never touches.
+        (
+            tasks,
+            dsc_list,
+            clients,
+            closed_masters_stat,
+            due_dates,
+            users_for_workload,
+        ) = await asyncio.gather(
+            db.tasks.find(task_query, {
+                "_id": 0, "id": 1, "status": 1, "due_date": 1,
+                "assigned_to": 1, "sub_assignees": 1, "created_by": 1,
+            }).to_list(length=None),
+            db.dsc_register.find({}, {
+                "_id": 0, "id": 1, "holder_name": 1,
+                "certificate_number": 1, "expiry_date": 1,
+            }).to_list(length=None),
+            db.clients.find(client_query, {
+                "_id": 0, "id": 1, "birthday": 1, "client_type": 1,
+                "contact_persons": 1, "company_name": 1,
+            }).to_list(length=None),
+            db.compliance_masters.find(
+                {"is_closed": True}, {"_id": 0, "name": 1, "calendar_due_date_id": 1}
+            ).to_list(length=None),
+            db.due_dates.find(due_date_query, {
+                "_id": 0, "id": 1, "title": 1, "due_date": 1, "department": 1,
+            }).to_list(length=None),
+            db.users.find({}, {"_id": 0, "id": 1, "full_name": 1})
+            .to_list(length=None)
+            if current_user.role != "staff"
+            else _empty_list(),
+        )
+        total_tasks = len(tasks)
+        completed_tasks = len([t for t in tasks if t["status"] == "completed"])
+        pending_tasks = len([t for t in tasks if t["status"] == "pending"])
+        overdue_tasks = 0
+        for task in tasks:
+            if task.get("due_date") and task["status"] != "completed":
+                try:
+                    due_date = (
+                        datetime.fromisoformat(task["due_date"])
+                        if isinstance(task["due_date"], str)
+                        else task["due_date"]
+                    )
+                    if due_date.tzinfo is None:
+                        due_date = due_date.replace(tzinfo=timezone.utc)
+                    if due_date < now:
+                        overdue_tasks += 1
+                except (ValueError, TypeError):
+                    continue
 
-    # PERF: Use tight projections — fetch only the fields this handler actually
-    # reads. Eliminates transmitting large blobs (notes, attachments, address
-    # strings, etc.) that the dashboard never touches.
-    (
-        tasks,
-        dsc_list,
-        clients,
-        closed_masters_stat,
-        due_dates,
-        users_for_workload,
-    ) = await asyncio.gather(
-        db.tasks.find(task_query, {
-            "_id": 0, "id": 1, "status": 1, "due_date": 1,
-            "assigned_to": 1, "sub_assignees": 1, "created_by": 1,
-        }).to_list(length=None),
-        db.dsc_register.find({}, {
-            "_id": 0, "id": 1, "holder_name": 1,
-            "certificate_number": 1, "expiry_date": 1,
-        }).to_list(length=None),
-        db.clients.find(client_query, {
-            "_id": 0, "id": 1, "birthday": 1, "client_type": 1,
-            "contact_persons": 1, "company_name": 1,
-        }).to_list(length=None),
-        db.compliance_masters.find(
-            {"is_closed": True}, {"_id": 0, "name": 1, "calendar_due_date_id": 1}
-        ).to_list(length=None),
-        db.due_dates.find(due_date_query, {
-            "_id": 0, "id": 1, "title": 1, "due_date": 1, "department": 1,
-        }).to_list(length=None),
-        db.users.find({}, {"_id": 0, "id": 1, "full_name": 1})
-        .to_list(length=None)
-        if current_user.role != "staff"
-        else _empty_list(),
-    )
-    total_tasks = len(tasks)
-    completed_tasks = len([t for t in tasks if t["status"] == "completed"])
-    pending_tasks = len([t for t in tasks if t["status"] == "pending"])
-    overdue_tasks = 0
-    for task in tasks:
-        if task.get("due_date") and task["status"] != "completed":
+        total_dsc = len(dsc_list)
+        expiring_dsc_count = 0
+        expired_dsc_count = 0
+        expiring_dsc_list = []
+        for dsc in dsc_list:
             try:
-                due_date = (
-                    datetime.fromisoformat(task["due_date"])
-                    if isinstance(task["due_date"], str)
-                    else task["due_date"]
+                expiry_date = (
+                    datetime.fromisoformat(dsc["expiry_date"])
+                    if isinstance(dsc["expiry_date"], str)
+                    else dsc["expiry_date"]
                 )
-                if due_date.tzinfo is None:
-                    due_date = due_date.replace(tzinfo=timezone.utc)
-                if due_date < now:
-                    overdue_tasks += 1
+                days_left = (expiry_date - now).days
+                if days_left < 0:
+                    expired_dsc_count += 1
+                if days_left <= 90:
+                    expiring_dsc_count += 1
+                    expiring_dsc_list.append(
+                        {
+                            "id": dsc["id"],
+                            "holder_name": dsc["holder_name"],
+                            "certificate_number": dsc.get("certificate_number", "N/A"),
+                            "expiry_date": dsc["expiry_date"],
+                            "days_left": days_left,
+                            "status": "expired" if days_left < 0 else "expiring",
+                        }
+                    )
             except (ValueError, TypeError):
                 continue
 
-    total_dsc = len(dsc_list)
-    expiring_dsc_count = 0
-    expired_dsc_count = 0
-    expiring_dsc_list = []
-    for dsc in dsc_list:
-        try:
-            expiry_date = (
-                datetime.fromisoformat(dsc["expiry_date"])
-                if isinstance(dsc["expiry_date"], str)
-                else dsc["expiry_date"]
-            )
-            days_left = (expiry_date - now).days
-            if days_left < 0:
-                expired_dsc_count += 1
-            if days_left <= 90:
-                expiring_dsc_count += 1
-                expiring_dsc_list.append(
+        total_clients = len(clients)
+        today = date.today()
+        upcoming_birthdays = 0
+
+        for client in clients:
+            for person in personal_birthday_candidates(client):
+                raw = person["birthday"]
+                try:
+                    bday = (
+                        date.fromisoformat(raw[:10])
+                        if isinstance(raw, str)
+                        else raw
+                    )
+                    try:
+                        this_year_bday = bday.replace(year=today.year)
+                    except ValueError:
+                        this_year_bday = bday.replace(year=today.year, day=28)
+                    if this_year_bday < today:
+                        try:
+                            this_year_bday = bday.replace(year=today.year + 1)
+                        except ValueError:
+                            this_year_bday = bday.replace(year=today.year + 1, day=28)
+                    days_until = (this_year_bday - today).days
+                    if 0 <= days_until <= 7:
+                        upcoming_birthdays += 1
+                except (ValueError, TypeError):
+                    continue
+
+        upcoming_due_dates_count = 0
+
+        # Exclude due_dates whose compliance master is marked closed
+        closed_names_stat = {
+            m["name"].strip().lower() for m in closed_masters_stat if m.get("name")
+        }
+        closed_cal_ids_stat = {
+            m["calendar_due_date_id"]
+            for m in closed_masters_stat
+            if m.get("calendar_due_date_id")
+        }
+
+        for dd in due_dates:
+            if dd.get("id") in closed_cal_ids_stat:
+                continue
+            if dd.get("title", "").strip().lower() in closed_names_stat:
+                continue
+            try:
+                dd_date = (
+                    datetime.fromisoformat(dd["due_date"])
+                    if isinstance(dd["due_date"], str)
+                    else dd["due_date"]
+                )
+                days_until_due = (dd_date - now).days
+                if days_until_due <= 120:
+                    upcoming_due_dates_count += 1
+            except (ValueError, TypeError):
+                continue
+
+        team_workload = []
+        if current_user.role != "staff":
+            for user in users_for_workload:
+                user_tasks = [t for t in tasks if t.get("assigned_to") == user["id"]]
+                team_workload.append(
                     {
-                        "id": dsc["id"],
-                        "holder_name": dsc["holder_name"],
-                        "certificate_number": dsc.get("certificate_number", "N/A"),
-                        "expiry_date": dsc["expiry_date"],
-                        "days_left": days_left,
-                        "status": "expired" if days_left < 0 else "expiring",
+                        "user_id": user["id"],
+                        "user_name": user["full_name"],
+                        "total_tasks": len(user_tasks),
+                        "pending_tasks": len(
+                            [t for t in user_tasks if t["status"] == "pending"]
+                        ),
+                        "completed_tasks": len(
+                            [t for t in user_tasks if t["status"] == "completed"]
+                        ),
                     }
                 )
-        except (ValueError, TypeError):
-            continue
 
-    total_clients = len(clients)
-    today = date.today()
-    upcoming_birthdays = 0
+        compliance_score = 100
+        if total_tasks > 0:
+            compliance_score -= (overdue_tasks / total_tasks) * 50
+        if total_dsc > 0:
+            compliance_score -= (expiring_dsc_count / total_dsc) * 30
 
-    for client in clients:
-        for person in personal_birthday_candidates(client):
-            raw = person["birthday"]
-            try:
-                bday = (
-                    date.fromisoformat(raw[:10])
-                    if isinstance(raw, str)
-                    else raw
-                )
-                try:
-                    this_year_bday = bday.replace(year=today.year)
-                except ValueError:
-                    this_year_bday = bday.replace(year=today.year, day=28)
-                if this_year_bday < today:
-                    try:
-                        this_year_bday = bday.replace(year=today.year + 1)
-                    except ValueError:
-                        this_year_bday = bday.replace(year=today.year + 1, day=28)
-                days_until = (this_year_bday - today).days
-                if 0 <= days_until <= 7:
-                    upcoming_birthdays += 1
-            except (ValueError, TypeError):
-                continue
+        compliance_status = {
+            "score": max(0, int(compliance_score)),
+            "status": "good"
+            if compliance_score >= 80
+            else "warning"
+            if compliance_score >= 50
+            else "critical",
+            "overdue_tasks": overdue_tasks,
+            "expiring_certificates": expiring_dsc_count,
+        }
 
-    upcoming_due_dates_count = 0
-
-    # Exclude due_dates whose compliance master is marked closed
-    closed_names_stat = {
-        m["name"].strip().lower() for m in closed_masters_stat if m.get("name")
-    }
-    closed_cal_ids_stat = {
-        m["calendar_due_date_id"]
-        for m in closed_masters_stat
-        if m.get("calendar_due_date_id")
-    }
-
-    for dd in due_dates:
-        if dd.get("id") in closed_cal_ids_stat:
-            continue
-        if dd.get("title", "").strip().lower() in closed_names_stat:
-            continue
-        try:
-            dd_date = (
-                datetime.fromisoformat(dd["due_date"])
-                if isinstance(dd["due_date"], str)
-                else dd["due_date"]
-            )
-            days_until_due = (dd_date - now).days
-            if days_until_due <= 120:
-                upcoming_due_dates_count += 1
-        except (ValueError, TypeError):
-            continue
-
-    team_workload = []
-    if current_user.role != "staff":
-        for user in users_for_workload:
-            user_tasks = [t for t in tasks if t.get("assigned_to") == user["id"]]
-            team_workload.append(
-                {
-                    "user_id": user["id"],
-                    "user_name": user["full_name"],
-                    "total_tasks": len(user_tasks),
-                    "pending_tasks": len(
-                        [t for t in user_tasks if t["status"] == "pending"]
-                    ),
-                    "completed_tasks": len(
-                        [t for t in user_tasks if t["status"] == "completed"]
-                    ),
-                }
-            )
-
-    compliance_score = 100
-    if total_tasks > 0:
-        compliance_score -= (overdue_tasks / total_tasks) * 50
-    if total_dsc > 0:
-        compliance_score -= (expiring_dsc_count / total_dsc) * 30
-
-    compliance_status = {
-        "score": max(0, int(compliance_score)),
-        "status": "good"
-        if compliance_score >= 80
-        else "warning"
-        if compliance_score >= 50
-        else "critical",
-        "overdue_tasks": overdue_tasks,
-        "expiring_certificates": expiring_dsc_count,
-    }
-
-    return DashboardStats(
-        total_tasks=total_tasks,
-        completed_tasks=completed_tasks,
-        pending_tasks=pending_tasks,
-        overdue_tasks=overdue_tasks,
-        total_dsc=total_dsc,
-        expiring_dsc_count=expiring_dsc_count,
-        expiring_dsc_list=expiring_dsc_list,
-        total_clients=total_clients,
-        upcoming_birthdays=upcoming_birthdays,
-        upcoming_due_dates=upcoming_due_dates_count,
-        team_workload=team_workload,
-        compliance_status=compliance_status,
-        expired_dsc_count=expired_dsc_count,
-    )
+        return DashboardStats(
+            total_tasks=total_tasks,
+            completed_tasks=completed_tasks,
+            pending_tasks=pending_tasks,
+            overdue_tasks=overdue_tasks,
+            total_dsc=total_dsc,
+            expiring_dsc_count=expiring_dsc_count,
+            expiring_dsc_list=expiring_dsc_list,
+            total_clients=total_clients,
+            upcoming_birthdays=upcoming_birthdays,
+            upcoming_due_dates=upcoming_due_dates_count,
+            team_workload=team_workload,
+            compliance_status=compliance_status,
+            expired_dsc_count=expired_dsc_count,
+        )
 
 
 # ==========================================================
