@@ -561,18 +561,16 @@ const DashboardLayout = ({ children }) => {
 
     const Icon = meta.icon;
     const isActive = sectionId === activeSectionId;
+    // Section bar is always white with blue text — same look as the
+    // "Commercial Console" pill next to it — regardless of light/dark mode.
     return (
       <button
         key={sectionId}
         onClick={() => navigate(meta.landingPath)}
         className={`flex items-center gap-1.5 px-2.5 h-full text-[12.5px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer border-b-2 transition-colors ${
           isActive
-            ? isDark
-              ? 'text-white border-blue-400'
-              : 'text-slate-900 border-blue-600'
-            : isDark
-              ? 'text-slate-400 border-transparent hover:text-slate-200'
-              : 'text-slate-500 border-transparent hover:text-slate-800'
+            ? 'text-[#0D3B66] border-[#1F6FB2]'
+            : 'text-[#1F6FB2]/70 border-transparent hover:text-[#0D3B66]'
         }`}
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0" />
@@ -949,8 +947,8 @@ const DashboardLayout = ({ children }) => {
         style={{
           top:          HEADER_H,
           height:       SECTION_BAR_H,
-          background:   isDark ? '#0f172a' : '#ffffff',
-          borderBottom: isDark ? '1px solid #334155' : '1px solid #e2e8f0',
+          background:   '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
         }}
       >
         {renderSectionTabs(LEFT_SECTIONS)}
@@ -958,7 +956,7 @@ const DashboardLayout = ({ children }) => {
         {RIGHT_SECTIONS.length > 0 && (
           <div
             className="flex items-center flex-shrink-0"
-            style={{ borderLeft: isDark ? '1px solid #334155' : '1px solid #e2e8f0', marginLeft: 4, paddingLeft: 4 }}
+            style={{ borderLeft: '1px solid #e2e8f0', marginLeft: 4, paddingLeft: 4 }}
           >
             {renderSectionTabs(RIGHT_SECTIONS)}
           </div>
