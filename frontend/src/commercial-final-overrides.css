@@ -41,10 +41,36 @@ body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{background:#f8fafc!important;color:#0D3B66!important}
 
-/* Master Data is a full-width three-master workspace. */
+/* Master Data is a clean full-width three-master workspace. */
 body:not(.website-surface) #root .master-data-page-shell{width:100%!important;max-width:none!important}
 body:not(.website-surface) #root .master-data-page-shell .border-b,
 body:not(.website-surface) #root .master-data-page-shell .border-t{border-color:#e2e8f0!important}
+
+/* The shared CompanyProfiles and ReferenceData components contain their own
+   inner toolbar rows. Keep those rows white on Master Data; older enterprise
+   chrome rules could otherwise paint the row dark blue, creating a broken
+   half-blue/half-white appearance. */
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child{
+  background:#fff!important;
+  color:#172033!important;
+  background-image:none!important;
+  border-color:#e2e8f0!important;
+}
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child > div,
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child > header{
+  background:#fff!important;
+  background-image:none!important;
+}
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child button{
+  color:#1F6FB2!important;
+}
+/* Company/Reference inner rows should never become a solid dark-blue strip. */
+body:not(.website-surface) #root .master-data-page-shell [class*="bg-[#0D3B66]"],
+body:not(.website-surface) #root .master-data-page-shell [class*="bg-blue-900"],
+body:not(.website-surface) #root .master-data-page-shell [class*="bg-blue-950"]{
+  background:#fff!important;
+  color:#1F6FB2!important;
+}
 
 /* Square enterprise surfaces, including portal dialogs. */
 body:not(.website-surface) [role="dialog"],
