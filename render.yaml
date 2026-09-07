@@ -1,55 +1,59 @@
 ##############################################################################
-# render.yaml — Taskosphere service definitions
+# render.yaml — Taskosphere Commercial service definitions
 #
-# Deploy instructions:
-#   1. Connect your GitHub repo to Render
-#   2. Render will auto-detect this file and create all services
-#   3. Set the required environment variables in each service's dashboard
+# Production architecture:
+#   Backend  -> Python / FastAPI (backend/server.py)
+#   Frontend -> React / Vite static site (frontend/)
+#   WA Hub   -> Node / Baileys bridge (wa-bridge/)
 ##############################################################################
 
 services:
 
   # ── Backend (Python / FastAPI) ─────────────────────────────────────────────
   - type: web
-    name: final-taskosphere-backend
+    name: tasko-commercial-backend
     env: python
     rootDir: .
     buildCommand: bash build.sh
     startCommand: uvicorn backend.server:app --host 0.0.0.0 --port $PORT
     envVars:
-      # ⚠️ CRITICAL: this MUST be the live wa-bridge service URL. If this is
-      # wrong (e.g. left as a placeholder, or the wa-bridge service was
-      # renamed), every WhatsApp Hub session/QR/sync call will fail —
-      # usually silently, since most callers catch and ignore bridge errors.
-      - key: WA_BRIDGE_URL
-        value: https://final-taskosphere-wa-bridge.onrender.com
-      - key: MONGO_URL
+      # MongoDB aliases used by backend/dependencies.py and the SaaS auth path.
+      - key: MONGODB_URI
         sync: false
-      - key: SECRET_KEY
+      - key: MONGODB_DB_NAME
+        value: taskosphere_commercial
+      # backend/dependencies.py requires JWT_SECRET when ENV_MODE=production.
+      - key: JWT_SECRET
         generateValue: true
+      - key: ENV_MODE
+        value: production
+      # Bootstrap credentials are intentionally configured in Render's
+      # environment dashboard rather than committed to this repository.
+      - key: SAAS_BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: SAAS_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: SAAS_BOOTSTRAP_COMPANY_NAME
+        value: Taskosphere Commercial
+      - key: SAAS_BOOTSTRAP_PACKAGE_ID
+        value: professional
+      - key: SAAS_SESSION_TTL_DAYS
+        value: "30"
+      - key: WA_BRIDGE_URL
+        value: https://tasko-commercial-wa-bridge.onrender.com
     healthCheckPath: /health
 
   # ── Frontend (React / Vite) ────────────────────────────────────────────────
   - type: web
-    name: final-taskosphere-frontend
+    name: tasko-commercial-frontend
     env: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
-      # ⚠️ CRITICAL: this MUST be the live backend service URL. It's baked
-      # into the static build at build time (Vite env vars are not readable
-      # at runtime), so every page makes API calls to this exact host.
-      # If this is missing, blank, or pointing at a renamed/deleted Render
-      # service, every /api/* call fails — either as a 404 (an old backend
-      # build answering, but missing the route) or as
-      # net::ERR_NAME_NOT_RESOLVED (the hostname doesn't resolve at all,
-      # e.g. the backend service was deleted/renamed/suspended). Previously
-      # this depended entirely on a Dashboard-only env var that a fresh
-      # Blueprint sync can silently drop — it's now pinned here so it can
-      # never go missing again.
+      # This is baked into the Vite build and must point to the Python API.
       - key: VITE_API_URL
-        value: https://final-taskosphere-backend.onrender.com
+        value: https://tasko-commercial-backend.onrender.com
     headers:
       - path: /assets/*.css
         name: Content-Type
@@ -70,22 +74,14 @@ services:
 
   # ── WhatsApp Bridge (Node.js / Baileys) ───────────────────────────────────
   - type: web
-    name: final-taskosphere-wa-bridge
+    name: tasko-commercial-wa-bridge
     env: node
     rootDir: wa-bridge
     buildCommand: npm install
     startCommand: node index.js
     envVars:
-      # ⚠️ CRITICAL: this MUST be the live backend service URL. The bridge
-      # posts every incoming message and history sync to
-      # ${BACKEND_URL}/api/whatsapp/hub/webhook/*. If this URL is wrong,
-      # WhatsApp numbers will show "connected" in the Hub forever while
-      # 0 chats ever load — there is no error shown anywhere in the UI for
-      # this specific failure mode (see wa-bridge/index.js startup self-test
-      # log for a loud warning if this is misconfigured).
       - key: BACKEND_URL
-        value: https://final-taskosphere-backend.onrender.com
-      # PORT is injected automatically by Render — no need to set it
+        value: https://tasko-commercial-backend.onrender.com
     disk:
       name: wa-sessions
       mountPath: /opt/render/project/src/sessions
