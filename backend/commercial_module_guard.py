@@ -56,15 +56,23 @@ def module_for_path(path: str) -> Optional[str]:
 _original_get_current_user = _dependencies.get_current_user
 
 
+async def _is_commercial_account(user: User) -> bool:
+    role_key = str(getattr(user, "role_key", "") or "").lower()
+    if role_key.startswith("commercial_"):
+        return True
+    company_id = str(getattr(user, "company_id", "") or "")
+    if not company_id:
+        return False
+    company = await _dependencies.db.companies.find_one({"id": company_id}, {"_id": 0, "source": 1})
+    return bool(company and company.get("source") == "commercial-license")
+
+
 async def get_current_user_with_commercial_guard(
     request: Request,
     credentials=Depends(_dependencies.security),
 ) -> User:
     user = await _original_get_current_user(credentials)
-    # Internal/system admins have no tenant license and retain the existing
-    # unrestricted behaviour. Commercial admins and all company staff are
-    # capped by the licensed module set.
-    if getattr(user, "company_id", None):
+    if await _is_commercial_account(user):
         module = module_for_path(request.url.path)
         if module and not has_module_access(user, module):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {module} module.")
