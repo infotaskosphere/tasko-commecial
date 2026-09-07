@@ -1,18 +1,30 @@
+import copy
 import re
 import uuid
 from calendar import monthrange
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 
 from backend.dependencies import create_access_token, db, get_current_user, require_admin
-from backend.models import DEFAULT_ROLE_PERMISSIONS, User
+from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
 from backend.licensing_api import create_license_record, _find_license, _public_license, _expiry_reason, _now
 
 router = APIRouter(prefix="/commercial-onboarding", tags=["commercial-onboarding"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+MODULE_CATALOG = [
+    {"id": "taskosphere", "code": "TASKOSPHERE", "name": "Taskosphere", "description": "Tasks, To-Do, Attendance, Reminders, Action Center, Client Visits and AI tools.", "monthly_price": 0.0, "active": True},
+    {"id": "finix", "code": "FINIX", "name": "Finix", "description": "Sales, Purchase, Bank, Chart of Accounts, Journal Entries and Accounting Reports.", "monthly_price": 0.0, "active": True},
+    {"id": "compliance", "code": "COMPLIANCE", "name": "Compliance", "description": "Compliance Tracker, GST Reconciliation, Trademark Sphere, MIS, Salary Slips and ROC Sphere.", "monthly_price": 0.0, "active": True},
+    {"id": "records", "code": "RECORDS", "name": "Records", "description": "DSC Register, Document Register, Clients and Password Vault.", "monthly_price": 0.0, "active": True},
+    {"id": "proposals", "code": "PROPOSALS", "name": "Client Proposals", "description": "Lead Management, Quotations and Client Discussion.", "monthly_price": 0.0, "active": True},
+    {"id": "people_matrix", "code": "PEOPLE_MATRIX", "name": "People Matrix", "description": "Users, Leave, Payroll, HR, Recruitment and Performance.", "monthly_price": 0.0, "active": True},
+]
+MODULE_IDS = {item["id"] for item in MODULE_CATALOG}
+MODULE_FLAG_BY_ID = {key: value["flag"] for key, value in MODULE_HIERARCHY.items() if key in MODULE_IDS}
 
 
 def _norm(value: Any) -> str:
@@ -43,8 +55,43 @@ def _customer_public(customer: Dict[str, Any]) -> Dict[str, Any]:
         "city": customer.get("city"),
         "state": customer.get("state"),
         "pincode": customer.get("pincode"),
+        "licensed_modules": list(customer.get("licensed_modules") or []),
         "created_at": customer.get("created_at"),
     }
+
+
+async def _ensure_module_catalog() -> List[Dict[str, Any]]:
+    for item in MODULE_CATALOG:
+        await db.commercial_license_module_catalog.update_one(
+            {"id": item["id"]},
+            {"$setOnInsert": dict(item)},
+            upsert=True,
+        )
+    return await db.commercial_license_module_catalog.find({}, {"_id": 0}).sort("name", 1).to_list(20)
+
+
+async def _module_catalog_map() -> Dict[str, Dict[str, Any]]:
+    catalog = await _ensure_module_catalog()
+    return {item["id"]: item for item in catalog if item.get("active", True)}
+
+
+def _apply_license_entitlements(role: str, selected_modules: List[str]) -> Dict[str, Any]:
+    """Overlay license module caps on the existing role permission template.
+
+    Role permissions still control individual pages for manager/staff. The
+    commercial license is the hard upper bound: an unlicensed module and all
+    of its pages are disabled. Admin keeps full permissions inside purchased
+    modules.
+    """
+    permissions = copy.deepcopy(DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["staff"]))
+    selected = set(selected_modules)
+    for module_id, module_flag in MODULE_FLAG_BY_ID.items():
+        allowed = module_id in selected
+        permissions[module_flag] = allowed
+        module_def = MODULE_HIERARCHY.get(module_id, {})
+        for page in module_def.get("pages", []):
+            permissions[page["flag"]] = bool(allowed and (permissions.get(page["flag"], False)))
+    return permissions
 
 
 async def _ensure_company_master(customer: Dict[str, Any], license_doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -62,6 +109,7 @@ async def _ensure_company_master(customer: Dict[str, Any], license_doc: Dict[str
         "city": customer.get("city"),
         "state": customer.get("state"),
         "pincode": customer.get("pincode"),
+        "licensed_modules": list(customer.get("licensed_modules") or license_doc.get("modules") or []),
         "status": "active",
         "source": "commercial-license",
         "license_id": license_doc.get("id"),
@@ -89,6 +137,30 @@ async def _find_customer_for_license(license_key: str, company_name: str):
     return customer, license_doc
 
 
+@router.get("/module-catalog")
+async def get_module_catalog(current_user: User = Depends(require_admin())):
+    return {"modules": await _ensure_module_catalog()}
+
+
+@router.put("/module-catalog/{module_id}")
+async def update_module_catalog(module_id: str, payload: Dict[str, Any], current_user: User = Depends(require_admin())):
+    if module_id not in MODULE_IDS:
+        raise HTTPException(status_code=404, detail="Module not found.")
+    try:
+        price = float(payload.get("monthly_price", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Monthly module price must be a number.")
+    if price < 0:
+        raise HTTPException(status_code=400, detail="Monthly module price cannot be negative.")
+    await _ensure_module_catalog()
+    await db.commercial_license_module_catalog.update_one(
+        {"id": module_id},
+        {"$set": {"monthly_price": round(price, 2), "active": bool(payload.get("active", True)), "updated_at": _now().isoformat()}},
+    )
+    item = await db.commercial_license_module_catalog.find_one({"id": module_id}, {"_id": 0})
+    return item
+
+
 @router.post("/generate-license", status_code=201)
 async def generate_license(payload: Dict[str, Any], current_user: User = Depends(require_admin())):
     company_name = str(payload.get("company_name") or "").strip()
@@ -98,21 +170,72 @@ async def generate_license(payload: Dict[str, Any], current_user: User = Depends
     if months <= 0:
         raise HTTPException(status_code=400, detail="License duration in months is required.")
 
-    license_doc = await create_license_record({**payload, "validity_days": max(1, months * 30)}, str(current_user.id))
+    catalog = await _module_catalog_map()
+    selected_modules = []
+    for raw in payload.get("selected_modules") or payload.get("modules") or []:
+        module_id = str(raw).strip().lower()
+        if module_id and module_id not in selected_modules:
+            selected_modules.append(module_id)
+    if not selected_modules:
+        raise HTTPException(status_code=400, detail="Select at least one module for the license.")
+    unavailable = [module_id for module_id in selected_modules if module_id not in catalog]
+    if unavailable:
+        raise HTTPException(status_code=400, detail=f"Selected module is unavailable: {', '.join(unavailable)}.")
+
+    module_prices = {module_id: round(float(catalog[module_id].get("monthly_price", 0)), 2) for module_id in selected_modules}
+    monthly_module_total = round(sum(module_prices.values()), 2)
+    calculated_amount = round(monthly_module_total * months, 2)
+    amount_raw = payload.get("amount_charged")
+    amount_charged = calculated_amount if amount_raw in (None, "") else float(amount_raw)
+    if amount_charged < 0:
+        raise HTTPException(status_code=400, detail="Amount charged cannot be negative.")
+
+    # Reuse the existing licensing engine for key generation, activation limits,
+    # status and expiry handling. The package fields are immediately replaced
+    # with the selected module entitlement set, so the old fixed bundles no
+    # longer determine what the customer receives.
+    license_doc = await create_license_record(
+        {
+            **payload,
+            "package_id": "essential",
+            "validity_days": max(1, months * 30),
+            "max_users": max(1, int(payload.get("max_users") or 1)),
+            "max_installations": max(1, int(payload.get("max_installations") or 1)),
+        },
+        str(current_user.id),
+    )
     issued_at = datetime.fromisoformat(license_doc["issued_at"].replace("Z", "+00:00"))
     expires_at = _add_months(issued_at, months)
-    license_doc["validity_months"] = months
-    license_doc["expires_at"] = expires_at.isoformat()
-    license_doc["amount_charged"] = float(payload.get("amount_charged") or 0)
+    license_doc.update({
+        "package_id": "custom-modules",
+        "package_code": "TSO-CUSTOM",
+        "package_name": "Custom Module License",
+        "modules": selected_modules,
+        "module_prices": module_prices,
+        "monthly_module_price": monthly_module_total,
+        "calculated_amount": calculated_amount,
+        "validity_months": months,
+        "expires_at": expires_at.isoformat(),
+        "amount_charged": round(amount_charged, 2),
+        "sales_currency": str(payload.get("currency") or "INR"),
+        "notes": str(payload.get("notes") or "").strip(),
+    })
 
     await db.commercial_licenses.update_one(
         {"id": license_doc["id"]},
         {"$set": {
+            "package_id": license_doc["package_id"],
+            "package_code": license_doc["package_code"],
+            "package_name": license_doc["package_name"],
+            "modules": selected_modules,
+            "module_prices": module_prices,
+            "monthly_module_price": monthly_module_total,
+            "calculated_amount": calculated_amount,
             "validity_months": months,
-            "amount_charged": license_doc["amount_charged"],
+            "amount_charged": round(amount_charged, 2),
             "expires_at": license_doc["expires_at"],
-            "sales_currency": str(payload.get("currency") or "INR"),
-            "notes": str(payload.get("notes") or "").strip(),
+            "sales_currency": license_doc["sales_currency"],
+            "notes": license_doc["notes"],
         }},
     )
 
@@ -124,7 +247,11 @@ async def generate_license(payload: Dict[str, Any], current_user: User = Depends
         "city": str(payload.get("city") or "").strip(),
         "state": str(payload.get("state") or "").strip(),
         "pincode": str(payload.get("pincode") or "").strip(),
-        "amount_charged": license_doc["amount_charged"],
+        "licensed_modules": selected_modules,
+        "module_prices": module_prices,
+        "amount_charged": round(amount_charged, 2),
+        "calculated_amount": calculated_amount,
+        "monthly_module_price": monthly_module_total,
         "validity_months": months,
         "last_license_id": license_doc["id"],
     }
@@ -144,6 +271,10 @@ async def lookup_licensed_company(payload: Dict[str, Any]):
 @router.post("/create-admin")
 async def create_customer_admin(payload: Dict[str, Any]):
     customer, license_doc = await _find_customer_for_license(payload.get("license_key"), payload.get("company_name"))
+    existing_admin = await db.users.find_one({"company_id": customer.get("id"), "role": "admin"}, {"_id": 1})
+    if existing_admin:
+        raise HTTPException(status_code=409, detail="The company administrator has already been created. Please sign in with the existing administrator account.")
+
     full_name = str(payload.get("full_name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     password = str(payload.get("password") or "")
@@ -155,13 +286,14 @@ async def create_customer_admin(payload: Dict[str, Any]):
     company = await _ensure_company_master(customer, license_doc)
     now = _now().isoformat()
     user_id = str(uuid.uuid4())
+    permissions = _apply_license_entitlements("admin", list(license_doc.get("modules") or []))
     user_doc = {
         "id": user_id,
         "email": email,
         "full_name": full_name,
         "role": "admin",
         "password": pwd_context.hash(password),
-        "permissions": dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {})),
+        "permissions": permissions,
         "departments": [],
         "phone": customer.get("phone"),
         "is_active": True,
@@ -173,10 +305,27 @@ async def create_customer_admin(payload: Dict[str, Any]):
         "company_name": customer.get("company_name"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
+        "licensed_modules": list(license_doc.get("modules") or []),
     }
     await db.users.insert_one(user_doc)
     safe_user = {k: v for k, v in user_doc.items() if k != "password"}
     return {"access_token": create_access_token({"sub": user_id}), "token_type": "bearer", "user": safe_user, "company": company, "license": _public_license(license_doc)}
+
+
+async def _active_company_license(current_user: User) -> Dict[str, Any]:
+    company_id = str(getattr(current_user, "company_id", "") or "")
+    if not company_id:
+        raise HTTPException(status_code=403, detail="This account is not linked to a licensed company.")
+    licenses = await db.commercial_licenses.find(
+        {"customer_id": company_id, "status": "active"}, {"_id": 0}
+    ).sort("issued_at", -1).limit(1).to_list(1)
+    license_doc = licenses[0] if licenses else None
+    if not license_doc:
+        raise HTTPException(status_code=403, detail="No active commercial license is linked to this company.")
+    reason = _expiry_reason(license_doc)
+    if reason:
+        raise HTTPException(status_code=403, detail=reason)
+    return license_doc
 
 
 @router.post("/create-staff")
@@ -186,13 +335,8 @@ async def create_staff(payload: Dict[str, Any], current_user: User = Depends(get
     company_name = str(payload.get("company_name") or "").strip()
     if _norm(company_name) != _norm(getattr(current_user, "company_name", "")):
         raise HTTPException(status_code=403, detail="Company name does not match your licensed company.")
-    license_id = getattr(current_user, "license_id", None)
-    license_doc = await db.commercial_licenses.find_one({"id": license_id}, {"_id": 0}) if license_id else None
-    if not license_doc:
-        raise HTTPException(status_code=403, detail="No commercial license is linked to this administrator.")
-    reason = _expiry_reason(license_doc)
-    if reason:
-        raise HTTPException(status_code=403, detail=reason)
+
+    license_doc = await _active_company_license(current_user)
     customer = await db.commercial_license_customers.find_one({"id": license_doc.get("customer_id")}, {"_id": 0})
     if not customer or _norm(customer.get("company_name")) != _norm(company_name):
         raise HTTPException(status_code=403, detail="Company name does not match the licensed company.")
@@ -205,21 +349,23 @@ async def create_staff(payload: Dict[str, Any], current_user: User = Depends(get
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
 
-    active_users = await db.users.count_documents({"license_id": license_doc.get("id"), "is_active": True})
-    if active_users >= int(license_doc.get("max_users", 1)):
-        raise HTTPException(status_code=400, detail=f"User limit reached for this license ({license_doc.get('max_users', 1)} users).")
+    active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
+    max_users = int(license_doc.get("max_users", 1))
+    if active_users >= max_users:
+        raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
 
     role = str(payload.get("role") or "staff").lower()
     if role not in {"staff", "manager"}:
         role = "staff"
     now = _now().isoformat()
+    permissions = _apply_license_entitlements(role, list(license_doc.get("modules") or []))
     user_doc = {
         "id": str(uuid.uuid4()),
         "email": email,
         "full_name": full_name,
         "role": role,
         "password": pwd_context.hash(password),
-        "permissions": dict(DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["staff"])),
+        "permissions": permissions,
         "departments": list(payload.get("departments") or []),
         "phone": str(payload.get("phone") or "").strip() or None,
         "is_active": True,
@@ -231,6 +377,7 @@ async def create_staff(payload: Dict[str, Any], current_user: User = Depends(get
         "company_name": customer.get("company_name"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
+        "licensed_modules": list(license_doc.get("modules") or []),
     }
     await db.users.insert_one(user_doc)
     return {k: v for k, v in user_doc.items() if k != "password"}
@@ -238,10 +385,8 @@ async def create_staff(payload: Dict[str, Any], current_user: User = Depends(get
 
 @router.get("/my-company")
 async def get_my_company(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin" or not getattr(current_user, "license_id", None):
+    if current_user.role != "admin" or not getattr(current_user, "company_id", None):
         raise HTTPException(status_code=403, detail="Commercial company administration is unavailable for this account.")
-    license_doc = await db.commercial_licenses.find_one({"id": current_user.license_id}, {"_id": 0})
-    if not license_doc:
-        raise HTTPException(status_code=404, detail="Commercial license not found.")
+    license_doc = await _active_company_license(current_user)
     customer = await db.commercial_license_customers.find_one({"id": license_doc.get("customer_id")}, {"_id": 0})
     return {"customer": _customer_public(customer or {}), "license": license_doc}
