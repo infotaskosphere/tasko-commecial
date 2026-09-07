@@ -1,8 +1,8 @@
 import api from './api';
 
-// Existing Users UI still posts to /auth/register. Keep that feature intact,
-// but route new staff/manager creation for licensed company admins through the
-// commercial onboarding workflow so the company name is verified server-side.
+// Existing Users UI still posts to /auth/register. Only licensed company
+// admins are routed through the commercial onboarding endpoint. Internal
+// admins continue using the existing user-creation process unchanged.
 const readStoredUser = () => {
   try {
     const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -18,6 +18,9 @@ api.interceptors.request.use((config) => {
 
   const user = readStoredUser();
   if (String(user?.role || '').toLowerCase() !== 'admin') return config;
+  // A commercial administrator has a company/license context. Do not alter
+  // the existing /auth/register workflow for system/internal administrators.
+  if (!user?.company_id) return config;
 
   const payload = typeof config.data === 'string' ? (() => {
     try { return JSON.parse(config.data); } catch { return {}; }
