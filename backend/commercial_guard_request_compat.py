@@ -3,7 +3,7 @@
 The original commercial guard annotated its Request parameter from FastAPI.
 On the deployed FastAPI/Pydantic combination that parameter was being treated
 as a required query parameter, so otherwise valid authenticated GET requests
-returned 422 before reaching the endpoint.  Keep the same licensing checks but
+returned 422 before reaching the endpoint. Keep the same licensing checks but
 use Starlette's Request type explicitly and replace the problematic wrapper
 before the application imports its route modules.
 """
@@ -14,6 +14,7 @@ from starlette.requests import Request
 from backend import dependencies as _dependencies
 from backend import commercial_module_guard as _guard
 from backend.models import User
+from backend.platform_owner import is_platform_owner
 
 
 # The module guard has already captured the admin-permission-aware original
@@ -27,6 +28,11 @@ async def get_current_user_with_commercial_guard_compat(
     credentials=Depends(_dependencies.security),
 ) -> User:
     user = await _original_get_current_user(credentials)
+
+    # The software owner is the platform operator, not a licensed customer
+    # tenant. Keep this identity outside customer module/feature enforcement.
+    if is_platform_owner(user):
+        return user
 
     if await _guard._is_commercial_account(user):
         module = _guard.module_for_path(request.url.path)
