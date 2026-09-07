@@ -17,8 +17,8 @@ xlrd==2.0.1
 # =========================
 # Data
 # =========================
-pandas==2.2.2
-numpy==1.26.4
+pandas==2.3.3
+numpy==2.3.3
 pdfplumber==0.11.4
 
 # =========================
@@ -149,7 +149,7 @@ cryptography>=42.0.0
 # TM Sync Agent (Trademark Sphere)
 # =========================
 selenium==4.20.0
-# pyscard excluded — requires libpcsclite-dev not available on [Render.com](https://Render.com)
+# pyscard excluded — requires libpcsclite-dev not available on Render.com
 
 # =========================
 # QuickCompany Trademark
