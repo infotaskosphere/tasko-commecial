@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext.jsx';
 import { CompanyProfilesList } from '@/components/CompanyProfiles';
 import CompanyUserManager from '@/components/CompanyUserManager';
 import PlatformUserManager from '@/components/PlatformUserManager';
+import MasterDataClientManager from '@/components/MasterDataClientManager';
 import { PageShell, PageBanner } from '@/components/ui/PageKit';
 import '../../master-data-commercial.css';
 
@@ -42,7 +43,7 @@ export default function MasterData() {
 }
 
 function MasterDataClientSection() {
-  return <MasterDataSectionShell className="master-data-client-card"><CompanyUserManager /></MasterDataSectionShell>;
+  return <MasterDataSectionShell className="master-data-client-card"><MasterDataClientManager /></MasterDataSectionShell>;
 }
 
 function MasterDataUserSection({ platformOwner, companies }) {
