@@ -42,6 +42,7 @@ from backend.governance_core import (
     get_visibility_scope,
 )
 from backend.models import User
+from backend.licensing_api import router as licensing_router
 
 
 class StubRecordIn(BaseModel):
@@ -196,4 +197,8 @@ ALL_GOVERNED_ROUTERS: List[APIRouter] = [
     leave_router, payroll_router, hr_router, performance_router,
     client_discussion_router,
     master_data_router, roles_router,
+    # Commercial licensing is mounted by server.py through this centralized
+    # router list, guaranteeing /api/licensing/* is present regardless of
+    # which production launcher imports the FastAPI app.
+    licensing_router,
 ]
