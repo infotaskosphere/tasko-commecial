@@ -1,0 +1,50 @@
+/* Commercial card geometry fixes
+   Keeps cards flush and square across Records and Trademark Sphere while
+   preserving rounded controls/badges where they are functional. */
+
+/* --------------------------------------------------------------------------
+   RECORDS DASHBOARD
+   -------------------------------------------------------------------------- */
+body:not(.website-surface) #root .records-dashboard-panel{
+  border-radius:0!important;
+  box-shadow:none!important;
+  border:1px solid #dbe3ea!important;
+}
+
+body:not(.website-surface) #root .records-dashboard-panel-header{
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
+/* Remove the legacy dark-blue frame that was being applied around panel bodies. */
+body:not(.website-surface) #root .records-dashboard-panel-body{
+  border:0!important;
+  border-top:0!important;
+  border-right:0!important;
+  border-bottom:0!important;
+  border-left:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
+body:not(.website-surface) #root .records-dashboard-empty,
+body:not(.website-surface) #root .records-dashboard-approval-empty,
+body:not(.website-surface) #root .records-dashboard-bar{
+  border-radius:0!important;
+  box-shadow:none!important;
+}
+
+/* --------------------------------------------------------------------------
+   TRADEMARK SPHERE
+   The page currently has no dedicated root class, so scope these rules to
+   its unique 1400px workspace container rather than changing other modules.
+   -------------------------------------------------------------------------- */
+body:not(.website-surface) #root:has([style*="max-width: 1400px"]) .shadow-sm,
+body:not(.website-surface) #root:has([style*="max-width: 1400px"]) .rounded-2xl,
+body:not(.website-surface) #root:has([style*="max-width: 1400px"]) [style*="border-radius: 16px"]{
+  border-radius:0!important;
+}
+
+body:not(.website-surface) #root:has([style*="max-width: 1400px"]) .shadow-sm{
+  box-shadow:0 1px 4px rgb(15 23 42 / 5%)!important;
+}
