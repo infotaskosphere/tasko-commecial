@@ -1,76 +1,142 @@
 /* Final commercial UI corrections. */
 
-/* The top module switcher is a white enterprise bar with the same blue text used by Commercial Console. */
+/* --------------------------------------------------------------------------
+   TOP MODULE SWITCHER
+   -------------------------------------------------------------------------- */
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"]{
   background:#fff!important;
   color:#1F6FB2!important;
   border-top:1px solid #e2e8f0!important;
   border-bottom:1px solid #d8e1ea!important;
+  box-shadow:none!important;
+  transition:background-color .25s ease,border-color .25s ease,color .25s ease;
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button{
+  position:relative!important;
   height:40px!important;
   min-height:40px!important;
-  background:#fff!important;
+  background:transparent!important;
   color:#1F6FB2!important;
   border-radius:0!important;
-  border-bottom:2px solid transparent!important;
+  border:0!important;
+  border-bottom:0!important;
   box-shadow:none!important;
   font-weight:700!important;
+  overflow:hidden!important;
+  transition:color .2s ease,background-color .2s ease,transform .2s ease;
+}
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{
+  content:"";
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:3px;
+  border-radius:3px 3px 0 0;
+  background:#1FAF5A;
+  transform:scaleX(0);
+  transform-origin:center;
+  transition:transform .28s cubic-bezier(.22,1,.36,1),background-color .2s ease;
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{
   background:#f8fafc!important;
   color:#0D3B66!important;
-  border-bottom-color:#1F6FB2!important;
+  transform:translateY(-1px);
+}
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover::after{
+  transform:scaleX(.65);
+  background:#1FAF5A;
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{
+  background:linear-gradient(to bottom,rgba(31,111,178,.10),rgba(31,111,178,.04))!important;
   color:#0D3B66!important;
-  border-bottom-color:#1F6FB2!important;
+  font-weight:800!important;
+}
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"]::after,
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]::after{
+  transform:scaleX(1);
+  background:#1FAF5A;
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{
   background:#fff!important;
   border-left:1px solid #e2e8f0!important;
+  transition:background-color .25s ease,border-color .25s ease;
 }
 body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{
+  position:relative!important;
   height:40px!important;
   min-height:40px!important;
-  background:#fff!important;
+  background:transparent!important;
   color:#1F6FB2!important;
   border-radius:0!important;
   box-shadow:none!important;
+  transition:color .2s ease,background-color .2s ease;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{background:#f8fafc!important;color:#0D3B66!important}
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{
+  background:#f8fafc!important;
+  color:#0D3B66!important;
+}
 
-/* Master Data is a clean full-width three-master workspace. */
+/* Dark theme: use the same dark surface as the dashboard header/content. */
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"]{
+  background:#0f172a!important;
+  color:#cbd5e1!important;
+  border-top-color:#1e293b!important;
+  border-bottom-color:#334155!important;
+  box-shadow:0 1px 0 rgba(15,23,42,.8)!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button{
+  background:transparent!important;
+  color:#94a3b8!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{
+  background:#172033!important;
+  color:#f8fafc!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{
+  background:linear-gradient(to bottom,rgba(31,111,178,.24),rgba(31,111,178,.10))!important;
+  color:#fff!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{
+  background:#5CCB5F;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{
+  background:#0f172a!important;
+  border-left-color:#334155!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{
+  background:transparent!important;
+  color:#94a3b8!important;
+}
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{
+  background:#172033!important;
+  color:#fff!important;
+}
+
+/* Keep any AI status/notification dot circular instead of inheriting a square
+   badge shape. This also covers the AI Document Reader sidebar item. */
+body:not(.website-surface) #root [href="/ai-reader"] [class*="rounded"],
+body:not(.website-surface) #root [href="/ai-reader"] [class*="badge"],
+body:not(.website-surface) #root [data-ai-status],
+body:not(.website-surface) #root [data-ai-badge]{
+  border-radius:9999px!important;
+}
+
+/* Master Data is a clean full-width workspace. */
 body:not(.website-surface) #root .master-data-page-shell{width:100%!important;max-width:none!important}
 body:not(.website-surface) #root .master-data-page-shell .border-b,
 body:not(.website-surface) #root .master-data-page-shell .border-t{border-color:#e2e8f0!important}
-
-/* The shared CompanyProfiles and ReferenceData components contain their own
-   inner toolbar rows. Keep those rows white on Master Data; older enterprise
-   chrome rules could otherwise paint the row dark blue, creating a broken
-   half-blue/half-white appearance. */
 body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child{
-  background:#fff!important;
-  color:#172033!important;
-  background-image:none!important;
-  border-color:#e2e8f0!important;
+  background:#fff!important;color:#172033!important;background-image:none!important;border-color:#e2e8f0!important;
 }
 body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child > div,
-body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child > header{
-  background:#fff!important;
-  background-image:none!important;
-}
-body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child button{
-  color:#1F6FB2!important;
-}
-/* Company/Reference inner rows should never become a solid dark-blue strip. */
-body:not(.website-surface) #root .master-data-page-shell [class*="bg-[#0D3B66]"],
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child > header{background:#fff!important;background-image:none!important}
+body:not(.website-surface) #root .master-data-page-shell > section > div.p-5 > div:first-child button{color:#1F6FB2!important}
+body:not(.website-surface) #root .master-data-page-shell [class*="bg-[#0D3B66"],
 body:not(.website-surface) #root .master-data-page-shell [class*="bg-blue-900"],
-body:not(.website-surface) #root .master-data-page-shell [class*="bg-blue-950"]{
-  background:#fff!important;
-  color:#1F6FB2!important;
-}
+body:not(.website-surface) #root .master-data-page-shell [class*="bg-blue-950"]{background:#fff!important;color:#1F6FB2!important}
 
 /* Square enterprise surfaces, including portal dialogs. */
 body:not(.website-surface) [role="dialog"],
@@ -84,150 +150,23 @@ body:not(.website-surface) [role="dialog"] select,
 body:not(.website-surface) [data-radix-dialog-content] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 body:not(.website-surface) [data-radix-dialog-content] select{min-height:40px!important;height:40px!important}
 
-/* Records Dashboard: the panel header is a compact white heading row and the
-   body is an independent, readable content surface. Do not allow inherited
-   dark-blue section backgrounds, fixed heights, or overflow clipping to hide
-   the words inside the cards. */
-.records-dashboard-root{
-  width:100%!important;
-  max-width:100%!important;
-  min-width:0!important;
-  min-height:100%!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow:visible!important;
-  box-sizing:border-box!important;
-  padding-bottom:2rem!important;
-}
-.records-dashboard-panel{
-  width:100%!important;
-  min-width:0!important;
-  min-height:132px!important;
-  height:auto!important;
-  max-height:none!important;
-  display:flex!important;
-  flex-direction:column!important;
-  overflow:hidden!important;
-  box-sizing:border-box!important;
-  border:1px solid #dbe3ea!important;
-  border-radius:14px!important;
-  background:#fff!important;
-  color:#172033!important;
-  box-shadow:0 2px 8px rgb(15 23 42 / 6%)!important;
-}
-.records-dashboard-panel-header{
-  flex:0 0 auto!important;
-  min-width:0!important;
-  min-height:64px!important;
-  display:flex!important;
-  align-items:center!important;
-  gap:12px!important;
-  padding:12px 16px!important;
-  box-sizing:border-box!important;
-  background:#fff!important;
-  background-image:none!important;
-  border:0!important;
-  border-bottom:1px solid #e5eaf0!important;
-  color:#172033!important;
-  overflow:visible!important;
-}
-.records-dashboard-panel-icon{
-  width:34px!important;
-  height:34px!important;
-  flex:0 0 34px!important;
-  display:inline-flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  border-radius:9px!important;
-}
-.records-dashboard-panel-title{
-  margin:0!important;
-  color:#172033!important;
-  font-size:13px!important;
-  line-height:1.35!important;
-  font-weight:800!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-.records-dashboard-panel-subtitle{
-  margin:3px 0 0!important;
-  color:#64748b!important;
-  font-size:11px!important;
-  line-height:1.4!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-.records-dashboard-panel-action{
-  flex:0 0 auto!important;
-  display:inline-flex!important;
-  align-items:center!important;
-  gap:4px!important;
-  border:0!important;
-  background:transparent!important;
-  color:#2563eb!important;
-  font-size:11px!important;
-  line-height:1.2!important;
-  font-weight:800!important;
-  white-space:nowrap!important;
-  padding:4px 0!important;
-  cursor:pointer!important;
-  box-shadow:none!important;
-}
+/* Records Dashboard: independent readable panel surfaces. */
+.records-dashboard-root{width:100%!important;max-width:100%!important;min-width:0!important;min-height:100%!important;height:auto!important;max-height:none!important;overflow:visible!important;box-sizing:border-box!important;padding-bottom:2rem!important}
+.records-dashboard-panel{width:100%!important;min-width:0!important;min-height:132px!important;height:auto!important;max-height:none!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;box-sizing:border-box!important;border:1px solid #dbe3ea!important;border-radius:14px!important;background:#fff!important;color:#172033!important;box-shadow:0 2px 8px rgb(15 23 42 / 6%)!important}
+.records-dashboard-panel-header{flex:0 0 auto!important;min-width:0!important;min-height:64px!important;display:flex!important;align-items:center!important;gap:12px!important;padding:12px 16px!important;box-sizing:border-box!important;background:#fff!important;background-image:none!important;border:0!important;border-bottom:1px solid #e5eaf0!important;color:#172033!important;overflow:visible!important}
+.records-dashboard-panel-icon{width:34px!important;height:34px!important;flex:0 0 34px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border-radius:9px!important}
+.records-dashboard-panel-title{margin:0!important;color:#172033!important;font-size:13px!important;line-height:1.35!important;font-weight:800!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.records-dashboard-panel-subtitle{margin:3px 0 0!important;color:#64748b!important;font-size:11px!important;line-height:1.4!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.records-dashboard-panel-action{flex:0 0 auto!important;display:inline-flex!important;align-items:center!important;gap:4px!important;border:0!important;background:transparent!important;color:#2563eb!important;font-size:11px!important;line-height:1.2!important;font-weight:800!important;white-space:nowrap!important;padding:4px 0!important;cursor:pointer!important;box-shadow:none!important}
 .records-dashboard-panel-action:hover{color:#1d4ed8!important;background:transparent!important}
-.records-dashboard-panel-body{
-  flex:1 1 auto!important;
-  width:100%!important;
-  min-width:0!important;
-  min-height:68px!important;
-  height:auto!important;
-  max-height:none!important;
-  box-sizing:border-box!important;
-  padding:8px!important;
-  background:#fff!important;
-  background-image:none!important;
-  color:#334155!important;
-  overflow:visible!important;
-  position:relative!important;
-  z-index:1!important;
-}
+.records-dashboard-panel-body{flex:1 1 auto!important;width:100%!important;min-width:0!important;min-height:68px!important;height:auto!important;max-height:none!important;box-sizing:border-box!important;padding:8px!important;background:#fff!important;background-image:none!important;color:#334155!important;overflow:visible!important;position:relative!important;z-index:1!important}
 .records-dashboard-panel-body > *{max-width:100%!important}
 .records-dashboard-panel-body .text-slate-500{color:#64748b!important}
-.records-dashboard-empty{
-  display:flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  min-height:68px!important;
-  margin:0!important;
-  padding:20px 12px!important;
-  box-sizing:border-box!important;
-  color:#64748b!important;
-  background:#fff!important;
-  font-size:12px!important;
-  line-height:1.45!important;
-  text-align:center!important;
-}
-.records-dashboard-approval-empty{
-  min-height:68px!important;
-  padding:18px 12px!important;
-  box-sizing:border-box!important;
-  text-align:center!important;
-  background:#fff!important;
-}
-.records-dashboard-bar{
-  width:100%!important;
-  min-height:50px!important;
-  padding:9px 12px!important;
-  box-sizing:border-box!important;
-  background:#fff!important;
-}
+.records-dashboard-empty{display:flex!important;align-items:center!important;justify-content:center!important;min-height:68px!important;margin:0!important;padding:20px 12px!important;box-sizing:border-box!important;color:#64748b!important;background:#fff!important;font-size:12px!important;line-height:1.45!important;text-align:center!important}
+.records-dashboard-approval-empty{min-height:68px!important;padding:18px 12px!important;box-sizing:border-box!important;text-align:center!important;background:#fff!important}
+.records-dashboard-bar{width:100%!important;min-height:50px!important;padding:9px 12px!important;box-sizing:border-box!important;background:#fff!important}
 .records-dashboard-panel-body .records-dashboard-bar + .records-dashboard-bar{border-top:1px solid #f1f5f9!important}
-.records-dashboard-panel-dark{
-  background:#0f172a!important;
-  border-color:#334155!important;
-  color:#e2e8f0!important;
-}
+.records-dashboard-panel-dark{background:#0f172a!important;border-color:#334155!important;color:#e2e8f0!important}
 .records-dashboard-panel-dark .records-dashboard-panel-header{background:#1e293b!important;border-bottom-color:#334155!important;color:#f8fafc!important}
 .records-dashboard-panel-dark .records-dashboard-panel-title{color:#f8fafc!important}
 .records-dashboard-panel-dark .records-dashboard-panel-subtitle{color:#94a3b8!important}
@@ -238,7 +177,4 @@ body:not(.website-surface) [data-radix-dialog-content] select{min-height:40px!im
 .records-dashboard-panel-dark .records-dashboard-panel-body .records-dashboard-bar + .records-dashboard-bar{border-top-color:#1e293b!important}
 .records-dashboard-root .grid{min-width:0!important}
 .records-dashboard-root .grid > *{min-width:0!important}
-@media (max-width:900px){
-  .records-dashboard-panel-header{min-height:60px!important;padding:11px 13px!important}
-  .records-dashboard-panel-title,.records-dashboard-panel-subtitle{white-space:normal!important}
-}
+@media (max-width:900px){.records-dashboard-panel-header{min-height:60px!important;padding:11px 13px!important}.records-dashboard-panel-title,.records-dashboard-panel-subtitle{white-space:normal!important}}
