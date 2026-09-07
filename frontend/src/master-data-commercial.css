@@ -14,8 +14,6 @@
 .master-data-page-shell .rounded-2xl { min-width: 0; }
 .master-data-page-shell .overflow-x-auto { max-width: 100%; }
 
-/* CompanyProfilesList is a complete section by itself. The page only supplies
-   spacing; it must not add another card/header around the component. */
 .master-data-company-section { width: 100%; min-width: 0; margin: 0; }
 .master-data-company-section > * { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
 .master-data-company-section button,
@@ -23,7 +21,7 @@
 .master-data-company-section textarea,
 .master-data-company-section select { box-sizing: border-box; }
 
-.master-data-users-card { border: 1px solid rgb(226 232 240); border-radius: 1rem; overflow: hidden; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / 5%); }
+.master-data-users-card { border: 1px solid rgb(226 232 240); border-radius: 0; overflow: hidden; background: #fff; box-shadow: 0 1px 3px rgb(15 23 42 / 5%); }
 .master-data-section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1.25rem; border-bottom: 1px solid rgb(241 245 249); }
 .master-data-section-heading { display: flex; gap: .75rem; min-width: 0; }
 .master-data-section-heading > div { min-width: 0; }
@@ -39,25 +37,7 @@
 .master-data-company-picker svg { width: 1rem; height: 1rem; flex: 0 0 auto; }
 .master-data-company-picker select { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #334155; font-size: .75rem; }
 
-/* User search row: a plain white enterprise toolbar with no inherited
-   pseudo-elements, gradients, shadows or edge strips. */
-.master-data-user-toolbar {
-  position: relative !important;
-  isolation: isolate;
-  display: flex;
-  align-items: center;
-  gap: .75rem;
-  width: 100% !important;
-  min-width: 0 !important;
-  margin: 0 !important;
-  padding: .75rem 1.25rem !important;
-  background: #fff !important;
-  background-image: none !important;
-  border: 0 !important;
-  border-bottom: 1px solid rgb(241 245 249) !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-}
+.master-data-user-toolbar { position: relative !important; isolation: isolate; display: flex; align-items: center; gap: .75rem; width: 100% !important; min-width: 0 !important; margin: 0 !important; padding: .75rem 1.25rem !important; background: #fff !important; background-image: none !important; border: 0 !important; border-bottom: 1px solid rgb(241 245 249) !important; box-shadow: none !important; overflow: visible !important; }
 .master-data-user-toolbar::before,
 .master-data-user-toolbar::after { content: none !important; display: none !important; background: transparent !important; box-shadow: none !important; }
 .master-data-user-toolbar > * { position: relative; z-index: 2; }
@@ -92,29 +72,17 @@
 .master-data-dialog-avatar svg { width: 1.1rem; height: 1.1rem; }
 .master-data-native-select { display: block; width: 100%; height: 2.5rem; padding: 0 .75rem; border: 1px solid #e2e8f0; border-radius: .5rem; background: #fff; color: #334155; outline: none; }
 
-/* Legacy Reference Data styles are retained only for compatibility with any
-   old cached markup; the Reference Data card is no longer rendered by Master Data. */
 .master-data-reference-card,
 .master-data-reference-toolbar { display: none !important; }
 .master-data-reference-card > div { min-width: 0; }
 
-/* Circular controls / status indicators. */
 body:has(.master-data-page-shell) button[role="switch"] { width: 2.75rem !important; height: 1.5rem !important; min-width: 2.75rem !important; min-height: 1.5rem !important; padding: 0 !important; border-radius: 9999px !important; border: 0 !important; box-sizing: border-box !important; }
 body:has(.master-data-page-shell) button[role="switch"] > span { width: 1.25rem !important; height: 1.25rem !important; min-width: 1.25rem !important; min-height: 1.25rem !important; border-radius: 50% !important; display: block !important; }
 body:has(.master-data-page-shell) [data-testid="notification-count"], body:has(.master-data-page-shell) [data-testid="notification-leave-count"] { width: .55rem !important; height: .55rem !important; min-width: .55rem !important; min-height: .55rem !important; padding: 0 !important; border-radius: 50% !important; font-size: 0 !important; line-height: 0 !important; border-width: 1.5px !important; }
 body:has(.master-data-page-shell) button[title="AI Search"] > span { width: .55rem !important; height: .55rem !important; min-width: .55rem !important; min-height: .55rem !important; padding: 0 !important; border-radius: 50% !important; display: block !important; box-sizing: border-box !important; }
 
-/* Company profile dialog: use the available desktop width instead of the old
-   narrow max-w-3xl shell. Keep it responsive on laptops and smaller screens. */
 body:has(.master-data-company-section) [role="dialog"].max-w-3xl { width: min(1080px, calc(100vw - 48px)) !important; max-width: min(1080px, calc(100vw - 48px)) !important; }
-
-/* GST Registered: present the existing binary control as a clear Yes/No radio
-   choice. The state and persistence remain backed by form.has_gst. */
-body:has(.master-data-company-section) [role="dialog"] button[role="switch"] {
-  position: relative !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 0 !important;
-  width: 108px !important; min-width: 108px !important; height: 32px !important; min-height: 32px !important; padding: 2px !important;
-  border: 1px solid #cbd5e1 !important; border-radius: 9999px !important; background: #f8fafc !important; box-sizing: border-box !important; box-shadow: none !important;
-}
+body:has(.master-data-company-section) [role="dialog"] button[role="switch"] { position: relative !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; gap: 0 !important; width: 108px !important; min-width: 108px !important; height: 32px !important; min-height: 32px !important; padding: 2px !important; border: 1px solid #cbd5e1 !important; border-radius: 9999px !important; background: #f8fafc !important; box-sizing: border-box !important; box-shadow: none !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"] > span { display: none !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::before,
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"]::after { display: inline-flex !important; align-items: center !important; justify-content: center !important; width: 50% !important; height: 26px !important; border-radius: 9999px !important; font-size: 11px !important; font-weight: 700 !important; line-height: 1 !important; box-sizing: border-box !important; }
@@ -123,72 +91,62 @@ body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-slate-300::before { content: "○  Yes" !important; color: #64748b !important; background: transparent !important; }
 body:has(.master-data-company-section) [role="dialog"] button[role="switch"].bg-slate-300::after { content: "●  No" !important; color: #b45309 !important; background: #fffbeb !important; }
 
-/* Master Data final card treatment: three cards only (Company, Client, User).
-   Reference Data is intentionally removed from the page. Every remaining card
-   gets the same solid blue section header for a consistent commercial-console UI. */
-.master-data-company-section > div {
-  width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden;
-  border: 1px solid #dbe3ea; border-radius: 1rem; background: #fff;
+/* All three Master Data cards use the same square enterprise geometry.
+   The blue header stays flush with the card edges so Company Profiles,
+   Client Details and User Details align exactly with the rest of the page. */
+.master-data-section-shell,
+.master-data-company-section > div,
+.master-data-client-card > #clients {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #dbe3ea !important;
+  border-radius: 0 !important;
+  background: #fff;
+  overflow: hidden;
   box-shadow: 0 1px 3px rgb(15 23 42 / 5%);
 }
-.master-data-company-section > div > div:first-child {
-  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  min-height: 64px; padding: .9rem 1.25rem;
-  background: #0D3B66 !important; color: #fff !important; border: 0 !important;
+
+.master-data-company-section > div > div:first-child,
+.master-data-client-card > #clients > div:first-child,
+.master-data-user-card > #users > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 64px;
+  padding: .9rem 1.25rem;
+  background: #0D3B66 !important;
+  color: #fff !important;
+  border: 0 !important;
+  border-radius: 0 !important;
 }
 .master-data-company-section > div > div:first-child h3,
 .master-data-company-section > div > div:first-child p,
 .master-data-company-section > div > div:first-child span,
-.master-data-company-section > div > div:first-child svg { color: #fff !important; }
-.master-data-company-section > div > div:first-child h3 { font-size: .95rem; font-weight: 800; }
-.master-data-company-section > div > div:first-child p { opacity: .82; }
-.master-data-company-section > div > div:first-child .bg-blue-100 { background: rgb(255 255 255 / 16%) !important; color: #fff !important; }
-.master-data-company-section > div > div:first-child button { flex-shrink: 0; }
-.master-data-company-section > div > div:nth-child(2) { padding: 1rem; }
-
-.master-data-client-card,
-.master-data-user-card { width: 100%; min-width: 0; box-sizing: border-box; }
-.master-data-client-card > #clients {
-  width: 100%; min-width: 0; box-sizing: border-box;
-  border: 1px solid #dbe3ea !important; border-radius: 1rem !important;
-  background: #fff !important; overflow: hidden !important;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 5%);
-}
-.master-data-client-card > #clients > div:first-child {
-  background: #0D3B66 !important; color: #fff !important; border: 0 !important;
-}
+.master-data-company-section > div > div:first-child svg,
 .master-data-client-card > #clients > div:first-child h2,
 .master-data-client-card > #clients > div:first-child p,
 .master-data-client-card > #clients > div:first-child span,
-.master-data-client-card > #clients > div:first-child svg { color: #fff !important; }
-.master-data-client-card > #clients > div:first-child .bg-blue-50 { background: rgb(255 255 255 / 16%) !important; color: #fff !important; }
-.master-data-client-card > #clients > div:first-child button { border-color: rgb(255 255 255 / 40%) !important; }
-.master-data-client-card > #clients > div:first-child button:last-child { background: #fff !important; color: #0D3B66 !important; border-color: #fff !important; }
-
-.master-data-user-card > div { min-width: 0; }
-.master-data-user-card > div > .master-data-users-card { width: 100%; box-sizing: border-box; }
-.master-data-user-card .master-data-section-header { background: #0D3B66 !important; color: #fff !important; border: 0 !important; }
-.master-data-user-card .master-data-section-heading h2,
-.master-data-user-card .master-data-section-heading p,
-.master-data-user-card .master-data-section-heading svg { color: #fff !important; }
-.master-data-user-card .master-data-icon-blue { background: rgb(255 255 255 / 14%) !important; color: #fff !important; }
-.master-data-user-card .master-data-badge { background: rgb(255 255 255 / 16%) !important; color: #fff !important; }
-.master-data-user-card .master-data-primary-button { background: #fff !important; color: #0D3B66 !important; }
-.master-data-user-card .master-data-company-picker { background: #fff !important; }
+.master-data-client-card > #clients > div:first-child svg,
+.master-data-user-card > #users > div:first-child h2,
+.master-data-user-card > #users > div:first-child p,
+.master-data-user-card > #users > div:first-child span,
+.master-data-user-card > #users > div:first-child svg { color: #fff !important; }
+.master-data-company-section > div > div:first-child h3,
+.master-data-client-card > #clients > div:first-child h2,
+.master-data-user-card > #users > div:first-child h2 { font-size: .95rem; font-weight: 800; }
+.master-data-company-section > div > div:first-child p,
+.master-data-client-card > #clients > div:first-child p,
+.master-data-user-card > #users > div:first-child p { opacity: .82; }
+.master-data-company-section > div > div:first-child .bg-blue-100 { background: rgb(255 255 255 / 16%) !important; color: #fff !important; }
+.master-data-company-section > div > div:first-child button { flex-shrink: 0; }
+.master-data-company-section > div > div:nth-child(2) { padding: 1rem; }
+.master-data-user-card > #users { width: 100%; min-width: 0; box-sizing: border-box; border-radius: 0 !important; overflow: hidden; }
+.master-data-user-card > #users > * { min-width: 0; }
 
 @media (max-width: 900px) {
-  .master-data-section-header { flex-direction: column; }
-  .master-data-section-actions { width: 100%; justify-content: stretch; }
-  .master-data-company-picker { flex: 1; }
-}
-@media (max-width: 640px) {
-  .master-data-page-shell { padding-left: .75rem !important; padding-right: .75rem !important; height: auto !important; max-height: none !important; overflow: visible !important; }
-  .master-data-section-header, .master-data-user-toolbar { padding-left: .9rem !important; padding-right: .9rem !important; }
-  .master-data-section-actions { flex-direction: column; align-items: stretch; }
-  .master-data-company-picker { width: 100%; }
-  .master-data-section-actions button { width: 100%; }
-  .master-data-user-toolbar { flex-direction: column; align-items: stretch; }
-  .master-data-search { width: 100%; }
-  .master-data-license-pill { width: fit-content; }
-  body:has(.master-data-company-section) [role="dialog"].max-w-3xl { width: calc(100vw - 24px) !important; max-width: calc(100vw - 24px) !important; }
+  .master-data-company-section > div > div:first-child,
+  .master-data-client-card > #clients > div:first-child,
+  .master-data-user-card > #users > div:first-child { flex-wrap: wrap; }
 }
