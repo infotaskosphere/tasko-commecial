@@ -17,6 +17,11 @@ services:
     buildCommand: bash build.sh
     startCommand: uvicorn backend.server:app --host 0.0.0.0 --port $PORT
     envVars:
+      # Pin the backend to Python 3.12. The current pandas dependency in
+      # backend/requirements.txt is not compatible with Render's Python 3.14
+      # build environment and otherwise falls back to a source compilation.
+      - key: PYTHON_VERSION
+        value: "3.12.10"
       # MongoDB aliases used by backend/dependencies.py and the SaaS auth path.
       - key: MONGODB_URI
         sync: false
@@ -43,7 +48,7 @@ services:
         value: https://tasko-commercial-wa-bridge.onrender.com
     healthCheckPath: /health
 
-  # ── Frontend (React / Vite) ────────────────────────────────────────────────
+  # ── Frontend (React / Vite static site) ────────────────────────────────────
   - type: web
     name: tasko-commercial-frontend
     env: static
