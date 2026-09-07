@@ -1,11 +1,12 @@
 // Admin → Master Data: canonical company, client, user and reference-data hub.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, Loader2, Database, Building2, Download, Upload, Copy, Archive, RotateCcw, Check, X, ListTree, Tag, Search } from 'lucide-react';
+import { Plus, Trash2, Pencil, Loader2, Database, Building2, Download, Upload, Copy, Archive, RotateCcw, Check, X, ListTree, Tag, Search, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import useDark from '@/hooks/useDark';
+import { useAuth } from '@/contexts/AuthContext.jsx';
 import { ActionGuard } from '@/components/governance/GovernanceGuards';
 import { CompanyProfilesList } from '@/components/CompanyProfiles';
 import CompanyUserManager from '@/components/CompanyUserManager';
@@ -16,8 +17,11 @@ const MODULE='admin';
 const VIEW_FLAG='can_view_master_data';
 const API_PATH='/master-data';
 const DEFAULT_CATEGORIES=['Department','Task Category','Client Category','Document Type','Expense Head','Service','Bank','Other'];
+const PLATFORM_OWNER_EMAIL='info.taskosphere@gmail.com';
 
 export default function MasterData(){
+ const { user } = useAuth();
+ const platformOwner=String(user?.email||'').trim().toLowerCase()===PLATFORM_OWNER_EMAIL;
  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[companyCount,setCompanyCount]=useState(null);
  const load=useCallback(async()=>{setLoading(true);try{const r=await api.get(API_PATH);setItems(Array.isArray(r.data)?r.data:[])}catch{}finally{setLoading(false)}},[]);
  useEffect(()=>{load()},[load]);
@@ -29,16 +33,26 @@ export default function MasterData(){
    <StatRow items={[{icon:Building2,label:'Company profiles',value:companyCount??'—',color:HUB_COLORS.mediumBlue},{icon:ListTree,label:'Reference entries',value:items.length,color:'#7C3AED'},{icon:Check,label:'Active',value:active,color:HUB_COLORS.emeraldGreen},{icon:Archive,label:'Archived',value:items.length-active,color:'#F59E0B'}]}/>
    <SectionCard icon={Building2} title="Company Profiles" badge={companyCount??undefined} description="The shared company master. Company records created or edited here remain the same company records used by Quotations, Invoicing, Trademark Sphere, WhatsApp/Email settings and GST Portal Sync."><CompanyProfilesList/></SectionCard>
    <MasterDataClientManager/>
-   <div id="users"><CompanyUserManager/></div>
+   {platformOwner ? <PlatformOwnerUserNotice/> : <div id="users"><CompanyUserManager/></div>}
    <ReferenceData items={items} loading={loading} reload={load} categories={categories}/>
  </PageShell>;
+}
+
+function PlatformOwnerUserNotice(){
+ return <section id="users" className="border border-slate-200 bg-white overflow-hidden">
+   <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
+     <div className="p-2 bg-slate-100"><ShieldCheck className="h-5 w-5 text-[#0D3B66]"/></div>
+     <div><h2 className="text-sm font-bold text-slate-800">User Details &amp; Access</h2><p className="text-xs mt-1 text-slate-500">Platform Owner account detected. Customer user records are tenant-scoped and are managed from Master Data after entering the licensed customer workspace.</p></div>
+   </div>
+   <div className="px-5 py-10 text-center text-sm text-slate-500">This account is the software platform owner, not a customer company. No customer-user license is required for the platform owner.</div>
+ </section>;
 }
 
 function ReferenceData({items,loading,reload,categories}){
  const isDark=useDark();
  const [search,setSearch]=useState(''),[category,setCategory]=useState('all'),[status,setStatus]=useState('active'),[sort,setSort]=useState('newest'),[adding,setAdding]=useState(false),[busy,setBusy]=useState(false),[editingId,setEditingId]=useState(null),[draft,setDraft]=useState({title:'',code:'',category:'',details:''});
  const reset=()=>setDraft({title:'',code:'',category:'',details:''});
- const visible=useMemo(()=>{let list=[...items];if(status!=='all')list=list.filter(i=>status==='archived'?i.status==='archived':(i.status||'open')!=='archived');if(category!=='all')list=list.filter(i=>(i.extra?.category||'Other')===category);const q=search.trim().toLowerCase();if(q)list=list.filter(i=>`${i.title||''} ${i.details||''} ${i.extra?.code||''} ${i.extra?.category||''}`.toLowerCase().includes(q));list.sort((a,b)=>sort==='az'?(a.title||'').localeCompare(b.title||''):sort==='category'?(a.extra?.category||'').localeCompare(b.extra?.category||'')||(a.title||'').localeCompare(b.title||''):(b.created_at||'').localeCompare(a.created_at||''));return list},[items,search,category,status,sort]);
+ const visible=useMemo(()=>{let list=[...items];if(status!=='all')list=list.filter(i=>status==='archived'?i.status==='archived':(i.status||'open')!=='archived');if(category!=='all')list=list.filter(i=>(i.extra?.category||'Other')===category);const q=search.trim().toLowerCase();if(q)list=list.filter(i=>`${i.title||''} ${i.details||''} ${i.extra?.code||''} ${i.extra?.category||''}`.toLowerCase().includes(q));list.sort((a,b)=>sort==='az'?(a.title||'').localeCompare(b.title||''):sort==='category'?(i.extra?.category||'').localeCompare(b.extra?.category||'')||(a.title||'').localeCompare(b.title||''):(b.created_at||'').localeCompare(a.created_at||''));return list},[items,search,category,status,sort]);
  const save=async()=>{if(!draft.title.trim())return;setBusy(true);try{const p={title:draft.title.trim(),details:draft.details.trim()||null,extra:{category:draft.category||'Other',code:draft.code.trim()||null}};if(editingId)await api.put(`${API_PATH}/${editingId}`,p);else await api.post(API_PATH,p);toast.success(editingId?'Updated':'Added');setEditingId(null);setAdding(false);reset();reload()}catch(e){toast.error(e?.response?.data?.detail||'Could not save')}finally{setBusy(false)}};
  const duplicate=async i=>{try{await api.post(API_PATH,{title:`${i.title} (copy)`,details:i.details||null,extra:i.extra||{}});toast.success('Duplicated');reload()}catch(e){toast.error(e?.response?.data?.detail||'Could not duplicate')}};
  const archive=async i=>{try{await api.put(`${API_PATH}/${i.id}`,{status:i.status==='archived'?'open':'archived'});toast.success(i.status==='archived'?'Restored':'Archived');reload()}catch(e){toast.error(e?.response?.data?.detail||'Could not update')}};
