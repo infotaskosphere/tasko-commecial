@@ -45,6 +45,28 @@ from backend.models import User
 from backend.licensing_api import router as licensing_router
 
 
+# AuthContext restores an existing session and explicitly synchronizes
+# permissions through this endpoint. The route was moved out of server.py
+# during the permission-governance split but the frontend contract remained.
+auth_sync_router = APIRouter(tags=["Authentication"])
+
+
+@auth_sync_router.post("/auth/sync-permissions")
+async def sync_permissions(current_user: User = Depends(get_current_user)):
+    """Return the authenticated user's current, normalized permissions.
+
+    get_current_user already normalizes role defaults and stored permission
+    overrides, so this endpoint intentionally returns that authoritative
+    permission set without changing the database.
+    """
+    permissions = getattr(current_user, "permissions", None)
+    if hasattr(permissions, "model_dump"):
+        permissions = permissions.model_dump()
+    elif not isinstance(permissions, dict):
+        permissions = {}
+    return {"permissions": permissions}
+
+
 class StubRecordIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: str
@@ -197,6 +219,7 @@ ALL_GOVERNED_ROUTERS: List[APIRouter] = [
     leave_router, payroll_router, hr_router, performance_router,
     client_discussion_router,
     master_data_router, roles_router,
+    auth_sync_router,
     # Commercial licensing is mounted by server.py through this centralized
     # router list, guaranteeing /api/licensing/* is present regardless of
     # which production launcher imports the FastAPI app.
