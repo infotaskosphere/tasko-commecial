@@ -1,28 +1,12 @@
 {
-  "name": "taskosphere-root",
+  "name": "taskosphere-commercial",
   "version": "1.0.0",
   "private": true,
   "workspaces": [
     "frontend"
   ],
   "scripts": {
-    "dev": "node --require ./backend/license-runtime.cjs ./node_modules/tsx/dist/cli.mjs server.ts",
-    "dev:licensing": "tsx licensing-server.ts",
-    "build": "npm run build --workspace=frontend && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild licensing-server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/licensing-server.cjs",
-    "build:licensing": "esbuild licensing-server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/licensing-server.cjs",
-    "start": "node --require ./backend/license-runtime.cjs dist/server.cjs",
-    "start:licensing": "node dist/licensing-server.cjs"
-  },
-  "dependencies": {
-    "@google/genai": "^2.13.0",
-    "express": "^5.2.1",
-    "multer": "^2.2.0",
-    "mongodb": "^6.20.0"
-  },
-  "devDependencies": {
-    "@types/multer": "^2.2.0",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.23.1",
-    "vite": "^8.1.5"
+    "build": "npm run build --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend"
   }
 }
