@@ -16,14 +16,17 @@ from backend.models import User
 from backend.licensing_api import router as licensing_router
 from backend.permission_governance import router as permission_governance_router
 from backend.website_config import router as website_config_router
+from backend.commercial_onboarding import router as commercial_onboarding_router
 
 # server.py already includes permission_governance_router in /api. Nest the
 # commercial control-plane routers here so their final paths are stable:
-# /api/licensing/* and /api/website-config/*.
+# /api/licensing/*, /api/website-config/* and /api/commercial-onboarding/*.
 if not any(getattr(r, "path", "") == "/licensing" for r in getattr(permission_governance_router, "routes", [])):
     permission_governance_router.include_router(licensing_router)
 if not any(getattr(r, "path", "") == "/website-config" for r in getattr(permission_governance_router, "routes", [])):
     permission_governance_router.include_router(website_config_router)
+if not any(getattr(r, "path", "") == "/commercial-onboarding" for r in getattr(permission_governance_router, "routes", [])):
+    permission_governance_router.include_router(commercial_onboarding_router)
 
 
 auth_sync_router = APIRouter(tags=["Authentication"])
