@@ -29,7 +29,7 @@ export default function MasterData(){
    <StatRow items={[{icon:Building2,label:'Company profiles',value:companyCount??'—',color:HUB_COLORS.mediumBlue},{icon:ListTree,label:'Reference entries',value:items.length,color:'#7C3AED'},{icon:Check,label:'Active',value:active,color:HUB_COLORS.emeraldGreen},{icon:Archive,label:'Archived',value:items.length-active,color:'#F59E0B'}]}/>
    <SectionCard icon={Building2} title="Company Profiles" badge={companyCount??undefined} description="The shared company master. Company records created or edited here remain the same company records used by Quotations, Invoicing, Trademark Sphere, WhatsApp/Email settings and GST Portal Sync."><CompanyProfilesList/></SectionCard>
    <MasterDataClientManager/>
-   <CompanyUserManager/>
+   <div id="users"><CompanyUserManager/></div>
    <ReferenceData items={items} loading={loading} reload={load} categories={categories}/>
  </PageShell>;
 }
