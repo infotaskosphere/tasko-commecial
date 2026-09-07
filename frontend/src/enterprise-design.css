@@ -11,6 +11,10 @@
   --ui-control-radius: 10px;
   --ui-card-radius: 16px;
   --ui-focus: rgba(31, 111, 178, 0.28);
+  /* Keep legacy tokens aligned with DashboardLayout's actual geometry. */
+  --header-height: 64px;
+  --sidebar-width: 280px;
+  --sidebar-col: 80px;
   font-feature-settings: "cv11" 1, "ss01" 1;
 }
 
