@@ -1,11 +1,9 @@
 import api from './api';
 
-// Some pages (notably Invoicing) use Chart of Accounts only as an auxiliary
-// data source. A manager/staff user who has not been granted COA access must
-// not generate a noisy 403 just because that optional request was attempted.
-// The backend remains the source of truth; this guard simply avoids sending
-// a request when the current local session already proves the user cannot
-// access the resource.
+// Some dashboard/invoicing data sources are optional secondary requests. If
+// the current session already proves the user cannot access one of them, do
+// not send a request that is guaranteed to return 403. The backend remains
+// the source of truth and continues to enforce the same permissions.
 const readStoredUser = () => {
   try {
     const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -15,32 +13,44 @@ const readStoredUser = () => {
   }
 };
 
-const canViewChartOfAccounts = () => {
-  const user = readStoredUser();
-  if (!user) return true; // Let the normal auth flow decide.
-  if (String(user.role || '').toLowerCase() === 'admin') return true;
-  return user.permissions?.can_view_chart_of_accounts === true;
+const isAdmin = (user) => String(user?.role || '').toLowerCase() === 'admin';
+
+const canViewChartOfAccounts = (user) =>
+  !user || isAdmin(user) || user.permissions?.can_view_chart_of_accounts === true;
+
+const optionalDashboardEndpoint = (path, user) => {
+  // Dashboard uses these as secondary metrics. Non-admin users should not
+  // need access to the full team list or performance ranking just to open the
+  // dashboard. If a backend permission is granted, the real request is used.
+  if (isAdmin(user)) return false;
+  if (path === '/users') return true;
+  if (path.startsWith('/reports/performance-rankings')) return true;
+  return false;
 };
+
+const syntheticEmptyResponse = (config) => ({
+  data: [],
+  status: 200,
+  statusText: 'OK (permission-gated optional resource)',
+  headers: {},
+  config,
+  request: null,
+});
 
 api.interceptors.request.use((config) => {
   const path = String(config.url || '').split('?')[0].replace(/\/+$/, '');
-  if (
-    config.method?.toLowerCase() === 'get' &&
-    path === '/chart-of-accounts' &&
-    !canViewChartOfAccounts()
-  ) {
-    // Axios cancellation would still surface as a rejected Promise. Instead,
-    // return a lightweight synthetic empty response so Promise.allSettled()
-    // callers can continue normally and the optional accounts list is simply
-    // empty for users without that permission.
-    config.adapter = async () => ({
-      data: [],
-      status: 200,
-      statusText: 'OK (permission-gated optional resource)',
-      headers: {},
-      config,
-      request: null,
-    });
+  if (config.method?.toLowerCase() !== 'get') return config;
+
+  const user = readStoredUser();
+
+  if (path === '/chart-of-accounts' && !canViewChartOfAccounts(user)) {
+    config.adapter = async () => syntheticEmptyResponse(config);
+    return config;
   }
+
+  if (optionalDashboardEndpoint(path, user)) {
+    config.adapter = async () => syntheticEmptyResponse(config);
+  }
+
   return config;
 });
