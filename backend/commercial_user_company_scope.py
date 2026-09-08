@@ -1,18 +1,20 @@
 """Final user-data isolation boundary for the commercial SaaS.
 
 The users collection is shared physically, but user data is NOT shared
-logically. Every authenticated user may read/write users only for their own
-company. A commercial customer's license may cover multiple legal companies
-and its max_users seat limit remains customer-wide, but the people directory
-is company-specific.
+logically. Every authenticated customer user may read/write users only for
+that user's own legal company. A commercial customer's license may cover
+multiple legal companies and its max_users seat limit remains customer-wide,
+but the people directory is company-specific.
 
-Platform Owner is also treated as a tenant for the Users surface: the owner
-can see only users belonging to the owner's own company. Customer users can
-never appear in the Platform Owner's normal Users page.
+The Platform Owner is not a customer tenant. Its normal Users surface is
+restricted to Platform Owner accounts only, so a customer company can never
+leak into the owner's operational user directory even if an old owner record
+still carries a legacy customer company_id.
 
-This is deliberately installed after the older customer-level compatibility
-layers so legacy records remain discoverable while the final security rule is
-unambiguous: users are always scoped by company_id at request time.
+This boundary is deliberately installed after the older customer-level
+compatibility layers so legacy records remain usable while the final security
+rule is unambiguous: customer users are always scoped by company_id at request
+time, and Platform Owner users are scoped by the configured owner identities.
 """
 from __future__ import annotations
 
@@ -20,12 +22,39 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from backend import dependencies as _dependencies
-from backend.platform_owner import is_platform_owner
+from backend.platform_owner import is_platform_owner, platform_owner_emails
 from backend.tenant_runtime import TenantAwareCollection, authenticated_company_id, in_platform_owner_context
-from backend.commercial_tenant_scope import authenticated_customer_id
 
 _INSTALLED = "_commercial_user_company_scope_installed"
+
+
+def _is_owner_context() -> bool:
+    return bool(in_platform_owner_context())
+
+
+def _owner_emails() -> set[str]:
+    return {str(email).strip().lower() for email in platform_owner_emails() if str(email).strip()}
+
+
+def _owner_user_query(query: Any) -> dict[str, Any]:
+    """Restrict the Platform Owner's Users surface to owner identities only.
+
+    This intentionally does not trust company_id because older Platform Owner
+    records may have been created while a licensee company was active. The
+    owner boundary therefore uses the canonical Platform Owner email list.
+    """
+    base = dict(query or {})
+    requested_email = base.get("email")
+    owner_emails = _owner_emails()
+    if requested_email is not None:
+        normalized = str(requested_email).strip().lower()
+        if normalized not in owner_emails:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner user access is restricted to Platform Owner accounts.",
+            )
+    owner_filter = {"email": {"$in": sorted(owner_emails)}}
+    return {"$and": [base, owner_filter]} if base else owner_filter
 
 
 def _user_company_id() -> str:
@@ -39,6 +68,9 @@ def _user_company_id() -> str:
 
 
 def _scope_user_query(query: Any) -> dict[str, Any]:
+    if _is_owner_context():
+        return _owner_user_query(query)
+
     company_id = _user_company_id()
     base = dict(query or {})
     requested = base.get("company_id")
@@ -54,6 +86,19 @@ def _scope_user_query(query: Any) -> dict[str, Any]:
 
 
 def _scope_user_insert(document: Any) -> dict[str, Any]:
+    if _is_owner_context():
+        if not isinstance(document, dict):
+            raise HTTPException(status_code=400, detail="Invalid user record.")
+        result = dict(document)
+        email = str(result.get("email") or "").strip().lower()
+        if email not in _owner_emails():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner accounts cannot create customer operational users through the Users surface.",
+            )
+        result["email"] = email
+        return result
+
     company_id = _user_company_id()
     if not isinstance(document, dict):
         raise HTTPException(status_code=400, detail="Invalid user record.")
@@ -69,6 +114,38 @@ def _scope_user_insert(document: Any) -> dict[str, Any]:
 
 
 def _scope_user_update(update: Any) -> dict[str, Any]:
+    if _is_owner_context():
+        # The owner boundary is identity-based, so do not force a legacy
+        # customer company_id onto the owner record during profile updates.
+        if not isinstance(update, dict):
+            return update
+        result = dict(update)
+        set_values = dict(result.get("$set") or {})
+        if "email" in set_values:
+            email = str(set_values["email"] or "").strip().lower()
+            if email not in _owner_emails():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Platform Owner email cannot be changed to a customer account.",
+                )
+            set_values["email"] = email
+        if "company_id" in set_values:
+            # Prevent an owner profile update from being used to move the
+            # owner into a customer company. Legacy owner company_id is left
+            # untouched unless explicitly repaired by a trusted maintenance
+            # operation outside the normal Users surface.
+            set_values.pop("company_id", None)
+        if "company_id" in dict(result.get("$unset") or {}):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner company ownership cannot be removed through the Users surface.",
+            )
+        if set_values:
+            result["$set"] = set_values
+        elif "$set" in result:
+            result.pop("$set", None)
+        return result
+
     company_id = _user_company_id()
     if not isinstance(update, dict):
         return update
@@ -188,7 +265,10 @@ def _install() -> None:
         if self._name != "users":
             return original_aggregate(self, pipeline, *args, **kwargs)
         pipeline = list(pipeline or [])
-        pipeline.insert(0, {"$match": {"company_id": _user_company_id()}})
+        if _is_owner_context():
+            pipeline.insert(0, {"$match": {"email": {"$in": sorted(_owner_emails())}}})
+        else:
+            pipeline.insert(0, {"$match": {"company_id": _user_company_id()}})
         return self._collection.aggregate(pipeline, *args, **kwargs)
 
     TenantAwareCollection.find = find
