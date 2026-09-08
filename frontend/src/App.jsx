@@ -178,33 +178,29 @@ function CommercialConsoleShortcut() {
   if (!isPlatformOwner) return null;
 
   const items = [
-    { path: "/master-console", label: "Commercial Console", icon: "▦" },
-    { path: "/master-console/website", label: "Website & Branding", icon: "◫" },
+    { path: "/master-console", label: "Commercial Console", Icon: ShieldCheck },
+    { path: "/master-console/website", label: "Website & Branding", Icon: Globe2 },
   ];
 
   return (
     <div
       data-commercial-console="true"
-      className="commercial-sidebar-tools hidden lg:flex flex-col gap-1"
+      className="commercial-sidebar-tools hidden lg:block"
       aria-label="Platform Owner tools"
     >
-      {items.map(({ path, label, icon }) => (
+      {items.map(({ path, label, Icon }) => (
         <NavLink
           key={path}
           to={path}
           title={label}
-          className={({ isActive }) => `commercial-sidebar-tool group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all ${
+          className={({ isActive }) => `commercial-sidebar-tool group relative flex w-full items-center gap-3 rounded-xl text-sm font-medium transition-all ${
             isActive
               ? "bg-white/[0.09] text-white"
               : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
           }`}
         >
-          <span className="commercial-sidebar-tool-icon flex h-5 w-5 flex-shrink-0 items-center justify-center text-[15px] leading-none">
-            {icon}
-          </span>
-          <span className="commercial-sidebar-tool-label whitespace-nowrap tracking-tight">
-            {label}
-          </span>
+          <Icon className="commercial-sidebar-tool-icon h-4 w-4 flex-shrink-0" />
+          <span className="commercial-sidebar-tool-label whitespace-nowrap tracking-tight">{label}</span>
           <span className="commercial-sidebar-tool-tooltip pointer-events-none absolute left-full ml-3 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100">
             {label}
           </span>
@@ -221,10 +217,23 @@ function CommercialConsoleShortcut() {
           background: linear-gradient(180deg, #0D3B66 0%, #0A2E52 100%);
           border-right: 1px solid rgba(255,255,255,0.08);
         }
-        .commercial-sidebar-tool-tooltip { transform: translateX(4px); }
-        .commercial-sidebar-tools .commercial-sidebar-tool-icon { color: #94a3b8; }
+        .commercial-sidebar-tool {
+          height: 44px;
+          padding: 0 12px;
+        }
+        .commercial-sidebar-tool + .commercial-sidebar-tool {
+          margin-top: 4px;
+        }
+        .commercial-sidebar-tools .commercial-sidebar-tool-icon {
+          color: #94a3b8;
+        }
         .commercial-sidebar-tools .commercial-sidebar-tool:hover .commercial-sidebar-tool-icon,
-        .commercial-sidebar-tools .commercial-sidebar-tool[aria-current="page"] .commercial-sidebar-tool-icon { color: #f8fafc; }
+        .commercial-sidebar-tools .commercial-sidebar-tool[aria-current="page"] .commercial-sidebar-tool-icon {
+          color: #f8fafc;
+        }
+        .commercial-sidebar-tool-tooltip {
+          transform: translateX(4px);
+        }
         body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools {
           width: 80px;
           padding-left: 12px;
@@ -235,8 +244,12 @@ function CommercialConsoleShortcut() {
           padding-left: 0;
           padding-right: 0;
         }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-label { display: none; }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-tooltip { left: 100%; }
+        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-label {
+          display: none;
+        }
+        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-tooltip {
+          left: 100%;
+        }
       `}</style>
     </div>
   );
