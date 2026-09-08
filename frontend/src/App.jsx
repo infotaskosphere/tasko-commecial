@@ -12,6 +12,7 @@ import BulkWASenderWidget from "@/contexts/BulkWASenderWidget";
 import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
+import { ShieldCheck, Globe2 } from "lucide-react";
 import "./commercial-business-ui.css";
 
 const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
@@ -213,8 +214,8 @@ function CommercialConsoleShortcut() {
           bottom: 76px;
           z-index: 41;
           width: 280px;
-          padding: 0 16px 10px;
-          background: linear-gradient(180deg, #0D3B66 0%, #0A2E52 100%);
+          padding: 0 16px;
+          background: #0D3B66;
           border-right: 1px solid rgba(255,255,255,0.08);
         }
         .commercial-sidebar-tool {
@@ -236,8 +237,8 @@ function CommercialConsoleShortcut() {
         }
         body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools {
           width: 80px;
-          padding-left: 12px;
-          padding-right: 12px;
+          padding-left: 16px;
+          padding-right: 16px;
         }
         body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool {
           justify-content: center;
