@@ -5,8 +5,10 @@ Company and User masters are different: a licensee may own multiple legal
 companies and therefore must be able to see only the companies/users belonging
 to that commercial customer, never another licensee or the Platform Owner.
 
-This layer is installed before route modules capture ``get_current_user`` and
-adds the commercial-customer boundary without changing Platform Owner access.
+The authenticated license is also authoritative for the effective module/page
+permissions of every licensee user. This makes post-generation license changes
+take effect on the next authenticated request without weakening user-level
+permission restrictions.
 """
 from __future__ import annotations
 
@@ -111,6 +113,55 @@ async def _resolve_customer_id(user: Any) -> str | None:
     return customer_id or None
 
 
+async def _apply_live_license_permissions(user: Any, customer_id: str | None):
+    """Return a user whose permissions are capped by the active commercial license.
+
+    User-level grants remain intact where the license allows them. A feature or
+    module removed from the commercial license is always forced off. The
+    Platform Owner is never processed here.
+    """
+    if not customer_id or is_platform_owner(user):
+        return user
+    try:
+        raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+        license_docs = await raw_db.commercial_licenses.find(
+            {"customer_id": customer_id, "status": "active"}, {"_id": 0}
+        ).sort("issued_at", -1).limit(10).to_list(10)
+        if not license_docs:
+            return user
+
+        from backend.licensing_api import _expiry_reason
+        active = next((doc for doc in license_docs if not _expiry_reason(doc)), None)
+        if not active:
+            return user
+
+        from backend.commercial_onboarding_extensions import _apply_feature_entitlements
+        role = str(getattr(user, "role", "staff") or "staff")
+        modules = list(active.get("modules") or active.get("licensed_modules") or [])
+        selected_features = active.get("selected_features") or {}
+        license_permissions = _apply_feature_entitlements(role, modules, selected_features)
+
+        current = getattr(user, "permissions", None)
+        if hasattr(current, "model_dump"):
+            current = current.model_dump()
+        if not isinstance(current, dict):
+            current = {}
+        effective = {**current, **license_permissions}
+        data = user.model_dump()
+        data["permissions"] = effective
+        data["licensed_modules"] = modules
+        data["selected_features"] = selected_features
+        data["license_id"] = active.get("id")
+        data["license_key"] = active.get("license_key")
+        data["commercial_customer_id"] = customer_id
+        return type(user).model_validate(data)
+    except Exception:
+        # Authorization must never fail open because a compatibility/hydration
+        # lookup failed. Keep the persisted user; the API guard still applies
+        # to commercial accounts and will deny missing entitlements.
+        return user
+
+
 _original_get_current_user = _dependencies.get_current_user
 
 
@@ -120,7 +171,7 @@ async def get_current_user_with_customer_scope(
     user = await _original_get_current_user(credentials)
     customer_id = await _resolve_customer_id(user)
     set_authenticated_customer(customer_id)
-    return user
+    return await _apply_live_license_permissions(user, customer_id)
 
 
 def _install_collection_overrides() -> None:
