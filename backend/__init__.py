@@ -38,9 +38,14 @@ import backend.commercial_master_data  # noqa: F401
 # exposing customer operational data.
 import backend.commercial_company_master  # noqa: F401
 
+# Platform-owner commercial customer/license registry editor. This edits only
+# commercial billing/contact details and license entitlements; it never grants
+# the platform owner access to customer operational data.
+import backend.commercial_customer_directory  # noqa: F401
+
 # AI Document Reader workspace: persistent company-scoped memory for multiple
-# documents and cross-document reasoning. It is mounted onto the existing AI
-# reader router so the existing /api/ai/analyze-document route is unchanged.
+# documents and cross-document reasoning. It is mounted onto the existing
+# AI reader router so the existing /api/ai/analyze-document route is unchanged.
 from backend.ai_document_reader import router as _ai_document_reader_router
 from backend.ai.workspace_router import router as _ai_workspace_router
 _ai_document_reader_router.include_router(_ai_workspace_router)
