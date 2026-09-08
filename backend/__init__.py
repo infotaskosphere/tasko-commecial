@@ -72,6 +72,12 @@ import backend.commercial_license_user_limit  # noqa: F401
 # legal company still consumes the customer's shared license seat.
 import backend.commercial_legacy_user_limit_compat  # noqa: F401
 
+# Final user-data boundary: user records are always company-scoped at request
+# time. This is intentionally after the customer-level compatibility layers so
+# the physical users collection can remain shared without ever merging people
+# between legal companies or exposing customer users to the Platform Owner.
+import backend.commercial_user_company_scope  # noqa: F401
+
 # The custom commercial generator creates customer ids automatically. Guard
 # issuance by the registered customer/company name as well so the one-license
 # rule is enforced even when the UI does not submit an explicit customer_id.
