@@ -1,11 +1,11 @@
 // Admin → Master Data: canonical company, client and user administration hub.
-import React, { useEffect, useState } from 'react';
-import api from '@/lib/api';
+import React from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { CompanyProfilesList } from '@/components/CompanyProfiles';
 import CompanyUserManager from '@/components/CompanyUserManager';
 import PlatformUserManager from '@/components/PlatformUserManager';
 import MasterDataClientManager from '@/components/MasterDataClientManager';
+import CommercialCompanyDirectory from '@/components/CommercialCompanyDirectory';
 import { PageShell, PageBanner } from '@/components/ui/PageKit';
 import '../../master-data-commercial.css';
 
@@ -14,14 +14,6 @@ const PLATFORM_OWNER_EMAIL = 'info.taskosphere@gmail.com';
 export default function MasterData() {
   const { user } = useAuth();
   const platformOwner = String(user?.email || '').trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
-  const [companies, setCompanies] = useState([]);
-
-  useEffect(() => {
-    if (!platformOwner) return;
-    api.get('/companies')
-      .then(r => setCompanies(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setCompanies([]));
-  }, [platformOwner]);
 
   return (
     <PageShell className="master-data-page-shell">
@@ -31,13 +23,20 @@ export default function MasterData() {
         subtitle="Manage company profiles, clients and customer users from one controlled master-data workspace."
       />
 
-      <div className="master-data-company-section">
-        <CompanyProfilesList />
-      </div>
+      {platformOwner ? (
+        <CommercialCompanyDirectory />
+      ) : (
+        <div className="master-data-company-section">
+          <CompanyProfilesList />
+        </div>
+      )}
 
-      <MasterDataClientSection />
+      {/* Platform Owner is the commercial control plane, not a customer
+          operational superadmin. Client records therefore remain completely
+          tenant-scoped and are only rendered for customer administrators. */}
+      {!platformOwner && <MasterDataClientSection />}
 
-      <MasterDataUserSection platformOwner={platformOwner} companies={companies} />
+      <MasterDataUserSection platformOwner={platformOwner} />
     </PageShell>
   );
 }
@@ -46,10 +45,10 @@ function MasterDataClientSection() {
   return <MasterDataSectionShell className="master-data-client-card"><MasterDataClientManager /></MasterDataSectionShell>;
 }
 
-function MasterDataUserSection({ platformOwner, companies }) {
+function MasterDataUserSection({ platformOwner }) {
   return (
     <MasterDataSectionShell className="master-data-user-card">
-      {platformOwner ? <div id="users"><PlatformUserManager companies={companies} /></div> : <div id="users"><CompanyUserManager /></div>}
+      {platformOwner ? <div id="users"><PlatformUserManager /></div> : <div id="users"><CompanyUserManager /></div>}
     </MasterDataSectionShell>
   );
 }
