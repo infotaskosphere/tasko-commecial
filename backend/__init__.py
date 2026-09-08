@@ -33,6 +33,11 @@ import backend.commercial_onboarding_extensions  # noqa: F401
 # can share one company-scoped user source of truth.
 import backend.commercial_master_data  # noqa: F401
 
+# Platform-owner commercial company master: manages the relationship between a
+# commercial billing customer and its legal operational companies without
+# exposing customer operational data.
+import backend.commercial_company_master  # noqa: F401
+
 # AI Document Reader workspace: persistent company-scoped memory for multiple
 # documents and cross-document reasoning. It is mounted onto the existing AI
 # reader router so the existing /api/ai/analyze-document route is unchanged.
