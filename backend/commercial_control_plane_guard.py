@@ -1,13 +1,15 @@
-"""Server-side control-plane boundary for licensed customer accounts.
+"""Server-side control-plane boundary for the commercial distribution console.
 
-The browser hides Commercial Console navigation, but route/API access must also
-be denied if a customer manually enters the URL or calls the endpoint directly.
-Platform Owner accounts continue to use the existing commercial APIs normally.
+Commercial Console and its control-plane APIs are Platform Owner features, not
+customer-admin features. The browser hides the navigation for non-owners, but
+this server-side guard is the authoritative authorization boundary for direct
+URL/API access as well.
 """
 
 from fastapi import Depends, HTTPException, Request
 
 from backend import dependencies as _dependencies
+from backend.platform_owner import is_platform_owner
 
 CONTROL_PLANE_PREFIXES = (
     "/master-console",
@@ -34,14 +36,11 @@ async def get_current_user_with_control_plane_guard(
     credentials=Depends(_dependencies.security),
 ):
     user = await _original_get_current_user(request, credentials)
-    company_id = str(getattr(user, "company_id", "") or "").strip()
-    if company_id and _is_control_plane_path(request.url.path):
-        # The Platform Owner is deliberately the only exception. Do not infer
-        # platform ownership from role=admin; licensed customer admins also
-        # have role=admin and must remain tenant-scoped.
-        from backend.platform_owner import is_platform_owner
-        if not is_platform_owner(user):
-            raise HTTPException(status_code=403, detail="Commercial Console access is restricted to the Platform Owner.")
+    if _is_control_plane_path(request.url.path) and not is_platform_owner(user):
+        # Never infer control-plane access from role=admin. Customer admins and
+        # other internal users must remain outside the commercial distribution
+        # console. Platform Owner identity is the sole authorization boundary.
+        raise HTTPException(status_code=403, detail="Commercial Console access is restricted to the Platform Owner.")
     return user
 
 
