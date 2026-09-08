@@ -137,6 +137,30 @@ async def _find_customer_for_license(license_key: str, company_name: str):
     return customer, license_doc
 
 
+async def _find_active_license_for_company_name(company_name: str):
+    normalized = _norm(company_name)
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Company name is required.")
+
+    candidates = await db.commercial_license_customers.find(
+        {"company_name": {"$regex": re.escape(str(company_name).strip()), "$options": "i"}},
+        {"_id": 0},
+    ).limit(20).to_list(20)
+    customer = next((item for item in candidates if _norm(item.get("company_name")) == normalized), None)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Company name was not found in the licensed companies database.")
+
+    licenses = await db.commercial_licenses.find(
+        {"customer_id": customer.get("id"), "status": "active"},
+        {"_id": 0},
+    ).sort("issued_at", -1).limit(10).to_list(10)
+    for license_doc in licenses:
+        reason = _expiry_reason(license_doc)
+        if not reason:
+            return customer, license_doc
+    raise HTTPException(status_code=403, detail="This company does not have an active commercial license.")
+
+
 @router.get("/module-catalog")
 async def get_module_catalog(current_user: User = Depends(require_admin())):
     return {"modules": await _ensure_module_catalog()}
@@ -190,10 +214,6 @@ async def generate_license(payload: Dict[str, Any], current_user: User = Depends
     if amount_charged < 0:
         raise HTTPException(status_code=400, detail="Amount charged cannot be negative.")
 
-    # Reuse the existing licensing engine for key generation, activation limits,
-    # status and expiry handling. The package fields are immediately replaced
-    # with the selected module entitlement set, so the old fixed bundles no
-    # longer determine what the customer receives.
     license_doc = await create_license_record(
         {
             **payload,
@@ -310,6 +330,90 @@ async def create_customer_admin(payload: Dict[str, Any]):
     await db.users.insert_one(user_doc)
     safe_user = {k: v for k, v in user_doc.items() if k != "password"}
     return {"access_token": create_access_token({"sub": user_id}), "token_type": "bearer", "user": safe_user, "company": company, "license": _public_license(license_doc)}
+
+
+@router.post("/verify-company")
+async def verify_company_for_registration(payload: Dict[str, Any]):
+    """Verify a company name against an active commercial license.
+
+    This endpoint deliberately returns no license key. The company name is the
+    public registration identifier requested by the commercial self-registration
+    flow, while the server performs the authoritative license and expiry check.
+    """
+    customer, license_doc = await _find_active_license_for_company_name(payload.get("company_name"))
+    active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
+    max_users = int(license_doc.get("max_users", 1))
+    return {
+        "valid": True,
+        "company": _customer_public(customer),
+        "license": {
+            "id": license_doc.get("id"),
+            "status": license_doc.get("status"),
+            "expires_at": license_doc.get("expires_at"),
+            "max_users": max_users,
+            "active_users": active_users,
+            "remaining_users": max(0, max_users - active_users),
+            "modules": list(license_doc.get("modules") or []),
+        },
+    }
+
+
+@router.post("/create-user")
+async def create_public_licensed_user(payload: Dict[str, Any]):
+    """Create a user account for a company with an active commercial license."""
+    customer, license_doc = await _find_active_license_for_company_name(payload.get("company_name"))
+
+    full_name = str(payload.get("full_name") or "").strip()
+    email = str(payload.get("email") or "").strip().lower()
+    password = str(payload.get("password") or "")
+    if not full_name or not email or len(password) < 8:
+        raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+
+    active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
+    max_users = int(license_doc.get("max_users", 1))
+    if active_users >= max_users:
+        raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
+
+    requested_role = str(payload.get("role") or "not_known").strip().lower()
+    role = requested_role if requested_role in {"admin", "manager", "staff"} else "staff"
+    role_label = {"admin": "Admin", "manager": "Manager", "staff": "Staff", "not_known": "Not Know"}.get(requested_role, "Not Know")
+
+    company = await _ensure_company_master(customer, license_doc)
+    now = _now().isoformat()
+    user_id = str(uuid.uuid4())
+    permissions = _apply_license_entitlements(role, list(license_doc.get("modules") or []))
+    user_doc = {
+        "id": user_id,
+        "email": email,
+        "full_name": full_name,
+        "role": role,
+        "requested_role": requested_role,
+        "role_label": role_label,
+        "password": pwd_context.hash(password),
+        "permissions": permissions,
+        "departments": [],
+        "phone": str(payload.get("phone") or "").strip() or None,
+        "is_active": True,
+        "status": "active",
+        "approved_by": "commercial-self-registration",
+        "approved_at": now,
+        "created_at": now,
+        "company_id": company.get("id"),
+        "company_name": customer.get("company_name"),
+        "license_id": license_doc.get("id"),
+        "license_key": license_doc.get("license_key"),
+        "licensed_modules": list(license_doc.get("modules") or []),
+    }
+    await db.users.insert_one(user_doc)
+    safe_user = {k: v for k, v in user_doc.items() if k != "password"}
+    return {
+        "access_token": create_access_token({"sub": user_id}),
+        "token_type": "bearer",
+        "user": safe_user,
+        "company": company,
+    }
 
 
 async def _active_company_license(current_user: User) -> Dict[str, Any]:
