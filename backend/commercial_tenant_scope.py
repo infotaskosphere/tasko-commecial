@@ -107,7 +107,9 @@ async def _resolve_customer_id(user: Any) -> str | None:
     ).strip()
     if not customer_id and (company or {}).get("source") == "commercial-license":
         customer_id = company_id
-    return customer_id or None
+    # Fail closed for legacy/non-standard company records: an authenticated
+    # non-owner must never receive an unscoped users/companies view.
+    return customer_id or company_id
 
 
 async def _apply_live_license_permissions(user: Any, customer_id: str | None):
