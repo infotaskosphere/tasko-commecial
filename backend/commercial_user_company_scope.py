@@ -15,6 +15,12 @@ before a company context exists. This module therefore permits only narrowly
 whitelisted internal authentication/bootstrap functions to query users before
 context is established. It does not make arbitrary unauthenticated database
 access available to request handlers.
+
+Trusted startup maintenance is a separate internal context: FastAPI's
+``startup_event`` performs one-time data hygiene before any request exists.
+That job must be able to operate on the shared users collection without an
+authenticated company, but the exception is limited to that exact backend
+startup function and never applies to normal request-time code.
 """
 from __future__ import annotations
 
@@ -32,6 +38,9 @@ _PRE_AUTH_CALLERS = frozenset({
     "_sync_saas_bootstrap_password",
     "register",
 })
+_SYSTEM_CALLERS = frozenset({
+    "startup_event",
+})
 
 
 def _is_owner_context() -> bool:
@@ -42,14 +51,24 @@ def _owner_emails() -> set[str]:
     return {str(email).strip().lower() for email in platform_owner_emails() if str(email).strip()}
 
 
-def _is_trusted_pre_auth_context() -> bool:
-    """Allow only known internal auth/bootstrap code before a tenant exists."""
+def _caller_matches(function_names: frozenset[str]) -> bool:
+    """Return True only for named internal functions in backend.server."""
     for frame_info in inspect.stack(context=0):
-        if frame_info.function in _PRE_AUTH_CALLERS:
+        if frame_info.function in function_names:
             module_name = str(frame_info.frame.f_globals.get("__name__") or "")
             if module_name == "backend.server":
                 return True
     return False
+
+
+def _is_trusted_pre_auth_context() -> bool:
+    """Allow only known internal auth/bootstrap code before a tenant exists."""
+    return _caller_matches(_PRE_AUTH_CALLERS)
+
+
+def _is_trusted_system_context() -> bool:
+    """Allow one-time backend startup maintenance to run without a tenant."""
+    return _caller_matches(_SYSTEM_CALLERS)
 
 
 def _owner_user_query(query: Any) -> dict[str, Any]:
@@ -81,6 +100,11 @@ def _user_company_id() -> str:
 def _scope_user_query(query: Any) -> dict[str, Any]:
     if _is_owner_context():
         return _owner_user_query(query)
+    if _is_trusted_system_context():
+        # Startup data hygiene is trusted server-side maintenance, not a
+        # request. It intentionally operates across the shared users collection
+        # because there is no authenticated company at application startup.
+        return dict(query or {})
     if _is_trusted_pre_auth_context():
         # Login/bootstrap must locate the credential record before the current
         # user and company are known. The caller is a narrowly whitelisted
@@ -112,6 +136,13 @@ def _scope_user_insert(document: Any) -> dict[str, Any]:
             )
         result["email"] = email
         return result
+    if _is_trusted_system_context():
+        # Startup maintenance currently does not insert users, but keeping the
+        # trusted path explicit prevents a future maintenance insert from being
+        # mistaken for an authenticated company action.
+        if not isinstance(document, dict):
+            raise HTTPException(status_code=400, detail="Invalid user record.")
+        return dict(document)
     if _is_trusted_pre_auth_context():
         # Public self-registration is a deliberately separate onboarding flow.
         # Its handler sets role/status and, where applicable, commercial linkage
@@ -162,7 +193,7 @@ def _scope_user_update(update: Any) -> dict[str, Any]:
             result.pop("$set", None)
         return result
 
-    if _is_trusted_pre_auth_context():
+    if _is_trusted_system_context() or _is_trusted_pre_auth_context():
         return update
 
     company_id = _user_company_id()
@@ -187,6 +218,10 @@ def _scope_user_update(update: Any) -> dict[str, Any]:
 
 
 def _scope_user_replacement(replacement: Any) -> dict[str, Any]:
+    if _is_trusted_system_context():
+        if not isinstance(replacement, dict):
+            raise HTTPException(status_code=400, detail="Invalid user record.")
+        return dict(replacement)
     return _scope_user_insert(replacement)
 
 
@@ -286,6 +321,8 @@ def _install() -> None:
         pipeline = list(pipeline or [])
         if _is_owner_context():
             pipeline.insert(0, {"$match": {"email": {"$in": sorted(_owner_emails())}}})
+        elif _is_trusted_system_context():
+            pass
         elif _is_trusted_pre_auth_context():
             pass
         else:
