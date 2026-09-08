@@ -4,7 +4,6 @@ import {
   Users, X, XCircle, Save, Trash2, ReceiptText, ChevronDown, ChevronRight,
   Loader2, Settings2, Pencil,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import {
   generateCommercialLicense,
@@ -72,7 +71,6 @@ const CONSOLE_CSS = `
 `;
 
 export default function MasterConsole() {
-  const navigate = useNavigate();
   const [state, setState] = useState({ packages: [], licenses: [], customers: [] });
   const [modules, setModules] = useState([]);
   const [invoiceCompanies, setInvoiceCompanies] = useState([]);
@@ -94,50 +92,6 @@ export default function MasterConsole() {
     finally { setLoading(false); }
   };
   useEffect(() => { refresh(); }, []);
-
-  // Keep the commercial navigation together with the normal sidebar navigation.
-  // This is intentionally handled here so the Master Console remains the only file
-  // changed for this UI adjustment while reusing the application's existing tab styling.
-  useEffect(() => {
-    const findSidebarItem = (label) => {
-      const candidates = Array.from(document.querySelectorAll("a, button, [role=button]"));
-      return candidates.find((element) => element.textContent?.replace(/\s+/g, " ").trim() === label) || null;
-    };
-
-    const clientPortalItem = findSidebarItem("Client Portal");
-    const commercialItem = findSidebarItem("Commercial Console");
-    if (!clientPortalItem || !commercialItem || !commercialItem.parentElement) return undefined;
-
-    const sidebarContainer = clientPortalItem.parentElement;
-    const originalParent = commercialItem.parentElement;
-    const originalNextSibling = commercialItem.nextSibling;
-    const websiteItem = commercialItem.cloneNode(true);
-    websiteItem.setAttribute("data-master-console-website", "true");
-    websiteItem.removeAttribute("aria-current");
-    websiteItem.setAttribute("title", "Website & Branding");
-
-    const textNodes = [];
-    const walker = document.createTreeWalker(websiteItem, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) textNodes.push(node);
-    if (textNodes.length) textNodes[textNodes.length - 1].nodeValue = "Website & Branding";
-
-    const openWebsite = (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      navigate("/master-console/website");
-    };
-    websiteItem.addEventListener("click", openWebsite);
-
-    sidebarContainer.insertBefore(websiteItem, clientPortalItem.nextSibling);
-    sidebarContainer.insertBefore(commercialItem, websiteItem.nextSibling);
-
-    return () => {
-      websiteItem.removeEventListener("click", openWebsite);
-      websiteItem.remove();
-      if (originalParent?.isConnected) originalParent.insertBefore(commercialItem, originalNextSibling && originalNextSibling.parentNode === originalParent ? originalNextSibling : null);
-    };
-  }, [navigate]);
 
   const customerById = useMemo(() => Object.fromEntries((state.customers || []).map((c) => [String(c.id), c])), [state.customers]);
   const activeModules = useMemo(() => modules.filter((m) => m.active !== false), [modules]);
@@ -184,6 +138,6 @@ export default function MasterConsole() {
     </div>
     {created && <div className="fixed inset-x-4 bottom-5 z-50 mx-auto max-w-4xl rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">License Generated</p><h3 className="mt-1 font-bold">{created.customer_name}</h3><p className="mt-1 text-sm text-slate-500">{(created.modules || []).map((m) => MODULE_LABELS[m] || m).join(", ")} · {created.validity_months} months · {money(created.amount_charged)}</p></div><button onClick={() => setCreated(null)} className="text-slate-400"><X size={18}/></button></div><div className="mt-4 grid gap-3 md:grid-cols-2"><div className="rounded-xl bg-slate-950 p-3"><div className="text-[10px] uppercase tracking-wider text-white/60">License Key</div><div className="mt-1 flex items-center gap-2"><code className="flex-1 break-all text-sm font-bold tracking-wider text-white">{created.license_key}</code><button onClick={() => copy(created.license_key)} className="rounded-lg bg-white/10 p-2 text-white"><Copy size={16}/></button></div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-400">Invoice</div><div className="mt-1 flex items-center gap-2 text-sm font-bold"><ReceiptText size={16}/>{created.invoice_no || created.invoice?.invoice_no || "Generated"}</div></div></div></div>}
     {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={submit} className="relative my-4 max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-xl font-bold">Generate Commercial License</h2><p className="mt-1 text-sm text-slate-500">Create the commercial customer and license. The generated customer is stored in the License Registry, not the Platform Owner Company Master.</p></div><button type="button" disabled={generating} onClick={() => setShowCreate(false)} className="rounded-xl p-2 text-slate-400"><X size={20}/></button></div><div className="mt-6 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="mb-4 flex items-center gap-2 font-semibold"><Building2 size={17}/> Customer &amp; GST details</div><div className="grid gap-4 md:grid-cols-2">{[["Company Name *","company_name"],["Contact Person","contact_name"],["Email *","email"],["Phone","phone"],["GSTIN","gstin"],["Pincode","pincode"],["City","city"],["State","state"]].map(([label,key]) => <Field key={key} label={label}><Input required={key === "company_name" || key === "email"} disabled={generating} type={key === "email" ? "email" : "text"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: key === "gstin" ? e.target.value.toUpperCase() : e.target.value })}/></Field>)}<Field label="Registered Address"><Input disabled={generating} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })}/></Field><Field label="GST Address"><Input disabled={generating} value={form.gst_address} onChange={(e) => setForm({ ...form, gst_address: e.target.value })}/></Field></div></div><div className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center gap-2 font-semibold"><ReceiptText size={17}/> Invoice Company</div><p className="mt-1 text-xs text-slate-500">Only the existing Platform Owner Company Master issuer is used for the invoice.</p><Field label="Invoice From Company Master *"><select required disabled={generating} value={form.invoice_company_id} onChange={(e) => setForm({ ...form, invoice_company_id: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="">Select issuer</option>{invoiceCompanies.map((c) => <option key={c.id} value={c.id}>{c.name || c.company_name}</option>)}</select></Field></div></div><div className="mt-5 rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between"><div><h3 className="font-bold">Modules &amp; Features</h3><p className="mt-1 text-xs text-slate-500">Select the exact access being sold.</p></div><span className="text-xs font-semibold text-slate-500">{selectedModules.length} modules · {Object.values(selectedFeatures).reduce((s, v) => s + v.length, 0)} features</span></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{activeModules.map((module) => <div key={module.id} className={`rounded-2xl border p-4 ${selectedModules.includes(module.id) ? "border-slate-900 bg-slate-50" : "border-slate-200"}`}><div className="flex items-center gap-3"><input type="checkbox" disabled={generating} checked={selectedModules.includes(module.id)} onChange={(e) => selectModule(module.id, e.target.checked)}/><div className="flex-1"><div className="font-semibold">{module.name}</div><div className="text-xs text-slate-500">{money(module.monthly_price)}/month</div></div><button type="button" disabled={generating} onClick={() => setExpandedModules((v) => ({ ...v, [module.id]: !v[module.id] }))} className="rounded-lg p-1 text-slate-400">{expandedModules[module.id] ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</button></div>{expandedModules[module.id] && <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">{(module.features || []).map((feature) => <label key={feature.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-2"><input type="checkbox" disabled={generating} checked={(selectedFeatures[module.id] || []).includes(feature.id)} onChange={() => toggleFeature(module.id, feature.id)}/><span className="flex-1 text-xs">{feature.label || featureLabel(feature.id)}</span><span className="text-xs font-semibold text-slate-500">{money(feature.monthly_price)}/mo</span></label>)}</div>}</div>)}</div></div><div className="mt-5 grid gap-4 md:grid-cols-4"><Field label="Duration (months)"><Input type="number" min="1" disabled={generating} value={form.validity_months} onChange={(e) => setForm({ ...form, validity_months: e.target.value })}/></Field><Field label="Max Users"><Input type="number" min="1" disabled={generating} value={form.max_users} onChange={(e) => setForm({ ...form, max_users: e.target.value })}/></Field><Field label="Max Installations"><Input type="number" min="1" disabled={generating} value={form.max_installations} onChange={(e) => setForm({ ...form, max_installations: e.target.value })}/></Field><Field label="Amount Charged"><Input type="number" min="0" step="0.01" disabled={generating} value={form.amount_charged === "" ? calculatedAmount : form.amount_charged} onChange={(e) => setForm({ ...form, amount_charged: e.target.value })}/></Field></div><div className="mt-4 flex justify-end gap-2"><button type="button" disabled={generating} onClick={() => setShowCreate(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button><button type="submit" disabled={generating} className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{generating ? <><Loader2 size={17} className="animate-spin"/> Generating License…</> : <>Generate License + Invoice</>}</button></div>{generating && <div className="absolute inset-0 z-20 flex items-center justify-center rounded-3xl bg-white/75 backdrop-blur-sm"><div className="rounded-2xl border border-slate-200 bg-white px-8 py-7 text-center shadow-xl"><Loader2 size={26} className="mx-auto animate-spin"/><p className="mt-3 text-sm font-bold">Generating license &amp; invoice</p><p className="mt-1 text-xs text-slate-500">Please wait while the commercial customer, license and invoice are created.</p></div></div>}</form></div>}
-    {editingLicense && <CommercialCustomerEditor license={editingLicense} customer={editorCustomer} modules={modules} onClose={() => setEditingLicense(null)} onSaved={async ({ license }) => { await refresh(); setEditingLicense(null); setState((current) => ({ ...current, licenses: current.licenses.map((item) => item.id === license.id ? license : item) })); }}/>} 
+    {editingLicense && <CommercialCustomerEditor license={editingLicense} customer={editorCustomer} modules={modules} onClose={() => setEditingLicense(null)} onSaved={async ({ license }) => { await refresh(); setEditingLicense(null); setState((current) => ({ ...current, licenses: current.licenses.map((item) => item.id === license.id ? license : item) })); }}/>}
   </div></div>;
 }
