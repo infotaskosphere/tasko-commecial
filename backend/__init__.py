@@ -16,18 +16,18 @@ _commercial_admin_permission_compat.install()
 import backend.commercial_module_guard as _commercial_module_guard
 _commercial_module_guard.install()
 
-# Enforce the separate Commercial Control Plane boundary. Customer admins may
-# be admins inside their own tenant, but they can never access the Commercial
-# Console, license registry administration, or license-generation APIs.
-import backend.commercial_control_plane_guard as _commercial_control_plane_guard
-_commercial_control_plane_guard.install()
-
 # FastAPI compatibility shim: the original commercial guard's Request
 # annotation was being interpreted as a required query parameter in the
 # deployed runtime, causing authenticated GET endpoints to return 422.
 # Replace only that wrapper before route modules import get_current_user.
 import backend.commercial_guard_request_compat as _commercial_guard_request_compat
 _commercial_guard_request_compat.install()
+
+# Enforce the separate Commercial Control Plane boundary AFTER the Request
+# compatibility wrapper so this remains the final authentication dependency
+# captured by all subsequently imported route modules.
+import backend.commercial_control_plane_guard as _commercial_control_plane_guard
+_commercial_control_plane_guard.install()
 
 # Load the commercial licensing extension before governed_modules registers the
 # legacy commercial router. The extension registers the same public prefix
