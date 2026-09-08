@@ -140,6 +140,35 @@ def _scope_company_registry_query(query: Any) -> dict[str, Any]:
     return base
 
 
+def _scope_company_registry_insert(document: Any) -> Any:
+    if in_platform_owner_context() or not authenticated_company_id() or not isinstance(document, dict):
+        return document
+    result = dict(document)
+    requested = result.get(COMPANY_ID_FIELD)
+    company_id = authenticated_company_id()
+    if requested is not None and str(requested) != company_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company company creation is not permitted")
+    result[COMPANY_ID_FIELD] = company_id
+    return result
+
+
+def _scope_company_registry_update(update: Any) -> Any:
+    if in_platform_owner_context() or not authenticated_company_id():
+        return update
+    if not isinstance(update, dict):
+        return update
+    result = dict(update)
+    set_values = dict(result.get("$set") or {})
+    if COMPANY_ID_FIELD in set_values and str(set_values[COMPANY_ID_FIELD]) != authenticated_company_id():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company ID cannot be changed")
+    set_values.pop(COMPANY_ID_FIELD, None)
+    if set_values:
+        result["$set"] = set_values
+    elif "$set" in result:
+        result.pop("$set", None)
+    return result
+
+
 def _scope_update(update: Any) -> Any:
     company_id = authenticated_company_id()
     if not company_id:
@@ -204,40 +233,46 @@ class TenantAwareCollection:
 
     async def insert_one(self, document, *args, **kwargs):
         if self._enabled(): document = _scope_replacement(document)
+        elif self._company_registry_enabled(): document = _scope_company_registry_insert(document)
         return await self._collection.insert_one(document, *args, **kwargs)
 
     async def insert_many(self, documents, *args, **kwargs):
         if self._enabled(): documents = [_scope_replacement(document) for document in documents]
+        elif self._company_registry_enabled(): documents = [_scope_company_registry_insert(document) for document in documents]
         return await self._collection.insert_many(documents, *args, **kwargs)
 
     async def update_one(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled: query, update = _scope_query(query), _scope_update(update)
-        elif registry: query = _scope_company_registry_query(query)
+        elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.update_one(query, update, *args, **kwargs)
 
     async def update_many(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled: query, update = _scope_query(query), _scope_update(update)
-        elif registry: query = _scope_company_registry_query(query)
+        elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.update_many(query, update, *args, **kwargs)
 
     async def replace_one(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
-        elif registry: query = _scope_company_registry_query(query)
+        elif registry:
+            query = _scope_company_registry_query(query)
+            replacement = _scope_company_registry_insert(replacement)
         return await self._collection.replace_one(query, replacement, *args, **kwargs)
 
     async def find_one_and_update(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled: query, update = _scope_query(query), _scope_update(update)
-        elif registry: query = _scope_company_registry_query(query)
+        elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.find_one_and_update(query, update, *args, **kwargs)
 
     async def find_one_and_replace(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
-        elif registry: query = _scope_company_registry_query(query)
+        elif registry:
+            query = _scope_company_registry_query(query)
+            replacement = _scope_company_registry_insert(replacement)
         return await self._collection.find_one_and_replace(query, replacement, *args, **kwargs)
 
     async def find_one_and_delete(self, query, *args, **kwargs):
