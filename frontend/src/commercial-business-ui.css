@@ -68,7 +68,18 @@ body.website-builder-surface #root header [data-user-menu] img{border-radius:999
 body.website-builder-surface #root header + div{height:40px!important;min-height:40px!important;background:#fff!important;border-top:0!important;border-bottom:1px solid #e2e8f0!important;border-radius:0!important;box-shadow:none!important}
 body.website-builder-surface #root header + div button,body.website-builder-surface #root header + div a,body.website-builder-surface #root [data-section-switcher] button,body.website-builder-surface #root [data-section-switcher] a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
 body.website-builder-surface #root header + div button:hover,body.website-builder-surface #root header + div a:hover,body.website-builder-surface #root [data-section-switcher] button:hover,body.website-builder-surface #root [data-section-switcher] a:hover{background:#f6f8fb!important;color:#0D3B66!important}
-/* Match the normal Tasks/Dashboard top bar: Website Studio must not show the extra Commercial Console shortcut in this strip. */
+/* Match the normal Tasks/Dashboard app sidebar exactly; Website Studio content remains untouched. */
+body.website-builder-surface #root aside{border-radius:0!important;box-shadow:10px 0 30px rgba(0,0,0,.22)!important}
+body.website-builder-surface #root aside .sidebar-scroll{padding-top:10px!important;padding-bottom:10px!important}
+body.website-builder-surface #root aside .sidebar-scroll > div > div.space-y-1{gap:4px!important}
+body.website-builder-surface #root aside .sidebar-scroll a{min-height:40px!important;height:40px!important;margin:0!important;padding-top:0!important;padding-bottom:0!important;border-radius:0!important;border:1px solid transparent!important;box-shadow:0 2px 7px rgba(0,0,0,.10)!important;transition:background-color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease!important;font-size:14px!important;line-height:20px!important;font-weight:500!important;color:#cbd5e1!important}
+body.website-builder-surface #root aside .sidebar-scroll a:hover{transform:translateX(3px)!important;box-shadow:0 4px 12px rgba(0,0,0,.16)!important}
+body.website-builder-surface #root aside .sidebar-scroll a[class*="bg-white/[0.09]"]{border-color:rgba(255,255,255,.12)!important;box-shadow:0 4px 14px rgba(0,0,0,.18)!important;color:#fff!important}
+body.website-builder-surface #root aside .sidebar-scroll a > span.absolute,body.website-builder-surface #root aside .sidebar-scroll a .absolute.left-full{border-radius:0!important}
+body.website-builder-surface #root aside > div:last-child{padding:10px!important}body.website-builder-surface #root aside > div:last-child button{height:40px!important;min-height:40px!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important}
+/* Match the normal Tasks/Dashboard top strip as well. */
+body.website-builder-surface #root header + div{font-size:14px!important}
+/* Website Studio must not show the old floating Commercial Console shortcut in the top strip. */
 body.website-builder-surface #root [data-commercial-console]{display:none!important}
 
 @media(max-width:1100px){#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
