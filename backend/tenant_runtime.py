@@ -8,6 +8,8 @@ from typing import Any, Mapping
 
 from fastapi import HTTPException, status
 
+from backend.platform_owner import is_platform_owner
+
 COMPANY_FIELD = "company_id"
 COMPANY_ID_FIELD = "id"
 
@@ -27,6 +29,7 @@ TENANT_COLLECTIONS = {
 COMPANY_REGISTRY_COLLECTION = "companies"
 
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
+_current_platform_owner: ContextVar[bool] = ContextVar("taskosphere_platform_owner", default=False)
 _system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
 
 
@@ -43,6 +46,18 @@ def reset_authenticated_company(token) -> None:
 
 def authenticated_company_id() -> str | None:
     return _current_company.get()
+
+
+def set_platform_owner(value: bool = True):
+    return _current_platform_owner.set(bool(value))
+
+
+def reset_platform_owner(token) -> None:
+    _current_platform_owner.reset(token)
+
+
+def in_platform_owner_context() -> bool:
+    return _current_platform_owner.get()
 
 
 def in_system_context() -> bool:
@@ -111,6 +126,8 @@ def _scope_query(query: Any) -> dict[str, Any]:
 
 
 def _scope_company_registry_query(query: Any) -> dict[str, Any]:
+    if in_platform_owner_context():
+        return query if isinstance(query, dict) else {}
     company_id = authenticated_company_id()
     if not company_id:
         return query if isinstance(query, dict) else {}
@@ -244,7 +261,8 @@ class TenantAwareCollection:
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
         elif self._company_registry_enabled():
             pipeline = list(pipeline or [])
-            pipeline.insert(0, {"$match": {COMPANY_ID_FIELD: authenticated_company_id()}})
+            if not in_platform_owner_context():
+                pipeline.insert(0, {"$match": {COMPANY_ID_FIELD: authenticated_company_id()}})
         return self._collection.aggregate(pipeline, *args, **kwargs)
 
     async def bulk_write(self, requests, *args, **kwargs):
