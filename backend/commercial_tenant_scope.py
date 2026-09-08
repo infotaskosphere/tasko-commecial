@@ -5,7 +5,7 @@ Company and User masters are different: a licensee may own multiple legal
 companies and therefore must be able to see only the companies/users belonging
 to that commercial customer, never another licensee or the Platform Owner.
 
-This layer is installed after the existing TenantAwareDatabase wrapper and
+This layer is installed before route modules capture ``get_current_user`` and
 adds the commercial-customer boundary without changing Platform Owner access.
 """
 from __future__ import annotations
@@ -13,11 +13,11 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any
 
-from fastapi import HTTPException, status
+from fastapi import Depends, HTTPException, status
 
 from backend import dependencies as _dependencies
 from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import TenantAwareCollection, TenantAwareDatabase
+from backend.tenant_runtime import TenantAwareCollection
 
 _current_customer_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_customer_id", default=None)
 
@@ -50,7 +50,6 @@ def _customer_query(name: str, query: Any) -> dict[str, Any]:
     customer_id = authenticated_customer_id()
     if not customer_id or _is_owner_context() or not _customer_scoped_collection(name):
         return dict(query or {})
-
     result = dict(query or {})
     requested = result.get("commercial_customer_id")
     if requested is not None and str(requested) != customer_id:
@@ -63,7 +62,6 @@ def _customer_insert(name: str, document: Any) -> Any:
     customer_id = authenticated_customer_id()
     if not customer_id or _is_owner_context() or not _customer_scoped_collection(name) or not isinstance(document, dict):
         return document
-
     result = dict(document)
     requested = result.get("commercial_customer_id")
     if requested is not None and str(requested) != customer_id:
@@ -76,7 +74,6 @@ def _customer_update(name: str, update: Any) -> Any:
     customer_id = authenticated_customer_id()
     if not customer_id or _is_owner_context() or not _customer_scoped_collection(name) or not isinstance(update, dict):
         return update
-
     result = dict(update)
     set_values = dict(result.get("$set") or {})
     if "commercial_customer_id" in set_values and str(set_values["commercial_customer_id"]) != customer_id:
@@ -96,10 +93,40 @@ def _customer_replacement(name: str, replacement: Any) -> Any:
     return _customer_insert(name, replacement)
 
 
+async def _resolve_customer_id(user: Any) -> str | None:
+    if is_platform_owner(user):
+        return None
+    company_id = str(getattr(user, "company_id", "") or "").strip()
+    if not company_id:
+        return None
+    raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+    company = await raw_db.companies.find_one({"id": company_id}, {"commercial_customer_id": 1, "source": 1})
+    customer_id = str(
+        getattr(user, "commercial_customer_id", None)
+        or (company or {}).get("commercial_customer_id")
+        or ""
+    ).strip()
+    if not customer_id and (company or {}).get("source") == "commercial-license":
+        customer_id = company_id
+    return customer_id or None
+
+
+_original_get_current_user = _dependencies.get_current_user
+
+
+async def get_current_user_with_customer_scope(
+    credentials=Depends(_dependencies.security),
+):
+    user = await _original_get_current_user(credentials)
+    customer_id = await _resolve_customer_id(user)
+    set_authenticated_customer(customer_id)
+    return user
+
+
 def _install_collection_overrides() -> None:
     if getattr(TenantAwareCollection, "_commercial_customer_scope_installed", False):
         return
-
+    original_registry_enabled = TenantAwareCollection._company_registry_enabled
     original_find = TenantAwareCollection.find
     original_find_one = TenantAwareCollection.find_one
     original_count = TenantAwareCollection.count_documents
@@ -115,6 +142,11 @@ def _install_collection_overrides() -> None:
     original_delete_one = TenantAwareCollection.delete_one
     original_delete_many = TenantAwareCollection.delete_many
     original_aggregate = TenantAwareCollection.aggregate
+
+    def registry_enabled(self):
+        if self._name == "companies" and authenticated_customer_id() and not _is_owner_context():
+            return False
+        return original_registry_enabled(self)
 
     def find(self, query=None, *args, **kwargs):
         if _customer_scoped_collection(self._name):
@@ -199,6 +231,7 @@ def _install_collection_overrides() -> None:
                 pipeline.insert(0, {"$match": {"commercial_customer_id": customer_id}})
         return original_aggregate(self, pipeline, *args, **kwargs)
 
+    TenantAwareCollection._company_registry_enabled = registry_enabled
     TenantAwareCollection.find = find
     TenantAwareCollection.find_one = find_one
     TenantAwareCollection.count_documents = count_documents
@@ -219,6 +252,8 @@ def _install_collection_overrides() -> None:
 
 def install() -> None:
     _install_collection_overrides()
+    if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_customer_scope":
+        _dependencies.get_current_user = get_current_user_with_customer_scope
 
 
 install()
