@@ -1,5 +1,5 @@
 import React, { Suspense, memo, useEffect } from "react";
-import { BrowserRouter, useLocation } from "react-router-dom";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -13,6 +13,8 @@ import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
+
+const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
@@ -170,14 +172,43 @@ function WebsiteSurfaceScope() {
   return null;
 }
 
-// Commercial navigation is now rendered by DashboardLayout from React-owned
-// navigation configuration. This component intentionally renders nothing.
-// Keeping it as a no-op preserves the App shell integration point without
-// allowing imperative DOM mutation to race React's reconciler.
 function CommercialConsoleShortcut() {
   const { user } = useAuth();
-  void user;
-  return null;
+  const navigate = useNavigate();
+  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
+
+  if (!isPlatformOwner) return null;
+
+  const items = [
+    { path: "/master-console", label: "Commercial Console" },
+    { path: "/master-console/website", label: "Website & Branding" },
+  ];
+
+  return (
+    <div
+      data-commercial-console="true"
+      className="fixed top-[64px] right-[220px] z-[46] hidden lg:flex h-10 items-center gap-1 border-x border-b border-slate-200 bg-white px-1 shadow-sm"
+      aria-label="Platform Owner tools"
+    >
+      {items.map(({ path, label }) => (
+        <div
+          key={path}
+          role="link"
+          tabIndex={0}
+          onClick={() => navigate(path)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              navigate(path);
+            }
+          }}
+          className="flex h-8 cursor-pointer items-center whitespace-nowrap rounded-md px-3 text-[12px] font-semibold text-[#1F6FB2] transition-colors hover:bg-slate-100 hover:text-[#0D3B66] focus:outline-none focus:ring-2 focus:ring-[#1F6FB2]/30"
+        >
+          {label}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
