@@ -35,177 +35,42 @@ body:not(.website-surface) #root [data-radix-dialog-content],
 body:not(.website-surface) #root [data-radix-dialog-content] *,
 body:not(.website-surface) #root [data-radix-popper-content-wrapper] > *,
 body:not(.website-surface) #root [data-radix-popper-content-wrapper] > * *{border-radius:0!important}
-
-/* Identity imagery stays circular; application controls stay square. */
-body:not(.website-surface) #root header img.rounded-full,
-body:not(.website-surface) #root header .rounded-full img,
-body:not(.website-surface) #root header [data-avatar],
-body:not(.website-surface) #root aside img.rounded-full,
-body:not(.website-surface) #root aside .rounded-full img,
-body:not(.website-surface) #root [role="dialog"] img.rounded-full,
-body:not(.website-surface) #root [data-radix-dialog-content] img.rounded-full{border-radius:9999px!important}
-
-/* Header: exact 64px shell and square utility controls. */
+body:not(.website-surface) #root header img.rounded-full,body:not(.website-surface) #root header .rounded-full img,body:not(.website-surface) #root header [data-avatar],body:not(.website-surface) #root aside img.rounded-full,body:not(.website-surface) #root aside .rounded-full img,body:not(.website-surface) #root [role="dialog"] img.rounded-full,body:not(.website-surface) #root [data-radix-dialog-content] img.rounded-full{border-radius:9999px!important}
 body:not(.website-surface) #root header{height:64px!important;min-height:64px!important;border-radius:0!important;backdrop-filter:blur(10px)}
-body:not(.website-surface) #root header button,
-body:not(.website-surface) #root header a,
-body:not(.website-surface) #root header [role="button"]{border-radius:0!important;box-shadow:none;transform:none!important}
-body:not(.website-surface) #root header button{min-height:36px}
-body:not(.website-surface) #root header .p-2{width:36px;height:36px;padding:0!important}
+body:not(.website-surface) #root header button,body:not(.website-surface) #root header a,body:not(.website-surface) #root header [role="button"]{border-radius:0!important;box-shadow:none;transform:none!important}
+body:not(.website-surface) #root header button{min-height:36px}body:not(.website-surface) #root header .p-2{width:36px;height:36px;padding:0!important}
 body:not(.website-surface) #root header .w-8.sm\\:w-\[54px\]{width:54px!important;height:32px!important}
-body:not(.website-surface) #root header [data-user-menu] > button{height:40px!important;min-height:40px!important;padding-top:4px!important;padding-bottom:4px!important}
-body:not(.website-surface) #root header [data-user-menu] > button > div:first-child{width:30px!important;height:30px!important}
-body:not(.website-surface) #root header .rounded-full{border-radius:0!important}
-body:not(.website-surface) #root header [data-user-menu] img{border-radius:9999px!important}
-
-/* Top section switcher: the direct fixed bar after the 64px header. */
-body:not(.website-surface) #root header + div{border-radius:0!important}
-body:not(.website-surface) #root header + div button,
-body:not(.website-surface) #root header + div a,
-body:not(.website-surface) #root [data-section-switcher] button,
-body:not(.website-surface) #root [data-section-switcher] a{border-radius:0!important;min-height:40px!important;height:40px!important;box-shadow:none!important;transform:none!important}
-
-/* Sidebar stays 280px expanded / 80px collapsed, with square floating tabs. */
+body:not(.website-surface) #root header [data-user-menu] > button{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important}
+body:not(.website-surface) #root header [data-user-menu] > button > div:first-child{width:28px!important;height:28px!important}
+body:not(.website-surface) #root header .rounded-full{border-radius:0!important}body:not(.website-surface) #root header [data-user-menu] img{border-radius:9999px!important}
+body:not(.website-surface) #root header + div{border-radius:0!important;height:40px!important;min-height:40px!important}
+body:not(.website-surface) #root header + div button,body:not(.website-surface) #root header + div a,body:not(.website-surface) #root [data-section-switcher] button,body:not(.website-surface) #root [data-section-switcher] a{border-radius:0!important;min-height:40px!important;height:40px!important;box-shadow:none!important;transform:none!important}
 body:not(.website-surface) #root aside{border-radius:0!important;box-shadow:10px 0 30px rgba(0,0,0,.22)!important}
 body:not(.website-surface) #root aside .sidebar-scroll{padding-top:10px!important;padding-bottom:10px!important}
 body:not(.website-surface) #root aside .sidebar-scroll > div > div.space-y-1{gap:4px!important}
 body:not(.website-surface) #root aside .sidebar-scroll a{min-height:40px!important;height:40px!important;margin:0!important;padding-top:0!important;padding-bottom:0!important;border-radius:0!important;border:1px solid transparent!important;box-shadow:0 2px 7px rgba(0,0,0,.10)!important;transition:background-color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease!important}
 body:not(.website-surface) #root aside .sidebar-scroll a:hover{transform:translateX(3px)!important;box-shadow:0 4px 12px rgba(0,0,0,.16)!important}
 body:not(.website-surface) #root aside .sidebar-scroll a[class*="bg-white/[0.09]"]{border-color:rgba(255,255,255,.12)!important;box-shadow:0 4px 14px rgba(0,0,0,.18)!important}
-body:not(.website-surface) #root aside .sidebar-scroll a > span.absolute,
-body:not(.website-surface) #root aside .sidebar-scroll a .absolute.left-full{border-radius:0!important}
-body:not(.website-surface) #root aside > div:last-child{padding:10px!important}
-body:not(.website-surface) #root aside > div:last-child button{height:40px!important;min-height:40px!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important}
+body:not(.website-surface) #root aside .sidebar-scroll a > span.absolute,body:not(.website-surface) #root aside .sidebar-scroll a .absolute.left-full{border-radius:0!important}
+body:not(.website-surface) #root aside > div:last-child{padding:10px!important}body:not(.website-surface) #root aside > div:last-child button{height:40px!important;min-height:40px!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important}
+body:not(.website-surface) #root [class*="rounded-"]{border-radius:0!important}body:not(.website-surface) #root img.rounded-full,body:not(.website-surface) #root [data-user-menu] img{border-radius:9999px!important}
+body:not(.website-surface) [role="dialog"],body:not(.website-surface) [data-radix-dialog-content],body:not(.website-surface) [data-radix-popper-content-wrapper] > *,body:not(.website-surface) [data-radix-menu-content],body:not(.website-surface) [data-radix-select-content],body:not(.website-surface) [data-radix-dropdown-menu-content],body:not(.website-surface) [data-radix-popover-content],body:not(.website-surface) [data-floating-ui-portal] > *{border-radius:0!important}
 
-/* Dialogs/popups and all internal tabs/buttons/inputs use the same 40px
-   control grid and square geometry. */
-body:not(.website-surface) #root [role="dialog"],
-body:not(.website-surface) #root [data-radix-dialog-content]{border:1px solid #D8E1EA!important;box-shadow:0 18px 50px rgba(15,23,42,.22)!important}
-body:not(.website-surface) #root [role="dialog"] button,
-body:not(.website-surface) #root [role="dialog"] input,
-body:not(.website-surface) #root [role="dialog"] select,
-body:not(.website-surface) #root [role="dialog"] textarea,
-body:not(.website-surface) #root [role="dialog"] [role="tab"],
-body:not(.website-surface) #root [data-radix-dialog-content] button,
-body:not(.website-surface) #root [data-radix-dialog-content] input,
-body:not(.website-surface) #root [data-radix-dialog-content] select,
-body:not(.website-surface) #root [data-radix-dialog-content] textarea,
-body:not(.website-surface) #root [data-radix-dialog-content] [role="tab"]{border-radius:0!important}
-body:not(.website-surface) #root [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-body:not(.website-surface) #root [role="dialog"] select,
-body:not(.website-surface) #root [role="dialog"] button:not([aria-label="Close"]),
-body:not(.website-surface) #root [data-radix-dialog-content] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-body:not(.website-surface) #root [data-radix-dialog-content] select,
-body:not(.website-surface) #root [data-radix-dialog-content] button:not([aria-label="Close"]){min-height:40px!important;height:40px}
-body:not(.website-surface) #root [role="dialog"] [role="tablist"],
-body:not(.website-surface) #root [data-radix-dialog-content] [role="tablist"]{border-radius:0!important;box-shadow:none!important}
-body:not(.website-surface) #root [role="dialog"] [role="tab"],
-body:not(.website-surface) #root [data-radix-dialog-content] [role="tab"]{min-height:40px!important;height:40px!important}
-
-/* Dropdown/popover surfaces and user menu. */
-body:not(.website-surface) #root [data-radix-popper-content-wrapper] > *,
-body:not(.website-surface) #root [data-radix-menu-content],
-body:not(.website-surface) #root [data-radix-select-content],
-body:not(.website-surface) #root [data-radix-dropdown-menu-content],
-body:not(.website-surface) #root [data-radix-popover-content],
-body:not(.website-surface) #root [data-user-menu] > div.absolute{border-radius:0!important;box-shadow:0 14px 34px rgba(15,23,42,.18)!important}
-body:not(.website-surface) #root [data-radix-popper-content-wrapper] button,
-body:not(.website-surface) #root [data-radix-menu-content] button,
-body:not(.website-surface) #root [data-radix-dropdown-menu-content] button,
-body:not(.website-surface) #root [data-radix-select-content] button,
-body:not(.website-surface) #root [data-radix-popover-content] button,
-body:not(.website-surface) #root [data-user-menu] > div.absolute button{border-radius:0!important}
-
-/* Toasts/floating widgets follow the same square geometry. */
-body:not(.website-surface) #root [data-sonner-toaster] [data-sonner-toast],
-body:not(.website-surface) #root [data-sonner-toast],
-body:not(.website-surface) #root [data-floating-ui-portal] > *{border-radius:0!important}
-
-/* Final shell-wide override: no capsules anywhere in the application chrome. */
-body:not(.website-surface) #root [class*="rounded-"]{border-radius:0!important}
-body:not(.website-surface) #root img.rounded-full,
-body:not(.website-surface) #root [data-user-menu] img{border-radius:9999px!important}
-
-/* GLOBAL PORTAL OVERRIDES
-   Radix dialogs/dropdowns are portalled to body, outside #root. Keep the
-   commercial application geometry consistent there as well. */
-body:not(.website-surface) [role="dialog"],
-body:not(.website-surface) [data-radix-dialog-content],
-body:not(.website-surface) [data-radix-popper-content-wrapper] > *,
-body:not(.website-surface) [data-radix-menu-content],
-body:not(.website-surface) [data-radix-select-content],
-body:not(.website-surface) [data-radix-dropdown-menu-content],
-body:not(.website-surface) [data-radix-popover-content],
-body:not(.website-surface) [data-floating-ui-portal] > *{border-radius:0!important}
-body:not(.website-surface) [role="dialog"] *,
-body:not(.website-surface) [data-radix-dialog-content] *,
-body:not(.website-surface) [data-radix-popper-content-wrapper] > * *,
-body:not(.website-surface) [data-radix-menu-content] *,
-body:not(.website-surface) [data-radix-select-content] *,
-body:not(.website-surface) [data-radix-dropdown-menu-content] *,
-body:not(.website-surface) [data-radix-popover-content] *{border-radius:0!important}
-body:not(.website-surface) [role="dialog"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-body:not(.website-surface) [role="dialog"] select,
-body:not(.website-surface) [role="dialog"] textarea,
-body:not(.website-surface) [role="dialog"] button:not([aria-label="Close"]),
-body:not(.website-surface) [data-radix-dialog-content] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-body:not(.website-surface) [data-radix-dialog-content] select,
-body:not(.website-surface) [data-radix-dialog-content] textarea,
-body:not(.website-surface) [data-radix-dialog-content] button:not([aria-label="Close"]){height:40px!important;min-height:40px!important}
-body:not(.website-surface) [role="dialog"] [role="tab"],
-body:not(.website-surface) [data-radix-dialog-content] [role="tab"]{height:40px!important;min-height:40px!important;border-radius:0!important}
-body:not(.website-surface) [role="dialog"] img.rounded-full,
-body:not(.website-surface) [data-radix-dialog-content] img.rounded-full{border-radius:9999px!important}
-
-/* TOP CHROME: keep every square utility aligned with the 36px sun/moon
-   controls; the section switcher itself is a compact 40px darkened bar. */
-body:not(.website-surface) #root header button,
-body:not(.website-surface) #root header a,
-body:not(.website-surface) #root header [role="button"]{height:36px!important;min-height:36px!important}
-body:not(.website-surface) #root header [data-user-menu] > button{height:36px!important;min-height:36px!important}
-body:not(.website-surface) #root header [data-user-menu] > button > div:first-child{width:28px!important;height:28px!important}
-body:not(.website-surface) #root header + div,
-body:not(.website-surface) #root [data-section-switcher]{height:40px!important;min-height:40px!important;background:#173F66!important;border-top:1px solid #244F78!important;border-bottom:1px solid #0F2F4B!important;color:#F8FAFC!important}
-body:not(.website-surface) #root header + div button,
-body:not(.website-surface) #root header + div a,
-body:not(.website-surface) #root [data-section-switcher] button,
-body:not(.website-surface) #root [data-section-switcher] a{height:40px!important;min-height:40px!important;color:#E2E8F0!important;background:transparent!important}
-body:not(.website-surface) #root header + div button:hover,
-body:not(.website-surface) #root header + div a:hover,
-body:not(.website-surface) #root [data-section-switcher] button:hover,
-body:not(.website-surface) #root [data-section-switcher] a:hover{background:#245B87!important;color:#FFF!important}
-
-/* One final application-wide square rule. Do not affect the public website. */
-body:not(.website-surface) #root [class*="rounded-"]{border-radius:0!important}
-body:not(.website-surface) #root [role="dialog"] [class*="rounded-"],
-body:not(.website-surface) [role="dialog"] [class*="rounded-"],
-body:not(.website-surface) [data-radix-dialog-content] [class*="rounded-"]{border-radius:0!important}
-
-/* WEBSITE STUDIO TOP BAR: match the normal application chrome shown on
-   Tasks/Dashboard. This is intentionally scoped to the Website Studio only;
-   the editor canvas, builder panels, public website and sidebar are untouched. */
-body.website-builder-surface #root header,
-body.website-builder-surface #root header *:not(img):not(svg):not(path){border-radius:0!important;box-shadow:none;transform:none!important}
+/* WEBSITE STUDIO: only the shared application top chrome is normalized here.
+   The Website Studio editor canvas, left/right panels, sections and content are untouched. */
+body.website-builder-surface #root header,body.website-builder-surface #root header *:not(img):not(svg):not(path){border-radius:0!important;box-shadow:none;transform:none!important}
 body.website-builder-surface #root header{height:64px!important;min-height:64px!important;backdrop-filter:blur(10px)!important}
-body.website-builder-surface #root header button,
-body.website-builder-surface #root header a,
-body.website-builder-surface #root header [role="button"]{height:36px!important;min-height:36px!important;border-radius:0!important;box-shadow:none!important;transform:none!important}
+body.website-builder-surface #root header button,body.website-builder-surface #root header a,body.website-builder-surface #root header [role="button"]{height:36px!important;min-height:36px!important;border-radius:0!important;box-shadow:none!important;transform:none!important}
 body.website-builder-surface #root header .p-2{width:36px!important;height:36px!important;padding:0!important}
 body.website-builder-surface #root header [data-user-menu] > button{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important}
 body.website-builder-surface #root header [data-user-menu] > button > div:first-child{width:28px!important;height:28px!important}
 body.website-builder-surface #root header [data-user-menu] img{border-radius:9999px!important}
 body.website-builder-surface #root header + div{height:40px!important;min-height:40px!important;background:#fff!important;border-top:0!important;border-bottom:1px solid #e2e8f0!important;border-radius:0!important;box-shadow:none!important}
-body.website-builder-surface #root header + div button,
-body.website-builder-surface #root header + div a,
-body.website-builder-surface #root [data-section-switcher] button,
-body.website-builder-surface #root [data-section-switcher] a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
-body.website-builder-surface #root header + div button:hover,
-body.website-builder-surface #root header + div a:hover,
-body.website-builder-surface #root [data-section-switcher] button:hover,
-body.website-builder-surface #root [data-section-switcher] a:hover{background:#f6f8fb!important;color:#0D3B66!important}
-body.website-builder-surface #root [data-commercial-console]{top:64px!important;height:40px!important;border-radius:0!important;box-shadow:none!important}
+body.website-builder-surface #root header + div button,body.website-builder-surface #root header + div a,body.website-builder-surface #root [data-section-switcher] button,body.website-builder-surface #root [data-section-switcher] a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
+body.website-builder-surface #root header + div button:hover,body.website-builder-surface #root header + div a:hover,body.website-builder-surface #root [data-section-switcher] button:hover,body.website-builder-surface #root [data-section-switcher] a:hover{background:#f6f8fb!important;color:#0D3B66!important}
+/* Match the normal Tasks/Dashboard top bar: Website Studio must not show the extra Commercial Console shortcut in this strip. */
+body.website-builder-surface #root [data-commercial-console]{display:none!important}
 
-@media(max-width:1100px){#root [data-commercial-console]{right:170px!important;min-width:132px}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
+@media(max-width:1100px){#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
 @media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}body:not(.website-surface) #root aside .sidebar-scroll a{height:40px!important;min-height:40px!important}}
-@media(max-width:800px){#root [data-commercial-console]{top:104px!important;right:8px!important;height:36px!important;min-width:132px;border:1px solid var(--biz-border)!important}}
-@media(max-width:640px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(2,minmax(0,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:44px!important;height:44px!important;padding:5px 7px!important}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:auto;width:100%}}
+@media(max-width:640px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(2,minmax(0,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:44px!important;height:44px!important;padding:5px 7px!important}}
