@@ -8,6 +8,11 @@ import backend.admin_identity_compat  # noqa: F401
 # companies from the Platform Owner and every other licensee.
 import backend.commercial_tenant_scope  # noqa: F401
 
+# Legacy license-generated company records may carry the license id without
+# the newer commercial_customer_id field. Expose only those records belonging
+# to the authenticated customer's active license and normalize them when used.
+import backend.commercial_legacy_company_scope_compat  # noqa: F401
+
 # Commercial administrator accounts created before feature-level licensing may
 # not have the current module/page flags persisted. Hydrate them from the
 # active commercial license before installing the API entitlement guard.
@@ -50,6 +55,11 @@ import backend.commercial_onboarding_admin_compat  # noqa: F401
 # canonical license creation function and before backend.server imports route
 # modules that create or manage users.
 import backend.commercial_license_user_limit  # noqa: F401
+
+# Legacy company records are also license-linked. Patch the user-seat validator
+# after the core license-wide limit is installed so adding a user to a legacy
+# legal company still consumes the customer's shared license seat.
+import backend.commercial_legacy_user_limit_compat  # noqa: F401
 
 # The custom commercial generator creates customer ids automatically. Guard
 # issuance by the registered customer/company name as well so the one-license
