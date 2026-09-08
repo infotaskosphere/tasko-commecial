@@ -39,6 +39,12 @@ _commercial_control_plane_guard.install()
 # first, so its feature-level licensing and invoice workflow takes precedence.
 import backend.commercial_onboarding_extensions  # noqa: F401
 
+# Enforce one commercial license per customer and a license-wide user limit.
+# This layer is installed after the licensing extension so it can wrap the
+# canonical license creation function and before backend.server imports route
+# modules that create or manage users.
+import backend.commercial_license_user_limit  # noqa: F401
+
 # Company Master user administration is deliberately outside People Matrix
 # licensing. It uses the same users collection and HR fields so every module
 # can share one company-scoped user source of truth.
