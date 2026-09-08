@@ -73,7 +73,7 @@ const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
 const EmailSettings = lazy(() => import('@/components/EmailSettings.jsx'));
 const PendingApprovals = lazy(() => import('@/components/PendingApprovalsPanel.jsx'));
-const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
+const MasterConsole = lazy(() => import('./pages/MasterConsoleV2.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
@@ -81,10 +81,6 @@ function LicensedDashboardHome() { const { user, loading } = useAuth(); if (load
 function ProtectedLayout(){const {user,loading}=useAuth();const location=useLocation();if(loading)return <AuthLoading/>;if(!user)return <Navigate to="/login" replace/>;return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><RouteAnimatedOutlet/></RouteErrorBoundary></DashboardLayout>}
 function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user)return <Navigate to="/dashboard" replace/>;return children}
 function AdminOnly({children}){const {user}=useAuth();if(user?.role?.toLowerCase()!=='admin')return <Navigate to="/dashboard" replace/>;return children}
-
-// /users is the native People Matrix user page for every authorized user,
-// including admins. Admin → Master Data provides a second, company-master
-// maintenance surface instead of hijacking the People Matrix route.
 function UsersEntry(){ return <Users/>; }
 
 export default function AppRoutes(){return <Suspense fallback={<AuthLoading/>}><Routes>
