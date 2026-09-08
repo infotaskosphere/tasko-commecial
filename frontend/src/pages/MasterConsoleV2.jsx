@@ -1,0 +1,174 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Building2, CheckCircle2, Copy, Globe2, KeyRound, Plus, Search, ShieldCheck,
+  Users, X, XCircle, IndianRupee, Save, Trash2, ReceiptText, ChevronDown,
+  ChevronRight, Loader2, Settings2, Pencil, Package,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
+import {
+  generateCommercialLicense,
+  getLicenseState,
+  updateLicenseStatus,
+  deleteCommercialCompany,
+  getCommercialModuleCatalog,
+  updateCommercialModulePrice,
+} from "@/lib/licenseApi";
+import { fetchCompanyList } from "@/lib/companies";
+import CommercialCustomerEditor from "@/components/CommercialCustomerEditor.jsx";
+
+const MODULE_LABELS = {
+  taskosphere: "Taskosphere", finix: "Finix", compliance: "Compliance", records: "Records",
+  proposals: "Client Proposals", people_matrix: "People Matrix",
+};
+const emptyForm = {
+  company_name: "", contact_name: "", email: "", phone: "", gstin: "", address: "", gst_address: "",
+  city: "", state: "", pincode: "", validity_months: 12, amount_charged: "", currency: "INR",
+  max_users: 10, max_installations: 1, notes: "", invoice_company_id: "",
+};
+const money = (value) => Number(value || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
+const formatDate = (value) => value ? new Date(value).toLocaleDateString("en-IN") : "Lifetime";
+const featureLabel = (flag) => String(flag || "").replace(/^can_(view|manage)_/, "").replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+function Stat({ icon: Icon, label, value }) {
+  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100"><Icon size={18}/></div><div className="mt-4 text-3xl font-bold text-slate-950">{value}</div><div className="mt-1 text-sm font-medium text-slate-500">{label}</div></div>;
+}
+function Field({ label, children }) { return <label className="text-sm font-medium text-slate-700"><span className="mb-1.5 block">{label}</span>{children}</label>; }
+function Input(props) { return <input {...props} className={`w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 outline-none focus:border-slate-400 disabled:bg-slate-50 ${props.className || ""}`}/>; }
+
+export default function MasterConsoleV2() {
+  const navigate = useNavigate();
+  const [state, setState] = useState({ packages: [], licenses: [], customers: [] });
+  const [modules, setModules] = useState([]);
+  const [invoiceCompanies, setInvoiceCompanies] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [query, setQuery] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [selectedModules, setSelectedModules] = useState([]);
+  const [selectedFeatures, setSelectedFeatures] = useState({});
+  const [expandedModules, setExpandedModules] = useState({});
+  const [created, setCreated] = useState(null);
+  const [editingLicense, setEditingLicense] = useState(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const [licenseState, moduleState] = await Promise.all([getLicenseState(), getCommercialModuleCatalog()]);
+      setState(licenseState || { packages: [], licenses: [], customers: [] });
+      setModules(moduleState?.modules || []);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Unable to connect to commercial licensing API.");
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const customerById = useMemo(() => Object.fromEntries((state.customers || []).map((c) => [String(c.id), c])), [state.customers]);
+  const activeModules = useMemo(() => modules.filter((m) => m.active !== false), [modules]);
+  const selectedCatalog = useMemo(() => activeModules.filter((m) => selectedModules.includes(m.id)), [activeModules, selectedModules]);
+  const monthlyTotal = useMemo(() => selectedCatalog.reduce((sum, module) => {
+    const all = (module.features || []).map((f) => f.id);
+    const selected = selectedFeatures[module.id] || [];
+    if (all.length && selected.length === all.length && Number(module.monthly_price || 0) > 0) return sum + Number(module.monthly_price || 0);
+    return sum + selected.reduce((s, id) => s + Number((module.features || []).find((f) => f.id === id)?.monthly_price || 0), 0);
+  }, 0), [selectedCatalog, selectedFeatures]);
+  const calculatedAmount = monthlyTotal * Number(form.validity_months || 0);
+
+  const stats = useMemo(() => ({
+    total: state.licenses.length,
+    active: state.licenses.filter((l) => l.status === "active" && (!l.expires_at || new Date(l.expires_at) >= new Date())).length,
+    expired: state.licenses.filter((l) => l.expires_at && new Date(l.expires_at) < new Date()).length,
+    customers: new Set(state.licenses.map((l) => l.customer_id)).size,
+  }), [state.licenses]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return state.licenses;
+    return state.licenses.filter((license) => [license.license_key, license.customer_name, license.package_name, license.status, license.invoice_no, license.customer?.gstin, license.amount_charged, ...(license.modules || []).map((m) => MODULE_LABELS[m] || m)].some((v) => String(v || "").toLowerCase().includes(q)));
+  }, [query, state.licenses]);
+
+  const resetCreate = () => {
+    const first = activeModules[0];
+    setForm({ ...emptyForm, invoice_company_id: invoiceCompanies[0]?.id || "" });
+    setSelectedModules(first ? [first.id] : []);
+    setSelectedFeatures(first ? { [first.id]: (first.features || []).map((f) => f.id) } : {});
+    setExpandedModules(first ? { [first.id]: true } : {});
+  };
+  const loadInvoiceCompanies = async () => {
+    try { const companies = await fetchCompanyList({ silent: false }); setInvoiceCompanies(companies || []); setForm((f) => ({ ...f, invoice_company_id: f.invoice_company_id || companies?.[0]?.id || "" })); }
+    catch (error) { toast.error(error?.response?.data?.detail || "Unable to load Company Master."); }
+  };
+  const openCreate = async () => { resetCreate(); setShowCreate(true); await loadInvoiceCompanies(); };
+  const selectModule = (id, enabled) => {
+    const module = activeModules.find((m) => m.id === id); if (!module) return;
+    if (enabled) {
+      setSelectedModules((v) => v.includes(id) ? v : [...v, id]);
+      setSelectedFeatures((v) => ({ ...v, [id]: (module.features || []).map((f) => f.id) }));
+    } else {
+      setSelectedModules((v) => v.filter((x) => x !== id));
+      setSelectedFeatures((v) => { const n = { ...v }; delete n[id]; return n; });
+    }
+  };
+  const toggleFeature = (moduleId, featureId) => setSelectedFeatures((current) => {
+    const existing = current[moduleId] || [];
+    const next = existing.includes(featureId) ? existing.filter((id) => id !== featureId) : [...existing, featureId];
+    if (!next.length) setSelectedModules((mods) => mods.filter((id) => id !== moduleId));
+    return { ...current, [moduleId]: next };
+  });
+
+  const submit = async (event) => {
+    event.preventDefault(); if (generating) return;
+    if (!selectedModules.length) return toast.error("Select at least one module.");
+    if (!form.invoice_company_id) return toast.error("Select the Company Master company that should issue the invoice.");
+    if (selectedModules.some((id) => !(selectedFeatures[id] || []).length)) return toast.error("Every selected module must have at least one feature.");
+    setGenerating(true);
+    try {
+      const response = await generateCommercialLicense({ ...form, selected_modules: selectedModules, selected_features: selectedFeatures, validity_months: Number(form.validity_months || 0), amount_charged: form.amount_charged === "" ? calculatedAmount : Number(form.amount_charged), max_users: Number(form.max_users), max_installations: Number(form.max_installations) });
+      setCreated(response.license || response); setShowCreate(false); await refresh(); toast.success(`License generated${response.invoice?.invoice_no ? ` with invoice ${response.invoice.invoice_no}` : ""}.`);
+    } catch (error) { toast.error(error?.response?.data?.detail || "Unable to generate license."); }
+    finally { setGenerating(false); }
+  };
+  const copy = async (value) => { try { await navigator.clipboard.writeText(value); toast.success("License number copied."); } catch { toast.error("Unable to copy license number."); } };
+  const changeStatus = async (license, status) => { try { await updateLicenseStatus(license.id, status); await refresh(); toast.success(`License ${status}.`); } catch (error) { toast.error(error?.response?.data?.detail || "Unable to update license."); } };
+  const removeCompany = async (license) => {
+    if (!window.confirm(`Delete ${license.customer_name || "this company"} from the License Registry? Historical invoices will be preserved.`)) return;
+    try { await deleteCommercialCompany(license.id); await refresh(); toast.success("License customer removed."); } catch (error) { toast.error(error?.response?.data?.detail || "Unable to delete company."); }
+  };
+  const savePricing = async (module) => {
+    try {
+      const featurePrices = Object.fromEntries((module.features || []).map((f) => [f.id, Number(f.monthly_price || 0)]));
+      const saved = await updateCommercialModulePrice(module.id, Number(module.monthly_price || 0), module.active !== false, featurePrices);
+      setModules((items) => items.map((item) => item.id === module.id ? saved : item)); toast.success(`${module.name} pricing updated.`);
+    } catch (error) { toast.error(error?.response?.data?.detail || "Unable to update module pricing."); }
+  };
+
+  const customerFor = (license) => license.customer || customerById[String(license.customer_id)] || {};
+  const editorCustomer = editingLicense ? customerFor(editingLicense) : null;
+  const selectedFeatureCount = (license) => Object.values(license.selected_features || {}).reduce((sum, list) => sum + (list?.length || 0), 0);
+
+  return <div className="min-h-screen bg-slate-50 p-4 md:p-7"><div className="mx-auto max-w-[1500px]">
+    <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+      <div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400"><ShieldCheck size={15}/> Commercial Control Plane</div><h1 className="mt-1 text-3xl font-bold text-slate-950">Taskosphere Master Console</h1><p className="mt-1 text-sm text-slate-500">Licenses, customer accounts, commercial access and billing control.</p></div>
+      <div className="flex flex-wrap gap-2"><button onClick={() => navigate("/master-console/website")} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><Globe2 size={17}/> Website &amp; Branding</button><button onClick={openCreate} disabled={generating} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-60"><Plus size={17}/> Generate License</button></div>
+    </header>
+
+    <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Stat icon={KeyRound} label="Total Licenses" value={stats.total}/><Stat icon={CheckCircle2} label="Active Licenses" value={stats.active}/><Stat icon={XCircle} label="Expired Licenses" value={stats.expired}/><Stat icon={Users} label="Customers" value={stats.customers}/></div>
+
+    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button type="button" onClick={() => setCatalogOpen((v) => !v)} className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-100 p-2"><Settings2 size={18}/></div><div><h2 className="font-bold text-slate-900">Module &amp; Feature Pricing</h2><p className="text-xs text-slate-500">Configure commercial pricing. Customer feature access is managed from the License Registry.</p></div></div>{catalogOpen ? <ChevronDown size={18}/> : <ChevronRight size={18}/>}</button>
+      {catalogOpen && <div className="grid gap-4 border-t border-slate-100 p-5 md:grid-cols-2 xl:grid-cols-3">{modules.map((module) => <div key={module.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{module.code}</p><h3 className="mt-1 font-bold text-slate-900">{module.name}</h3><p className="mt-1 text-xs text-slate-500">{module.description}</p></div><input type="checkbox" checked={module.active !== false} onChange={(e) => setModules((items) => items.map((m) => m.id === module.id ? { ...m, active: e.target.checked } : m))}/></div><div className="mt-4"><Field label="Full module price / month"><Input type="number" min="0" step="0.01" value={module.monthly_price ?? 0} onChange={(e) => setModules((items) => items.map((m) => m.id === module.id ? { ...m, monthly_price: e.target.value } : m))}/></Field></div><div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Feature prices</div>{(module.features || []).map((feature) => <div key={feature.id} className="grid grid-cols-[1fr_95px] items-center gap-2"><span className="text-xs text-slate-700">{feature.label}</span><input type="number" min="0" step="0.01" value={feature.monthly_price ?? 0} onChange={(e) => setModules((items) => items.map((m) => m.id === module.id ? { ...m, features: (m.features || []).map((f) => f.id === feature.id ? { ...f, monthly_price: e.target.value } : f) } : m))} className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs"/></div>)}</div><button onClick={() => savePricing(module)} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold"><Save size={15}/> Save Pricing</button></div>)}</div>}
+    </section>
+
+    <section className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-4 border-b border-slate-100 p-5 md:flex-row md:items-center md:justify-between"><div><div className="flex items-center gap-2"><h2 className="font-bold text-slate-950">License Registry</h2><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">{filtered.length}</span></div><p className="mt-1 text-sm text-slate-500">Click a company to view and edit its commercial details and access.</p></div><div className="relative w-full md:w-80"><Search size={16} className="absolute left-3 top-3 text-slate-400"/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search company, GSTIN, license or invoice" className="w-full rounded-xl border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-slate-400"/></div></div>
+      <div className="overflow-x-auto"><table className="w-full min-w-[1050px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wider text-slate-400"><tr><th className="px-5 py-3">Company</th><th className="px-5 py-3">License</th><th className="px-5 py-3">Modules</th><th className="px-5 py-3">Monthly</th><th className="px-5 py-3">Charged</th><th className="px-5 py-3">Duration</th><th className="px-5 py-3">Invoice</th><th className="px-5 py-3">Validity</th><th className="px-5 py-3">Status</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((license) => { const customer = customerFor(license); return <tr key={license.id} className="transition hover:bg-slate-50"><td className="px-5 py-4"><button type="button" onClick={() => setEditingLicense(license)} className="group text-left"><div className="flex items-center gap-2"><span className="font-semibold text-slate-900 group-hover:text-slate-700">{license.customer_name || customer.company_name || "Unnamed customer"}</span><Pencil size={13} className="text-slate-300 group-hover:text-slate-700"/></div><div className="mt-1 text-xs text-slate-400">{customer.gstin || "GSTIN not recorded"} · {customer.email || "No email"}</div></button></td><td className="px-5 py-4"><button onClick={() => copy(license.license_key)} className="inline-flex max-w-[205px] items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 font-mono text-xs font-semibold"><span className="break-all">{license.license_key}</span><Copy size={13}/></button></td><td className="px-5 py-4"><div className="flex max-w-[260px] flex-wrap gap-1.5">{(license.modules || []).map((module) => <span key={module} className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-700">{MODULE_LABELS[module] || module}</span>)}<span className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-semibold text-blue-700">{selectedFeatureCount(license)} features</span></div></td><td className="px-5 py-4 font-semibold text-slate-800">{money(license.monthly_module_price)}</td><td className="px-5 py-4 font-semibold text-slate-800">{money(license.amount_charged)}</td><td className="px-5 py-4 text-slate-500">{license.validity_months || "—"} mo</td><td className="px-5 py-4"><span className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold"><ReceiptText size={13}/>{license.invoice_no || "—"}</span></td><td className="px-5 py-4 text-slate-500">{formatDate(license.expires_at)}</td><td className="px-5 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${license.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{license.status}</span></td><td className="px-5 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingLicense(license)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><Pencil size={13}/> Details</button><select value="" onChange={(e) => e.target.value && changeStatus(license, e.target.value)} className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs"><option value="">Status</option><option value="active">Activate</option><option value="suspended">Suspend</option><option value="revoked">Revoke</option></select><button type="button" onClick={() => removeCompany(license)} title="Remove" className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50"><Trash2 size={14}/></button></div></td></tr>; })}{!filtered.length && <tr><td colSpan="10" className="px-5 py-12 text-center text-slate-400">{loading ? "Loading licensing server…" : "No licenses found."}</td></tr>}</tbody></table></div>
+    </section>
+
+    {created && <div className="fixed inset-x-4 bottom-5 z-50 mx-auto max-w-4xl rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl"><div className="flex items-start justify-between"><div><p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">License Generated</p><h3 className="mt-1 font-bold">{created.customer_name}</h3><p className="mt-1 text-sm text-slate-500">{(created.modules || []).map((m) => MODULE_LABELS[m] || m).join(", ")} · {created.validity_months} months · {money(created.amount_charged)}</p></div><button onClick={() => setCreated(null)} className="text-slate-400"><X size={18}/></button></div><div className="mt-4 grid gap-3 md:grid-cols-2"><div className="rounded-xl bg-slate-950 p-3"><div className="text-[10px] uppercase tracking-wider text-white/60">License Key</div><div className="mt-1 flex items-center gap-2"><code className="flex-1 break-all text-sm font-bold tracking-wider text-white">{created.license_key}</code><button onClick={() => copy(created.license_key)} className="rounded-lg bg-white/10 p-2 text-white"><Copy size={16}/></button></div></div><div className="rounded-xl bg-slate-50 p-3"><div className="text-[10px] uppercase tracking-wider text-slate-400">Invoice</div><div className="mt-1 flex items-center gap-2 text-sm font-bold"><ReceiptText size={16}/>{created.invoice_no || created.invoice?.invoice_no || "Generated"}</div></div></div></div>}
+
+    {showCreate && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4"><form onSubmit={submit} className="relative my-4 max-h-[94vh] w-full max-w-6xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"><div className="flex items-start justify-between"><div><h2 className="text-xl font-bold">Generate Commercial License</h2><p className="mt-1 text-sm text-slate-500">Create the commercial customer and license. The generated customer is stored in the License Registry, not the Platform Owner Company Master.</p></div><button type="button" disabled={generating} onClick={() => setShowCreate(false)} className="rounded-xl p-2 text-slate-400"><X size={20}/></button></div><div className="mt-6 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2 rounded-2xl border border-slate-100 bg-slate-50 p-4"><div className="mb-4 flex items-center gap-2 font-semibold"><Building2 size={17}/> Customer &amp; GST details</div><div className="grid gap-4 md:grid-cols-2">{[["Company Name *","company_name"],["Contact Person","contact_name"],["Email *","email"],["Phone","phone"],["GSTIN","gstin"],["Pincode","pincode"],["City","city"],["State","state"]].map(([label,key]) => <Field key={key} label={label}><Input required={key === "company_name" || key === "email"} disabled={generating} type={key === "email" ? "email" : "text"} value={form[key]} onChange={(e) => setForm({ ...form, [key]: key === "gstin" ? e.target.value.toUpperCase() : e.target.value })}/></Field>)}<Field label="Registered Address"><Input disabled={generating} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })}/></Field><Field label="GST Address"><Input disabled={generating} value={form.gst_address} onChange={(e) => setForm({ ...form, gst_address: e.target.value })}/></Field></div></div><div className="rounded-2xl border border-slate-100 p-4"><div className="flex items-center gap-2 font-semibold"><ReceiptText size={17}/> Invoice Company</div><p className="mt-1 text-xs text-slate-500">Only the existing Platform Owner Company Master issuer is used for the invoice.</p><Field label="Invoice From Company Master *"><select required disabled={generating} value={form.invoice_company_id} onChange={(e) => setForm({ ...form, invoice_company_id: e.target.value })} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm"><option value="">Select issuer</option>{invoiceCompanies.map((c) => <option key={c.id} value={c.id}>{c.name || c.company_name}</option>)}</select></Field></div></div><div className="mt-5 rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between"><div><h3 className="font-bold">Modules &amp; Features</h3><p className="mt-1 text-xs text-slate-500">Select the exact access being sold.</p></div><span className="text-xs font-semibold text-slate-500">{selectedModules.length} modules · {Object.values(selectedFeatures).reduce((s, v) => s + v.length, 0)} features</span></div><div className="mt-4 grid gap-3 lg:grid-cols-2">{activeModules.map((module) => <div key={module.id} className={`rounded-2xl border p-4 ${selectedModules.includes(module.id) ? "border-slate-900 bg-slate-50" : "border-slate-200"}`}><div className="flex items-center gap-3"><input type="checkbox" disabled={generating} checked={selectedModules.includes(module.id)} onChange={(e) => selectModule(module.id, e.target.checked)}/><div className="flex-1"><div className="font-semibold">{module.name}</div><div className="text-xs text-slate-500">{money(module.monthly_price)}/month</div></div><button type="button" disabled={generating} onClick={() => setExpandedModules((v) => ({ ...v, [module.id]: !v[module.id] }))} className="rounded-lg p-1 text-slate-400">{expandedModules[module.id] ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</button></div>{expandedModules[module.id] && <div className="mt-3 space-y-1 border-t border-slate-200 pt-3">{(module.features || []).map((feature) => <label key={feature.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-2"><input type="checkbox" disabled={generating} checked={(selectedFeatures[module.id] || []).includes(feature.id)} onChange={() => toggleFeature(module.id, feature.id)}/><span className="flex-1 text-xs">{feature.label || featureLabel(feature.id)}</span><span className="text-xs font-semibold text-slate-500">{money(feature.monthly_price)}/mo</span></label>)}</div>}</div>)}</div></div><div className="mt-5 grid gap-4 md:grid-cols-4"><Field label="Duration (months)"><Input type="number" min="1" disabled={generating} value={form.validity_months} onChange={(e) => setForm({ ...form, validity_months: e.target.value })}/></Field><Field label="Max Users"><Input type="number" min="1" disabled={generating} value={form.max_users} onChange={(e) => setForm({ ...form, max_users: e.target.value })}/></Field><Field label="Max Installations"><Input type="number" min="1" disabled={generating} value={form.max_installations} onChange={(e) => setForm({ ...form, max_installations: e.target.value })}/></Field><Field label="Amount Charged"><Input type="number" min="0" step="0.01" disabled={generating} value={form.amount_charged === "" ? calculatedAmount : form.amount_charged} onChange={(e) => setForm({ ...form, amount_charged: e.target.value })}/></Field></div><div className="mt-4 flex justify-end gap-2"><button type="button" disabled={generating} onClick={() => setShowCreate(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold">Cancel</button><button type="submit" disabled={generating} className="inline-flex min-w-[220px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{generating ? <><Loader2 size={17} className="animate-spin"/> Generating License…</> : <>Generate License + Invoice</>}</button></div>{generating && <div className="absolute inset-0 z-20 flex items-center justify-center rounded-3xl bg-white/75 backdrop-blur-sm"><div className="rounded-2xl border border-slate-200 bg-white px-8 py-7 text-center shadow-xl"><Loader2 size={26} className="mx-auto animate-spin"/><p className="mt-3 text-sm font-bold">Generating license &amp; invoice</p><p className="mt-1 text-xs text-slate-500">Please wait while the commercial customer, license and invoice are created.</p></div></div>}</form></div>}
+
+    {editingLicense && <CommercialCustomerEditor license={editingLicense} customer={editorCustomer} modules={modules} onClose={() => setEditingLicense(null)} onSaved={async ({ license }) => { await refresh(); setEditingLicense(null); setState((current) => ({ ...current, licenses: current.licenses.map((item) => item.id === license.id ? license : item) })); }}/>} 
+  </div></div>;
+}
