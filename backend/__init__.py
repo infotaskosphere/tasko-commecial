@@ -56,6 +56,11 @@ import backend.commercial_onboarding_extensions  # noqa: F401
 # customer/license records while still enforcing the license-wide user cap.
 import backend.commercial_onboarding_admin_compat  # noqa: F401
 
+# Harden public licensed user creation after the compatibility route replacement.
+# This keeps the signup endpoint license-authoritative and returns controlled
+# validation/duplicate/database errors rather than an opaque 500.
+import backend.commercial_onboarding_create_user_compat  # noqa: F401
+
 # Enforce one commercial license per customer and a license-wide user limit.
 # This layer is installed after the licensing extension so it can wrap the
 # canonical license creation function and before backend.server imports route
