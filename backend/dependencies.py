@@ -9,7 +9,8 @@ from jose import jwt, JWTError
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from backend.models import User, AuditLog
-from backend.tenant_runtime import set_authenticated_company, TenantAwareDatabase
+from backend.tenant_runtime import set_authenticated_company, set_platform_owner, TenantAwareDatabase
+from backend.platform_owner import is_platform_owner
 logger=logging.getLogger("dependencies")
 def personal_birthday_candidates(client):
     candidates=[]
@@ -192,6 +193,7 @@ async def get_current_user(credentials=Depends(security)):
     saas_user=await _get_saas_session_user(token)
     if saas_user is not None:
         set_authenticated_company(saas_user.company_id)
+        set_platform_owner(is_platform_owner(saas_user))
         return saas_user
     try:
         payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
@@ -207,7 +209,9 @@ async def get_current_user(credentials=Depends(security)):
     except Exception as e:logger.error("User validation failed for %s: %s",user_id,e);raise HTTPException(status_code=500,detail="User profile data is corrupted")
     company_id=getattr(user,"company_id",None)
     if not company_id or not str(company_id).strip():raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
-    set_authenticated_company(company_id);return user
+    set_authenticated_company(company_id)
+    set_platform_owner(is_platform_owner(user))
+    return user
 
 def check_permission(required_permission):
     async def checker(current_user=Depends(get_current_user)):
