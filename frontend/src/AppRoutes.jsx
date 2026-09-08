@@ -73,7 +73,7 @@ const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
 const EmailSettings = lazy(() => import('@/components/EmailSettings.jsx'));
 const PendingApprovals = lazy(() => import('@/components/PendingApprovalsPanel.jsx'));
-const MasterConsole = lazy(() => import('./pages/MasterConsoleV2.jsx'));
+const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
