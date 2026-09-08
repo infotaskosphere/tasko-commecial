@@ -43,6 +43,11 @@ import backend.commercial_company_master  # noqa: F401
 # the platform owner access to customer operational data.
 import backend.commercial_customer_directory  # noqa: F401
 
+# Platform-owner Company Master must exclude the hidden operational company
+# created automatically during license generation. Companies explicitly added
+# through Master Data / Quotations remain visible.
+import backend.commercial_company_registry_visibility  # noqa: F401
+
 # AI Document Reader workspace: persistent company-scoped memory for multiple
 # documents and cross-document reasoning. It is mounted onto the existing
 # AI reader router so the existing /api/ai/analyze-document route is unchanged.
