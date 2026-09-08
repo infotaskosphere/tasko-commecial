@@ -23,9 +23,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [serverWaking, setServerWaking] = useState(false);
   const [wakingDots, setWakingDots] = useState("");
-
-  const [licenseKey, setLicenseKey] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [licenseKey, setLicenseKey] = useState("");
   const [licensedCustomer, setLicensedCustomer] = useState(null);
   const [adminName, setAdminName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
@@ -108,19 +107,19 @@ export default function Login() {
   };
 
   const pageStyle = backgroundImage
-    ? { backgroundImage: `linear-gradient(120deg, rgba(5,18,31,.96), rgba(13,59,102,.86)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
-    : { background: `radial-gradient(circle at 15% 20%, ${accent}22, transparent 30%), radial-gradient(circle at 85% 80%, #38bdf822, transparent 32%), linear-gradient(135deg, #f8fafc, #eef6f7)` };
+    ? { backgroundImage: `linear-gradient(120deg, rgba(4,34,31,.78), rgba(8,65,105,.82)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
+    : { background: "radial-gradient(circle at 4% 8%, rgba(34,197,94,.34) 0, rgba(34,197,94,0) 27%), radial-gradient(circle at 96% 8%, rgba(37,99,235,.34) 0, rgba(37,99,235,0) 30%), radial-gradient(circle at 82% 82%, rgba(14,165,233,.30) 0, rgba(14,165,233,0) 31%), radial-gradient(circle at 10% 94%, rgba(16,185,129,.34) 0, rgba(16,185,129,0) 35%), linear-gradient(135deg, #e8f9f0 0%, #e8f7f8 38%, #e9f3ff 72%, #dff1ff 100%)" };
 
   return <div className="min-h-screen" style={pageStyle}>
     <div className="mx-auto grid min-h-screen max-w-[1500px] lg:grid-cols-[1.05fr_.95fr]">
-      <section className="hidden flex-col justify-between p-10 text-white lg:flex xl:p-14">
-        <div><Link to="/" className="inline-flex items-center gap-3"><img src={logo} alt={siteName} className="h-12 w-auto rounded-lg object-contain" /><span className="text-lg font-bold tracking-tight">{siteName}</span></Link></div>
-        <div className="max-w-xl"><div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/75"><Sparkles size={14} /> {config?.hero_badge || "Business operating system"}</div><h1 className="text-5xl font-black leading-[1.04] tracking-tight xl:text-6xl">{config?.hero_title || "One workspace. Every business operation."}</h1><p className="mt-6 max-w-lg text-lg leading-8 text-white/65">{config?.hero_subtitle || "Manage work, finance, people and compliance from one connected platform."}</p><div className="mt-8 grid gap-3 sm:grid-cols-2">{["Modular commercial packages", "Permission-aware workspaces", "Centralised customer control", "Built for daily operations"].map((item) => <div key={item} className="flex items-center gap-2 text-sm text-white/75"><CheckCircle2 size={17} style={{ color: accent }} />{item}</div>)}</div></div>
-        <div className="text-xs text-white/35">{config?.footer_copyright || `© 2026 ${siteName}`}</div>
+      <section className="hidden flex-col justify-between p-10 text-slate-800 lg:flex xl:p-14">
+        <div><Link to="/" className="inline-flex items-center gap-3"><img src={logo} alt={siteName} className="h-12 w-auto rounded-lg object-contain" /><span className="text-lg font-bold tracking-tight text-[#173f70]">{siteName}</span></Link></div>
+        <div className="max-w-xl"><div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/45 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#173f70] shadow-sm backdrop-blur"><Sparkles size={14} /> {config?.hero_badge || "Business operating system"}</div><h1 className="text-5xl font-black leading-[1.04] tracking-tight text-[#123b69] xl:text-6xl">{config?.hero_title || "One workspace. Every business operation."}</h1><p className="mt-6 max-w-lg text-lg leading-8 text-slate-600">{config?.hero_subtitle || "Manage work, finance, people and compliance from one connected platform."}</p><div className="mt-8 grid gap-3 sm:grid-cols-2">{["Modular commercial packages", "Permission-aware workspaces", "Centralised customer control", "Built for daily operations"].map((item) => <div key={item} className="flex items-center gap-2 text-sm font-semibold text-slate-600"><CheckCircle2 size={17} style={{ color: accent }} />{item}</div>)}</div></div>
+        <div className="text-xs text-slate-400">{config?.footer_copyright || `© 2026 ${siteName}`}</div>
       </section>
 
       <section className="flex items-center justify-center px-4 py-8 sm:px-8 lg:px-10">
-        <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[520px] rounded-[2rem] border border-white/70 bg-white/95 p-6 shadow-[0_30px_80px_rgba(15,23,42,.18)] backdrop-blur-xl sm:p-9">
+        <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[520px] rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-[0_30px_80px_rgba(15,23,42,.18)] backdrop-blur-xl sm:p-9">
           <div className="mb-8 lg:hidden"><Link to="/" className="flex items-center gap-3"><img src={logo} alt={siteName} className="h-10 w-auto object-contain" /><span className="font-bold text-slate-900">{siteName}</span></Link></div>
           <div className="mb-6"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: `${accent}16`, color: accent }}>{mode === "signin" ? <LockKeyhole size={22} /> : <KeyRound size={22} />}</div><h2 className="text-3xl font-black tracking-tight text-slate-950">{mode === "signin" ? (config?.login_title || "Welcome Back") : "I Have a License"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? (config?.login_subtitle || `Sign in to your ${siteName} workspace.`) : "Enter the company name and license supplied by Taskosphere. Your registered company details will be loaded automatically."}</p></div>
 
