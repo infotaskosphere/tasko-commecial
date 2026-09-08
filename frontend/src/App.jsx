@@ -1,5 +1,5 @@
-import React, { Suspense, memo, useEffect, useState } from "react";
-import { BrowserRouter, Link, useLocation } from "react-router-dom";
+import React, { Suspense, memo, useEffect } from "react";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -172,30 +172,97 @@ function WebsiteSurfaceScope() {
 
 function CommercialConsoleShortcut() {
   const { user, loading } = useAuth();
-  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "true");
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (loading || user?.role?.toLowerCase() !== "admin") return undefined;
-    const syncSidebarState = () => setCollapsed(localStorage.getItem("sidebarCollapsed") === "true");
-    syncSidebarState();
-    const interval = window.setInterval(syncSidebarState, 250);
-    return () => window.clearInterval(interval);
-  }, [loading, user]);
 
-  if (loading || user?.role?.toLowerCase() !== "admin") return null;
+    const installCommercialLinks = () => {
+      const clientPortalLink = document.querySelector('a[href="/client-portal-manager"]');
+      if (!clientPortalLink) return false;
 
-  return (
-    <Link
-      to="/master-console"
-      data-commercial-console
-      className={`commercial-console-sidebar-link ${collapsed ? "is-collapsed" : "is-expanded"}`}
-      title={collapsed ? "Commercial Console" : "Open Commercial Console"}
-      aria-label="Open Commercial Console"
-    >
-      <span className="commercial-console-sidebar-icon" aria-hidden="true">▣</span>
-      {!collapsed && <span>Commercial Console</span>}
-    </Link>
-  );
+      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => node.remove());
+      document.querySelectorAll(".commercial-console-sidebar-link").forEach((node) => node.remove());
+
+      const clientPortalWrapper = clientPortalLink.parentElement;
+      if (!clientPortalWrapper) return false;
+      const insertionParent = clientPortalWrapper.parentElement;
+      if (!insertionParent) return false;
+
+      const makeLink = (path, label, active) => {
+        const wrapper = clientPortalWrapper.cloneNode(true);
+        const link = wrapper.querySelector("a");
+        if (!link) return wrapper;
+
+        link.setAttribute("href", path);
+        link.setAttribute("data-commercial-sidebar-item", path);
+        link.setAttribute("aria-label", label);
+        link.setAttribute("title", label);
+        link.classList.remove("text-slate-300");
+        link.classList.add("text-slate-300");
+
+        if (active) {
+          link.classList.remove("text-slate-300");
+          link.classList.add("bg-white/[0.09]", "text-white");
+        } else {
+          link.classList.remove("bg-white/[0.09]", "text-white");
+          link.classList.add("text-slate-300");
+        }
+
+        const labelNode = link.querySelector("span.font-medium");
+        if (labelNode) labelNode.textContent = label;
+        const tooltip = link.querySelector("div.absolute");
+        if (tooltip) {
+          const textNode = Array.from(tooltip.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+          if (textNode) textNode.nodeValue = label;
+        }
+
+        const icon = link.querySelector("svg");
+        if (icon) {
+          icon.classList.remove("text-white", "text-slate-400");
+          icon.classList.add(active ? "text-white" : "text-slate-400");
+        }
+
+        const onClick = (event) => {
+          event.preventDefault();
+          navigate(path);
+        };
+        link.addEventListener("click", onClick);
+        link.__commercialCleanup = () => link.removeEventListener("click", onClick);
+        return wrapper;
+      };
+
+      const websiteLink = makeLink("/master-console/website", "Website & Branding", location.pathname.startsWith("/master-console/website"));
+      const commercialLink = makeLink("/master-console", "Commercial Console", location.pathname === "/master-console");
+
+      insertionParent.insertBefore(websiteLink, clientPortalWrapper.nextSibling);
+      insertionParent.insertBefore(commercialLink, websiteLink.nextSibling);
+      return true;
+    };
+
+    const cleanupInjected = () => {
+      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => {
+        const link = node.querySelector("a");
+        if (link?.__commercialCleanup) link.__commercialCleanup();
+        node.remove();
+      });
+    };
+
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      if (installCommercialLinks() || attempts >= 20) window.clearInterval(timer);
+    }, 100);
+    installCommercialLinks();
+
+    return () => {
+      window.clearInterval(timer);
+      cleanupInjected();
+    };
+  }, [loading, user, location.pathname, navigate]);
+
+  return null;
 }
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
