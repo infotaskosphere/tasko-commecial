@@ -1,5 +1,5 @@
 import React, { Suspense, memo, useEffect } from "react";
-import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -170,131 +170,13 @@ function WebsiteSurfaceScope() {
   return null;
 }
 
+// Commercial navigation is now rendered by DashboardLayout from React-owned
+// navigation configuration. This component intentionally renders nothing.
+// Keeping it as a no-op preserves the App shell integration point without
+// allowing imperative DOM mutation to race React's reconciler.
 function CommercialConsoleShortcut() {
-  const { user, loading } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === "info.taskosphere@gmail.com";
-
-  useEffect(() => {
-    if (loading || !isPlatformOwner) return undefined;
-
-    const installCommercialLinks = () => {
-      const clientPortalLink = document.querySelector('a[href="/client-portal-manager"]');
-      if (!clientPortalLink) return false;
-
-      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => node.remove());
-
-      const clientPortalWrapper = clientPortalLink.parentElement;
-      if (!clientPortalWrapper) return false;
-      const sidebar = clientPortalWrapper.closest("aside");
-      if (!sidebar) return false;
-
-      const collapseButton = Array.from(sidebar.querySelectorAll("button")).find((button) => /collapse sidebar/i.test(button.textContent || ""));
-      const collapseWrapper = collapseButton?.parentElement?.parentElement || sidebar.lastElementChild;
-      if (!collapseWrapper) return false;
-
-      const linksContainer = document.createElement("div");
-      linksContainer.setAttribute("data-platform-owner-console-links", "true");
-      linksContainer.style.display = "flex";
-      linksContainer.style.flexDirection = "column";
-      linksContainer.style.gap = "4px";
-      linksContainer.style.padding = "0 10px 10px";
-
-      const makeLink = (path, label, active) => {
-        const wrapper = clientPortalWrapper.cloneNode(true);
-        const link = wrapper.querySelector("a");
-        if (!link) return wrapper;
-
-        wrapper.setAttribute("data-commercial-sidebar-item", path);
-        link.setAttribute("href", path);
-        link.setAttribute("aria-label", label);
-        link.setAttribute("title", label);
-        link.style.minHeight = "40px";
-        link.style.height = "40px";
-        link.style.margin = "0";
-        link.style.paddingTop = "0";
-        link.style.paddingBottom = "0";
-        link.style.borderRadius = "0";
-        link.style.border = "1px solid transparent";
-        link.style.boxShadow = "0 2px 7px rgba(0,0,0,.10)";
-        link.style.transition = "background-color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease";
-
-        link.classList.remove("text-slate-300");
-        link.classList.add("text-slate-300");
-        if (active) {
-          link.classList.remove("text-slate-300");
-          link.classList.add("bg-white/[0.09]", "text-white");
-          link.style.borderColor = "rgba(255,255,255,.12)";
-          link.style.boxShadow = "0 4px 14px rgba(0,0,0,.18)";
-        } else {
-          link.classList.remove("bg-white/[0.09]", "text-white");
-          link.classList.add("text-slate-300");
-        }
-
-        const labelNode = link.querySelector("span.font-medium");
-        if (labelNode) labelNode.textContent = label;
-        const tooltip = link.querySelector("div.absolute");
-        if (tooltip) {
-          const textNode = Array.from(tooltip.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
-          if (textNode) textNode.nodeValue = label;
-        }
-
-        const icon = link.querySelector("svg");
-        if (icon) {
-          icon.classList.remove("text-white", "text-slate-400");
-          icon.classList.add(active ? "text-white" : "text-slate-400");
-        }
-
-        const onMouseEnter = () => {
-          link.style.transform = "translateX(3px)";
-          link.style.boxShadow = "0 4px 12px rgba(0,0,0,.16)";
-        };
-        const onMouseLeave = () => {
-          link.style.transform = "none";
-          link.style.boxShadow = active ? "0 4px 14px rgba(0,0,0,.18)" : "0 2px 7px rgba(0,0,0,.10)";
-        };
-        const onClick = (event) => {
-          event.preventDefault();
-          navigate(path);
-        };
-        link.addEventListener("mouseenter", onMouseEnter);
-        link.addEventListener("mouseleave", onMouseLeave);
-        link.addEventListener("click", onClick);
-        link.__commercialCleanup = () => {
-          link.removeEventListener("mouseenter", onMouseEnter);
-          link.removeEventListener("mouseleave", onMouseLeave);
-          link.removeEventListener("click", onClick);
-        };
-        linksContainer.appendChild(wrapper);
-        return wrapper;
-      };
-
-      makeLink("/master-console/website", "Website & Branding", location.pathname.startsWith("/master-console/website"));
-      makeLink("/master-console", "Commercial Console", location.pathname === "/master-console");
-
-      sidebar.insertBefore(linksContainer, collapseWrapper);
-      return true;
-    };
-
-    const cleanupInjected = () => {
-      document.querySelectorAll("[data-platform-owner-console-links]").forEach((node) => node.remove());
-      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => node.remove());
-    };
-
-    let attempts = 0;
-    const timer = window.setInterval(() => {
-      attempts += 1;
-      if (installCommercialLinks() || attempts >= 20) window.clearInterval(timer);
-    }, 100);
-    installCommercialLinks();
-
-    return () => {
-      window.clearInterval(timer);
-      cleanupInjected();
-    };
-  }, [loading, isPlatformOwner, location.pathname, navigate]);
-
+  const { user } = useAuth();
+  void user;
   return null;
 }
 
