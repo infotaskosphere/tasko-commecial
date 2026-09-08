@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Building2, Check, ChevronDown, ChevronRight, Loader2, Mail, Phone, Save, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { updateCommercialCustomer, updateCommercialLicense } from "@/lib/licenseApi";
+import "@/styles/commercialConsoleLayout.css";
 
 const MODULE_LABELS = {
   taskosphere: "Taskosphere",
@@ -96,8 +97,8 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
   ];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-3 md:p-6" role="dialog" aria-modal="true" aria-label="Commercial customer details">
-      <form onSubmit={save} className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+    <div className="commercial-customer-editor-root fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-3 md:p-6" role="dialog" aria-modal="true" aria-label="Commercial customer details">
+      <form onSubmit={save} className="commercial-customer-editor-panel relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 md:px-7">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white"><Building2 size={20} /></div>
@@ -106,7 +107,7 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
           <button type="button" onClick={onClose} disabled={saving} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 disabled:opacity-40"><X size={20} /></button>
         </div>
 
-        <div className="flex gap-1 border-b border-slate-100 px-5 pt-3 md:px-7">
+        <div className="flex shrink-0 gap-1 border-b border-slate-100 px-5 pt-3 md:px-7">
           {tabs.map(([id, label]) => <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-t-xl px-4 py-2.5 text-sm font-semibold ${tab === id ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label}</button>)}
         </div>
 
@@ -144,7 +145,7 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
           </div>}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4 md:px-7"><p className="text-xs text-slate-500">Changes are restricted to the Platform Owner and are recorded against the commercial customer/license.</p><div className="flex gap-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancel</button><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{saving ? "Saving…" : "Save Changes"}</button></div></div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4 md:px-7"><p className="text-xs text-slate-500">Changes are restricted to the Platform Owner and are recorded against the commercial customer/license.</p><div className="flex gap-2"><button type="button" onClick={onClose} disabled={saving} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancel</button><button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{saving ? "Saving…" : "Save Changes"}</button></div></div>
         {saving && <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/65 backdrop-blur-[1px]"><div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 text-center shadow-xl"><Loader2 size={24} className="mx-auto animate-spin text-slate-800" /><p className="mt-2 text-sm font-semibold">Saving customer details…</p></div></div>}
       </form>
     </div>
