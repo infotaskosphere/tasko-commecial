@@ -19,7 +19,7 @@ from fastapi import Depends, HTTPException, status
 
 from backend import dependencies as _dependencies
 from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import TenantAwareCollection
+from backend.tenant_runtime import TenantAwareCollection, in_platform_owner_context
 
 _current_customer_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_customer_id", default=None)
 
@@ -38,10 +38,7 @@ def authenticated_customer_id() -> str | None:
 
 
 def _is_owner_context() -> bool:
-    try:
-        return bool(_dependencies.in_platform_owner_context())
-    except Exception:
-        return False
+    return bool(in_platform_owner_context())
 
 
 def _customer_scoped_collection(name: str) -> bool:
@@ -114,12 +111,7 @@ async def _resolve_customer_id(user: Any) -> str | None:
 
 
 async def _apply_live_license_permissions(user: Any, customer_id: str | None):
-    """Return a user whose permissions are capped by the active commercial license.
-
-    User-level grants remain intact where the license allows them. A feature or
-    module removed from the commercial license is always forced off. The
-    Platform Owner is never processed here.
-    """
+    """Cap the user's effective permissions by the active commercial license."""
     if not customer_id or is_platform_owner(user):
         return user
     try:
@@ -156,9 +148,6 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
         data["commercial_customer_id"] = customer_id
         return type(user).model_validate(data)
     except Exception:
-        # Authorization must never fail open because a compatibility/hydration
-        # lookup failed. Keep the persisted user; the API guard still applies
-        # to commercial accounts and will deny missing entitlements.
         return user
 
 
