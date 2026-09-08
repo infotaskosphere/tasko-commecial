@@ -128,3 +128,31 @@ body {
   outline: 2px solid rgba(31, 111, 178, 0.55);
   outline-offset: 2px;
 }
+
+/* ── Commercial Login: white centre with green/blue edge glow ───── */
+#root:has(input[autocomplete="email"]) > div.min-h-screen {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(34, 197, 94, .22) 0, rgba(34, 197, 94, 0) 29%),
+    radial-gradient(circle at 100% 0%, rgba(37, 99, 235, .24) 0, rgba(37, 99, 235, 0) 30%),
+    radial-gradient(circle at 0% 100%, rgba(16, 185, 129, .20) 0, rgba(16, 185, 129, 0) 31%),
+    radial-gradient(circle at 100% 100%, rgba(14, 165, 233, .20) 0, rgba(14, 165, 233, 0) 31%),
+    linear-gradient(120deg, #e5f9ee 0%, #f7fcfa 23%, #ffffff 43%, #ffffff 58%, #f6fbff 77%, #e6f1ff 100%) !important;
+}
+
+/* Keep the supplied Taskosphere logo visually seamless with the page.
+   White pixels in a logo asset multiply into the page instead of forming
+   a visible white rectangle/strip behind the logo. */
+#root:has(input[autocomplete="email"]) img[alt] {
+  mix-blend-mode: multiply;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+@media (max-width: 1023px) {
+  #root:has(input[autocomplete="email"]) > div.min-h-screen {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(34, 197, 94, .20) 0, rgba(34, 197, 94, 0) 34%),
+      radial-gradient(circle at 100% 0%, rgba(37, 99, 235, .20) 0, rgba(37, 99, 235, 0) 34%),
+      linear-gradient(135deg, #eefbf5 0%, #ffffff 45%, #f0f7ff 100%) !important;
+  }
+}
