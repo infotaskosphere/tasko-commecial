@@ -36,6 +36,8 @@ export const updateCommercialModulePrice = async (moduleId, monthlyPrice, active
   if (featurePrices !== undefined) payload.feature_prices = featurePrices;
   return (await licensingApi.put(`/commercial-onboarding/module-catalog/${moduleId}`, payload)).data;
 };
+export const updateCommercialCustomer = async (customerId, payload) => (await licensingApi.put(`/commercial-master-data/customers/${encodeURIComponent(customerId)}`, payload)).data;
+export const updateCommercialLicense = async (licenseId, payload) => (await licensingApi.put(`/commercial-master-data/licenses/${encodeURIComponent(licenseId)}`, payload)).data;
 
 export const lookupLicensedCompany = async (companyName, licenseKey) => (await licensingApi.post("/commercial-onboarding/lookup", { company_name: companyName, license_key: licenseKey })).data;
 export const createLicensedAdmin = async (payload) => (await licensingApi.post("/commercial-onboarding/create-admin", payload)).data;
@@ -45,14 +47,9 @@ export const createLicensedStaff = async (payload) => (await licensingApi.post("
 export const getMyLicensedCompany = async () => (await licensingApi.get("/commercial-onboarding/my-company")).data;
 
 export const activateLicense = async (licenseKey, installationId, installationName) => {
-  const response = await api.post("/licensing/installation-activate", {
-    license_key: licenseKey,
-    installation_id: installationId,
-    installation_name: installationName,
-  });
+  const response = await api.post("/licensing/installation-activate", { license_key: licenseKey, installation_id: installationId, installation_name: installationName });
   return response.data;
 };
-
 export const validateLicense = async (licenseKey) => (await licensingApi.post("/licensing/validate", { license_key: licenseKey })).data;
 export const getLocalLicenseStatus = async () => (await api.get("/licensing/status")).data;
 export const heartbeatLicense = async (licenseKey, installationId) => (await licensingApi.post("/licensing/heartbeat", { license_key: licenseKey, installation_id: installationId })).data;
@@ -60,18 +57,8 @@ export const revokeInstallation = async (licenseId, installationId) => (await li
 
 export const subscribeLicenseState = (callback) => {
   let cancelled = false;
-  const refresh = async () => {
-    try {
-      const state = await getLicenseState();
-      if (!cancelled) callback(state);
-    } catch {
-      // Keep the last known state when the licensing API is unavailable.
-    }
-  };
+  const refresh = async () => { try { const state = await getLicenseState(); if (!cancelled) callback(state); } catch { /* keep last known state */ } };
   refresh();
   const timer = window.setInterval(refresh, 30000);
-  return () => {
-    cancelled = true;
-    window.clearInterval(timer);
-  };
+  return () => { cancelled = true; window.clearInterval(timer); };
 };
