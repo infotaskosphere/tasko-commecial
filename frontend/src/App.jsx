@@ -194,6 +194,13 @@ function CommercialConsoleShortcut() {
       const collapseWrapper = collapseButton?.parentElement?.parentElement || sidebar.lastElementChild;
       if (!collapseWrapper) return false;
 
+      const linksContainer = document.createElement("div");
+      linksContainer.setAttribute("data-platform-owner-console-links", "true");
+      linksContainer.style.display = "flex";
+      linksContainer.style.flexDirection = "column";
+      linksContainer.style.gap = "4px";
+      linksContainer.style.padding = "0 10px 10px";
+
       const makeLink = (path, label, active) => {
         const wrapper = clientPortalWrapper.cloneNode(true);
         const link = wrapper.querySelector("a");
@@ -203,12 +210,23 @@ function CommercialConsoleShortcut() {
         link.setAttribute("href", path);
         link.setAttribute("aria-label", label);
         link.setAttribute("title", label);
+        link.style.minHeight = "40px";
+        link.style.height = "40px";
+        link.style.margin = "0";
+        link.style.paddingTop = "0";
+        link.style.paddingBottom = "0";
+        link.style.borderRadius = "0";
+        link.style.border = "1px solid transparent";
+        link.style.boxShadow = "0 2px 7px rgba(0,0,0,.10)";
+        link.style.transition = "background-color 150ms ease,border-color 150ms ease,box-shadow 150ms ease,transform 150ms ease";
 
         link.classList.remove("text-slate-300");
         link.classList.add("text-slate-300");
         if (active) {
           link.classList.remove("text-slate-300");
           link.classList.add("bg-white/[0.09]", "text-white");
+          link.style.borderColor = "rgba(255,255,255,.12)";
+          link.style.boxShadow = "0 4px 14px rgba(0,0,0,.18)";
         } else {
           link.classList.remove("bg-white/[0.09]", "text-white");
           link.classList.add("text-slate-300");
@@ -228,29 +246,40 @@ function CommercialConsoleShortcut() {
           icon.classList.add(active ? "text-white" : "text-slate-400");
         }
 
+        const onMouseEnter = () => {
+          link.style.transform = "translateX(3px)";
+          link.style.boxShadow = "0 4px 12px rgba(0,0,0,.16)";
+        };
+        const onMouseLeave = () => {
+          link.style.transform = "none";
+          link.style.boxShadow = active ? "0 4px 14px rgba(0,0,0,.18)" : "0 2px 7px rgba(0,0,0,.10)";
+        };
         const onClick = (event) => {
           event.preventDefault();
           navigate(path);
         };
+        link.addEventListener("mouseenter", onMouseEnter);
+        link.addEventListener("mouseleave", onMouseLeave);
         link.addEventListener("click", onClick);
-        link.__commercialCleanup = () => link.removeEventListener("click", onClick);
+        link.__commercialCleanup = () => {
+          link.removeEventListener("mouseenter", onMouseEnter);
+          link.removeEventListener("mouseleave", onMouseLeave);
+          link.removeEventListener("click", onClick);
+        };
+        linksContainer.appendChild(wrapper);
         return wrapper;
       };
 
-      const websiteLink = makeLink("/master-console/website", "Website & Branding", location.pathname.startsWith("/master-console/website"));
-      const commercialLink = makeLink("/master-console", "Commercial Console", location.pathname === "/master-console");
+      makeLink("/master-console/website", "Website & Branding", location.pathname.startsWith("/master-console/website"));
+      makeLink("/master-console", "Commercial Console", location.pathname === "/master-console");
 
-      sidebar.insertBefore(websiteLink, collapseWrapper);
-      sidebar.insertBefore(commercialLink, collapseWrapper);
+      sidebar.insertBefore(linksContainer, collapseWrapper);
       return true;
     };
 
     const cleanupInjected = () => {
-      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => {
-        const link = node.querySelector("a");
-        if (link?.__commercialCleanup) link.__commercialCleanup();
-        node.remove();
-      });
+      document.querySelectorAll("[data-platform-owner-console-links]").forEach((node) => node.remove());
+      document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => node.remove());
     };
 
     let attempts = 0;
