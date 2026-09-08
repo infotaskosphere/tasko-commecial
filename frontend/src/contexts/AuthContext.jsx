@@ -6,7 +6,6 @@ const AuthContext = createContext(null);
 export const useAuth = () => { const context = useContext(AuthContext); if (!context) throw new Error("useAuth must be used within an AuthProvider"); return context; };
 const isKeepSignedIn = () => localStorage.getItem('taskosphere_keep_signed_in') === 'true';
 const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
-
 const COMMERCIAL_MODULE_FLAGS = new Set(["can_access_taskosphere", "can_access_finix", "can_access_compliance", "can_access_records", "can_access_proposals", "can_access_people_matrix"]);
 
 export const AuthProvider = ({ children }) => {
@@ -26,19 +25,30 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => { const handleBeforeUnload = () => { if (!isKeepSignedIn() && localStorage.getItem('token')) localStorage.setItem('taskosphere_tab_closed', Date.now().toString()); }; window.addEventListener('beforeunload', handleBeforeUnload); return () => window.removeEventListener('beforeunload', handleBeforeUnload); }, []);
   useEffect(() => { if (!user || isKeepSignedIn()) return; const updateActivity = () => localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']; events.forEach(e => window.addEventListener(e, updateActivity, { passive: true })); updateActivity(); const interval = setInterval(() => { const lastActive = parseInt(localStorage.getItem(LAST_ACTIVE_KEY) || '0', 10); if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) logout(); }, 60 * 1000); return () => { events.forEach(e => window.removeEventListener(e, updateActivity)); clearInterval(interval); }; }, [user]);
 
-  // A licensed customer admin is an operational tenant admin, not the
-  // Commercial Control Plane owner. Block both the console and Website Studio
-  // at the navigation boundary while preserving all customer admin functions.
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
     const isLicensedCustomer = !!user?.company_id && !isPlatformOwner;
     document.body.classList.toggle("licensed-customer-session", isLicensedCustomer);
+
+    // The sidebar/header shortcut is rendered outside this auth context. Hide
+    // it at the DOM level for customer sessions as well as blocking navigation.
+    const styleId = "taskosphere-commercial-console-customer-guard";
+    let style = document.getElementById(styleId);
+    if (isLicensedCustomer && !style) {
+      style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = "body.licensed-customer-session [data-commercial-console]{display:none!important}";
+      document.head.appendChild(style);
+    } else if (!isLicensedCustomer && style) {
+      style.remove();
+    }
+
     const isCommercialPath = () => window.location.pathname === "/master-console" || window.location.pathname.startsWith("/master-console/");
     const redirectIfBlocked = () => { if (!isLicensedCustomer || !isCommercialPath()) return; window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
     const handleClick = (event) => { if (!isLicensedCustomer) return; const target = event.target?.closest?.("a[href]"); const href = target?.getAttribute("href") || ""; if (!href.startsWith("/master-console")) return; event.preventDefault(); event.stopPropagation(); window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
     redirectIfBlocked(); document.addEventListener("click", handleClick, true); window.addEventListener("popstate", redirectIfBlocked);
-    return () => { document.body.classList.remove("licensed-customer-session"); document.removeEventListener("click", handleClick, true); window.removeEventListener("popstate", redirectIfBlocked); };
+    return () => { document.body.classList.remove("licensed-customer-session"); const activeStyle = document.getElementById(styleId); if (activeStyle) activeStyle.remove(); document.removeEventListener("click", handleClick, true); window.removeEventListener("popstate", redirectIfBlocked); };
   }, [user]);
 
   useEffect(() => {
@@ -48,7 +58,7 @@ export const AuthProvider = ({ children }) => {
       const navType = window.performance?.getEntriesByType?.('navigation')?.[0]?.type ?? (window.performance?.navigation?.type === 1 ? 'reload' : 'navigate');
       const isReload = navType === 'reload'; const tabClosedAt = localStorage.getItem('taskosphere_tab_closed');
       if (tabClosedAt && localStorage.getItem('token')) { localStorage.removeItem('taskosphere_tab_closed'); if (!isKeepSignedIn() && !isReload) { clearStorage(); setLoading(false); return; } }
-      try { const parsedUser = normalizeTenantContext(JSON.parse(storedUser)); api.defaults.headers.common["Authorization"] = `Bearer ${token}`; const meRes = await api.get("/auth/me"); const freshUser = normalizeTenantContext(meRes.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(freshUser)); setUser(freshUser); autoAuthenticateAgent(token, freshUser.id).catch(() => {}); }
+      try { api.defaults.headers.common["Authorization"] = `Bearer ${token}`; const meRes = await api.get("/auth/me"); const freshUser = normalizeTenantContext(meRes.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(freshUser)); setUser(freshUser); autoAuthenticateAgent(token, freshUser.id).catch(() => {}); }
       catch (error) { if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser))); else if (error.response && [401, 403].includes(error.response.status)) { clearStorage(); setUser(null); } else console.error("Session restore error:", error); }
       finally { setLoading(false); }
     };
