@@ -1,0 +1,115 @@
+/* Commercial Console layout safeguards.
+   Kept scoped so the existing application UI is untouched. */
+
+body .master-console-page > .mc-content > .mc-stat-grid {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  grid-template-rows: 138px !important;
+  grid-auto-rows: 138px !important;
+  height: 138px !important;
+  min-height: 138px !important;
+  max-height: 138px !important;
+  align-items: stretch !important;
+  align-content: start !important;
+  gap: 16px !important;
+  overflow: visible !important;
+  clear: both !important;
+}
+
+body .master-console-page > .mc-content > .mc-stat-grid > .mc-stat-card {
+  position: relative !important;
+  width: 100% !important;
+  height: 138px !important;
+  min-height: 138px !important;
+  max-height: 138px !important;
+  margin: 0 !important;
+  align-self: stretch !important;
+  overflow: hidden !important;
+  transform: none !important;
+}
+
+body .master-console-page > .mc-content > .mc-section {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin-top: 24px !important;
+  clear: both !important;
+  transform: none !important;
+}
+
+body .master-console-page .mc-registry-scroll {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+
+body .master-console-page .mc-registry-table {
+  display: table !important;
+  width: 100% !important;
+  min-width: 1120px !important;
+  table-layout: fixed !important;
+}
+
+@media (max-width: 1200px) {
+  body .master-console-page > .mc-content > .mc-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-rows: repeat(2, 138px) !important;
+    grid-auto-rows: 138px !important;
+    height: 292px !important;
+    min-height: 292px !important;
+    max-height: 292px !important;
+  }
+}
+
+@media (max-width: 760px) {
+  body .master-console-page > .mc-content > .mc-stat-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(4, 138px) !important;
+    grid-auto-rows: 138px !important;
+    height: 600px !important;
+    min-height: 600px !important;
+    max-height: 600px !important;
+  }
+}
+
+/* The editor is rendered through a React portal, but these rules also
+   provide a deterministic viewport-sized modal surface. */
+.commercial-customer-editor-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-height: 100dvh !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 24px !important;
+  overflow: hidden !important;
+}
+
+.commercial-customer-editor-panel {
+  width: min(1180px, calc(100vw - 48px)) !important;
+  height: min(900px, calc(100vh - 48px)) !important;
+  max-width: 1180px !important;
+  max-height: calc(100vh - 48px) !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+@media (max-width: 640px) {
+  .commercial-customer-editor-root { padding: 12px !important; }
+  .commercial-customer-editor-panel {
+    width: calc(100vw - 24px) !important;
+    height: calc(100vh - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+    border-radius: 20px !important;
+  }
+}
