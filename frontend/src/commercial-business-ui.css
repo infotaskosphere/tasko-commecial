@@ -181,6 +181,30 @@ body:not(.website-surface) #root [role="dialog"] [class*="rounded-"],
 body:not(.website-surface) [role="dialog"] [class*="rounded-"],
 body:not(.website-surface) [data-radix-dialog-content] [class*="rounded-"]{border-radius:0!important}
 
+/* WEBSITE STUDIO TOP BAR: match the normal application chrome shown on
+   Tasks/Dashboard. This is intentionally scoped to the Website Studio only;
+   the editor canvas, builder panels, public website and sidebar are untouched. */
+body.website-builder-surface #root header,
+body.website-builder-surface #root header *:not(img):not(svg):not(path){border-radius:0!important;box-shadow:none;transform:none!important}
+body.website-builder-surface #root header{height:64px!important;min-height:64px!important;backdrop-filter:blur(10px)!important}
+body.website-builder-surface #root header button,
+body.website-builder-surface #root header a,
+body.website-builder-surface #root header [role="button"]{height:36px!important;min-height:36px!important;border-radius:0!important;box-shadow:none!important;transform:none!important}
+body.website-builder-surface #root header .p-2{width:36px!important;height:36px!important;padding:0!important}
+body.website-builder-surface #root header [data-user-menu] > button{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important}
+body.website-builder-surface #root header [data-user-menu] > button > div:first-child{width:28px!important;height:28px!important}
+body.website-builder-surface #root header [data-user-menu] img{border-radius:9999px!important}
+body.website-builder-surface #root header + div{height:40px!important;min-height:40px!important;background:#fff!important;border-top:0!important;border-bottom:1px solid #e2e8f0!important;border-radius:0!important;box-shadow:none!important}
+body.website-builder-surface #root header + div button,
+body.website-builder-surface #root header + div a,
+body.website-builder-surface #root [data-section-switcher] button,
+body.website-builder-surface #root [data-section-switcher] a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
+body.website-builder-surface #root header + div button:hover,
+body.website-builder-surface #root header + div a:hover,
+body.website-builder-surface #root [data-section-switcher] button:hover,
+body.website-builder-surface #root [data-section-switcher] a:hover{background:#f6f8fb!important;color:#0D3B66!important}
+body.website-builder-surface #root [data-commercial-console]{top:64px!important;height:40px!important;border-radius:0!important;box-shadow:none!important}
+
 @media(max-width:1100px){#root [data-commercial-console]{right:170px!important;min-width:132px}#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
 @media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}body:not(.website-surface) #root aside .sidebar-scroll a{height:40px!important;min-height:40px!important}}
 @media(max-width:800px){#root [data-commercial-console]{top:104px!important;right:8px!important;height:36px!important;min-width:132px;border:1px solid var(--biz-border)!important}}
