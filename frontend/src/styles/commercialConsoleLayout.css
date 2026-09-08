@@ -76,8 +76,8 @@ body .master-console-page .mc-registry-table {
   }
 }
 
-/* The editor is rendered through a React portal, but these rules also
-   provide a deterministic viewport-sized modal surface. */
+/* The editor is rendered through a React portal, so it is independent of
+   application shell transforms, sidebar containers, and stacking contexts. */
 .commercial-customer-editor-root {
   position: fixed !important;
   inset: 0 !important;
@@ -90,6 +90,14 @@ body .master-console-page .mc-registry-table {
   justify-content: center !important;
   padding: 24px !important;
   overflow: hidden !important;
+  background: rgb(15 23 42 / 0.58) !important;
+  box-sizing: border-box !important;
+}
+
+.commercial-customer-editor-root *,
+.commercial-customer-editor-root *::before,
+.commercial-customer-editor-root *::after {
+  box-sizing: border-box !important;
 }
 
 .commercial-customer-editor-panel {
