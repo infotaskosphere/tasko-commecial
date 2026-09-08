@@ -39,6 +39,8 @@ export const updateCommercialModulePrice = async (moduleId, monthlyPrice, active
 
 export const lookupLicensedCompany = async (companyName, licenseKey) => (await licensingApi.post("/commercial-onboarding/lookup", { company_name: companyName, license_key: licenseKey })).data;
 export const createLicensedAdmin = async (payload) => (await licensingApi.post("/commercial-onboarding/create-admin", payload)).data;
+export const verifyLicensedCompany = async (companyName) => (await licensingApi.post("/commercial-onboarding/verify-company", { company_name: companyName })).data;
+export const createLicensedUser = async (payload) => (await licensingApi.post("/commercial-onboarding/create-user", payload)).data;
 export const createLicensedStaff = async (payload) => (await licensingApi.post("/commercial-onboarding/create-staff", payload)).data;
 export const getMyLicensedCompany = async () => (await licensingApi.get("/commercial-onboarding/my-company")).data;
 
