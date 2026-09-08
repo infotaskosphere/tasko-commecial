@@ -53,7 +53,7 @@ async def _company_context(current_user: User):
 
 
 async def _platform_company_context(current_user: User, company_id: str):
-    """Resolve a customer company for platform-owner administration only."""
+    """Resolve a legal company for platform-owner administration only."""
     if not is_platform_owner(current_user):
         raise HTTPException(status_code=403, detail="Platform-level customer user administration is restricted to the software platform owner.")
     company_id = str(company_id or "").strip()
@@ -62,8 +62,13 @@ async def _platform_company_context(current_user: User, company_id: str):
     company = await db.companies.find_one({"id": company_id}, {"_id": 0})
     if not company:
         raise HTTPException(status_code=404, detail="Customer company not found.")
+
+    # The license belongs to the commercial customer, not to the legal entity.
+    # Keep a legacy fallback for older company records that used company_id as
+    # the license customer_id.
+    customer_id = str(company.get("commercial_customer_id") or company_id)
     license_doc = await db.commercial_licenses.find_one(
-        {"customer_id": company_id, "status": "active"},
+        {"customer_id": customer_id, "status": "active"},
         {"_id": 0},
         sort=[("issued_at", -1)],
     )
@@ -185,6 +190,7 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         "created_at": now,
         "company_id": company_id,
         "company_name": company.get("name") or company.get("company_name"),
+        "commercial_customer_id": company.get("commercial_customer_id"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
@@ -340,6 +346,7 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
         "created_at": now,
         "company_id": company_id,
         "company_name": company.get("name") or current_user.company_name,
+        "commercial_customer_id": company.get("commercial_customer_id"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
