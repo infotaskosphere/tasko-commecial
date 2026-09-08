@@ -174,34 +174,38 @@ function CommercialConsoleShortcut() {
   const { user, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === "info.taskosphere@gmail.com";
 
   useEffect(() => {
-    if (loading || user?.role?.toLowerCase() !== "admin") return undefined;
+    if (loading || !isPlatformOwner) return undefined;
 
     const installCommercialLinks = () => {
       const clientPortalLink = document.querySelector('a[href="/client-portal-manager"]');
       if (!clientPortalLink) return false;
 
       document.querySelectorAll("[data-commercial-sidebar-item]").forEach((node) => node.remove());
-      document.querySelectorAll(".commercial-console-sidebar-link").forEach((node) => node.remove());
 
       const clientPortalWrapper = clientPortalLink.parentElement;
       if (!clientPortalWrapper) return false;
-      const insertionParent = clientPortalWrapper.parentElement;
-      if (!insertionParent) return false;
+      const sidebar = clientPortalWrapper.closest("aside");
+      if (!sidebar) return false;
+
+      const collapseButton = Array.from(sidebar.querySelectorAll("button")).find((button) => /collapse sidebar/i.test(button.textContent || ""));
+      const collapseWrapper = collapseButton?.parentElement?.parentElement || sidebar.lastElementChild;
+      if (!collapseWrapper) return false;
 
       const makeLink = (path, label, active) => {
         const wrapper = clientPortalWrapper.cloneNode(true);
         const link = wrapper.querySelector("a");
         if (!link) return wrapper;
 
+        wrapper.setAttribute("data-commercial-sidebar-item", path);
         link.setAttribute("href", path);
-        link.setAttribute("data-commercial-sidebar-item", path);
         link.setAttribute("aria-label", label);
         link.setAttribute("title", label);
+
         link.classList.remove("text-slate-300");
         link.classList.add("text-slate-300");
-
         if (active) {
           link.classList.remove("text-slate-300");
           link.classList.add("bg-white/[0.09]", "text-white");
@@ -236,8 +240,8 @@ function CommercialConsoleShortcut() {
       const websiteLink = makeLink("/master-console/website", "Website & Branding", location.pathname.startsWith("/master-console/website"));
       const commercialLink = makeLink("/master-console", "Commercial Console", location.pathname === "/master-console");
 
-      insertionParent.insertBefore(websiteLink, clientPortalWrapper.nextSibling);
-      insertionParent.insertBefore(commercialLink, websiteLink.nextSibling);
+      sidebar.insertBefore(websiteLink, collapseWrapper);
+      sidebar.insertBefore(commercialLink, collapseWrapper);
       return true;
     };
 
@@ -260,7 +264,7 @@ function CommercialConsoleShortcut() {
       window.clearInterval(timer);
       cleanupInjected();
     };
-  }, [loading, user, location.pathname, navigate]);
+  }, [loading, isPlatformOwner, location.pathname, navigate]);
 
   return null;
 }
