@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { ArrowRight, Building2, CheckCircle2, LockKeyhole, Mail, Phone, ShieldCheck, User, UserPlus, Briefcase } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,6 @@ const Field = ({ id, label, icon: Icon, type = "text", placeholder, value, onCha
 );
 
 export default function Register() {
-  const navigate = useNavigate();
   const { login } = useAuth();
   const [step, setStep] = useState("company");
   const [companyName, setCompanyName] = useState("");
@@ -65,7 +64,11 @@ export default function Register() {
       login(result, true);
       try { window.postMessage({ type: "SET_TOKEN", token: result.access_token }, window.location.origin); } catch {}
       toast.success("Account created successfully. Welcome to Taskosphere!");
-      navigate("/dashboard", { replace: true });
+      // Do not call navigate() here: the <PublicOnly> guard around /register
+      // already redirects to /dashboard as soon as the authenticated user is
+      // set above. Calling navigate() too fires a second, competing route
+      // transition in the same commit, which caused a
+      // "Failed to execute 'insertBefore' on 'Node'" crash (same bug as Login.jsx).
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Unable to create your account.");
     } finally { setBusy(false); }
