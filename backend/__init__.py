@@ -51,6 +51,11 @@ import backend.commercial_onboarding_admin_compat  # noqa: F401
 # modules that create or manage users.
 import backend.commercial_license_user_limit  # noqa: F401
 
+# The custom commercial generator creates customer ids automatically. Guard
+# issuance by the registered customer/company name as well so the one-license
+# rule is enforced even when the UI does not submit an explicit customer_id.
+import backend.commercial_license_creation_compat  # noqa: F401
+
 # Company Master user administration is deliberately outside People Matrix
 # licensing. It uses the same users collection and HR fields so every module
 # can share one company-scoped user source of truth.
