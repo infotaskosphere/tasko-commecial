@@ -3,6 +3,11 @@
 # `uvicorn backend.server:app` instead of backend/run.py.
 import backend.admin_identity_compat  # noqa: F401
 
+# Establish the commercial-customer tenant context before any route module
+# captures get_current_user. This separates a licensee's multiple legal
+# companies from the Platform Owner and every other licensee.
+import backend.commercial_tenant_scope  # noqa: F401
+
 # Commercial administrator accounts created before feature-level licensing may
 # not have the current module/page flags persisted. Hydrate them from the
 # active commercial license before installing the API entitlement guard.
