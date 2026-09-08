@@ -19,6 +19,12 @@ import backend.commercial_legacy_company_scope_compat  # noqa: F401
 import backend.commercial_admin_permission_compat as _commercial_admin_permission_compat
 _commercial_admin_permission_compat.install()
 
+# Resolve the final commercial admin permissions from the customer's ONE active
+# license. This is customer-level, not legal-company-level, so all companies
+# under the same license inherit the purchased modules while other licensees
+# remain isolated.
+import backend.commercial_license_entitlement_compat  # noqa: F401
+
 # Install the commercial tenant module cap before route modules import
 # get_current_user. Internal admins remain unrestricted; licensed company
 # accounts are denied at the API boundary when a request targets an unlicensed
