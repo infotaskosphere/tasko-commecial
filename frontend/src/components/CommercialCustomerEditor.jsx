@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
-import { Building2, Check, ChevronDown, ChevronRight, Loader2, Mail, Phone, Save, ShieldCheck, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Building2, ChevronDown, ChevronRight, Loader2, Mail, Phone, Save, ShieldCheck, X } from "lucide-react";
 import { toast } from "sonner";
 import { updateCommercialCustomer, updateCommercialLicense } from "@/lib/licenseApi";
 import "@/styles/commercialConsoleLayout.css";
@@ -96,10 +97,10 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
     ["license", "License Access"],
   ];
 
-  return (
-    <div className="commercial-customer-editor-root fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-3 md:p-6" role="dialog" aria-modal="true" aria-label="Commercial customer details">
-      <form onSubmit={save} className="commercial-customer-editor-panel relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 md:px-7">
+  const editor = (
+    <div className="commercial-customer-editor-root" role="dialog" aria-modal="true" aria-label="Commercial customer details">
+      <form onSubmit={save} className="commercial-customer-editor-panel relative rounded-3xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 px-5 py-4 md:px-7">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white"><Building2 size={20} /></div>
             <div className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">License Registry</p><h2 className="truncate text-xl font-bold text-slate-950">{company.company_name || "Customer Details"}</h2><p className="mt-0.5 truncate text-xs text-slate-500">{license?.license_key || "No license key"}</p></div>
@@ -150,4 +151,6 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
       </form>
     </div>
   );
+
+  return createPortal(editor, document.body);
 }
