@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import api from "@/lib/api";
@@ -12,7 +12,6 @@ import { toast } from "sonner";
 const spring = { type: "spring", stiffness: 280, damping: 26, mass: 0.9 };
 
 export default function Login() {
-  const navigate = useNavigate();
   const { login } = useAuth();
   const [config, setConfig] = useState(null);
   const [mode, setMode] = useState("signin");
@@ -68,7 +67,11 @@ export default function Login() {
       if (!authenticated) throw new Error("Invalid login response");
       try { window.postMessage({ type: "SET_TOKEN", token: response.data.access_token }, window.location.origin); } catch {}
       toast.success("Welcome back!");
-      navigate("/dashboard", { replace: true });
+      // Do not call navigate() here: setting the authenticated user above causes
+      // the <PublicOnly> route guard around /login to redirect to /dashboard on
+      // its own re-render. Calling navigate() as well fires a second, competing
+      // route transition in the same commit, which is what was causing the
+      // "Failed to execute 'insertBefore' on 'Node'" crash on successful login.
     } catch (error) {
       clearTimeout(wakingTimer); setServerWaking(false);
       toast.error(error?.response?.data?.detail || "Unable to sign in. Please check your credentials.");
@@ -100,7 +103,8 @@ export default function Login() {
       login(result, true);
       try { window.postMessage({ type: "SET_TOKEN", token: result.access_token }, window.location.origin); } catch {}
       toast.success("Admin account created. Your workspace is ready.");
-      navigate("/dashboard", { replace: true });
+      // See note in handleSubmit: <PublicOnly> already redirects once the user
+      // is authenticated, so we don't also navigate() here.
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Unable to create the admin account.");
     } finally { setLookupBusy(false); }
