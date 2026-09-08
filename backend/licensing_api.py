@@ -174,6 +174,33 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
     max_users = max(1, int(input_data.get("max_users") or package.get("max_users", 1)))
     max_installations = max(1, int(input_data.get("max_installations") or package.get("max_installations", 1)))
 
+    # The Platform Owner is the commercial control-plane identity and may not
+    # exist in the customer users collection. The commercial invoice flow,
+    # however, reuses the normal invoicing service and needs a valid User model
+    # as its created_by/audit identity. Keep a non-loginable internal identity
+    # record isolated from every customer company so invoice generation does
+    # not depend on a customer administrator existing.
+    created_by_id = str(created_by or "").strip()
+    if created_by_id:
+        internal_identity = await db.users.find_one({"id": created_by_id}, {"_id": 1})
+        if not internal_identity:
+            await db.users.insert_one({
+                "id": created_by_id,
+                "email": f"commercial-control+{created_by_id}@taskosphere.internal",
+                "full_name": "Taskosphere Commercial Control Plane",
+                "role": "admin",
+                "password": None,
+                "departments": [],
+                "is_active": True,
+                "status": "internal",
+                "company_id": "__commercial_control_plane__",
+                "company_name": "Taskosphere Commercial Control Plane",
+                "approved_by": "system",
+                "created_at": issued_at.isoformat(),
+                "permissions": {},
+                "is_internal_commercial_admin": True,
+            })
+
     license_doc = {
         "id": f"lic-{uuid.uuid4().hex}",
         "license_key": await _generate_unique_key(),
