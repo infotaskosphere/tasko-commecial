@@ -185,21 +185,21 @@ function CommercialConsoleShortcut() {
   return (
     <div
       data-commercial-console="true"
-      className="commercial-sidebar-tools hidden lg:flex flex-col gap-1"
       aria-label="Platform Owner tools"
+      className="commercial-sidebar-tools hidden lg:flex flex-col"
     >
       {items.map(({ path, label, icon }) => (
         <NavLink
           key={path}
           to={path}
           title={label}
-          className={({ isActive }) => `commercial-sidebar-tool group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all ${
+          className={({ isActive }) => `commercial-sidebar-tool group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150 ${
             isActive
               ? "bg-white/[0.09] text-white"
               : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
           }`}
         >
-          <span className="commercial-sidebar-tool-icon flex h-5 w-5 flex-shrink-0 items-center justify-center text-[15px] leading-none">
+          <span className="commercial-sidebar-tool-icon flex h-5 w-5 flex-shrink-0 items-center justify-center text-[14px] leading-none">
             {icon}
           </span>
           <span className="commercial-sidebar-tool-label whitespace-nowrap tracking-tight">
@@ -211,32 +211,59 @@ function CommercialConsoleShortcut() {
         </NavLink>
       ))}
       <style>{`
+        /* Platform-owner tools occupy the exact space directly above the existing
+           sidebar footer. They are rendered by React, never cloned/moved in the DOM. */
         .commercial-sidebar-tools {
-          position: fixed;
-          left: 0;
-          bottom: 76px;
-          z-index: 41;
-          width: 280px;
-          padding: 0 16px 10px;
-          background: linear-gradient(180deg, #0D3B66 0%, #0A2E52 100%);
-          border-right: 1px solid rgba(255,255,255,0.08);
+          position: fixed !important;
+          left: 0 !important;
+          top: calc(100vh - 76px - 98px) !important;
+          bottom: auto !important;
+          width: 280px !important;
+          height: 98px !important;
+          padding: 3px 16px 7px !important;
+          margin: 0 !important;
+          gap: 4px !important;
+          z-index: 44 !important;
+          background: #0D3B66 !important;
+          border-right: 1px solid rgba(255,255,255,0.08) !important;
+          box-sizing: border-box !important;
         }
-        .commercial-sidebar-tool-tooltip { transform: translateX(4px); }
-        .commercial-sidebar-tools .commercial-sidebar-tool-icon { color: #94a3b8; }
+        .commercial-sidebar-tools .commercial-sidebar-tool {
+          flex: 0 0 44px !important;
+          width: 100% !important;
+          height: 44px !important;
+          min-height: 44px !important;
+          max-height: 44px !important;
+          padding: 0 12px !important;
+          margin: 0 !important;
+          box-sizing: border-box !important;
+        }
+        .commercial-sidebar-tools .commercial-sidebar-tool-icon {
+          color: #94a3b8 !important;
+        }
         .commercial-sidebar-tools .commercial-sidebar-tool:hover .commercial-sidebar-tool-icon,
-        .commercial-sidebar-tools .commercial-sidebar-tool[aria-current="page"] .commercial-sidebar-tool-icon { color: #f8fafc; }
+        .commercial-sidebar-tools .commercial-sidebar-tool[aria-current="page"] .commercial-sidebar-tool-icon {
+          color: #f8fafc !important;
+        }
+        .commercial-sidebar-tools .commercial-sidebar-tool-tooltip {
+          transform: translateX(4px);
+        }
         body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools {
-          width: 80px;
-          padding-left: 12px;
-          padding-right: 12px;
+          width: 80px !important;
+          padding-left: 16px !important;
+          padding-right: 16px !important;
         }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool {
-          justify-content: center;
-          padding-left: 0;
-          padding-right: 0;
+        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools .commercial-sidebar-tool {
+          justify-content: center !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
         }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-label { display: none; }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-tooltip { left: 100%; }
+        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-label {
+          display: none !important;
+        }
+        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-tooltip {
+          left: 100% !important;
+        }
       `}</style>
     </div>
   );
