@@ -7,25 +7,31 @@ multiple legal companies and its max_users seat limit remains customer-wide,
 but the people directory is company-specific.
 
 The Platform Owner is not a customer tenant. Its normal Users surface is
-restricted to Platform Owner accounts only, so a customer company can never
-leak into the owner's operational user directory even if an old owner record
-still carries a legacy customer company_id.
+restricted to Platform Owner accounts only, so customer users cannot leak into
+the owner's operational directory.
 
-This boundary is deliberately installed after the older customer-level
-compatibility layers so legacy records remain usable while the final security
-rule is unambiguous: customer users are always scoped by company_id at request
-time, and Platform Owner users are scoped by the configured owner identities.
+Authentication itself is necessarily pre-tenant: login must locate the user
+before a company context exists. This module therefore permits only narrowly
+whitelisted internal authentication/bootstrap functions to query users before
+context is established. It does not make arbitrary unauthenticated database
+access available to request handlers.
 """
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from fastapi import HTTPException, status
 
-from backend.platform_owner import is_platform_owner, platform_owner_emails
+from backend.platform_owner import platform_owner_emails
 from backend.tenant_runtime import TenantAwareCollection, authenticated_company_id, in_platform_owner_context
 
 _INSTALLED = "_commercial_user_company_scope_installed"
+_PRE_AUTH_CALLERS = frozenset({
+    "login",
+    "_sync_saas_bootstrap_password",
+    "register",
+})
 
 
 def _is_owner_context() -> bool:
@@ -36,13 +42,18 @@ def _owner_emails() -> set[str]:
     return {str(email).strip().lower() for email in platform_owner_emails() if str(email).strip()}
 
 
-def _owner_user_query(query: Any) -> dict[str, Any]:
-    """Restrict the Platform Owner's Users surface to owner identities only.
+def _is_trusted_pre_auth_context() -> bool:
+    """Allow only known internal auth/bootstrap code before a tenant exists."""
+    for frame_info in inspect.stack(context=0):
+        if frame_info.function in _PRE_AUTH_CALLERS:
+            module_name = str(frame_info.frame.f_globals.get("__name__") or "")
+            if module_name == "backend.server":
+                return True
+    return False
 
-    This intentionally does not trust company_id because older Platform Owner
-    records may have been created while a licensee company was active. The
-    owner boundary therefore uses the canonical Platform Owner email list.
-    """
+
+def _owner_user_query(query: Any) -> dict[str, Any]:
+    """Restrict the Platform Owner's Users surface to owner identities only."""
     base = dict(query or {})
     requested_email = base.get("email")
     owner_emails = _owner_emails()
@@ -70,6 +81,12 @@ def _user_company_id() -> str:
 def _scope_user_query(query: Any) -> dict[str, Any]:
     if _is_owner_context():
         return _owner_user_query(query)
+    if _is_trusted_pre_auth_context():
+        # Login/bootstrap must locate the credential record before the current
+        # user and company are known. The caller is a narrowly whitelisted
+        # backend authentication function, not a public route with direct DB
+        # access. Never reuse this path for normal authenticated reads.
+        return dict(query or {})
 
     company_id = _user_company_id()
     base = dict(query or {})
@@ -79,9 +96,6 @@ def _scope_user_query(query: Any) -> dict[str, Any]:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cross-company user access is not permitted.",
         )
-    # Never allow a caller-supplied OR/AND expression to escape the company
-    # boundary. Wrap the complete original query under an explicit company
-    # predicate instead of trusting the caller's filter structure.
     return {"$and": [base, {"company_id": company_id}]} if base else {"company_id": company_id}
 
 
@@ -98,6 +112,14 @@ def _scope_user_insert(document: Any) -> dict[str, Any]:
             )
         result["email"] = email
         return result
+    if _is_trusted_pre_auth_context():
+        # Public self-registration is a deliberately separate onboarding flow.
+        # Its handler sets role/status and, where applicable, commercial linkage
+        # explicitly. Do not silently add a company here because none exists
+        # until the license/company has been resolved by that handler.
+        if not isinstance(document, dict):
+            raise HTTPException(status_code=400, detail="Invalid user record.")
+        return dict(document)
 
     company_id = _user_company_id()
     if not isinstance(document, dict):
@@ -115,8 +137,6 @@ def _scope_user_insert(document: Any) -> dict[str, Any]:
 
 def _scope_user_update(update: Any) -> dict[str, Any]:
     if _is_owner_context():
-        # The owner boundary is identity-based, so do not force a legacy
-        # customer company_id onto the owner record during profile updates.
         if not isinstance(update, dict):
             return update
         result = dict(update)
@@ -130,10 +150,6 @@ def _scope_user_update(update: Any) -> dict[str, Any]:
                 )
             set_values["email"] = email
         if "company_id" in set_values:
-            # Prevent an owner profile update from being used to move the
-            # owner into a customer company. Legacy owner company_id is left
-            # untouched unless explicitly repaired by a trusted maintenance
-            # operation outside the normal Users surface.
             set_values.pop("company_id", None)
         if "company_id" in dict(result.get("$unset") or {}):
             raise HTTPException(
@@ -145,6 +161,9 @@ def _scope_user_update(update: Any) -> dict[str, Any]:
         elif "$set" in result:
             result.pop("$set", None)
         return result
+
+    if _is_trusted_pre_auth_context():
+        return update
 
     company_id = _user_company_id()
     if not isinstance(update, dict):
@@ -267,6 +286,8 @@ def _install() -> None:
         pipeline = list(pipeline or [])
         if _is_owner_context():
             pipeline.insert(0, {"$match": {"email": {"$in": sorted(_owner_emails())}}})
+        elif _is_trusted_pre_auth_context():
+            pass
         else:
             pipeline.insert(0, {"$match": {"company_id": _user_company_id()}})
         return self._collection.aggregate(pipeline, *args, **kwargs)
