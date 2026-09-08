@@ -40,7 +40,7 @@ const CONSOLE_CSS = `
 .master-console-page .mc-stat-card { position: relative !important; z-index: 2 !important; display: block !important; flex: 0 0 auto !important; width: 100% !important; height: 138px !important; min-width: 0 !important; min-height: 138px !important; margin: 0 !important; padding: 20px !important; overflow: hidden !important; transform: none !important; float: none !important; }
 .master-console-page .mc-stat-card .text-3xl { line-height: 1.1 !important; }
 .master-console-page .mc-section { position: relative !important; z-index: 2 !important; display: block !important; flex: 0 0 auto !important; width: 100% !important; min-width: 0 !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; clear: none !important; float: none !important; transform: none !important; }
-.master-console-page .mc-catalog-toggle { min-height: 68px !important; padding-top: 0 !important; padding-bottom: 0 !important; }
+.master-console-page .mc-catalog-toggle { height: 88px !important; min-height: 88px !important; padding-top: 0 !important; padding-bottom: 0 !important; }
 .master-console-page .mc-catalog-body { position: relative !important; display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 16px !important; width: 100% !important; min-width: 0 !important; }
 .master-console-page .mc-module-card { min-width: 0 !important; width: 100% !important; overflow: hidden !important; }
 .master-console-page .mc-registry-scroll { position: relative !important; display: block !important; width: 100% !important; min-width: 0 !important; max-width: 100% !important; overflow-x: auto !important; overflow-y: hidden !important; }
