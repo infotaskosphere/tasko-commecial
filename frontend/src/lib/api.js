@@ -122,6 +122,19 @@ export const clearToken = () => {
   sessionStorage.removeItem(TOKEN_KEY);
 };
 
+export const SESSION_REPLACED_DETAIL = "SESSION_REPLACED";
+export const SESSION_REPLACED_MESSAGE =
+  "You were logged out because this account was signed in on another device or browser. Only one active login is allowed.";
+
+const emitSessionReplacement = () => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("taskosphere:session-replaced", {
+      detail: { message: SESSION_REPLACED_MESSAGE },
+    })
+  );
+};
+
 // ─────────────────────────────────────────────────────────────
 // GLOBAL LOADING STATE
 // ─────────────────────────────────────────────────────────────
@@ -432,6 +445,17 @@ api.interceptors.response.use(
 
     // No HTTP response = network-level problem.
     _reportNetworkResult(Boolean(error.response));
+
+    // A second login replaces the first session. Let AuthContext show the
+    // reason and perform the single coordinated logout instead of allowing
+    // the generic 401 branch below to redirect silently.
+    if (
+      error.response?.status === 401 &&
+      error.response?.data?.detail === SESSION_REPLACED_DETAIL
+    ) {
+      emitSessionReplacement();
+      return Promise.reject(error);
+    }
 
     // ─────────────────────────────────────────────────────────
     // COLLECTION RETRY HANDLING
