@@ -27,7 +27,7 @@ export const AuthProvider = ({ children }) => {
       (response) => response,
       (error) => {
         if (error?.response?.status === 401 && error?.response?.data?.detail === "SESSION_REPLACED") {
-          sessionStorage.setItem("taskosphere_logout_reason", "another_login");
+          try { window.alert("You have been logged out because someone else logged in to your account."); } catch {}
         }
         return Promise.reject(error);
       }
