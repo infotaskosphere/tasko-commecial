@@ -68,6 +68,8 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
         current_saas_session = None
 
     if current_saas_session:
+        if current_saas_session.get("status") in {"revoked", "replaced"}:
+            return True
         latest = await _latest_session_for_user(user_id)
         if not latest:
             return False
@@ -181,9 +183,21 @@ class SessionManager:
     @staticmethod
     async def revoke_session(session_token: str) -> bool:
         now = datetime.now(timezone.utc).isoformat()
-        result = await _raw_db().session_manager.update_one(
+        raw_db = _raw_db()
+        result = await raw_db.session_manager.update_one(
             {"session_token": session_token},
             {"$set": {"status": "revoked", "logout_at": now}},
+        )
+        if result.modified_count > 0:
+            return True
+
+        # Commercial SaaS sessions store only a SHA-256 token hash in the
+        # `sessions` collection. Support explicit logout for those sessions
+        # as well as replacement-triggered logout.
+        token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        result = await raw_db.sessions.update_one(
+            {"token_hash": token_hash},
+            {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}},
         )
         return result.modified_count > 0
 
