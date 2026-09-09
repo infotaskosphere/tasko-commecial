@@ -25,31 +25,28 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => { const handleBeforeUnload = () => { if (!isKeepSignedIn() && localStorage.getItem('token')) localStorage.setItem('taskosphere_tab_closed', Date.now().toString()); }; window.addEventListener('beforeunload', handleBeforeUnload); return () => window.removeEventListener('beforeunload', handleBeforeUnload); }, []);
   useEffect(() => { if (!user || isKeepSignedIn()) return; const updateActivity = () => localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']; events.forEach(e => window.addEventListener(e, updateActivity, { passive: true })); updateActivity(); const interval = setInterval(() => { const lastActive = parseInt(localStorage.getItem(LAST_ACTIVE_KEY) || '0', 10); if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) logout(); }, 60 * 1000); return () => { events.forEach(e => window.removeEventListener(e, updateActivity)); clearInterval(interval); }; }, [user]);
 
+  // Single source of truth for the platform-owner check — every other file
+  // that needs it should read it from useAuth() rather than re-deriving its
+  // own copy of PLATFORM_OWNER_EMAIL (the sidebar shortcut, MasterData.jsx,
+  // etc. previously each had their own copy, which is how the shortcut and
+  // the guard below could disagree with each other).
+  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
+
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
-    const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
     const isLicensedCustomer = !!user?.company_id && !isPlatformOwner;
     document.body.classList.toggle("licensed-customer-session", isLicensedCustomer);
 
-    // The sidebar/header shortcut is rendered outside this auth context. Hide
-    // it at the DOM level for customer sessions as well as blocking navigation.
-    const styleId = "taskosphere-commercial-console-customer-guard";
-    let style = document.getElementById(styleId);
-    if (isLicensedCustomer && !style) {
-      style = document.createElement("style");
-      style.id = styleId;
-      style.textContent = "body.licensed-customer-session [data-commercial-console]{display:none!important}";
-      document.head.appendChild(style);
-    } else if (!isLicensedCustomer && style) {
-      style.remove();
-    }
-
+    // Route-level guard: even though the Commercial Console / Website Studio
+    // sidebar items are no longer rendered at all for a licensed customer
+    // (see DashboardLayout's isPlatformOwner gate), still block direct URL
+    // entry / back-forward navigation to /master-console as defense in depth.
     const isCommercialPath = () => window.location.pathname === "/master-console" || window.location.pathname.startsWith("/master-console/");
     const redirectIfBlocked = () => { if (!isLicensedCustomer || !isCommercialPath()) return; window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
     const handleClick = (event) => { if (!isLicensedCustomer) return; const target = event.target?.closest?.("a[href]"); const href = target?.getAttribute("href") || ""; if (!href.startsWith("/master-console")) return; event.preventDefault(); event.stopPropagation(); window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
     redirectIfBlocked(); document.addEventListener("click", handleClick, true); window.addEventListener("popstate", redirectIfBlocked);
-    return () => { document.body.classList.remove("licensed-customer-session"); const activeStyle = document.getElementById(styleId); if (activeStyle) activeStyle.remove(); document.removeEventListener("click", handleClick, true); window.removeEventListener("popstate", redirectIfBlocked); };
-  }, [user]);
+    return () => { document.body.classList.remove("licensed-customer-session"); document.removeEventListener("click", handleClick, true); window.removeEventListener("popstate", redirectIfBlocked); };
+  }, [user, isPlatformOwner]);
 
   useEffect(() => {
     const restoreSession = async () => {
@@ -73,5 +70,5 @@ export const AuthProvider = ({ children }) => {
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
   const canAccessUser = (permissionKey, targetUserId) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; const allowedIds = (user.permissions || {})[permissionKey]; return Array.isArray(allowedIds) && allowedIds.includes(targetUserId); };
   const isOwner = (ownerId) => !!user && ownerId === user.id;
-  return <AuthContext.Provider value={{ user, loading, company: user?.company || null, companyId: user?.company_id || null, subscription: user?.subscription || null, login, logout, refreshUser, hasPermission, hasAnyPermission, canAccessUser, isOwner }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, loading, company: user?.company || null, companyId: user?.company_id || null, subscription: user?.subscription || null, login, logout, refreshUser, hasPermission, hasAnyPermission, canAccessUser, isOwner, isPlatformOwner }}>{children}</AuthContext.Provider>;
 };
