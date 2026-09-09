@@ -213,6 +213,17 @@ def _install_global_single_session_guard():
         )
         dependencies.__dict__["_single_session_original_get_current_user"] = original
 
+        # The route modules already hold references to the original function
+        # object, so the guard is installed by transplanting the wrapper's
+        # code object below.  A transplanted code object keeps the globals of
+        # its destination function (the dependencies module), not the
+        # session_manager module where _guarded_get_current_user was defined.
+        # Publish the two names used by that code into the destination
+        # module before the transplant; otherwise every authenticated request
+        # fails with `NameError: name 'dependencies' is not defined`.
+        dependencies.__dict__["dependencies"] = dependencies
+        dependencies.__dict__["_session_was_replaced"] = _session_was_replaced
+
         guarded = _guarded_get_current_user
         current.__code__ = guarded.__code__
         # Keep FastAPI's original Depends(security) default intact.
