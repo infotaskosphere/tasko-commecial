@@ -5,9 +5,9 @@ body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0
 body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4{
   display:grid!important;
   grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  width:min(100%,760px)!important;
-  height:42px!important;
-  min-height:42px!important;
+  width:min(100%,640px)!important;
+  height:38px!important;
+  min-height:38px!important;
   gap:1px!important;
   padding:2px!important;
   margin-top:12px!important;
@@ -16,21 +16,20 @@ body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0
   border-radius:0!important;
 }
 body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button{
-  height:38px!important;
-  min-height:38px!important;
+  height:34px!important;
+  min-height:34px!important;
   width:100%!important;
-  padding:0 10px!important;
+  padding:0 8px!important;
   margin:0!important;
   border-radius:0!important;
   display:flex!important;
   align-items:center!important;
   justify-content:center!important;
   white-space:nowrap!important;
-  font-size:12px!important;
+  font-size:11px!important;
   line-height:1!important;
 }
-/* SaaS & Licensing is no longer part of General Settings. Licensing remains
-   available from the Commercial Console/Master Console. */
+/* SaaS & Licensing is intentionally kept out of General Settings. */
 body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button:nth-child(4){display:none!important}
 body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button[class*="bg-white"]{
   color:#17324D!important;
@@ -42,7 +41,7 @@ body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0
     grid-template-columns:repeat(3,minmax(0,1fr))!important
   }
   body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button{
-    font-size:10px!important;
-    padding:0 5px!important
+    font-size:9px!important;
+    padding:0 4px!important
   }
 }
