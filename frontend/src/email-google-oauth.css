@@ -11,7 +11,13 @@
      modern CSS support. */
 }
 
-/* Hide the old Gmail App Password action from the card header. */
+/* Hide the old Gmail setup card header so the OAuth panel is the only
+   connection entry point shown to the user. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .flex.items-center.justify-between.px-4.py-3.border-b {
+  display: none !important;
+}
+
+/* Hide the old Gmail App Password action from the card header if present. */
 [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > div:first-child a[href="https://myaccount.google.com/apppasswords"] {
   display: none !important;
 }
@@ -36,6 +42,12 @@
 
 /* Remove the legacy manual-IMAP security note. */
 [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > div:last-child {
+  display: none !important;
+}
+
+/* Remove the separate Gmail checklist/troubleshooting card that still
+   advertises IMAP, 2-Step Verification and App Password setup. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]):has(a[href="https://myaccount.google.com/security"]) {
   display: none !important;
 }
 
