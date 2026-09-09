@@ -2803,7 +2803,7 @@ function ClientsPermTab({ permissions, clients, isDark, setPermissions, clientSe
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════════════════════
 export default function Users() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, isPlatformOwner } = useAuth();
   const isDark = useDark();
   const isAdmin              = user?.role === 'admin';
   const isManager            = user?.role === 'manager';
@@ -2904,9 +2904,17 @@ export default function Users() {
     try {
       const res = await api.get('/users');
       const raw = res.data;
-      setUsers(Array.isArray(raw) ? raw : (raw?.data || []));
+      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+      const filtered = isPlatformOwner ? list.filter((u) => {
+        const isCommercialLicensee = (
+          (u.commercial_customer_id && u.commercial_customer_id !== 'platform-owner') ||
+          (u.license_id && u.license_id !== 'platform-owner-license')
+        );
+        return !isCommercialLicensee;
+      }) : list;
+      setUsers(filtered);
     } catch { toast.error('Failed to fetch users'); }
-  }, []);
+  }, [isPlatformOwner]);
 
   const fetchClients = useCallback(async () => {
     try {
