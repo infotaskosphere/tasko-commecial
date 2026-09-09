@@ -165,13 +165,15 @@ export default function GeneralSettings() {
     if (!profile.full_name.trim()) { toast.error("Name is required"); return; }
     setSaving(true);
     try {
-      await api.put(`/users/${user.id}`, {
+      const updatePayload = {
         full_name:       profile.full_name.trim(),
         phone:           profile.phone || null,
         birthday:        profile.birthday || null,
         profile_picture: profile.profile_picture || null,
-      });
-      await refreshUser();
+      };
+      const res = await api.put(`/users/${user.id}`, updatePayload);
+      const returnedUser = res?.data && typeof res.data === "object" ? { ...user, ...res.data } : { ...user, ...updatePayload };
+      await refreshUser(returnedUser);
       toast.success("Profile updated");
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
