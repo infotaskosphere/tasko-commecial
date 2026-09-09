@@ -1,7 +1,7 @@
 import React, { Suspense, memo, useEffect } from "react";
-import { BrowserRouter, NavLink, useLocation } from "react-router-dom";
+import { BrowserRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import { Toaster } from "@/components/ui/sonner";
 import AppRoutes from "./AppRoutes.jsx";
 import { useLoading } from "./lib/api";
@@ -14,7 +14,6 @@ import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
 
-const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
@@ -124,6 +123,7 @@ const BUSINESS_PAGE_TITLES = {
   "/roles": "Roles & Access",
   "/contact-details": "Contact Details",
   "/master-console": "Commercial Console",
+  "/master-console/website": "Website Studio",
 };
 
 const BUSINESS_LANDING_PATHS = new Set([
@@ -172,106 +172,18 @@ function WebsiteSurfaceScope() {
   return null;
 }
 
-function CommercialConsoleShortcut() {
-  const { user } = useAuth();
-  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
-  if (!isPlatformOwner) return null;
-
-  const items = [
-    { path: "/master-console", label: "Commercial Console", icon: "▦" },
-    { path: "/master-console/website", label: "Website Studio", icon: "◫" },
-  ];
-
-  return (
-    <div
-      data-commercial-console="true"
-      aria-label="Platform Owner tools"
-      className="commercial-sidebar-tools hidden lg:flex flex-col"
-    >
-      {items.map(({ path, label, icon }) => (
-        <NavLink
-          key={path}
-          to={path}
-          title={label}
-          className={({ isActive }) => `commercial-sidebar-tool group relative flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors duration-150 ${
-            isActive
-              ? "bg-white/[0.09] text-white"
-              : "text-slate-300 hover:bg-white/[0.07] hover:text-white"
-          }`}
-        >
-          <span className="commercial-sidebar-tool-icon flex h-5 w-5 flex-shrink-0 items-center justify-center text-[14px] leading-none">
-            {icon}
-          </span>
-          <span className="commercial-sidebar-tool-label whitespace-nowrap tracking-tight">
-            {label}
-          </span>
-          <span className="commercial-sidebar-tool-tooltip pointer-events-none absolute left-full ml-3 rounded-lg bg-slate-800 px-2.5 py-1.5 text-xs font-medium whitespace-nowrap text-white opacity-0 shadow-lg transition-all duration-200 group-hover:translate-x-0 group-hover:opacity-100">
-            {label}
-          </span>
-        </NavLink>
-      ))}
-      <style>{`
-        /* Platform-owner tools sit directly above the native Collapse Sidebar
-           control, giving all three footer controls the same size and rhythm. */
-        .commercial-sidebar-tools {
-          position: fixed !important;
-          left: 0 !important;
-          top: calc(100vh - 76px - 88px) !important;
-          bottom: auto !important;
-          width: 280px !important;
-          height: 88px !important;
-          padding: 0 16px !important;
-          margin: 0 !important;
-          gap: 0 !important;
-          z-index: 44 !important;
-          background: #0D3B66 !important;
-          border-right: 1px solid rgba(255,255,255,0.08) !important;
-          box-sizing: border-box !important;
-        }
-        .commercial-sidebar-tools .commercial-sidebar-tool {
-          flex: 0 0 44px !important;
-          width: 100% !important;
-          height: 44px !important;
-          min-height: 44px !important;
-          max-height: 44px !important;
-          padding: 0 12px !important;
-          margin: 0 !important;
-          box-sizing: border-box !important;
-          border-radius: 12px !important;
-        }
-        .commercial-sidebar-tools .commercial-sidebar-tool-icon {
-          color: #94a3b8 !important;
-        }
-        .commercial-sidebar-tools .commercial-sidebar-tool:hover .commercial-sidebar-tool-icon,
-        .commercial-sidebar-tools .commercial-sidebar-tool[aria-current="page"] .commercial-sidebar-tool-icon {
-          color: #f8fafc !important;
-        }
-        .commercial-sidebar-tools .commercial-sidebar-tool-tooltip {
-          transform: translateX(4px);
-        }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools {
-          width: 80px !important;
-          padding-left: 16px !important;
-          padding-right: 16px !important;
-        }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tools .commercial-sidebar-tool {
-          justify-content: center !important;
-          padding-left: 0 !important;
-          padding-right: 0 !important;
-        }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-label {
-          display: none !important;
-        }
-        body:has(aside[style*="width: 80px"]) .commercial-sidebar-tool-tooltip {
-          left: 100% !important;
-        }
-      `}</style>
-    </div>
-  );
-}
+// NOTE: the platform-owner-only "Commercial Console" / "Website Studio" links
+// used to be rendered here as a separate, CSS-positioned overlay
+// (data-commercial-console) fighting for placement against rules in
+// commercial-business-ui.css and enterprise-design.css -- which is why they
+// could appear misplaced. They now live inside DashboardLayout's own sidebar,
+// right above "Collapse Sidebar", rendered with the exact same markup so all
+// three are guaranteed to match in size/shape/animation, and gated on the
+// single isPlatformOwner flag from AuthContext so a licensee never sees or
+// can navigate to them (see AuthContext.jsx + DashboardLayout.jsx).
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><CommercialConsoleShortcut /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }
