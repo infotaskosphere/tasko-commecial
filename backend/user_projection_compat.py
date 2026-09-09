@@ -1,4 +1,4 @@
-"""Compatibility fix for legacy user projections.
+"""Compatibility fix for legacy user projections and user identifiers.
 
 Some HR/task handlers use Mongo projections that exclude fields and later read
 our application-level ``id`` field.  The previous shim force-added ``id: 1``
@@ -6,8 +6,9 @@ to every projection, which is invalid when the caller uses an exclusion
 projection (MongoDB rejects mixing inclusion and exclusion fields).
 
 This shim is intentionally narrow: for a users projection it only removes an
-explicit ``id: 0`` exclusion.  Inclusion projections remain inclusion
-projections, while exclusion projections remain exclusion projections.
+explicit ``id: 0`` exclusion. It also resolves older commercial-admin records
+whose browser-facing identifier is Mongo's ObjectId rather than the newer
+application-level ``id`` field.
 """
 
 from bson import ObjectId
@@ -48,6 +49,16 @@ def _fix_user_projection(collection, args, kwargs):
     return tuple(updated_args), kwargs
 
 
+def _legacy_object_id_query(query):
+    if not isinstance(query, dict) or set(query) != {"id"}:
+        return None
+    raw_id = query.get("id")
+    try:
+        return {"_id": ObjectId(str(raw_id))}
+    except Exception:
+        return None
+
+
 def _find(self, query=None, *args, **kwargs):
     args, kwargs = _fix_user_projection(self, args, kwargs)
     return _original_find(self, query, *args, **kwargs)
@@ -55,7 +66,14 @@ def _find(self, query=None, *args, **kwargs):
 
 async def _find_one(self, query=None, *args, **kwargs):
     args, kwargs = _fix_user_projection(self, args, kwargs)
-    return await _original_find_one(self, query, *args, **kwargs)
+    result = await _original_find_one(self, query, *args, **kwargs)
+    if result is not None or self._name != "users":
+        return result
+
+    fallback_query = _legacy_object_id_query(query)
+    if fallback_query is None:
+        return result
+    return await _original_find_one(self, fallback_query, *args, **kwargs)
 
 
 async def _update_one(self, query, update, *args, **kwargs):
@@ -64,22 +82,13 @@ async def _update_one(self, query, update, *args, **kwargs):
         result.matched_count > 0
         or kwargs.get("upsert", False)
         or self._name != "users"
-        or not isinstance(query, dict)
-        or set(query) != {"id"}
     ):
         return result
 
-    # Older commercial-admin records can expose Mongo's ObjectId as the
-    # browser-facing account id while lacking the newer application-level
-    # ``id`` field. Retry the same tenant-scoped update against _id only when
-    # the normal application-id update matched nothing.
-    raw_id = query.get("id")
-    fallback_id = raw_id
-    try:
-        fallback_id = ObjectId(str(raw_id))
-    except Exception:
-        pass
-    return await _original_update_one(self, {"_id": fallback_id}, update, *args, **kwargs)
+    fallback_query = _legacy_object_id_query(query)
+    if fallback_query is None:
+        return result
+    return await _original_update_one(self, fallback_query, update, *args, **kwargs)
 
 
 TenantAwareCollection.find = _find
