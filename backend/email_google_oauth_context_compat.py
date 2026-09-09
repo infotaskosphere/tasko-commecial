@@ -7,7 +7,9 @@ server-side bridge for the callback's company/customer identity.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Optional
+
+from fastapi import Query, Request
 
 from backend import email_google_oauth as _oauth
 from backend.dependencies import _raw_db
@@ -31,12 +33,17 @@ def _find_callback_route():
     return None
 
 
-async def _callback_with_saved_context(request: Any, *args, **kwargs):
-    state = request.query_params.get("state")
+async def _callback_with_saved_context(
+    request: Request,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+):
+    state_value = state or request.query_params.get("state")
     state_doc = None
-    if state:
+    if state_value:
         state_doc = await _raw_db[_STATE_COLLECTION].find_one(
-            {"state": state},
+            {"state": state_value},
             {"company_id": 1, "commercial_customer_id": 1},
         )
 
@@ -50,7 +57,12 @@ async def _callback_with_saved_context(request: Any, *args, **kwargs):
             company_token = set_authenticated_company(company_id)
         if customer_id:
             customer_token = set_authenticated_customer(customer_id)
-        return await _oauth.google_gmail_oauth_callback(request, *args, **kwargs)
+        return await _oauth.google_gmail_oauth_callback(
+            request,
+            code=code,
+            state=state,
+            error=error,
+        )
     finally:
         if customer_token is not None:
             reset_authenticated_customer(customer_token)
