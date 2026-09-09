@@ -5,6 +5,10 @@ so a generic customer-id-only guard cannot detect a second issuance for the
 same customer. The commercial onboarding customer is identified by its
 registered customer/company name at issuance time; block a second license for
 that customer before the canonical generator runs.
+
+Commercial license issuance itself is a Platform Owner operation. Do not use
+role=admin as the authorization boundary here because a customer Admin must
+never be able to issue licenses from the Commercial Console.
 """
 from __future__ import annotations
 
@@ -14,11 +18,24 @@ from fastapi import Depends, HTTPException, status
 from fastapi.dependencies.utils import get_dependant
 from fastapi.routing import APIRoute
 
-from backend.dependencies import require_admin
+from backend.platform_owner import is_platform_owner
+from backend.dependencies import get_current_user
 from backend.commercial_onboarding import _norm, router
 
 
-async def _generate_license_with_one_customer_guard(payload: Dict[str, Any], current_user=Depends(require_admin())):
+async def _require_platform_owner(current_user=Depends(get_current_user)):
+    if not is_platform_owner(current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Commercial license issuance is restricted to the Platform Owner.",
+        )
+    return current_user
+
+
+async def _generate_license_with_one_customer_guard(
+    payload: Dict[str, Any],
+    current_user=Depends(_require_platform_owner),
+):
     company_name = str(payload.get("company_name") or "").strip()
     if not company_name:
         raise HTTPException(status_code=400, detail="Company name is required.")
