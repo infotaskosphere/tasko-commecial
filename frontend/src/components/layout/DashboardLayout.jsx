@@ -12,6 +12,7 @@ import {
   ScanLine, Lock, Search, Loader2,
   Wallet, CalendarOff, UserPlus, Cake,
   Database, FolderOpen, MessagesSquare, FileBarChart2, Phone,
+  Crown, Globe,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import NotificationBell from './NotificationBell';
@@ -325,14 +326,28 @@ const EXTRA_PAGE_TITLES = {
   '/settings': 'Settings',
   '/records-dashboard': 'Records Dashboard',
   '/client-approvals': 'Client Approvals',
+  '/master-console': 'Commercial Console',
+  '/master-console/website': 'Website Studio',
 };
+
+// Platform-owner-only sidebar tools. Deliberately NOT part of NAV_GROUPS —
+// they aren't a business section, they always apply regardless of which
+// section is active, and they must never be reachable through the normal
+// checkNavPermission() module/permission logic that licensee accounts go
+// through. Gated purely on isPlatformOwner (see AuthContext.jsx) and
+// rendered directly above "Collapse Sidebar" using identical markup, so all
+// three controls are guaranteed to share the same size/structure/animation.
+const PLATFORM_OWNER_TOOLS = [
+  { path: '/master-console',         icon: Crown, label: 'Commercial Console' },
+  { path: '/master-console/website', icon: Globe, label: 'Website Studio' },
+];
 
 const springSnap = { type: 'spring', stiffness: 500, damping: 28 };
 const springMed  = { type: 'spring', stiffness: 400, damping: 24 };
 const springSoft = { type: 'spring', stiffness: 300, damping: 20 };
 
 const DashboardLayout = ({ children }) => {
-  const { user, logout, hasPermission, loading } = useAuth();
+  const { user, logout, hasPermission, loading, isPlatformOwner } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -655,8 +670,41 @@ const DashboardLayout = ({ children }) => {
           })}
         </div>
 
-        {/* Collapse button — desktop only */}
+        {/* Footer — platform-owner tools (Commercial Console / Website Studio,
+            visible only to isPlatformOwner) directly above Collapse Sidebar.
+            All three use the same Button shape/classes/motion wrapper so they
+            read as one consistent group, and the owner-only items are never
+            rendered at all for a licensee — not hidden with CSS, just absent. */}
         <div className="p-4 border-t hidden lg:block" style={{ borderColor: COLORS.sidebarBorder }}>
+          {isPlatformOwner && (
+            <div className="space-y-1 mb-1">
+              {PLATFORM_OWNER_TOOLS.map((item) => {
+                const isToolActive = location.pathname === item.path ||
+                  location.pathname.startsWith(item.path + '/');
+                const ToolIcon = item.icon;
+                return (
+                  <motion.div
+                    key={item.path}
+                    whileHover={{ x: collapsed ? 0 : 3 }}
+                    whileTap={{ scale: 0.97 }}
+                    transition={springSnap}
+                  >
+                    <Button
+                      variant="ghost"
+                      onClick={() => navigate(item.path)}
+                      title={collapsed ? item.label : undefined}
+                      className={`w-full flex items-center ${collapsed ? 'justify-center' : 'justify-start gap-3'} h-11 rounded-xl transition-all ${
+                        isToolActive ? 'bg-white/[0.09] text-white' : 'text-slate-300 hover:text-white hover:bg-white/[0.07]'
+                      }`}
+                    >
+                      <ToolIcon className="h-4 w-4 flex-shrink-0" />
+                      {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
+                    </Button>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
           <Button
             variant="ghost"
             onClick={() => setCollapsed(!collapsed)}
