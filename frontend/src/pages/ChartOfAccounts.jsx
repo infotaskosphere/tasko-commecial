@@ -175,7 +175,7 @@ function ChartOfAccountsInner() {
                 {['asset', 'liability', 'equity', 'income', 'expense'].map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Input placeholder="Sub-type (optional, e.g. operating_expense)" value={form.sub_type} onChange={e => setForm(f => ({ ...f, sub_type: v }))} />
+            <Input placeholder="Sub-type (optional, e.g. operating_expense)" value={form.sub_type} onChange={e => setForm(f => ({ ...f, sub_type: e.target.value }))} />
             <Button onClick={createAccount} disabled={saving} className="w-full rounded-xl">{saving ? <MiniLoader height={18} /> : 'Save account'}</Button>
           </div>
         </DialogContent>
