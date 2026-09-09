@@ -7,6 +7,8 @@ license/customer linkage resolves to exactly one legal company.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import Depends, HTTPException
 from starlette.requests import Request
 
@@ -14,10 +16,76 @@ from backend import dependencies as _dependencies
 from backend import commercial_module_guard as _guard
 from backend import commercial_control_plane_guard as _control_plane
 from backend.models import User
-from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import set_authenticated_company, set_platform_owner
+from backend.platform_owner import is_platform_owner, platform_owner_emails
+from backend.tenant_runtime import TenantAwareCollection, set_authenticated_company, set_platform_owner
 
 _original_get_current_user = _guard._original_get_current_user
+
+
+_SINGLE_DEVICE_LOGIN_MESSAGE = (
+    "You are already logged in on another device. "
+    "Please log out from that device and then log in again."
+)
+_ORIGINAL_TENANT_COLLECTION_UPDATE_ONE = TenantAwareCollection.update_one
+
+
+async def _single_device_session_update_one(self, query, update, *args, **kwargs):
+    """Prevent commercial SaaS logins from replacing an existing device session.
+
+    `_create_saas_session()` historically marked the old session as `replaced`
+    before inserting the new one. Intercept only that exact replacement write,
+    before it reaches Mongo, so a second device is rejected and the first device
+    remains active. Platform Owner is exempt and is allowed to keep multiple
+    active SaaS sessions.
+    """
+    if self._name == "sessions" and isinstance(update, dict):
+        values = update.get("$set") or {}
+        if values.get("status") == "replaced" and values.get("revoked_reason") == "new_login":
+            try:
+                existing = await self._collection.find_one(query)
+            except Exception:
+                logger.exception("Unable to inspect an existing SaaS session during login.")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Unable to verify your current login session. Please try again.",
+                )
+
+            if existing and existing.get("status") == "active":
+                expires_at = existing.get("expires_at")
+                if expires_at:
+                    if isinstance(expires_at, str):
+                        try:
+                            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                        except Exception:
+                            expires_at = None
+                    if expires_at and expires_at.tzinfo is None:
+                        expires_at = expires_at.replace(tzinfo=timezone.utc)
+                    if expires_at and expires_at <= datetime.now(timezone.utc):
+                        expires_at = None
+
+                # An unexpired active session belongs to a currently signed-in
+                # device. Resolve its user directly from raw Mongo and exempt
+                # only the configured Platform Owner identity.
+                if expires_at is not None:
+                    raw_db = _raw_db()
+                    user_id = existing.get("user_id")
+                    user_document = await raw_db.users.find_one({"_id": user_id})
+                    if not user_document and user_id is not None:
+                        user_document = await raw_db.users.find_one({"id": str(user_id)})
+                    email = str((user_document or {}).get("email") or "").strip().lower()
+                    if email not in platform_owner_emails():
+                        raise HTTPException(status_code=403, detail=_SINGLE_DEVICE_LOGIN_MESSAGE)
+                    # Platform Owner: deliberately do not mark the previous
+                    # session replaced; the following insert creates another
+                    # active session, preserving multi-device access.
+                    class _NoOpResult:
+                        modified_count = 0
+                    return _NoOpResult()
+
+    return await _ORIGINAL_TENANT_COLLECTION_UPDATE_ONE(self, query, update, *args, **kwargs)
+
+
+TenantAwareCollection.update_one = _single_device_session_update_one
 
 
 def _raw_db():
