@@ -314,20 +314,3 @@ body.website-builder-surface #root [class*="rounded-"] {
 body.website-builder-surface #root [class*="rounded-full"] {
   border-radius: 4px !important;
 }
-
-/* Move the commercial-console shortcut into the same top utility band as
-   Admin/Settings instead of leaving it as a floating bottom-right widget. */
-#root [data-commercial-console] {
-  bottom: auto !important;
-  top: var(--ui-header-height) !important;
-  right: 180px !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
-@media (max-width: 900px) {
-  #root [data-commercial-console] {
-    right: 8px !important;
-    top: calc(var(--ui-header-height) + var(--ui-section-height) + 8px) !important;
-  }
-}
