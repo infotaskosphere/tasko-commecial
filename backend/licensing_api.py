@@ -183,8 +183,12 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
     created_by_id = str(created_by or "").strip()
     if created_by_id:
         from backend import dependencies as _dependencies
+        from bson import ObjectId
         raw_db = getattr(_dependencies, "_raw_db", db)
-        internal_identity = await raw_db.users.find_one({"id": created_by_id}, {"_id": 1})
+        user_check_query = {"id": created_by_id}
+        if ObjectId.is_valid(created_by_id):
+            user_check_query = {"$or": [{"id": created_by_id}, {"_id": ObjectId(created_by_id)}]}
+        internal_identity = await raw_db.users.find_one(user_check_query, {"_id": 1})
         if not internal_identity:
             await raw_db.users.insert_one({
                 "id": created_by_id,
