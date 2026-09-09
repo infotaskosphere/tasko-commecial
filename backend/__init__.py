@@ -124,6 +124,9 @@ _whatsapp_sse_compat.install()
 # OAuth routes at /api/email/oauth/google/* and adapts Gmail API reads into the
 # existing email extraction pipeline without changing non-Gmail providers.
 import backend.email_google_oauth  # noqa: F401
+# Google redirects back without the authenticated browser context. Bind the
+# saved OAuth state's commercial company/customer identity for the callback.
+import backend.email_google_oauth_context_compat  # noqa: F401
 
 import logging
 from datetime import datetime, timezone, timedelta
