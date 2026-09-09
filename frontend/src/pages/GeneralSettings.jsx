@@ -11,8 +11,8 @@ import {
   User, Camera, Phone, Calendar as CalendarIcon,
   Save, Loader2, CheckCircle2, Mail, Shield,
   Settings, Clock, Hash, Star, Trophy, TrendingUp,
-  CheckSquare, Timer, Zap, Users as UsersIcon, Link2,
-  HardDrive, Plug, ChevronRight, Building2,
+  CheckSquare, Timer, Users as UsersIcon, Link2,
+  HardDrive, Plug, ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -193,41 +193,46 @@ export default function GeneralSettings() {
       {/* ── TOP BANNER ──────────────────────────────────────────────────── */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
         <div
-          className="relative overflow-hidden rounded-2xl px-4 sm:px-6 pt-4 sm:pt-5 pb-4"
-          style={{ background: GRADIENT, boxShadow: "0 8px 32px rgba(13,59,102,0.2)" }}
+          className="general-settings-banner relative overflow-hidden rounded-xl px-4 py-3 sm:px-5 sm:py-3.5"
+          style={{ background: GRADIENT, boxShadow: "0 4px 20px rgba(13,59,102,0.18)" }}
         >
-          <div className="absolute right-0 top-0 w-48 h-48 rounded-full -mr-16 -mt-16 opacity-10"
+          <div className="absolute right-0 top-0 w-48 h-48 rounded-full -mr-16 -mt-16 opacity-10 pointer-events-none"
             style={{ background: "radial-gradient(circle, white 0%, transparent 70%)" }} />
-          <div className="relative flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
-              <Settings className="h-5 w-5 text-white" />
+          <div className="relative flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center flex-shrink-0">
+              <Settings className="h-4 w-4 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight leading-tight">General Settings</h1>
+              <h1 className="text-xl font-bold text-white tracking-tight leading-tight">General Settings</h1>
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest mt-0.5">
                 Manage identity &amp; preferences
               </p>
             </div>
           </div>
 
-          {/* Tab bar */}
-          <div className="relative mt-4 flex flex-wrap gap-1 bg-white/10 p-1 rounded-xl w-fit">
+          {/* Tab bar - compact, slim height */}
+          <div className="general-settings-tab-bar relative mt-2.5 flex items-center gap-1 bg-black/20 p-1 rounded-lg border border-white/10 w-fit">
             {[
               { id: "profile",      label: "Profile",              icon: User      },
               { id: "clients",      label: "All Assigned Clients", icon: UsersIcon },
               { id: "integrations", label: "Integrations",         icon: Link2     },
-              ...(user?.role === "admin" ? [{ id: "licensing", label: "SaaS & Licensing", icon: Shield }] : [])
             ].map(t => {
               const I = t.icon;
               const active = activeTab === t.id;
               return (
                 <button
                   key={t.id}
+                  id={`general-settings-tab-${t.id}`}
+                  type="button"
                   onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition ${active ? "bg-white text-slate-800 shadow" : "text-white/80 hover:text-white"}`}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
+                    active
+                      ? "bg-white text-slate-800 shadow-sm font-bold"
+                      : "text-white/80 hover:text-white hover:bg-white/10"
+                  }`}
                 >
-                  <I className="h-3.5 w-3.5" />
-                  {t.label}
+                  <I className="h-3.5 w-3.5 shrink-0" />
+                  <span>{t.label}</span>
                 </button>
               );
             })}
@@ -518,193 +523,7 @@ export default function GeneralSettings() {
         </div>
       )}
 
-      {activeTab === "licensing" && user?.role === "admin" && (
-        <SaaSLicensingPanel isDark={isDark} />
-      )}
-
     </div>
   );
 }
 
-function SaaSLicensingPanel({ isDark }) {
-  const [licenseKey, setLicenseKey] = useState("");
-  const [activating, setActivating] = useState(false);
-  const [tenantId, setTenantId] = useState("");
-  const [tenantName, setTenantName] = useState("");
-  const [tenantSchema, setTenantSchema] = useState("isolated");
-  const [tenantSettings, setTenantSettings] = useState("{}");
-  const [tenantLoading, setTenantLoading] = useState(false);
-  const [usageData, setUsageData] = useState({
-    storage_allocated: "1.2 GB / 10 GB",
-    email_attachments_scanned: 42,
-    active_users: "12 / 50",
-    api_v2_calls: 156
-  });
-
-  const handleActivate = async (e) => {
-    e.preventDefault();
-    if (!licenseKey.trim()) { toast.error("Please enter a valid key"); return; }
-    setActivating(true);
-    try {
-      await api.post("/v2/licensing/activate", { license_key: licenseKey.trim() });
-      toast.success("Enterprise SaaS License Activated Successfully!");
-      setLicenseKey("");
-      setUsageData(prev => ({ ...prev, active_users: "12 / 500" }));
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Key validation failed. Use code 'ENTERPRISE_KEY_XYZ' or standard resellers.");
-    } finally {
-      setActivating(false);
-    }
-  };
-
-  const handleCreateTenant = async (e) => {
-    e.preventDefault();
-    if (!tenantId.trim() || !tenantName.trim()) { toast.error("Tenant ID and Name are required"); return; }
-    setTenantLoading(true);
-    try {
-      let parsedSettings = {};
-      try { parsedSettings = JSON.parse(tenantSettings); } catch { toast.error("Invalid custom JSON settings format"); setTenantLoading(false); return; }
-      
-      const { data } = await api.post("/v2/platform/tenant", {
-        id: tenantId.trim(),
-        name: tenantName.trim(),
-        schema_type: tenantSchema,
-        settings: parsedSettings
-      });
-      toast.success(`Tenant ${data.tenant?.name || tenantName} deployed successfully!`);
-      setTenantId("");
-      setTenantName("");
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || "Failed to provision isolated tenant");
-    } finally {
-      setTenantLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* LICENSE ACTIVATION CARD */}
-        <div className={`rounded-2xl border p-5 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} shadow-sm`}>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40">
-              <Shield className="h-4 w-4 text-blue-500" />
-            </div>
-            <div>
-              <h3 className={`font-bold text-sm ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>Activate Commercial Key</h3>
-              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Unlock GST, OCR, and AI copilot services</p>
-            </div>
-          </div>
-          <form onSubmit={handleActivate} className="space-y-3">
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Retail License Activation Key</Label>
-              <Input
-                value={licenseKey}
-                onChange={e => setLicenseKey(e.target.value)}
-                placeholder="XXXX-XXXX-XXXX-XXXX (e.g. ENTERPRISE_KEY)"
-                className={`h-10 text-sm ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200'}`}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={activating}
-              className="w-full flex items-center justify-center gap-2 h-10 rounded-xl text-xs font-bold text-white shadow-md hover:brightness-105 transition"
-              style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue} 0%, ${COLORS.mediumBlue} 100%)` }}
-            >
-              {activating ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify and Apply Activation"}
-            </button>
-          </form>
-        </div>
-
-        {/* METRICS & USAGE */}
-        <div className={`rounded-2xl border p-5 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} shadow-sm`}>
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40">
-              <Zap className="h-4 w-4 text-emerald-500" />
-            </div>
-            <div>
-              <h3 className={`font-bold text-sm ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>Metered Tenant Quotas</h3>
-              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Real-time resource tracking stats</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: "Storage Space", val: usageData.storage_allocated, color: "#3B82F6" },
-              { label: "Scans Metered", val: `${usageData.email_attachments_scanned} / 100`, color: "#10B981" },
-              { label: "Active User Cap", val: usageData.active_users, color: "#F59E0B" },
-              { label: "Outbound Webhooks", val: `${usageData.api_v2_calls} calls`, color: "#8B5CF6" }
-            ].map(m => (
-              <div key={m.label} className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">{m.label}</p>
-                <p className="text-sm font-black" style={{ color: m.color }}>{m.val}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* PLATFORM ISOLATED TENANT MANAGER */}
-      <div className={`rounded-2xl border p-5 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'} shadow-sm`}>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40">
-            <Building2 className="h-4 w-4" style={{ color: '#4F46E5' }} />
-          </div>
-          <div>
-            <h3 className={`font-bold text-sm ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>SaaS Isolated Tenant Deployments</h3>
-            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Provision isolated databases & custom client configurations</p>
-          </div>
-        </div>
-        <form onSubmit={handleCreateTenant} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tenant ID (Unique Slug)</Label>
-              <Input
-                value={tenantId}
-                onChange={e => setTenantId(e.target.value)}
-                placeholder="e.g. reliance_corp"
-                className={`h-10 text-sm ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200'}`}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tenant Company Name</Label>
-              <Input
-                value={tenantName}
-                onChange={e => setTenantName(e.target.value)}
-                placeholder="e.g. Reliance Industries"
-                className={`h-10 text-sm ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200'}`}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Database Schema Type</Label>
-              <select
-                value={tenantSchema}
-                onChange={e => setTenantSchema(e.target.value)}
-                className={`h-10 w-full rounded-xl px-3 border text-sm ${isDark ? 'bg-slate-950 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200'}`}
-              >
-                <option value="isolated">Isolated (Separate DB Collections)</option>
-                <option value="shared_col">Shared with Tenant Filters</option>
-              </select>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Custom Tenant Settings (JSON Object)</Label>
-            <textarea
-              value={tenantSettings}
-              onChange={e => setTenantSettings(e.target.value)}
-              rows={2}
-              className={`w-full font-mono text-xs p-3 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-slate-50 border-slate-200'}`}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={tenantLoading}
-            className="flex items-center gap-2 px-6 py-2 h-10 rounded-xl text-xs font-bold text-white shadow-md hover:brightness-105 transition"
-            style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue} 0%, ${COLORS.mediumBlue} 100%)` }}
-          >
-            {tenantLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Deploy Isolation Sandbox"}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
