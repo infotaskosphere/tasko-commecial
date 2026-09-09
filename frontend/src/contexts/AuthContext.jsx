@@ -22,25 +22,28 @@ export const AuthProvider = ({ children }) => {
   const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
   const LAST_ACTIVE_KEY = 'taskosphere_last_active';
 
+  useEffect(() => {
+    const interceptorId = api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error?.response?.status === 401 && error?.response?.data?.detail === "SESSION_REPLACED") {
+          sessionStorage.setItem("taskosphere_logout_reason", "another_login");
+        }
+        return Promise.reject(error);
+      }
+    );
+    return () => api.interceptors.response.eject(interceptorId);
+  }, []);
+
   useEffect(() => { const handleBeforeUnload = () => { if (!isKeepSignedIn() && localStorage.getItem('token')) localStorage.setItem('taskosphere_tab_closed', Date.now().toString()); }; window.addEventListener('beforeunload', handleBeforeUnload); return () => window.removeEventListener('beforeunload', handleBeforeUnload); }, []);
   useEffect(() => { if (!user || isKeepSignedIn()) return; const updateActivity = () => localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']; events.forEach(e => window.addEventListener(e, updateActivity, { passive: true })); updateActivity(); const interval = setInterval(() => { const lastActive = parseInt(localStorage.getItem(LAST_ACTIVE_KEY) || '0', 10); if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) logout(); }, 60 * 1000); return () => { events.forEach(e => window.removeEventListener(e, updateActivity)); clearInterval(interval); }; }, [user]);
 
-  // Single source of truth for the platform-owner check — every other file
-  // that needs it should read it from useAuth() rather than re-deriving its
-  // own copy of PLATFORM_OWNER_EMAIL (the sidebar shortcut, MasterData.jsx,
-  // etc. previously each had their own copy, which is how the shortcut and
-  // the guard below could disagree with each other).
   const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
     const isLicensedCustomer = !!user?.company_id && !isPlatformOwner;
     document.body.classList.toggle("licensed-customer-session", isLicensedCustomer);
-
-    // Route-level guard: even though the Commercial Console / Website Studio
-    // sidebar items are no longer rendered at all for a licensed customer
-    // (see DashboardLayout's isPlatformOwner gate), still block direct URL
-    // entry / back-forward navigation to /master-console as defense in depth.
     const isCommercialPath = () => window.location.pathname === "/master-console" || window.location.pathname.startsWith("/master-console/");
     const redirectIfBlocked = () => { if (!isLicensedCustomer || !isCommercialPath()) return; window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
     const handleClick = (event) => { if (!isLicensedCustomer) return; const target = event.target?.closest?.("a[href]"); const href = target?.getAttribute("href") || ""; if (!href.startsWith("/master-console")) return; event.preventDefault(); event.stopPropagation(); window.history.replaceState({}, "", "/dashboard"); window.dispatchEvent(new PopStateEvent("popstate")); };
