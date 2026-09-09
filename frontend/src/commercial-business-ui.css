@@ -21,8 +21,6 @@
 #root main thead th{min-height:40px;height:40px;padding:8px 10px;background:#F1F5F9;color:#475569;border-bottom:1px solid var(--biz-border)}
 #root main tbody td{padding:9px 10px;border-bottom:1px solid #E8EDF3}#root main tbody tr:last-child td{border-bottom:0}
 #root [role="dialog"],#root [data-radix-dialog-content],#root [data-radix-popper-content-wrapper]>*{border-radius:var(--biz-radius)!important}
-#root [data-commercial-console]{position:fixed!important;top:64px!important;right:178px!important;height:40px!important;min-width:150px;justify-content:center;border:0!important;border-left:1px solid #E2E8F0!important;border-right:1px solid #E2E8F0!important;background:#FFF!important;color:#0D3B66!important;box-shadow:none!important;border-radius:0!important;z-index:46!important;font-size:12px!important;font-weight:700!important}
-#root [data-commercial-console]:hover{background:#F6F8FB!important;color:#1F6FB2!important}
 
 /* APP CHROME: flat enterprise geometry + floating sidebar navigation. */
 body:not(.website-surface) #root header,
@@ -79,8 +77,6 @@ body.website-builder-surface #root aside .sidebar-scroll a > span.absolute,body.
 body.website-builder-surface #root aside > div:last-child{padding:10px!important}body.website-builder-surface #root aside > div:last-child button{height:40px!important;min-height:40px!important;border-radius:0!important;box-shadow:0 2px 8px rgba(0,0,0,.12)!important}
 /* Match the normal Tasks/Dashboard top strip as well. */
 body.website-builder-surface #root header + div{font-size:14px!important}
-/* Website Studio must not show the old floating Commercial Console shortcut in the top strip. */
-body.website-builder-surface #root [data-commercial-console]{display:none!important}
 
 @media(max-width:1100px){#root main [style*="linear-gradient"]>div[class*="flex-wrap"]{width:min(100%,680px)}}
 @media(max-width:900px){#root main [role="tablist"],#root main [data-tabs="true"],#root main .tabs-list,#root main .tab-list{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}#root main [role="tab"],#root main [data-tabs="true"]>button,#root main .tabs-list>button,#root main .tab-list>button{min-height:46px!important;height:46px!important;font-size:11px!important}body:not(.website-surface) #root aside .sidebar-scroll a{height:40px!important;min-height:40px!important}}
