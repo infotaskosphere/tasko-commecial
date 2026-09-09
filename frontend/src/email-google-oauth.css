@@ -1,15 +1,40 @@
 /* Gmail Google OAuth-only connection presentation.
  *
  * The existing EmailSettings component still contains the legacy IMAP/App
- * Password controls for Gmail. These styles isolate that legacy UI only for
- * the Gmail connection card, leaving Outlook/Yahoo/iCloud/Other unchanged.
- * The existing "Connect with Google" handler remains the source of truth.
+ * Password controls for Gmail. These styles isolate those legacy controls
+ * only for Gmail. Outlook/Yahoo/iCloud/Other remain unchanged.
  */
 
 /* Identify only the Gmail connection card by its Google App Password link. */
-[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-xl.overflow-hidden.border,
-[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .space-y-3,
-[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .flex.gap-3,
+.gmail-oauth-surface {
+  /* Marker class is added below through :has() selectors for browsers with
+     modern CSS support. */
+}
+
+/* Hide the old Gmail App Password action from the card header. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > div:first-child a[href="https://myaccount.google.com/apppasswords"] {
+  display: none !important;
+}
+
+/* Hide Gmail's legacy IMAP setup instructions. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-xl.overflow-hidden.border {
+  display: none !important;
+}
+
+/* The Gmail form contains Email + Password + Account Label + Linked Page +
+   Auto Sync. Remove only Email and Password; keep useful preferences. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .space-y-3 > div:nth-child(1),
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .space-y-3 > div:nth-child(2) {
+  display: none !important;
+}
+
+/* Remove the legacy bottom "Connect Account" / Cancel row. The Google
+   OAuth button above is now the only Gmail connection action. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .flex.gap-3 {
+  display: none !important;
+}
+
+/* Remove the legacy manual-IMAP security note. */
 [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > div:last-child {
   display: none !important;
 }
@@ -25,12 +50,12 @@
   padding: 24px !important;
 }
 
-/* Remove the legacy fallback wording from the OAuth card. */
+/* Remove the old "manual fallback" wording from the OAuth panel. */
 [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden > .px-4.pb-3 {
   display: none !important;
 }
 
-/* Give the Google button a clear primary-action treatment. */
+/* Make the Google action visually dominant. */
 [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden button {
   min-width: 190px;
   min-height: 44px;
