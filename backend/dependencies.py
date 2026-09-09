@@ -208,7 +208,11 @@ async def get_current_user(credentials=Depends(security)):
     try:user=User(**d)
     except Exception as e:logger.error("User validation failed for %s: %s",user_id,e);raise HTTPException(status_code=500,detail="User profile data is corrupted")
     company_id=getattr(user,"company_id",None)
-    if not company_id or not str(company_id).strip():raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
+    if not company_id or not str(company_id).strip():
+        if is_platform_owner(user):
+            set_platform_owner(True)
+            return user
+        raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
     set_authenticated_company(company_id)
     set_platform_owner(is_platform_owner(user))
     return user
