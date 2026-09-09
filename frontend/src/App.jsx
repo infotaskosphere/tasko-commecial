@@ -179,7 +179,7 @@ function CommercialConsoleShortcut() {
 
   const items = [
     { path: "/master-console", label: "Commercial Console", icon: "▦" },
-    { path: "/master-console/website", label: "Website & Branding", icon: "◫" },
+    { path: "/master-console/website", label: "Website Studio", icon: "◫" },
   ];
 
   return (
@@ -211,18 +211,18 @@ function CommercialConsoleShortcut() {
         </NavLink>
       ))}
       <style>{`
-        /* Platform-owner tools occupy the exact space directly above the existing
-           sidebar footer. They are rendered by React, never cloned/moved in the DOM. */
+        /* Platform-owner tools sit directly above the native Collapse Sidebar
+           control, giving all three footer controls the same size and rhythm. */
         .commercial-sidebar-tools {
           position: fixed !important;
           left: 0 !important;
-          top: calc(100vh - 76px - 98px) !important;
+          top: calc(100vh - 76px - 88px) !important;
           bottom: auto !important;
           width: 280px !important;
-          height: 98px !important;
-          padding: 3px 16px 7px !important;
+          height: 88px !important;
+          padding: 0 16px !important;
           margin: 0 !important;
-          gap: 4px !important;
+          gap: 0 !important;
           z-index: 44 !important;
           background: #0D3B66 !important;
           border-right: 1px solid rgba(255,255,255,0.08) !important;
@@ -237,6 +237,7 @@ function CommercialConsoleShortcut() {
           padding: 0 12px !important;
           margin: 0 !important;
           box-sizing: border-box !important;
+          border-radius: 12px !important;
         }
         .commercial-sidebar-tools .commercial-sidebar-tool-icon {
           color: #94a3b8 !important;
