@@ -92,7 +92,24 @@ export const AuthProvider = ({ children }) => {
 
   const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
   const logout = async () => { const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token"); window.__STOP_ACTIVITY__ = true; resetAgentAuth(); clearStorage(); setUser(null); try { if (sessionToken) await api.post("/auth/logout", { session_token: sessionToken }, { _silent: true, _skipReadyGate: true }); } catch (error) { console.warn("Session revoke on logout failed (non-fatal).", error); } };
-  const refreshUser = useCallback(async () => { try { const response = await api.get("/auth/me"); const updatedUser = normalizeTenantContext(response.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(updatedUser)); setUser(updatedUser); } catch (error) { console.error("Failed to refresh user:", error); } }, []);
+  const refreshUser = useCallback(async (overrideUser = null) => {
+    try {
+      if (overrideUser && typeof overrideUser === "object" && (overrideUser.id || overrideUser.email)) {
+        const optimisticUser = normalizeTenantContext(overrideUser);
+        const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
+        storage.setItem("user", JSON.stringify(optimisticUser));
+        setUser(optimisticUser);
+      }
+      const response = await api.get("/auth/me");
+      const updatedUser = normalizeTenantContext(response.data);
+      const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
+      storage.setItem("user", JSON.stringify(updatedUser));
+      setUser(updatedUser);
+      return updatedUser;
+    } catch (error) {
+      console.error("Failed to refresh user:", error);
+    }
+  }, []);
   const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id;
   const hasPermission = (permission) => { if (!user) return false; if (isCommercialAdmin()) { if (COMMERCIAL_MODULE_FLAGS.has(permission)) return user.permissions?.[permission] === true; return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : true; } if (user.role?.toLowerCase() === "admin") return true; return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false; };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
