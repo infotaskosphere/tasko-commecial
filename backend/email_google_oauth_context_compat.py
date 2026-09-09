@@ -1,13 +1,17 @@
-"""Bind saved commercial tenant identity during the Gmail OAuth callback.
+"""Compatibility fixes for the direct Gmail OAuth flow.
 
 Google redirects back without the Taskosphere bearer/session context that was
 present when OAuth was started. The OAuth state record is therefore the trusted
 server-side bridge for the callback's company/customer identity.
+
+This module also normalizes Gmail connection output because the legacy
+email_integration connection serializer returns a Pydantic ``ConnectionOut``
+model, while the first Gmail adapter attempted to mutate it like a dict.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Any
 
 from fastapi import Query, Request
 
@@ -70,13 +74,43 @@ async def _callback_with_saved_context(
             reset_authenticated_company(company_token)
 
 
+def _safe_conn_doc_to_out(doc: dict[str, Any]):
+    """Serialize a connection without assuming the legacy serializer returns a dict."""
+    original = getattr(_oauth, "_ORIGINAL_CONN_DOC_TO_OUT", None)
+    if original is None:
+        original = getattr(_oauth._email, "_conn_doc_to_out")
+
+    out = original(doc)
+    if hasattr(out, "model_dump"):
+        data = out.model_dump()
+    elif isinstance(out, dict):
+        data = dict(out)
+    else:
+        return out
+
+    if doc.get("auth_type") == "google_oauth":
+        data["imap_host"] = "Google Gmail API"
+        data["imap_port"] = 443
+        # ConnectionOut does not expose auth_type/oauth_provider, so keep the
+        # public response aligned with the existing model instead of mutating
+        # a Pydantic instance with dictionary syntax.
+
+    connection_model = getattr(_oauth._email, "ConnectionOut", None)
+    if connection_model is not None and hasattr(connection_model, "model_validate"):
+        return connection_model.model_validate(data)
+    return data
+
+
 def install() -> None:
     route = _find_callback_route()
-    if route is None:
-        return
-    if getattr(route.endpoint, "__name__", "") == "_callback_with_saved_context":
-        return
-    route.endpoint = _callback_with_saved_context
+    if route is not None and getattr(route.endpoint, "__name__", "") != "_callback_with_saved_context":
+        route.endpoint = _callback_with_saved_context
+
+    # email_google_oauth.py's serializer decorates the original serializer but
+    # attempts item assignment on ConnectionOut. Replace that narrow adapter
+    # with a model-safe serializer for both module references used at runtime.
+    _oauth._conn_doc_to_out = _safe_conn_doc_to_out
+    _oauth._email._conn_doc_to_out = _safe_conn_doc_to_out
 
 
 install()
