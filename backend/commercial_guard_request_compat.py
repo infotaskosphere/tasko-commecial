@@ -48,35 +48,40 @@ async def _recover_jwt_user(credentials) -> User:
     document = await raw_db.users.find_one({"id": user_id})
     if document is None:
         raise HTTPException(status_code=401, detail="User not found")
+
+    # Keep the legacy commercial linkage from the raw Mongo document. The
+    # User Pydantic model intentionally ignores unknown fields, so reading
+    # license_id/commercial_customer_id after constructing User would erase
+    # the very linkage needed to recover company_id.
+    legacy_license_id = str(document.get("license_id") or "").strip()
+    legacy_customer_id = str(document.get("commercial_customer_id") or "").strip()
+    raw_company_id = str(document.get("company_id") or "").strip()
+
     user = _normalise_user_document(document)
 
     if is_platform_owner(user):
         set_platform_owner(True)
-        company_id = str(getattr(user, "company_id", "") or "").strip()
+        company_id = raw_company_id
         if company_id:
             set_authenticated_company(company_id)
         return user
 
-    company_id = str(getattr(user, "company_id", "") or "").strip()
-    if not company_id:
-        license_id = str(getattr(user, "license_id", "") or "").strip()
-        if license_id:
-            candidates = await raw_db.companies.find(
-                {"license_id": license_id, "status": {"$ne": "inactive"}},
-                {"_id": 0, "id": 1},
-            ).to_list(20)
-            if len(candidates) == 1:
-                company_id = str(candidates[0].get("id") or "").strip()
+    company_id = raw_company_id
+    if not company_id and legacy_license_id:
+        candidates = await raw_db.companies.find(
+            {"license_id": legacy_license_id, "status": {"$ne": "inactive"}},
+            {"_id": 0, "id": 1},
+        ).to_list(20)
+        if len(candidates) == 1:
+            company_id = str(candidates[0].get("id") or "").strip()
 
-    if not company_id:
-        customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
-        if customer_id:
-            candidates = await raw_db.companies.find(
-                {"commercial_customer_id": customer_id, "status": {"$ne": "inactive"}},
-                {"_id": 0, "id": 1},
-            ).to_list(20)
-            if len(candidates) == 1:
-                company_id = str(candidates[0].get("id") or "").strip()
+    if not company_id and legacy_customer_id:
+        candidates = await raw_db.companies.find(
+            {"commercial_customer_id": legacy_customer_id, "status": {"$ne": "inactive"}},
+            {"_id": 0, "id": 1},
+        ).to_list(20)
+        if len(candidates) == 1:
+            company_id = str(candidates[0].get("id") or "").strip()
 
     if not company_id:
         raise HTTPException(status_code=403, detail="Authenticated user is not associated with a company")
