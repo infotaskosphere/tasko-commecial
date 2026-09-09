@@ -7,6 +7,7 @@ license/customer linkage resolves to exactly one legal company.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import Depends, HTTPException
@@ -19,6 +20,7 @@ from backend.models import User
 from backend.platform_owner import is_platform_owner, platform_owner_emails
 from backend.tenant_runtime import TenantAwareCollection, set_authenticated_company, set_platform_owner
 
+logger = logging.getLogger("commercial_guard_request_compat")
 _original_get_current_user = _guard._original_get_current_user
 
 
