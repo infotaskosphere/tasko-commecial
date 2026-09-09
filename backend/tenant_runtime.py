@@ -93,6 +93,15 @@ def company_filter(current_user: Any, extra: Mapping[str, Any] | None = None) ->
 
 
 def enforce_company_value(current_user: Any, value: Any) -> str:
+    # Platform owners are intentionally allowed to operate across customer
+    # companies. Normal tenant users remain strictly company-scoped.
+    if in_platform_owner_context():
+        if value is not None and str(value).strip():
+            return str(value).strip()
+        company_id = getattr(current_user, COMPANY_FIELD, None)
+        if company_id is not None and str(company_id).strip():
+            return str(company_id).strip()
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Company context is required for this operation")
     authenticated = get_company_id(current_user)
     if value is not None and str(value).strip() != authenticated:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
@@ -108,12 +117,18 @@ def force_company_id(current_user: Any, record: dict[str, Any]) -> dict[str, Any
 def assert_record_company(current_user: Any, record: Mapping[str, Any] | None) -> None:
     if record is None:
         return
+    if in_platform_owner_context():
+        return
     authenticated = get_company_id(current_user)
     if record.get(COMPANY_FIELD) is None or str(record.get(COMPANY_FIELD)) != authenticated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
 
 
 def _scope_query(query: Any) -> dict[str, Any]:
+    # Platform owner requests are deliberately cross-tenant. Do not inject
+    # the owner's own company_id or reject a requested customer company.
+    if in_platform_owner_context():
+        return query if isinstance(query, dict) else {}
     company_id = authenticated_company_id()
     if not company_id:
         return query if isinstance(query, dict) else {}
@@ -170,6 +185,9 @@ def _scope_company_registry_update(update: Any) -> Any:
 
 
 def _scope_update(update: Any) -> Any:
+    # Platform-owner writes are not forced into the owner's tenant.
+    if in_platform_owner_context():
+        return update
     company_id = authenticated_company_id()
     if not company_id:
         return update
@@ -190,6 +208,10 @@ def _scope_update(update: Any) -> Any:
 
 
 def _scope_replacement(replacement: Any) -> Any:
+    # Platform owners may explicitly write records for a selected customer
+    # company; do not silently rewrite them to the owner's company.
+    if in_platform_owner_context():
+        return replacement
     company_id = authenticated_company_id()
     if not company_id or not isinstance(replacement, dict):
         return replacement
@@ -293,6 +315,8 @@ class TenantAwareCollection:
     def aggregate(self, pipeline, *args, **kwargs):
         if self._enabled():
             pipeline = list(pipeline or [])
+            if in_platform_owner_context():
+                return self._collection.aggregate(pipeline, *args, **kwargs)
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
         elif self._company_registry_enabled():
             pipeline = list(pipeline or [])
