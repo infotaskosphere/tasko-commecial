@@ -160,9 +160,16 @@ async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Qu
 
         user_id = str(state_doc["user_id"])
         existing = await db[_email.COL_CONNECTIONS].find_one({"user_id": user_id, "email_address": email_address}, {"_id": 0})
-        user_doc = await db.users.find_one({"id": user_id}, {"_id": 0, "commercial_customer_id": 1, "company_id": 1})
-        customer_id = state_doc.get("commercial_customer_id") or (user_doc or {}).get("commercial_customer_id")
-        company_id = state_doc.get("company_id") or (user_doc or {}).get("company_id")
+        # NOTE: Do not query db.users here. This callback is hit directly by
+        # Google's redirect (no Authorization header), so there is no
+        # authenticated-company context set on this request, and the tenant
+        # isolation guard on the users collection (commercial_user_company_scope.py)
+        # will raise 403 "Authenticated user is not associated with a company."
+        # state_doc already carries company_id/commercial_customer_id, captured
+        # safely from current_user when the flow was started under a real
+        # authenticated session in /start.
+        customer_id = state_doc.get("commercial_customer_id")
+        company_id = state_doc.get("company_id")
         oauth_secret = _email._encrypt(OAUTH_PASSWORD_PREFIX + refresh_token)
         now_iso = datetime.now(timezone.utc).isoformat()
         connection_doc = {
