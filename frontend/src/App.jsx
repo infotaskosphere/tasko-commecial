@@ -13,6 +13,7 @@ import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
+import "./email-google-oauth.css";
 
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
