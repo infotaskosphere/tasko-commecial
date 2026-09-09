@@ -119,6 +119,12 @@ import backend.user_projection_compat  # noqa: F401
 import backend.whatsapp_sse_compat as _whatsapp_sse_compat
 _whatsapp_sse_compat.install()
 
+# Load Gmail's direct OAuth integration after email_integration's helpers are
+# available but before backend.server imports the email router. This mounts the
+# OAuth routes at /api/email/oauth/google/* and adapts Gmail API reads into the
+# existing email extraction pipeline without changing non-Gmail providers.
+import backend.email_google_oauth  # noqa: F401
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
