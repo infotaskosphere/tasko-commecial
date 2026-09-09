@@ -1,47 +1,62 @@
-/* Commercial General Settings: compact, square enterprise tabs. */
-body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"]{
-  border-radius:0!important;
+/* Commercial General Settings: compact, slim tabs with reduced height. */
+body:not(.website-surface) #root main .general-settings-banner {
+  padding-top: 14px !important;
+  padding-bottom: 14px !important;
 }
-body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4{
-  display:grid!important;
-  grid-template-columns:repeat(3,minmax(0,1fr))!important;
-  width:min(100%,640px)!important;
-  height:38px!important;
-  min-height:38px!important;
-  gap:1px!important;
-  padding:2px!important;
-  margin-top:12px!important;
-  background:rgba(255,255,255,.12)!important;
-  border:1px solid rgba(255,255,255,.16)!important;
-  border-radius:0!important;
+
+body:not(.website-surface) #root main .general-settings-tab-bar {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  gap: 3px !important;
+  padding: 2px !important;
+  margin-top: 10px !important;
+  background: rgba(0, 0, 0, 0.2) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 8px !important;
 }
-body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button{
-  height:34px!important;
-  min-height:34px!important;
-  width:100%!important;
-  padding:0 8px!important;
-  margin:0!important;
-  border-radius:0!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  white-space:nowrap!important;
-  font-size:11px!important;
-  line-height:1!important;
+
+body:not(.website-surface) #root main .general-settings-tab-bar button {
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 10px !important;
+  margin: 0 !important;
+  border-radius: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.01em !important;
+  gap: 5px !important;
 }
-/* SaaS & Licensing is intentionally kept out of General Settings. */
-body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button:nth-child(4){display:none!important}
-body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button[class*="bg-white"]{
-  color:#17324D!important;
-  box-shadow:0 1px 4px rgba(0,0,0,.12)!important;
+
+body:not(.website-surface) #root main .general-settings-tab-bar button[class*="bg-white"] {
+  background: #ffffff !important;
+  color: #0D3B66 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
 }
-@media(max-width:700px){
-  body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4{
-    width:100%!important;
-    grid-template-columns:repeat(3,minmax(0,1fr))!important
+
+body:not(.website-surface) #root main .general-settings-tab-bar button:not([class*="bg-white"]) {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+body:not(.website-surface) #root main .general-settings-tab-bar button:not([class*="bg-white"]):hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+@media (max-width: 640px) {
+  body:not(.website-surface) #root main .general-settings-tab-bar {
+    width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
   }
-  body:not(.website-surface) #root main [style*="linear-gradient(135deg, #0D3B66 0%, #1F6FB2 100%)"][class*="px-4"] .relative.mt-4 button{
-    font-size:9px!important;
-    padding:0 4px!important
-  }
 }
+
