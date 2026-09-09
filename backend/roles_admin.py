@@ -323,7 +323,46 @@ async def apply_role_to_users(key: str, current_user: User = Depends(get_current
 @router.get("/users")
 async def list_users(current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(5000)
+
+    # Scope users by company / tenant
+    raw_lic_comps = await db.companies.find(
+        {"$or": [
+            {"source": {"$in": ["commercial-license", "commercial", "license"]}},
+            {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
+            {"license_id": {"$nin": [None, "", "platform-owner-license"]}},
+        ]},
+        {"_id": 0, "id": 1},
+    ).to_list(5000)
+    licensee_comp_ids = {str(c["id"]) for c in raw_lic_comps if c.get("id")}
+
+    user_customer_id = getattr(current_user, "commercial_customer_id", None)
+    user_license_id = getattr(current_user, "license_id", None)
+    user_comp_id = getattr(current_user, "company_id", None)
+
+    is_licensee_user = bool(
+        (user_customer_id and str(user_customer_id).strip() != "platform-owner") or
+        (user_license_id and str(user_license_id).strip() != "platform-owner-license") or
+        (user_comp_id and str(user_comp_id) in licensee_comp_ids)
+    )
+
+    if is_licensee_user:
+        clauses = []
+        if user_customer_id and str(user_customer_id).strip() != "platform-owner":
+            clauses.append({"commercial_customer_id": str(user_customer_id)})
+        if user_license_id and str(user_license_id).strip() != "platform-owner-license":
+            clauses.append({"license_id": str(user_license_id)})
+        if user_comp_id:
+            clauses.append({"company_id": str(user_comp_id)})
+        user_query = {"$or": clauses} if clauses else {}
+    else:
+        user_query = {
+            "commercial_customer_id": {"$in": [None, "", "platform-owner"]},
+            "license_id": {"$in": [None, "", "platform-owner-license"]},
+        }
+        if licensee_comp_ids:
+            user_query["company_id"] = {"$nin": list(licensee_comp_ids)}
+
+    users = await db.users.find(user_query, {"_id": 0, "password": 0}).to_list(5000)
     roles = {r["key"]: r for r in await _all_roles()}
     out = []
     for u in users:
