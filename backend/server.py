@@ -820,6 +820,49 @@ async def startup_event():
     except Exception as e:
         logger.error(f"⚠️ Visit ID repair failed (non-fatal): {e}")
 
+    # ✅ USER ID REPAIR & PHANTOM CLEANUP
+    try:
+        from backend import dependencies as _dependencies
+        from bson import ObjectId
+        raw_db = getattr(_dependencies, "_raw_db", db)
+        users_no_id = await raw_db.users.find({
+            "$or": [{"id": {"$exists": False}}, {"id": None}, {"id": ""}]
+        }).to_list(10000)
+        user_repaired = 0
+        for u in users_no_id:
+            raw_id = u.get("_id")
+            if raw_id:
+                await raw_db.users.update_one({"_id": raw_id}, {"$set": {"id": str(raw_id)}})
+                user_repaired += 1
+        if user_repaired:
+            logger.info(f"✅ User ID repair: {user_repaired} user documents patched with id field")
+
+        # Clean up any phantom commercial control plane users that duplicate real users
+        phantom_users = await raw_db.users.find({
+            "company_id": "__commercial_control_plane__",
+            "is_internal_commercial_admin": True,
+        }).to_list(100)
+        for pu in phantom_users:
+            p_id = pu.get("id")
+            if p_id and ObjectId.is_valid(p_id):
+                real_user = await raw_db.users.find_one({
+                    "_id": ObjectId(p_id),
+                    "company_id": {"$ne": "__commercial_control_plane__"},
+                })
+                if real_user:
+                    sync_fields = {}
+                    if pu.get("full_name") and pu.get("full_name") not in ("Taskosphere Commercial Control Plane", "Commercial Admin"):
+                        sync_fields["full_name"] = pu["full_name"]
+                    for fld in ("phone", "birthday", "profile_picture"):
+                        if pu.get(fld):
+                            sync_fields[fld] = pu[fld]
+                    if sync_fields:
+                        await raw_db.users.update_one({"_id": real_user["_id"]}, {"$set": sync_fields})
+                    await raw_db.users.delete_one({"_id": pu["_id"]})
+                    logger.info(f"✅ Cleaned up phantom control-plane identity shadowing user {p_id}")
+    except Exception as e:
+        logger.error(f"⚠️ User ID repair failed (non-fatal): {e}")
+
     # Scheduled jobs=====================================================================
     try:
         scheduler.add_job(fetch_indian_holidays_task, "cron", day=1, hour=0, minute=5)
@@ -2977,6 +3020,22 @@ async def security_events(
 # NOTE: POST /auth/sync-permissions moved to permission_governance.py
 
 
+def _make_user_id_query(user_id: str, email: Optional[str] = None) -> dict[str, Any]:
+    """Build a MongoDB query that matches a user document by either string id or ObjectId _id, or email."""
+    from bson import ObjectId
+    user_id_str = str(user_id or "").strip()
+    clauses = []
+    if email:
+        clauses.append({"email": str(email).strip().lower()})
+    if user_id_str:
+        if ObjectId.is_valid(user_id_str):
+            clauses.append({"_id": ObjectId(user_id_str)})
+        clauses.append({"id": user_id_str})
+    if not clauses:
+        return {"id": user_id_str}
+    return {"$or": clauses} if len(clauses) > 1 else clauses[0]
+
+
 @api_router.post("/users/{user_id}/approve")
 async def approve_user(user_id: str, current_user: User = Depends(get_current_user)):
     # Client / user approval is admin-only — permission governance cannot delegate this.
@@ -2985,7 +3044,7 @@ async def approve_user(user_id: str, current_user: User = Depends(get_current_us
             status_code=403, detail="Only administrators can approve users"
         )
 
-    existing = await db.users.find_one({"id": user_id}, {"_id": 0})
+    existing = await db.users.find_one(_make_user_id_query(user_id))
 
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
@@ -3003,7 +3062,10 @@ async def approve_user(user_id: str, current_user: User = Depends(get_current_us
         "approved_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    await db.users.update_one({"id": user_id}, {"$set": update_data})
+    if existing.get("_id"):
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": update_data})
+    else:
+        await db.users.update_one({"id": user_id}, {"$set": update_data})
 
     await create_audit_log(
         current_user, "APPROVE_USER", "user", user_id, existing, update_data
@@ -3020,14 +3082,17 @@ async def reject_user(user_id: str, current_user: User = Depends(get_current_use
             status_code=403, detail="Only administrators can reject users"
         )
 
-    existing = await db.users.find_one({"id": user_id}, {"_id": 0})
+    existing = await db.users.find_one(_make_user_id_query(user_id))
 
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
 
     update_data = {"status": "rejected", "is_active": False}
 
-    await db.users.update_one({"id": user_id}, {"$set": update_data})
+    if existing.get("_id"):
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": update_data})
+    else:
+        await db.users.update_one({"id": user_id}, {"$set": update_data})
 
     await create_audit_log(
         current_user, "REJECT_USER", "user", user_id, existing, update_data
@@ -3045,11 +3110,11 @@ async def get_users(
 ):
     if current_user.role == "admin":
         query = {}
-        users_raw = await db.users.find(query, {"_id": 0, "password": 0}).to_list(1000)
+        users_raw = await db.users.find(query, {"password": 0}).to_list(1000)
     elif current_user.role == "manager":
         if user_id:
             target_user = await db.users.find_one(
-                {"id": user_id}, {"_id": 0, "password": 0}
+                _make_user_id_query(user_id), {"password": 0}
             )
             if not target_user:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -3065,8 +3130,8 @@ async def get_users(
             # "Team" is now purely explicit (admin-curated view_other_* lists).
             cross_ids = await get_cross_visibility_union(current_user.id)
             visible_ids = list(set(cross_ids + [current_user.id]))
-            query = {"id": {"$in": visible_ids}}
-            users_raw = await db.users.find(query, {"_id": 0, "password": 0}).to_list(
+            query = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
+            users_raw = await db.users.find(query, {"password": 0}).to_list(
                 1000
             )
     else:
@@ -3079,12 +3144,12 @@ async def get_users(
             # Specific user lookup — own record always allowed
             if user_id == current_user.id:
                 users_raw = await db.users.find(
-                    {"id": user_id}, {"_id": 0, "password": 0}
+                    _make_user_id_query(user_id), {"password": 0}
                 ).to_list(1000)
             elif can_view_dir:
                 # Staff with directory access can look up any user by ID
                 users_raw = await db.users.find(
-                    {"id": user_id}, {"_id": 0, "password": 0}
+                    _make_user_id_query(user_id), {"password": 0}
                 ).to_list(1000)
             else:
                 # Allow lookup if target is in any of this staff's cross-vis lists
@@ -3092,7 +3157,7 @@ async def get_users(
                 if user_id not in cross_ids:
                     raise HTTPException(status_code=403, detail="Not allowed")
                 users_raw = await db.users.find(
-                    {"id": user_id}, {"_id": 0, "password": 0}
+                    _make_user_id_query(user_id), {"password": 0}
                 ).to_list(1000)
         elif can_view_dir:
             # Staff with can_view_user_page: return full directory (active users only, no passwords)
@@ -3100,7 +3165,6 @@ async def get_users(
             users_raw = await db.users.find(
                 {"is_active": True},
                 {
-                    "_id": 0,
                     "password": 0,
                     "permissions": 0,
                 },  # strip permissions for privacy
@@ -3109,10 +3173,14 @@ async def get_users(
             # No directory access — return self + cross-visibility union
             cross_ids = await get_cross_visibility_union(current_user.id)
             visible_ids = list(set(cross_ids + [current_user.id]))
+            query = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
             users_raw = await db.users.find(
-                {"id": {"$in": visible_ids}}, {"_id": 0, "password": 0}
+                query, {"password": 0}
             ).to_list(1000)
     for u in users_raw:
+        if not u.get("id") and u.get("_id"):
+            u["id"] = str(u["_id"])
+        u.pop("_id", None)
         if u.get("created_at") and isinstance(u["created_at"], str):
             try:
                 u["created_at"] = datetime.fromisoformat(u["created_at"])
@@ -3145,7 +3213,7 @@ async def update_user(
         team_ids = await get_team_user_ids(current_user.id)
         if user_id not in team_ids:
             raise HTTPException(status_code=403, detail="User is not in your team")
-        target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        target_user = await db.users.find_one(_make_user_id_query(user_id), {"password": 0})
         if target_user and target_user.get("role") in ("admin", "manager"):
             raise HTTPException(
                 status_code=403, detail="Managers can only edit staff members"
@@ -3155,9 +3223,13 @@ async def update_user(
             status_code=403, detail="You can only update your own profile."
         )
 
-    existing = await db.users.find_one({"id": user_id}, {"_id": 0})
+    lookup_email = current_user.email if is_own else None
+    existing = await db.users.find_one(_make_user_id_query(user_id, lookup_email))
     if not existing:
         raise HTTPException(status_code=404, detail="User not found.")
+
+    target_oid = existing.get("_id")
+    target_id = str(existing.get("id") or target_oid or user_id)
 
     if is_admin:
         # Admin can update all fields including role, permissions, status
@@ -3225,12 +3297,50 @@ async def update_user(
     new_password = user_data.get("password")
     if new_password and len(new_password.strip()) > 0:
         update_payload["password"] = get_password_hash(new_password)
+
+    # Always ensure canonical id field is stored on the document
+    if target_id:
+        update_payload["id"] = target_id
+
     if update_payload:
-        await db.users.update_one({"id": user_id}, {"$set": update_payload})
+        if target_oid:
+            await db.users.update_one({"_id": target_oid}, {"$set": update_payload})
+        else:
+            await db.users.update_one({"id": user_id}, {"$set": update_payload})
+
+    # Clean up any phantom commercial control plane records that shadowed this user ID
+    if is_own and is_admin:
+        try:
+            from backend import dependencies as _dependencies
+            raw_db = getattr(_dependencies, "_raw_db", db)
+            await raw_db.users.delete_many({
+                "company_id": "__commercial_control_plane__",
+                "is_internal_commercial_admin": True,
+                "$or": [
+                    {"id": str(target_id)},
+                    {"id": str(user_id)},
+                    {"email": f"commercial-control+{user_id}@taskosphere.internal"},
+                ],
+            })
+        except Exception as _clean_err:
+            logger.warning(f"Phantom user cleanup skipped: {_clean_err}")
+
     await create_audit_log(
         current_user, "UPDATE_USER", "user", user_id, existing, update_payload
     )
-    updated_user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+
+    if target_oid:
+        updated_user = await db.users.find_one(
+            {"_id": target_oid}, {"password": 0, "password_hash": 0, "password_salt": 0}
+        )
+    else:
+        updated_user = await db.users.find_one(
+            {"id": user_id}, {"password": 0, "password_hash": 0, "password_salt": 0}
+        )
+
+    if updated_user:
+        updated_user["id"] = str(updated_user.get("id") or updated_user.get("_id"))
+        updated_user.pop("_id", None)
     return updated_user
 
 
@@ -3242,12 +3352,14 @@ async def delete_user(
     # Issue #8: fully permission-based (can_manage_users flag), admin always passes via check_module_permission
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-    existing = await db.users.find_one({"id": user_id}, {"_id": 0})
+    existing = await db.users.find_one(_make_user_id_query(user_id))
     if not existing:
         raise HTTPException(status_code=404, detail="User not found")
     await create_audit_log(
         current_user, "DELETE_USER", "user", record_id=user_id, old_data=existing
     )
+    if existing.get("_id"):
+        await db.users.delete_one({"_id": existing["_id"]})
     await db.users.delete_one({"id": user_id})
     return {"message": "User deleted successfully"}
 
@@ -3263,26 +3375,27 @@ async def offboard_preview(
     current_user: User = Depends(require_admin()),
 ):
     """Preview what data belongs to this user before offboarding."""
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    user = await db.users.find_one(_make_user_id_query(user_id), {"password": 0, "password_hash": 0, "password_salt": 0})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    canonical_id = str(user.get("id") or user.get("_id") or user_id)
 
     counts = {
-        "tasks_assigned": await db.tasks.count_documents({"assigned_to": user_id}),
-        "tasks_created": await db.tasks.count_documents({"created_by": user_id}),
-        "clients": await db.clients.count_documents({"assigned_to": user_id}),
-        "dsc": await db.dsc_register.count_documents({"assigned_to": user_id}),
+        "tasks_assigned": await db.tasks.count_documents({"assigned_to": {"$in": [canonical_id, user_id]}}),
+        "tasks_created": await db.tasks.count_documents({"created_by": {"$in": [canonical_id, user_id]}}),
+        "clients": await db.clients.count_documents({"assigned_to": {"$in": [canonical_id, user_id]}}),
+        "dsc": await db.dsc_register.count_documents({"assigned_to": {"$in": [canonical_id, user_id]}}),
         "documents": await db.documents.count_documents(
-            {"$or": [{"assigned_to": user_id}, {"created_by": user_id}]}
+            {"$or": [{"assigned_to": {"$in": [canonical_id, user_id]}}, {"created_by": {"$in": [canonical_id, user_id]}}]}
         ),
-        "todos": await db.todos.count_documents({"user_id": user_id}),
-        "visits": await db.visits.count_documents({"assigned_to": user_id}),
-        "leads": await db.leads.count_documents({"assigned_to": user_id}),
+        "todos": await db.todos.count_documents({"user_id": {"$in": [canonical_id, user_id]}}),
+        "visits": await db.visits.count_documents({"assigned_to": {"$in": [canonical_id, user_id]}}),
+        "leads": await db.leads.count_documents({"assigned_to": {"$in": [canonical_id, user_id]}}),
     }
 
     return {
         "user": {
-            "id": user.get("id"),
+            "id": canonical_id,
             "full_name": user.get("full_name"),
             "email": user.get("email"),
             "role": user.get("role"),
@@ -3310,11 +3423,11 @@ async def offboard_user(
             status_code=400, detail="Old and replacement user cannot be the same"
         )
 
-    old_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    old_user = await db.users.find_one(_make_user_id_query(user_id))
     if not old_user:
         raise HTTPException(status_code=404, detail="User to offboard not found")
 
-    new_user = await db.users.find_one({"id": body.replacement_user_id}, {"_id": 0})
+    new_user = await db.users.find_one(_make_user_id_query(body.replacement_user_id))
     if not new_user:
         raise HTTPException(status_code=404, detail="Replacement user not found")
 
