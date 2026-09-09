@@ -87,6 +87,40 @@ async def startup_event():
                 {"$set": {"id": str(v["_id"])}}
             )
 
+        # ✅ USER ID REPAIR & PHANTOM CLEANUP
+        try:
+            from bson import ObjectId
+            users_no_id = await db.users.find({
+                "$or": [{"id": {"$exists": False}}, {"id": None}, {"id": ""}]
+            }).to_list(10000)
+            for u in users_no_id:
+                if u.get("_id"):
+                    await db.users.update_one({"_id": u["_id"]}, {"$set": {"id": str(u["_id"])}})
+
+            phantom_users = await db.users.find({
+                "company_id": "__commercial_control_plane__",
+                "is_internal_commercial_admin": True,
+            }).to_list(100)
+            for pu in phantom_users:
+                p_id = pu.get("id")
+                if p_id and ObjectId.is_valid(p_id):
+                    real_user = await db.users.find_one({
+                        "_id": ObjectId(p_id),
+                        "company_id": {"$ne": "__commercial_control_plane__"},
+                    })
+                    if real_user:
+                        sync_fields = {}
+                        if pu.get("full_name") and pu.get("full_name") not in ("Taskosphere Commercial Control Plane", "Commercial Admin"):
+                            sync_fields["full_name"] = pu["full_name"]
+                        for fld in ("phone", "birthday", "profile_picture"):
+                            if pu.get(fld):
+                                sync_fields[fld] = pu[fld]
+                        if sync_fields:
+                            await db.users.update_one({"_id": real_user["_id"]}, {"$set": sync_fields})
+                        await db.users.delete_one({"_id": pu["_id"]})
+        except Exception as e:
+            logger.warning(f"User ID repair in startup.py failed: {e}")
+
         # ✅ AUTO MIGRATION — backfill consent_given for existing users
         # (was incorrectly placed in a sync scheduler block in server.py)
         try:
