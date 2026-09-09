@@ -1071,7 +1071,7 @@ async def startup_event():
 # If a request to /health ever shows a DIFFERENT marker than the one you
 # just committed, the browser/CDN/Render is NOT serving this exact commit —
 # stop looking for a code bug and go fix the deploy instead.
-BUILD_MARKER = "client-groups-deploy-check-2026-08-23"
+BUILD_MARKER = "session-guard-signature-fix-2026-09-09"
 
 
 def _health_route_paths():
