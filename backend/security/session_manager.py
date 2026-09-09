@@ -24,7 +24,7 @@ def _as_utc(value):
 
 
 async def _latest_session_for_user(user_id: str):
-    """Find the newest session regardless of whether Mongo stores user_id as str/ObjectId."""
+    """Find the newest SaaS session regardless of Mongo user_id type."""
     try:
         sessions = await db.sessions.find({}).to_list(5000)
     except Exception:
@@ -210,8 +210,9 @@ def _install_global_single_session_guard():
 
         guarded = _guarded_get_current_user
         current.__code__ = guarded.__code__
-        current.__defaults__ = guarded.__defaults__
-        current.__kwdefaults__ = guarded.__kwdefaults__
+        # Keep FastAPI's original Depends(security) default intact.
+        current.__defaults__ = original.__defaults__
+        current.__kwdefaults__ = original.__kwdefaults__
         current.__doc__ = guarded.__doc__
         current._single_session_guard_installed = True
     except Exception:
