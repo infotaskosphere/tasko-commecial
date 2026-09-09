@@ -121,11 +121,15 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     return latest_login > issued_at.replace(microsecond=0) + timedelta(seconds=10)
 
 
-async def _guarded_get_current_user(credentials):
+async def _guarded_get_current_user(request, credentials):
     from fastapi import HTTPException
 
     original = dependencies.__dict__["_single_session_original_get_current_user"]
-    user = await original(credentials)
+    # The final commercial compatibility wrapper has the FastAPI dependency
+    # signature `(request, credentials)`. Preserve that signature when its
+    # code object is replaced, otherwise FastAPI passes `request` into a
+    # one-argument function and every authenticated endpoint returns HTTP 500.
+    user = await original(request, credentials)
     if await _session_was_replaced(user, credentials.credentials):
         raise HTTPException(
             status_code=401,
@@ -225,18 +229,19 @@ def _install_global_single_session_guard():
             current.__defaults__,
             current.__closure__,
         )
+        target_globals = current.__globals__
+        target_globals["_single_session_original_get_current_user"] = original
+        target_globals["dependencies"] = dependencies
+        target_globals["_session_was_replaced"] = _session_was_replaced
+        target_globals["SESSION_REPLACED_DETAIL"] = SESSION_REPLACED_DETAIL
         dependencies.__dict__["_single_session_original_get_current_user"] = original
 
         # The route modules already hold references to the original function
         # object, so the guard is installed by transplanting the wrapper's
-        # code object below.  A transplanted code object keeps the globals of
-        # its destination function (the dependencies module), not the
-        # session_manager module where _guarded_get_current_user was defined.
-        # Publish the two names used by that code into the destination
-        # module before the transplant; otherwise every authenticated request
-        # fails with `NameError: name 'dependencies' is not defined`.
-        dependencies.__dict__["dependencies"] = dependencies
-        dependencies.__dict__["_session_was_replaced"] = _session_was_replaced
+        # code object below. A transplanted code object keeps the globals of
+        # its destination function, which is the commercial compatibility
+        # module rather than `backend.dependencies`. Publish the guard's
+        # required names into that actual globals dictionary.
 
         guarded = _guarded_get_current_user
         current.__code__ = guarded.__code__
