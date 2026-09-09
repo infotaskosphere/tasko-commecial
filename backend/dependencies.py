@@ -187,6 +187,29 @@ async def _get_saas_session_user(token: str):
         logger.exception("SaaS session resolution failed: %s", error)
         return None
 
+async def _resolve_licensed_company_id(user):
+    """Resolve a missing operational company for a legacy licensed account.
+
+    Commercial licensees can own company/user master records through
+    commercial_customer_id or license_id even when an older user record has
+    no company_id. Only a positively linked, unique company is accepted; this
+    never guesses across tenants.
+    """
+    customer_id=str(getattr(user,"commercial_customer_id","") or "").strip()
+    license_id=str(getattr(user,"license_id","") or "").strip()
+    if not customer_id and not license_id:
+        return None
+    raw_db=globals().get("_raw_db",db)
+    clauses=[]
+    if license_id: clauses.append({"license_id":license_id})
+    if customer_id: clauses.append({"commercial_customer_id":customer_id})
+    if not clauses:return None
+    rows=await raw_db.companies.find({"$or":clauses}).limit(2).to_list(2)
+    if len(rows)!=1:return None
+    company=rows[0]
+    company_id=str(company.get("id") or company.get("_id") or "").strip()
+    return company_id or None
+
 async def get_current_user(credentials=Depends(security)):
     unauthorized=HTTPException(status_code=401,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
     token=credentials.credentials
@@ -212,7 +235,13 @@ async def get_current_user(credentials=Depends(security)):
         if is_platform_owner(user):
             set_platform_owner(True)
             return user
-        raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
+        company_id=await _resolve_licensed_company_id(user)
+        if company_id:
+            user_data=user.model_dump()
+            user_data["company_id"]=company_id
+            user=User.model_validate(user_data)
+        else:
+            raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
     set_authenticated_company(company_id)
     set_platform_owner(is_platform_owner(user))
     return user
