@@ -3104,17 +3104,81 @@ async def reject_user(user_id: str, current_user: User = Depends(get_current_use
 # ============================================================
 # USER MANAGEMENT
 # =============================================================
+async def _scope_users_query_by_company(current_user: User, base_query: Optional[dict] = None) -> dict:
+    """Isolate users by company / tenant:
+    - Commercial licensee users only see users belonging to their licensed company / customer.
+    - Platform owner / platform operational users only see operational users created for
+      their company to assign tasks (commercial licensee users are strictly excluded).
+    """
+    base = dict(base_query or {})
+
+    # Discover all commercial licensee company IDs
+    licensee_comp_ids = set()
+    try:
+        raw_lic_comps = await db.companies.find(
+            {"$or": [
+                {"source": {"$in": ["commercial-license", "commercial", "license"]}},
+                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
+                {"license_id": {"$nin": [None, "", "platform-owner-license"]}},
+            ]},
+            {"_id": 0, "id": 1},
+        ).to_list(5000)
+        licensee_comp_ids = {str(c["id"]) for c in raw_lic_comps if c.get("id")}
+    except Exception:
+        pass
+
+    user_customer_id = getattr(current_user, "commercial_customer_id", None)
+    user_license_id = getattr(current_user, "license_id", None)
+    user_comp_id = getattr(current_user, "company_id", None)
+
+    is_licensee_user = bool(
+        (user_customer_id and str(user_customer_id).strip() != "platform-owner") or
+        (user_license_id and str(user_license_id).strip() != "platform-owner-license") or
+        (user_comp_id and str(user_comp_id) in licensee_comp_ids)
+    )
+
+    if is_licensee_user:
+        clauses = []
+        if user_customer_id and str(user_customer_id).strip() != "platform-owner":
+            clauses.append({"commercial_customer_id": str(user_customer_id)})
+        if user_license_id and str(user_license_id).strip() != "platform-owner-license":
+            clauses.append({"license_id": str(user_license_id)})
+        if user_comp_id:
+            clauses.append({"company_id": str(user_comp_id)})
+
+        scope = {"$or": clauses} if clauses else {}
+        if base and scope:
+            return {"$and": [base, scope]}
+        return base or scope
+
+    # Platform owner / platform operational user:
+    # Only see operational users created for their company to assign tasks.
+    # Licensee company users must NOT be visible here.
+    scope = {
+        "commercial_customer_id": {"$in": [None, "", "platform-owner"]},
+        "license_id": {"$in": [None, "", "platform-owner-license"]},
+    }
+    if licensee_comp_ids:
+        scope["company_id"] = {"$nin": list(licensee_comp_ids)}
+
+    if base:
+        return {"$and": [base, scope]}
+    return scope
+
+
 @api_router.get("/users")
 async def get_users(
     user_id: Optional[str] = None, current_user: User = Depends(get_current_user)
 ):
     if current_user.role == "admin":
-        query = {}
+        base_q = _make_user_id_query(user_id) if user_id else {}
+        query = await _scope_users_query_by_company(current_user, base_q)
         users_raw = await db.users.find(query, {"password": 0}).to_list(1000)
     elif current_user.role == "manager":
         if user_id:
+            scoped_lookup = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
             target_user = await db.users.find_one(
-                _make_user_id_query(user_id), {"password": 0}
+                scoped_lookup, {"password": 0}
             )
             if not target_user:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -3130,7 +3194,8 @@ async def get_users(
             # "Team" is now purely explicit (admin-curated view_other_* lists).
             cross_ids = await get_cross_visibility_union(current_user.id)
             visible_ids = list(set(cross_ids + [current_user.id]))
-            query = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
+            base_q = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
+            query = await _scope_users_query_by_company(current_user, base_q)
             users_raw = await db.users.find(query, {"password": 0}).to_list(
                 1000
             )
@@ -3147,23 +3212,25 @@ async def get_users(
                     _make_user_id_query(user_id), {"password": 0}
                 ).to_list(1000)
             elif can_view_dir:
-                # Staff with directory access can look up any user by ID
+                query = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
                 users_raw = await db.users.find(
-                    _make_user_id_query(user_id), {"password": 0}
+                    query, {"password": 0}
                 ).to_list(1000)
             else:
                 # Allow lookup if target is in any of this staff's cross-vis lists
                 cross_ids = await get_cross_visibility_union(current_user.id)
                 if user_id not in cross_ids:
                     raise HTTPException(status_code=403, detail="Not allowed")
+                query = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
                 users_raw = await db.users.find(
-                    _make_user_id_query(user_id), {"password": 0}
+                    query, {"password": 0}
                 ).to_list(1000)
         elif can_view_dir:
             # Staff with can_view_user_page: return full directory (active users only, no passwords)
             # This is needed for task assignment dropdowns, cross-visibility, etc.
+            query = await _scope_users_query_by_company(current_user, {"is_active": True})
             users_raw = await db.users.find(
-                {"is_active": True},
+                query,
                 {
                     "password": 0,
                     "permissions": 0,
@@ -3173,7 +3240,8 @@ async def get_users(
             # No directory access — return self + cross-visibility union
             cross_ids = await get_cross_visibility_union(current_user.id)
             visible_ids = list(set(cross_ids + [current_user.id]))
-            query = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
+            base_q = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
+            query = await _scope_users_query_by_company(current_user, base_q)
             users_raw = await db.users.find(
                 query, {"password": 0}
             ).to_list(1000)
