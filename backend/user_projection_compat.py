@@ -10,11 +10,13 @@ explicit ``id: 0`` exclusion.  Inclusion projections remain inclusion
 projections, while exclusion projections remain exclusion projections.
 """
 
+from bson import ObjectId
 from backend.tenant_runtime import TenantAwareCollection
 
 
 _original_find = TenantAwareCollection.find
 _original_find_one = TenantAwareCollection.find_one
+_original_update_one = TenantAwareCollection.update_one
 
 
 def _fix_user_projection(collection, args, kwargs):
@@ -56,5 +58,30 @@ async def _find_one(self, query=None, *args, **kwargs):
     return await _original_find_one(self, query, *args, **kwargs)
 
 
+async def _update_one(self, query, update, *args, **kwargs):
+    result = await _original_update_one(self, query, update, *args, **kwargs)
+    if (
+        result.matched_count > 0
+        or kwargs.get("upsert", False)
+        or self._name != "users"
+        or not isinstance(query, dict)
+        or set(query) != {"id"}
+    ):
+        return result
+
+    # Older commercial-admin records can expose Mongo's ObjectId as the
+    # browser-facing account id while lacking the newer application-level
+    # ``id`` field. Retry the same tenant-scoped update against _id only when
+    # the normal application-id update matched nothing.
+    raw_id = query.get("id")
+    fallback_id = raw_id
+    try:
+        fallback_id = ObjectId(str(raw_id))
+    except Exception:
+        pass
+    return await _original_update_one(self, {"_id": fallback_id}, update, *args, **kwargs)
+
+
 TenantAwareCollection.find = _find
 TenantAwareCollection.find_one = _find_one
+TenantAwareCollection.update_one = _update_one
