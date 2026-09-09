@@ -4,11 +4,16 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from types import FunctionType
 
-from backend.dependencies import db
+import backend.dependencies as dependencies
 
 logger = logging.getLogger("session_manager")
 
 SESSION_REPLACED_DETAIL = "SESSION_REPLACED"
+
+
+def _raw_db():
+    """Return the unwrapped database so session checks are never tenant-scoped."""
+    return dependencies.__dict__.get("_raw_db") or dependencies.db
 
 
 def _as_utc(value):
@@ -26,7 +31,7 @@ def _as_utc(value):
 async def _latest_session_for_user(user_id: str):
     """Find the newest SaaS session regardless of Mongo user_id type."""
     try:
-        sessions = await db.sessions.find({}).to_list(5000)
+        sessions = await _raw_db().sessions.find({}).to_list(5000)
     except Exception:
         return None
 
@@ -53,10 +58,12 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     if not user_id:
         return False
 
+    raw_db = _raw_db()
+
     # Commercial SaaS accounts use opaque session tokens stored in db.sessions.
     token_hash = hashlib.sha256(bearer_token.encode("utf-8")).hexdigest()
     try:
-        current_saas_session = await db.sessions.find_one({"token_hash": token_hash})
+        current_saas_session = await raw_db.sessions.find_one({"token_hash": token_hash})
     except Exception:
         current_saas_session = None
 
@@ -71,7 +78,6 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     # issuance time from exp and compare it with the newest tracked login.
     try:
         from jose import jwt
-        import backend.dependencies as dependencies
 
         payload = jwt.decode(
             bearer_token,
@@ -90,7 +96,7 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
         return False
 
     try:
-        active_sessions = await db.session_manager.find(
+        active_sessions = await raw_db.session_manager.find(
             {"user_id": user_id, "status": "active"}
         ).to_list(1000)
     except Exception:
@@ -114,7 +120,6 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
 
 
 async def _guarded_get_current_user(credentials):
-    import backend.dependencies as dependencies
     from fastapi import HTTPException
 
     original = dependencies.__dict__["_single_session_original_get_current_user"]
@@ -132,15 +137,16 @@ class SessionManager:
     @staticmethod
     async def create_user_session(user_id: str, client_ip: str, user_agent: str) -> str:
         """Create the user's one allowed legacy session and revoke older ones."""
+        raw_db = _raw_db()
         try:
-            previous_sessions = await db.session_manager.find(
+            previous_sessions = await raw_db.session_manager.find(
                 {"user_id": str(user_id), "status": "active"}
             ).to_list(1000)
             now = datetime.now(timezone.utc).isoformat()
             for previous in previous_sessions:
                 previous_token = previous.get("session_token")
                 if previous_token:
-                    await db.session_manager.update_one(
+                    await raw_db.session_manager.update_one(
                         {"session_token": previous_token},
                         {
                             "$set": {
@@ -162,9 +168,10 @@ class SessionManager:
             "user_agent": user_agent,
             "status": "active",
             "login_at": now,
+            "created_at": now,
             "last_activity_at": now,
         }
-        await db.session_manager.update_one(
+        await raw_db.session_manager.update_one(
             {"session_token": session_token},
             {"$set": session_doc},
             upsert=True,
@@ -174,7 +181,7 @@ class SessionManager:
     @staticmethod
     async def revoke_session(session_token: str) -> bool:
         now = datetime.now(timezone.utc).isoformat()
-        result = await db.session_manager.update_one(
+        result = await _raw_db().session_manager.update_one(
             {"session_token": session_token},
             {"$set": {"status": "revoked", "logout_at": now}},
         )
@@ -182,7 +189,7 @@ class SessionManager:
 
     @staticmethod
     async def is_session_active(session_token: str) -> bool:
-        sess = await db.session_manager.find_one({"session_token": session_token})
+        sess = await _raw_db().session_manager.find_one({"session_token": session_token})
         if not sess:
             return False
         return sess.get("status") == "active"
@@ -193,8 +200,6 @@ class SessionManager:
 # receive the single-session check without changing every router individually.
 def _install_global_single_session_guard():
     try:
-        import backend.dependencies as dependencies
-
         current = dependencies.get_current_user
         if getattr(current, "_single_session_guard_installed", False):
             return
