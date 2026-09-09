@@ -182,9 +182,11 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
     # not depend on a customer administrator existing.
     created_by_id = str(created_by or "").strip()
     if created_by_id:
-        internal_identity = await db.users.find_one({"id": created_by_id}, {"_id": 1})
+        from backend import dependencies as _dependencies
+        raw_db = getattr(_dependencies, "_raw_db", db)
+        internal_identity = await raw_db.users.find_one({"id": created_by_id}, {"_id": 1})
         if not internal_identity:
-            await db.users.insert_one({
+            await raw_db.users.insert_one({
                 "id": created_by_id,
                 "email": f"commercial-control+{created_by_id}@taskosphere.internal",
                 "full_name": "Taskosphere Commercial Control Plane",
