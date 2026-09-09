@@ -9,7 +9,7 @@ is licensed; it does not own the user accounts.
 """
 import uuid
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
