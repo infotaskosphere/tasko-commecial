@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from types import FunctionType
 
+from fastapi import HTTPException
+
 import backend.dependencies as dependencies
 
 logger = logging.getLogger("session_manager")
@@ -142,30 +144,40 @@ async def _guarded_get_current_user(request, credentials):
 
 class SessionManager:
     @staticmethod
-    async def create_user_session(user_id: str, client_ip: str, user_agent: str) -> str:
-        """Create the user's one allowed legacy session and revoke older ones."""
+    async def has_active_user_session(user_id: str) -> bool:
+        """Return True when this legacy account is already signed in elsewhere."""
         raw_db = _raw_db()
         try:
-            previous_sessions = await raw_db.session_manager.find(
+            session = await raw_db.session_manager.find_one(
                 {"user_id": str(user_id), "status": "active"}
-            ).to_list(1000)
-            now = datetime.now(timezone.utc).isoformat()
-            for previous in previous_sessions:
-                previous_token = previous.get("session_token")
-                if previous_token:
-                    await raw_db.session_manager.update_one(
-                        {"session_token": previous_token},
-                        {
-                            "$set": {
-                                "status": "revoked",
-                                "logout_at": now,
-                                "revoked_reason": "new_login",
-                            }
-                        },
-                    )
+            )
+            return session is not None
         except Exception:
-            logger.exception("Failed to revoke previous sessions for user %s", user_id)
+            logger.exception("Failed to inspect active session for user %s", user_id)
+            # Fail closed for the security boundary: if the current session
+            # state cannot be verified, do not allow another login to proceed.
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to verify your current login session. Please try again.",
+            )
 
+    @staticmethod
+    async def assert_single_device_login_allowed(user_id: str) -> None:
+        """Block a second login while an existing legacy session is active."""
+        if await SessionManager.has_active_user_session(user_id):
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "You are already logged in on another device. "
+                    "Please log out from that device and then log in again."
+                ),
+            )
+
+    @staticmethod
+    async def create_user_session(user_id: str, client_ip: str, user_agent: str) -> str:
+        """Create the user's single allowed legacy session without replacing an active one."""
+        raw_db = _raw_db()
+        await SessionManager.assert_single_device_login_allowed(user_id)
         now = datetime.now(timezone.utc).isoformat()
         session_token = f"sess_{uuid.uuid4().hex}"
         session_doc = {
