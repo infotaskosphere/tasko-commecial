@@ -1,9 +1,8 @@
 import hashlib
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from types import FunctionType
-from typing import Optional
 
 from backend.dependencies import db
 
@@ -24,24 +23,29 @@ def _as_utc(value):
     return None
 
 
-async def _latest_session_for_user(collection_name: str, user_id: str):
+async def _latest_session_for_user(user_id: str):
+    """Find the newest session regardless of whether Mongo stores user_id as str/ObjectId."""
     try:
-        sessions = await getattr(db, collection_name).find({"user_id": user_id}).to_list(1000)
+        sessions = await db.sessions.find({}).to_list(5000)
     except Exception:
         return None
-    if not sessions:
+
+    matching = [s for s in sessions if str(s.get("user_id")) == str(user_id)]
+    if not matching:
         return None
+
     return max(
-        sessions,
+        matching,
         key=lambda item: (
-            _as_utc(item.get("created_at") or item.get("login_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            _as_utc(item.get("created_at") or item.get("login_at"))
+            or datetime.min.replace(tzinfo=timezone.utc),
             str(item.get("_id") or item.get("session_token") or ""),
         ),
     )
 
 
 async def _session_was_replaced(user, bearer_token: str) -> bool:
-    """Return True when this credential belongs to an older device login."""
+    """Return True when these credentials belong to an older device login."""
     if not bearer_token or not user:
         return False
 
@@ -57,15 +61,14 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
         current_saas_session = None
 
     if current_saas_session:
-        latest = await _latest_session_for_user("sessions", user_id)
+        latest = await _latest_session_for_user(user_id)
         if not latest:
             return False
         return str(latest.get("_id")) != str(current_saas_session.get("_id"))
 
     # Legacy JWT accounts have a session record created at successful login.
-    # The JWT contains exp but historically did not contain iat. Since the
-    # expiry is always ACCESS_TOKEN_EXPIRE_MINUTES after issuance, issuance
-    # time can be reconstructed without changing existing JWT structure.
+    # Their historical JWT structure has no session id, so reconstruct the
+    # issuance time from exp and compare it with the newest tracked login.
     try:
         from jose import jwt
         import backend.dependencies as dependencies
@@ -94,8 +97,6 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
         return False
 
     if not active_sessions:
-        # Preserve compatibility with older accounts whose login was not
-        # session-tracked successfully.
         return False
 
     latest_login = max(
@@ -109,9 +110,7 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     if latest_login is None:
         return False
 
-    # A small tolerance prevents clock/serialization differences around the
-    # exact moment of login from invalidating the newly-issued device.
-    return latest_login > issued_at.replace(microsecond=0) + __import__("datetime").timedelta(seconds=10)
+    return latest_login > issued_at.replace(microsecond=0) + timedelta(seconds=10)
 
 
 async def _guarded_get_current_user(credentials):
@@ -143,7 +142,13 @@ class SessionManager:
                 if previous_token:
                     await db.session_manager.update_one(
                         {"session_token": previous_token},
-                        {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "new_login"}},
+                        {
+                            "$set": {
+                                "status": "revoked",
+                                "logout_at": now,
+                                "revoked_reason": "new_login",
+                            }
+                        },
                     )
         except Exception:
             logger.exception("Failed to revoke previous sessions for user %s", user_id)
@@ -183,10 +188,9 @@ class SessionManager:
         return sess.get("status") == "active"
 
 
-# All route modules import get_current_user from backend.dependencies. That
-# function object may already have been imported by several routers before this
-# module is loaded. Replace its code in-place so every existing reference gets
-# the same single-session guard without changing each router individually.
+# Route modules import get_current_user directly from backend.dependencies.
+# Mutate that existing function object so those already-imported references
+# receive the single-session check without changing every router individually.
 def _install_global_single_session_guard():
     try:
         import backend.dependencies as dependencies
@@ -202,9 +206,7 @@ def _install_global_single_session_guard():
             current.__defaults__,
             current.__closure__,
         )
-
         dependencies.__dict__["_single_session_original_get_current_user"] = original
-        dependencies.__dict__["_single_session_guard_installed"] = True
 
         guarded = _guarded_get_current_user
         current.__code__ = guarded.__code__
