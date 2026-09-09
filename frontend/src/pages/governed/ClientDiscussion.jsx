@@ -1,8 +1,7 @@
-// ClientDiscussion.jsx — thin wrapper around GovernedListPage. See
-// frontend/src/components/governance/GovernedListPage.jsx for the shared
-// implementation and backend/governed_modules.py for the matching API.
-import React from "react";
-import GovernedListPage from "@/components/governance/GovernedListPage";
+// ClientDiscussion.jsx — dedicated Client Proposals discussion workspace.
+import React from 'react';
+import { MessagesSquare } from 'lucide-react';
+import GovernedListPage from '@/components/governance/GovernedListPage';
 
 export default function ClientDiscussion() {
   return (
@@ -12,6 +11,9 @@ export default function ClientDiscussion() {
       apiPath="/client-discussion"
       module="proposals"
       pageFlag="can_view_client_discussion"
+      icon={MessagesSquare}
+      eyebrow="Client Proposals"
+      width="wide"
     />
   );
 }
