@@ -9,11 +9,12 @@ import CommercialCompanyDirectory from '@/components/CommercialCompanyDirectory'
 import { PageShell, PageBanner } from '@/components/ui/PageKit';
 import '../../master-data-commercial.css';
 
-const PLATFORM_OWNER_EMAIL = 'info.taskosphere@gmail.com';
-
 export default function MasterData() {
-  const { user } = useAuth();
-  const platformOwner = String(user?.email || '').trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
+  // Read the shared flag from AuthContext rather than re-deriving it locally —
+  // this file previously kept its own copy of PLATFORM_OWNER_EMAIL, which is
+  // exactly the kind of duplication that let the sidebar shortcut and this
+  // page's own owner check drift out of sync with each other.
+  const { isPlatformOwner: platformOwner } = useAuth();
 
   return (
     <PageShell className="master-data-page-shell">
