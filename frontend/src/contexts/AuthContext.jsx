@@ -23,25 +23,20 @@ export const AuthProvider = ({ children }) => {
   const LAST_ACTIVE_KEY = 'taskosphere_last_active';
 
   const forceLogoutForReplacement = useCallback(() => {
+    if (window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__) return;
+    window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = true;
     clearStorage();
     resetAgentAuth();
     window.__STOP_ACTIVITY__ = true;
     setUser(null);
-    try { window.alert("You have been logged out because someone else logged in to your account."); } catch {}
+    try { window.alert("You were logged out because this account was signed in on another device or browser. Only one active login is allowed."); } catch {}
     if (window.location.pathname !== "/login") window.location.replace("/login");
   }, []);
 
   useEffect(() => {
-    const interceptorId = api.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error?.response?.status === 401 && error?.response?.data?.detail === "SESSION_REPLACED") {
-          forceLogoutForReplacement();
-        }
-        return Promise.reject(error);
-      }
-    );
-    return () => api.interceptors.response.eject(interceptorId);
+    const handleSessionReplacement = () => forceLogoutForReplacement();
+    window.addEventListener("taskosphere:session-replaced", handleSessionReplacement);
+    return () => window.removeEventListener("taskosphere:session-replaced", handleSessionReplacement);
   }, [forceLogoutForReplacement]);
 
   // Poll the authoritative session on a short interval. This is important for
@@ -57,12 +52,9 @@ export const AuthProvider = ({ children }) => {
         await api.get("/auth/me", { _silent: true, _skipReadyGate: true });
       } catch (error) {
         if (cancelled) return;
-        if (error?.response?.status === 401 && error?.response?.data?.detail === "SESSION_REPLACED") {
-          forceLogoutForReplacement();
-        }
       }
     };
-    const interval = setInterval(checkCurrentSession, 15000);
+    const interval = setInterval(checkCurrentSession, 5000);
     const handleVisibility = () => { if (document.visibilityState === "visible") checkCurrentSession(); };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => { cancelled = true; clearInterval(interval); document.removeEventListener("visibilitychange", handleVisibility); };
@@ -92,13 +84,13 @@ export const AuthProvider = ({ children }) => {
       const isReload = navType === 'reload'; const tabClosedAt = localStorage.getItem('taskosphere_tab_closed');
       if (tabClosedAt && localStorage.getItem('token')) { localStorage.removeItem('taskosphere_tab_closed'); if (!isKeepSignedIn() && !isReload) { clearStorage(); setLoading(false); return; } }
       try { api.defaults.headers.common["Authorization"] = `Bearer ${token}`; const meRes = await api.get("/auth/me"); const freshUser = normalizeTenantContext(meRes.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(freshUser)); setUser(freshUser); autoAuthenticateAgent(token, freshUser.id).catch(() => {}); }
-      catch (error) { if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser))); else if (error.response && [401, 403].includes(error.response.status)) { if (error.response.status === 401 && error.response.data?.detail === "SESSION_REPLACED") forceLogoutForReplacement(); else { clearStorage(); setUser(null); } } else console.error("Session restore error:", error); }
+      catch (error) { if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser))); else if (error.response && [401, 403].includes(error.response.status)) { clearStorage(); setUser(null); } else console.error("Session restore error:", error); }
       finally { setLoading(false); }
     };
     restoreSession();
   }, [forceLogoutForReplacement]);
 
-  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
+  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
   const logout = async () => { const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token"); window.__STOP_ACTIVITY__ = true; resetAgentAuth(); clearStorage(); setUser(null); try { if (sessionToken) await api.post("/auth/logout", { session_token: sessionToken }, { _silent: true, _skipReadyGate: true }); } catch (error) { console.warn("Session revoke on logout failed (non-fatal).", error); } };
   const refreshUser = useCallback(async () => { try { const response = await api.get("/auth/me"); const updatedUser = normalizeTenantContext(response.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(updatedUser)); setUser(updatedUser); } catch (error) { console.error("Failed to refresh user:", error); } }, []);
   const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id;
