@@ -35,10 +35,13 @@ function verifyPassword(password, record) {
 
 function publicUser(user, company, subscription) {
   return {
-    id: String(user._id),
+    id: String(user.id || user._id),
     email: user.email,
     full_name: user.full_name,
     role: user.role,
+    phone: user.phone || null,
+    birthday: user.birthday || null,
+    profile_picture: user.profile_picture || null,
     permissions: user.permissions || {},
     company_id: String(user.company_id),
     company: company ? { id: String(company._id), name: company.name, slug: company.slug, status: company.status } : null,
@@ -91,6 +94,9 @@ async function ensureBootstrap() {
     // changing SAAS_BOOTSTRAP_ADMIN_PASSWORD can recover the initial admin
     // without requiring a manual MongoDB password-hash edit.
     if (existing) {
+      if (!existing.id) {
+        await users.updateOne({ _id: existing._id }, { $set: { id: String(existing._id) } });
+      }
       if (existing.role !== "admin" && existing.bootstrap_managed !== true) return;
 
       const passwordRecord = makePasswordRecord(BOOTSTRAP_PASSWORD);
