@@ -15,16 +15,12 @@ _ORIGINAL = tenant_runtime._scope_company_registry_query
 
 def _scope_company_registry_query(query):
     scoped = _ORIGINAL(query)
-    if tenant_runtime.in_platform_owner_context() and isinstance(scoped, dict):
-        # Preserve an explicit caller filter while always excluding the hidden
-        # company created as part of commercial license generation.
-        existing = scoped.get("source")
-        if existing is None:
-            scoped["source"] = {"$ne": "commercial-license"}
-        elif isinstance(existing, str) and existing == "commercial-license":
-            # A platform-owner operational Company Master request should never
-            # be able to opt back into the hidden license-created records.
-            scoped["source"] = {"$ne": "commercial-license"}
+    if isinstance(scoped, dict):
+        # Platform Owner Company Master is for operational companies (to create tasks,
+        # add employees, issue invoices). Companies generated for commercial customer
+        # licenses must never appear in Company Master.
+        scoped["source"] = {"$nin": ["commercial-license", "commercial", "license"]}
+        scoped["commercial_customer_id"] = {"$in": [None, ""]}
     return scoped
 
 
