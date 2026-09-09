@@ -7,29 +7,170 @@ legacy license has only ``modules``, every page in those modules remains
 licensed.
 """
 
+import calendar
 import copy
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
+from passlib.context import CryptContext
 
 from backend.dependencies import create_access_token, db, get_current_user, require_admin
 from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
 from backend.licensing_api import create_license_record, _expiry_reason, _find_license, _now, _public_license
-from backend.commercial_onboarding import (
-    MODULE_CATALOG,
-    MODULE_FLAG_BY_ID,
-    MODULE_IDS,
-    _add_months,
-    _customer_public,
-    _ensure_company_master,
-    _ensure_module_catalog,
-    _find_customer_for_license,
-    _norm,
-    _active_company_license,
-    pwd_context,
-)
+
+# ---------------------------------------------------------------------------
+# Core primitives.
+#
+# This module is the base that backend.commercial_onboarding_extensions and
+# every backend.commercial_*_compat module import from. Keep it import-safe
+# (never import back from those modules here) — everything they need to
+# build on top of the commercial-onboarding flow is defined below.
+# ---------------------------------------------------------------------------
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+MODULE_IDS: List[str] = list(MODULE_HIERARCHY.keys())
+MODULE_FLAG_BY_ID: Dict[str, str] = {
+    module_id: module_def["flag"] for module_id, module_def in MODULE_HIERARCHY.items()
+}
+MODULE_CATALOG: List[Dict[str, Any]] = [
+    {
+        "id": module_id,
+        "label": module_def.get("label", module_id),
+        "description": module_def.get("description", ""),
+        "monthly_price": 0.0,
+        "feature_prices": {},
+        "active": True,
+    }
+    for module_id, module_def in MODULE_HIERARCHY.items()
+]
+
+
+def _norm(value: Optional[str]) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _add_months(value: datetime, months: int) -> datetime:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def _customer_public(customer: Dict[str, Any]) -> Dict[str, Any]:
+    result = dict(customer or {})
+    result.pop("_id", None)
+    return result
+
+
+async def _ensure_module_catalog() -> List[Dict[str, Any]]:
+    for item in MODULE_CATALOG:
+        await db.commercial_license_module_catalog.update_one(
+            {"id": item["id"]},
+            {"$setOnInsert": dict(item)},
+            upsert=True,
+        )
+    stored = await db.commercial_license_module_catalog.find({}, {"_id": 0}).to_list(200)
+    by_id = {item["id"]: item for item in stored}
+    ordered = []
+    for item in MODULE_CATALOG:
+        record = by_id.get(item["id"], item)
+        ordered.append({**item, **record})
+    return ordered
+
+
+async def _find_customer_for_license(license_key: Optional[str], company_name: Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    key = str(license_key or "").strip().upper()
+    if not key:
+        raise HTTPException(status_code=400, detail="License number is required.")
+    license_doc = await _find_license(key)
+    if not license_doc:
+        raise HTTPException(status_code=404, detail="License not found. Check the license number and try again.")
+    reason = _expiry_reason(license_doc)
+    if reason:
+        raise HTTPException(status_code=403, detail=reason)
+    customer = await db.commercial_license_customers.find_one({"id": license_doc.get("customer_id")}, {"_id": 0})
+    if not customer:
+        raise HTTPException(status_code=404, detail="The customer linked to this license was not found.")
+    name = str(company_name or "").strip()
+    if name and _norm(name) != _norm(customer.get("company_name")):
+        raise HTTPException(status_code=403, detail="Company name does not match the licensed customer.")
+    return customer, license_doc
+
+
+async def _find_active_license_for_company_name(company_name: Optional[str]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    name = str(company_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Company name is required.")
+    normalized = _norm(name)
+    candidates = await db.commercial_license_customers.find({}, {"_id": 0}).to_list(5000)
+    customer = next((item for item in candidates if _norm(item.get("company_name")) == normalized), None)
+    if not customer:
+        raise HTTPException(status_code=404, detail="No licensed customer matches that company name.")
+    docs = await db.commercial_licenses.find({"customer_id": customer.get("id")}, {"_id": 0}).sort("issued_at", -1).to_list(20)
+    license_doc = next((doc for doc in docs if not _expiry_reason(doc)), None)
+    if not license_doc:
+        raise HTTPException(status_code=403, detail="The commercial license for this company is inactive or expired.")
+    return customer, license_doc
+
+
+async def _ensure_company_master(customer: Dict[str, Any], license_doc: Dict[str, Any]) -> Dict[str, Any]:
+    customer_id = str(customer.get("id") or "")
+    existing = await db.companies.find_one({"commercial_customer_id": customer_id, "source": "commercial-license"}, {"_id": 0})
+    if existing:
+        return existing
+    now = _now().isoformat()
+    company_doc = {
+        "id": customer_id,
+        "name": customer.get("company_name"),
+        "gstin": customer.get("gstin"),
+        "address": customer.get("address") or customer.get("gst_address"),
+        "state": customer.get("state"),
+        "pincode": customer.get("pincode"),
+        "email": customer.get("email"),
+        "phone": customer.get("phone"),
+        "commercial_customer_id": customer_id,
+        "licensed_modules": list(license_doc.get("modules") or []),
+        "selected_features": license_doc.get("selected_features") or {},
+        "license_id": license_doc.get("id"),
+        "license_key": license_doc.get("license_key"),
+        "source": "commercial-license",
+        "created_at": now,
+    }
+    await db.companies.update_one({"id": customer_id}, {"$set": company_doc}, upsert=True)
+    return company_doc
+
+
+async def _active_company_license(current_user: User) -> Dict[str, Any]:
+    company_id = str(getattr(current_user, "company_id", "") or "")
+    if not company_id:
+        raise HTTPException(status_code=403, detail="Your account is not linked to a licensed company.")
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    customer_id = str((company or {}).get("commercial_customer_id") or company_id)
+    docs = await db.commercial_licenses.find({"customer_id": customer_id}, {"_id": 0}).sort("issued_at", -1).to_list(20)
+    license_doc = next((doc for doc in docs if not _expiry_reason(doc)), None)
+    if not license_doc:
+        raise HTTPException(status_code=403, detail="The commercial license for your company is inactive or expired.")
+    return license_doc
+
+
+def _apply_license_entitlements(role: str, modules: List[str]) -> Dict[str, Any]:
+    """Legacy, module-only entitlement application: a legacy license with only
+    ``modules`` (no per-page ``selected_features``) grants every page inside
+    each licensed module."""
+    permissions = copy.deepcopy(DEFAULT_ROLE_PERMISSIONS.get(role, DEFAULT_ROLE_PERMISSIONS["staff"]))
+    selected = set(modules or [])
+    for module_id, module_flag in MODULE_FLAG_BY_ID.items():
+        allowed = module_id in selected
+        permissions[module_flag] = allowed
+        module_def = MODULE_HIERARCHY.get(module_id, {})
+        for page in module_def.get("pages", []):
+            permissions[page["flag"]] = bool(allowed and permissions.get(page["flag"], False))
+    return permissions
+
 
 router = APIRouter(prefix="/commercial-onboarding", tags=["commercial-onboarding"])
 
@@ -336,6 +477,11 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     license_doc["invoice_company_id"] = invoice_company_id
 
     return {"license": {**license_doc, "customer": _customer_public(customer), "invoice": invoice}, "customer": _customer_public(customer), "company": company, "invoice": invoice}
+
+
+# backend.commercial_license_creation_compat lazily imports this exact name
+# to call through to the canonical generator after its one-customer guard.
+generate_license = generate_custom_license
 
 
 @router.post("/lookup")
