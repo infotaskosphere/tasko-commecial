@@ -222,8 +222,13 @@ async def get_current_user(credentials=Depends(security)):
         payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
         if user_id is None:raise unauthorized
     except JWTError:raise unauthorized
-    d=await db.users.find_one({"id":user_id})
+    user_query = {"id": user_id}
+    if ObjectId.is_valid(user_id):
+        user_query = {"$or": [{"id": user_id}, {"_id": ObjectId(user_id)}]}
+    d=await db.users.find_one(user_query)
     if d is None:raise HTTPException(status_code=401,detail="User not found")
+    if "id" not in d or not d.get("id"):
+        d["id"] = str(d.get("_id") or user_id)
     d.pop("_id",None)
     for key,value in list(d.items()):
         if value=="":d[key]=None
