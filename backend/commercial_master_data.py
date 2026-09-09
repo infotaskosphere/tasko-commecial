@@ -4,8 +4,8 @@ User administration is intentionally kept outside People Matrix licensing. A
 commercial customer may buy Taskosphere, Finix, Compliance, Records or any
 other module individually, but the licensed company's administrator must
 always be able to maintain the company's user directory from Admin → Master
-Data. People Matrix consumes the same users collection and HR fields when
-it is licensed; it does not own the user accounts.
+Data. People Matrix consumes the same users collection and HR fields when it
+is licensed; it does not own the user accounts.
 """
 import uuid
 from datetime import datetime
@@ -99,6 +99,45 @@ def _license_permissions(role: str, license_doc: Dict[str, Any]) -> Dict[str, An
     )
 
 
+async def _license_user_query(license_doc: Dict[str, Any], company: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the shared user-seat scope for one commercial license.
+
+    User seats belong to the commercial license/customer, not to one legal
+    company. New users carry ``commercial_customer_id`` directly. Older
+    commercial users may not have that field, so their company is included as
+    a compatibility fallback after resolving every company belonging to the
+    same customer. This keeps legacy users counted without allowing users from
+    another license to consume seats.
+    """
+    customer_id = str(
+        license_doc.get("customer_id")
+        or company.get("commercial_customer_id")
+        or ""
+    ).strip()
+    if not customer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="The commercial license is not linked to a customer.",
+        )
+
+    company_ids = await db.companies.distinct(
+        "id",
+        {"commercial_customer_id": customer_id},
+    )
+    current_company_id = str(company.get("id") or "").strip()
+    if current_company_id and current_company_id not in company_ids:
+        company_ids.append(current_company_id)
+
+    # Prefer the explicit customer field. The company-id branch exists only
+    # for legacy users created before commercial_customer_id was persisted.
+    query: Dict[str, Any] = {
+        "$or": [{"commercial_customer_id": customer_id}],
+    }
+    if company_ids:
+        query["$or"].append({"company_id": {"$in": company_ids}})
+    return query
+
+
 @router.get("/users")
 async def list_company_users(current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
@@ -165,7 +204,9 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
 
     max_users = max(1, int(license_doc.get("max_users", 1)))
-    user_count = await db.users.count_documents({"company_id": company_id, "status": {"$ne": "deleted"}})
+    user_count_query = await _license_user_query(license_doc, company)
+    user_count_query["status"] = {"$ne": "deleted"}
+    user_count = await db.users.count_documents(user_count_query)
     if user_count >= max_users:
         raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
 
@@ -190,7 +231,7 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         "created_at": now,
         "company_id": company_id,
         "company_name": company.get("name") or company.get("company_name"),
-        "commercial_customer_id": company.get("commercial_customer_id"),
+        "commercial_customer_id": company.get("commercial_customer_id") or license_doc.get("customer_id"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
@@ -276,7 +317,9 @@ async def _platform_change_user_status(user_id: str, company_id: str, status: st
         raise HTTPException(status_code=404, detail="Company user not found.")
     if status == "active":
         max_users = max(1, int(license_doc.get("max_users", 1)))
-        active_count = await db.users.count_documents({"company_id": str(company["id"]), "status": "active"})
+        active_count_query = await _license_user_query(license_doc, company)
+        active_count_query["status"] = "active"
+        active_count = await db.users.count_documents(active_count_query)
         if active_count >= max_users and existing.get("status") != "active":
             raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
         update = {"status": "active", "is_active": True, "approved_by": current_user.id, "approved_at": _now()}
@@ -316,7 +359,9 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
 
     company_id = str(company["id"])
     max_users = max(1, int(license_doc.get("max_users", 1)))
-    user_count = await db.users.count_documents({"company_id": company_id, "status": {"$ne": "deleted"}})
+    user_count_query = await _license_user_query(license_doc, company)
+    user_count_query["status"] = "active"
+    user_count = await db.users.count_documents(user_count_query)
     if user_count >= max_users:
         raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
 
@@ -346,7 +391,7 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
         "created_at": now,
         "company_id": company_id,
         "company_name": company.get("name") or current_user.company_name,
-        "commercial_customer_id": company.get("commercial_customer_id"),
+        "commercial_customer_id": company.get("commercial_customer_id") or license_doc.get("customer_id"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
@@ -434,7 +479,9 @@ async def _change_user_status(user_id: str, status: str, current_user: User):
         raise HTTPException(status_code=400, detail="The company administrator cannot change their own status here.")
     if status == "active":
         max_users = max(1, int(license_doc.get("max_users", 1)))
-        active_count = await db.users.count_documents({"company_id": company_id, "status": "active"})
+        active_count_query = await _license_user_query(license_doc, company)
+        active_count_query["status"] = "active"
+        active_count = await db.users.count_documents(active_count_query)
         if active_count >= max_users:
             raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
         update = {"status": "active", "is_active": True, "approved_by": current_user.id, "approved_at": _now()}
