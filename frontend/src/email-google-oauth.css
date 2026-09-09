@@ -1,0 +1,48 @@
+/* Gmail Google OAuth-only connection presentation.
+ *
+ * The existing EmailSettings component still contains the legacy IMAP/App
+ * Password controls for Gmail. These styles isolate that legacy UI only for
+ * the Gmail connection card, leaving Outlook/Yahoo/iCloud/Other unchanged.
+ * The existing "Connect with Google" handler remains the source of truth.
+ */
+
+/* Identify only the Gmail connection card by its Google App Password link. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-xl.overflow-hidden.border,
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .space-y-3,
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .flex.gap-3,
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > div:last-child {
+  display: none !important;
+}
+
+/* Make the Google OAuth panel the primary connection surface. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden {
+  border-radius: 16px !important;
+  border-width: 2px !important;
+  box-shadow: 0 10px 30px rgba(13, 59, 102, 0.08);
+}
+
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden > .p-4.flex {
+  padding: 24px !important;
+}
+
+/* Remove the legacy fallback wording from the OAuth card. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden > .px-4.pb-3 {
+  display: none !important;
+}
+
+/* Give the Google button a clear primary-action treatment. */
+[class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden button {
+  min-width: 190px;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden > .p-4.flex {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  [class*="bg-white"]:has(a[href="https://myaccount.google.com/apppasswords"]) > .p-5.space-y-4 > .rounded-2xl.border.overflow-hidden button {
+    width: 100%;
+  }
+}
