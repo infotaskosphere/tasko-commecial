@@ -1,0 +1,91 @@
+name: Fix Master Data ObjectId serialization
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'fix: sanitize Master Data ObjectId responses'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/master-console
+          fetch-depth: 0
+
+      - name: Patch Master Data response serialization
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('backend/commercial_master_data.py')
+          text = path.read_text(encoding='utf-8')
+
+          old = '''def _clean_user(doc: Dict[str, Any]) -> Dict[str, Any]:
+              out = dict(doc or {})
+              out.pop("_id", None)
+              for key in ("password", "password_hash", "password_salt"):
+                  out.pop(key, None)
+              return out
+          '''
+
+          new = '''def _json_safe(value):
+              """Recursively convert Mongo ObjectId values before FastAPI serializes them."""
+              if type(value).__name__ == "ObjectId":
+                  return str(value)
+              if isinstance(value, dict):
+                  return {key: _json_safe(item) for key, item in value.items() if key != "_id"}
+              if isinstance(value, (list, tuple)):
+                  return [_json_safe(item) for item in value]
+              return value
+
+
+          def _clean_user(doc: Dict[str, Any]) -> Dict[str, Any]:
+              out = dict(doc or {})
+              out.pop("_id", None)
+              for key in ("password", "password_hash", "password_salt"):
+                  out.pop(key, None)
+              return _json_safe(out)
+          '''
+
+          if old not in text:
+              raise SystemExit('Expected _clean_user block was not found; aborting without changes.')
+          text = text.replace(old, new, 1)
+
+          old_return = '''        return {
+              "company": company,
+              "license": license_doc,
+              "users": [_clean_user(u) for u in users],
+              "platform_owner": True,
+          }
+          '''
+          new_return = '''        return _json_safe({
+              "company": company,
+              "license": license_doc,
+              "users": [_clean_user(u) for u in users],
+              "platform_owner": True,
+          })
+          '''
+          if old_return not in text:
+              raise SystemExit('Expected platform-owner response block was not found; aborting without changes.')
+          text = text.replace(old_return, new_return, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('Patched ObjectId serialization in commercial_master_data.py')
+          PY
+
+      - name: Commit fix and remove temporary workflow
+        run: |
+          rm -f .github/workflows/fix-master-data-objectid.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/commercial_master_data.py .github/workflows/fix-master-data-objectid.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: sanitize Master Data ObjectId responses"
+          git push origin HEAD:feature/master-console
