@@ -465,27 +465,48 @@ export function CompanyProfilesList({ onRefresh, dense = false, onFormOpenChange
 
   return (
     <div className={dense ? '' : 'space-y-3'}>
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: COMPANY_COLORS.deepBlue }}>
-            <Building2 className="h-4 w-4" />Company Profiles
-            <Badge className="bg-blue-100 text-blue-700">{companies.length}</Badge>
-          </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Name, address, GSTIN/PAN, bank details, logos &amp; SMTP — used across Quotations, Invoicing,
-            Trademark Sphere, WhatsApp/Email settings and GST Portal Sync.
-          </p>
+      {dense ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold flex items-center gap-2" style={{ color: COMPANY_COLORS.deepBlue }}>
+              <Building2 className="h-4 w-4" />Company Profiles
+              <Badge className="bg-blue-100 text-blue-700">{companies.length}</Badge>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Name, address, GSTIN/PAN, bank details, logos &amp; SMTP — used across Quotations, Invoicing,
+              Trademark Sphere, WhatsApp/Email settings and GST Portal Sync.
+            </p>
+          </div>
+          <Button onClick={() => { setEditingCompany(null); setShowForm(true); }} className="rounded-xl gap-2 flex-shrink-0" style={{ background: COMPANY_COLORS.emeraldGreen }}>
+            <Plus className="h-4 w-4" />Add Company
+          </Button>
         </div>
-        <Button onClick={() => { setEditingCompany(null); setShowForm(true); }} className="rounded-xl gap-2 flex-shrink-0" style={{ background: COMPANY_COLORS.emeraldGreen }}>
-          <Plus className="h-4 w-4" />Add Company
-        </Button>
-      </div>
+      ) : (
+        <div className="master-data-blue-header">
+          <div className="flex items-center gap-3">
+            <div className="master-data-blue-header-icon"><Building2 /></div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold">Company Profiles</h3>
+                <Badge className="master-data-blue-header-badge">{companies.length}</Badge>
+              </div>
+              <p className="text-xs mt-1">
+                Name, address, GSTIN/PAN, bank details, logos &amp; SMTP — used across Quotations, Invoicing,
+                Trademark Sphere, WhatsApp/Email settings and GST Portal Sync.
+              </p>
+            </div>
+          </div>
+          <Button onClick={() => { setEditingCompany(null); setShowForm(true); }} className="h-9 rounded-none master-data-blue-header-btn-solid flex-shrink-0">
+            <Plus className="h-4 w-4 mr-1.5" />Add Company
+          </Button>
+        </div>
+      )}
 
       {loading
         ? <MiniLoader height={120} />
         : companies.length === 0
           ? (
-            <div className="text-center py-10 text-slate-400 rounded-xl border border-dashed border-slate-200">
+            <div className={`text-center py-10 text-slate-400 border border-dashed border-slate-200 ${dense ? 'rounded-xl' : 'rounded-none'}`}>
               <Building2 className="h-12 w-12 mx-auto mb-3 opacity-30" />
               <p>No companies added yet.</p>
             </div>
@@ -493,8 +514,8 @@ export function CompanyProfilesList({ onRefresh, dense = false, onFormOpenChange
           : (
             <div className="space-y-3">
               {companies.map(company => (
-                <div key={company.id} className="flex items-start gap-4 p-4 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/30 transition-colors">
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 flex items-center justify-center overflow-hidden">
+                <div key={company.id} className={`flex items-start gap-4 p-4 border border-slate-200 hover:border-blue-200 hover:bg-blue-50/30 transition-colors ${dense ? 'rounded-xl' : 'rounded-none'}`}>
+                  <div className={`w-12 h-12 bg-slate-100 flex-shrink-0 flex items-center justify-center overflow-hidden ${dense ? 'rounded-xl' : 'rounded-none'}`}>
                     {company.logo_base64 ? <img src={company.logo_base64} alt="logo" className="w-full h-full object-contain" /> : <Building2 className="h-5 w-5 text-slate-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -525,8 +546,8 @@ export function CompanyProfilesList({ onRefresh, dense = false, onFormOpenChange
                     </div>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
-                    <Button variant="outline" size="sm" onClick={() => { setEditingCompany(company); setShowForm(true); }} className="rounded-lg gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"><Edit className="h-3.5 w-3.5" />Edit</Button>
-                    <Button variant="outline" size="sm" onClick={() => handleDelete(company.id, company.name)} disabled={deletingId === company.id} className="rounded-lg gap-1 text-red-600 border-red-200 hover:bg-red-50">
+                    <Button variant="outline" size="sm" onClick={() => { setEditingCompany(company); setShowForm(true); }} className={`gap-1 text-blue-600 border-blue-200 hover:bg-blue-50 ${dense ? 'rounded-lg' : 'rounded-none'}`}><Edit className="h-3.5 w-3.5" />Edit</Button>
+                    <Button variant="outline" size="sm" onClick={() => handleDelete(company.id, company.name)} disabled={deletingId === company.id} className={`gap-1 text-red-600 border-red-200 hover:bg-red-50 ${dense ? 'rounded-lg' : 'rounded-none'}`}>
                       {deletingId === company.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}Delete
                     </Button>
                   </div>
