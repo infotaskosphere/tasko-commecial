@@ -1,61 +1,146 @@
-/* Commercial General Settings: compact, slim tabs with reduced height. */
-body:not(.website-surface) #root main .general-settings-banner {
+/*
+ * General Settings — commercial UI refinement
+ *
+ * Scope is intentionally limited to the General Settings screen.
+ * The previous rules targeted .general-settings-tab-bar, but the page uses
+ * the shared Radix TabsList primitive without that class. That left the
+ * actual tab list constrained by the primitive's inline-flex sizing, which
+ * caused the Integrations tab to be clipped on narrower desktop widths.
+ *
+ * Design direction: square/enterprise UI, no pill/curvy treatment.
+ */
+
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) {
+  --gs-blue: #0D3B66;
+  --gs-blue-mid: #1F6FB2;
+  --gs-border: #d7e0ea;
+  --gs-panel: #ffffff;
+}
+
+/* Header: compact, rectangular, stable height. */
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .general-settings-banner {
   padding-top: 14px !important;
   padding-bottom: 14px !important;
+  border-radius: 2px !important;
+  box-shadow: 0 2px 8px rgba(13, 59, 102, 0.14) !important;
 }
 
-body:not(.website-surface) #root main .general-settings-tab-bar {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  width: fit-content !important;
-  max-width: 100% !important;
-  height: 30px !important;
-  min-height: 30px !important;
-  gap: 3px !important;
-  padding: 2px !important;
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .general-settings-banner * {
+  border-radius: 2px !important;
+}
+
+/*
+ * Main tabs: full available width, three equal columns.
+ * This is the key fix for the Integrations tab being cut off.
+ */
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  height: 42px !important;
+  min-height: 42px !important;
+  padding: 0 !important;
   margin-top: 10px !important;
-  background: rgba(0, 0, 0, 0.2) !important;
-  border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  border-radius: 8px !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--gs-border) !important;
+  border-radius: 2px !important;
+  background: #eef3f8 !important;
 }
 
-body:not(.website-surface) #root main .general-settings-tab-bar button {
-  height: 24px !important;
-  min-height: 24px !important;
-  padding: 0 10px !important;
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"] {
+  min-width: 0 !important;
+  width: 100% !important;
+  height: 40px !important;
+  min-height: 40px !important;
   margin: 0 !important;
-  border-radius: 6px !important;
+  padding: 0 10px !important;
+  border: 0 !important;
+  border-right: 1px solid var(--gs-border) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  gap: 7px !important;
+  overflow: hidden !important;
   white-space: nowrap !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
+  text-overflow: ellipsis !important;
+  font-size: 12px !important;
   line-height: 1 !important;
-  letter-spacing: 0.01em !important;
-  gap: 5px !important;
+  font-weight: 700 !important;
+  color: #49627b !important;
+  background: transparent !important;
 }
 
-body:not(.website-surface) #root main .general-settings-tab-bar button[class*="bg-white"] {
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"]:last-child {
+  border-right: 0 !important;
+}
+
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"][data-state="active"] {
+  color: var(--gs-blue) !important;
   background: #ffffff !important;
-  color: #0D3B66 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+  box-shadow: inset 0 -3px 0 #1f6fb2 !important;
 }
 
-body:not(.website-surface) #root main .general-settings-tab-bar button:not([class*="bg-white"]) {
-  color: rgba(255, 255, 255, 0.85) !important;
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"]:hover:not([data-state="active"]) {
+  color: var(--gs-blue) !important;
+  background: #e5edf5 !important;
 }
 
-body:not(.website-surface) #root main .general-settings-tab-bar button:not([class*="bg-white"]):hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-  color: #ffffff !important;
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] svg {
+  flex: 0 0 auto !important;
 }
 
-@media (max-width: 640px) {
-  body:not(.website-surface) #root main .general-settings-tab-bar {
-    width: 100% !important;
-    overflow-x: auto !important;
-    scrollbar-width: none !important;
+/* Remove pill/curved treatment from the General Settings content only. */
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-3xl,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-2xl,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-xl,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-lg,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-md,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) .rounded-full {
+  border-radius: 2px !important;
+}
+
+/* Keep the actual profile image square rather than circular/pill-shaped. */
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) img {
+  border-radius: 2px !important;
+}
+
+/* Rectangular controls and panels give the screen a cleaner enterprise look. */
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) input,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) button,
+body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="button"] {
+  border-radius: 2px !important;
+}
+
+/* Prevent long tab labels from ever forcing horizontal overflow. */
+@media (max-width: 760px) {
+  body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] {
+    height: 40px !important;
+    min-height: 40px !important;
+  }
+
+  body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"] {
+    height: 38px !important;
+    min-height: 38px !important;
+    padding: 0 6px !important;
+    gap: 5px !important;
+    font-size: 11px !important;
+  }
+}
+
+@media (max-width: 520px) {
+  body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"] {
+    padding: 0 4px !important;
+    font-size: 10px !important;
+  }
+
+  body:not(.website-surface) #root main:has(#general-settings-tab-profile) [role="tablist"] > [role="tab"] svg {
+    width: 13px !important;
+    height: 13px !important;
   }
 }
