@@ -4,6 +4,7 @@ import "./index.css";
 import "./App.css";
 import "./enterprise-design.css";
 import "./general-settings-commercial.css";
+import "./message-automation-commercial.css";
 import "./master-data-ui.css";
 import "./commercial-final-overrides.css";
 // Explicit extensions for Vite
