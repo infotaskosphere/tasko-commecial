@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DriveIntegrations from "@/components/DriveIntegrations";
 import AssignedClientsPanel from "@/components/AssignedClientsPanel";
 
@@ -209,36 +210,26 @@ export default function GeneralSettings() {
               </p>
             </div>
           </div>
-
-          {/* Tab bar - compact, slim height */}
-          <div className="general-settings-tab-bar relative mt-2.5 flex items-center gap-1 bg-black/20 p-1 rounded-lg border border-white/10 w-fit">
-            {[
-              { id: "profile",      label: "Profile",              icon: User      },
-              { id: "clients",      label: "All Assigned Clients", icon: UsersIcon },
-              { id: "integrations", label: "Integrations",         icon: Link2     },
-            ].map(t => {
-              const I = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  id={`general-settings-tab-${t.id}`}
-                  type="button"
-                  onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition-all whitespace-nowrap ${
-                    active
-                      ? "bg-white text-slate-800 shadow-sm font-bold"
-                      : "text-white/80 hover:text-white hover:bg-white/10"
-                  }`}
-                >
-                  <I className="h-3.5 w-3.5 shrink-0" />
-                  <span>{t.label}</span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       </motion.div>
+
+      {/* ── TAB BAR ─────────────────────────────────────────────────────────
+          Uses the same Tabs/TabsList/TabsTrigger primitives as the rest of
+          the app (e.g. Employee Master, Leave, Payroll) instead of a
+          one-off custom pill bar, so this page's tabs look consistent. */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="profile" id="general-settings-tab-profile" className="gap-1.5">
+            <User className="h-3.5 w-3.5 shrink-0" />Profile
+          </TabsTrigger>
+          <TabsTrigger value="clients" id="general-settings-tab-clients" className="gap-1.5">
+            <UsersIcon className="h-3.5 w-3.5 shrink-0" />All Assigned Clients
+          </TabsTrigger>
+          <TabsTrigger value="integrations" id="general-settings-tab-integrations" className="gap-1.5">
+            <Link2 className="h-3.5 w-3.5 shrink-0" />Integrations
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       {/* ── PROFILE TAB ──────────────────────────────────────────────────── */}
       {activeTab === "profile" && (
@@ -526,4 +517,3 @@ export default function GeneralSettings() {
     </div>
   );
 }
-
