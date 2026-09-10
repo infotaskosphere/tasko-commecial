@@ -13,7 +13,7 @@ main .space-y-4.w-full.min-w-0.overflow-x-hidden > div:first-child > div.relativ
   box-shadow: 0 2px 8px rgba(18, 140, 126, 0.16) !important;
 }
 
-/* Five tabs: full-width, equal columns, square, directly attached to the green header. */
+/* Five tabs: full-width, equal columns, compact height, directly attached to header. */
 main .space-y-4.w-full.min-w-0.overflow-x-hidden > div:first-child > div.relative.overflow-hidden.rounded-2xl
   div[class*="bg-white/10"]:has(> button:nth-child(5)) {
   display: grid !important;
@@ -23,7 +23,7 @@ main .space-y-4.w-full.min-w-0.overflow-x-hidden > div:first-child > div.relativ
   min-width: 0 !important;
   height: 42px !important;
   min-height: 42px !important;
-  margin-top: 12px !important;
+  margin-top: 0 !important;
   margin-right: 0 !important;
   margin-bottom: 0 !important;
   margin-left: 0 !important;
@@ -89,8 +89,7 @@ main .space-y-4.w-full.min-w-0.overflow-x-hidden > div:first-child > div.relativ
   color: currentColor !important;
 }
 
-/* The existing page uses space-y-4 between the banner and content. Since the
- * tabs now finish the banner cleanly, preserve the intended 16px content gap. */
+/* Keep the normal content spacing below the completed header/tab block. */
 main .space-y-4.w-full.min-w-0.overflow-x-hidden > div:nth-child(2) {
   margin-top: 16px !important;
 }
