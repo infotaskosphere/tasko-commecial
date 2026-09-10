@@ -128,6 +128,14 @@ import backend.email_google_oauth  # noqa: F401
 # saved OAuth state's commercial company/customer identity for the callback.
 import backend.email_google_oauth_context_compat  # noqa: F401
 
+# MongoDB ObjectId values can still exist in legacy user/company documents.
+# FastAPI's default encoder raises a 500 when such a value reaches a response.
+# Treat ObjectId as its canonical string representation globally so legacy
+# Master Data records remain readable without changing stored data.
+from bson import ObjectId
+from fastapi.encoders import ENCODERS_BY_TYPE
+ENCODERS_BY_TYPE[ObjectId] = str
+
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
