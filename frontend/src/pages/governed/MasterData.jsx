@@ -40,9 +40,7 @@ function MasterDataClientSection() {
 function MasterDataUserSection() {
   return (
     <MasterDataSectionShell className="master-data-user-card">
-      <div id="users">
-        <CompanyUserManager />
-      </div>
+      <CompanyUserManager />
     </MasterDataSectionShell>
   );
 }
