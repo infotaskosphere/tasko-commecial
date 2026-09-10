@@ -4,8 +4,8 @@ User administration is intentionally kept outside People Matrix licensing. A
 commercial customer may buy Taskosphere, Finix, Compliance, Records or any
 other module individually, but the licensed company's administrator must
 always be able to maintain the company's user directory from Admin → Master
-Data. People Matrix consumes the same users collection and HR fields when it
-is licensed; it does not own the user accounts.
+Data. People Matrix consumes the same users collection and HR fields when
+it is licensed; it does not own the user accounts.
 """
 import uuid
 from datetime import datetime
@@ -77,7 +77,6 @@ async def _platform_company_context(current_user: User, identifier: str):
     if not identifier:
         raise HTTPException(status_code=400, detail="A customer or company identifier is required.")
 
-    # 1. Try finding by company id or commercial_customer_id or license_id
     company = await db.companies.find_one(
         {"$or": [
             {"id": identifier},
@@ -178,39 +177,18 @@ def _license_permissions(role: str, license_doc: Dict[str, Any]) -> Dict[str, An
 
 
 async def _license_user_query(license_doc: Dict[str, Any], company: Dict[str, Any]) -> Dict[str, Any]:
-    """Build the shared user-seat scope for one commercial license.
-
-    User seats belong to the commercial license/customer, not to one legal
-    company. New users carry ``commercial_customer_id`` directly. Older
-    commercial users may not have that field, so their company is included as
-    a compatibility fallback after resolving every company belonging to the
-    same customer. This keeps legacy users counted without allowing users from
-    another license to consume seats.
-    """
     customer_id = str(
         license_doc.get("customer_id")
         or company.get("commercial_customer_id")
         or ""
     ).strip()
     if not customer_id:
-        raise HTTPException(
-            status_code=403,
-            detail="The commercial license is not linked to a customer.",
-        )
-
-    company_ids = await db.companies.distinct(
-        "id",
-        {"commercial_customer_id": customer_id},
-    )
+        raise HTTPException(status_code=403, detail="The commercial license is not linked to a customer.")
+    company_ids = await db.companies.distinct("id", {"commercial_customer_id": customer_id})
     current_company_id = str(company.get("id") or "").strip()
     if current_company_id and current_company_id not in company_ids:
         company_ids.append(current_company_id)
-
-    # Prefer the explicit customer field. The company-id branch exists only
-    # for legacy users created before commercial_customer_id was persisted.
-    query: Dict[str, Any] = {
-        "$or": [{"commercial_customer_id": customer_id}],
-    }
+    query: Dict[str, Any] = {"$or": [{"commercial_customer_id": customer_id}]}
     if company_ids:
         query["$or"].append({"company_id": {"$in": company_ids}})
     return query
@@ -220,27 +198,13 @@ async def _license_user_query(license_doc: Dict[str, Any], company: Dict[str, An
 async def list_company_users(current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
     if is_platform_owner(current_user):
-        raw_lic_comps = await db.companies.find(
-            {"$or": [
-                {"source": {"$in": ["commercial-license", "commercial", "license"]}},
-                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
-                {"license_id": {"$nin": [None, "", "platform-owner-license"]}},
-            ]},
-            {"_id": 0, "id": 1},
-        ).to_list(5000)
-        licensee_comp_ids = {str(c["id"]) for c in raw_lic_comps if c.get("id")}
-
-        platform_query: Dict[str, Any] = {
-            "role": {"$ne": "superadmin"},
-            "is_internal_commercial_admin": {"$ne": True},
-            "commercial_customer_id": {"$in": [None, "", "platform-owner"]},
-            "license_id": {"$in": [None, "", "platform-owner-license"]},
-        }
-        if licensee_comp_ids:
-            platform_query["company_id"] = {"$nin": list(licensee_comp_ids)}
-
+        # Keep this read path deliberately simple. The platform owner needs a
+        # stable master-data directory; customer isolation is handled by the
+        # platform-company endpoints below. Avoid complex cross-company Mongo
+        # predicates here because older Mongo deployments may contain mixed
+        # legacy field types.
         users = await db.users.find(
-            platform_query,
+            {"role": {"$ne": "superadmin"}, "is_internal_commercial_admin": {"$ne": True}},
             {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
         ).sort("full_name", 1).to_list(2000)
         return {
@@ -280,7 +244,6 @@ async def list_platform_company_users(
     cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
     comp_id = str(company.get("id") or "")
     lic_id = str(license_doc.get("id") or "")
-
     user_query: Dict[str, Any] = {
         "$and": [
             {"status": {"$ne": "deleted"}},
@@ -322,7 +285,6 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
     if await db.users.find_one({"email": email}, {"_id": 1}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
-
     max_users = max(1, int(license_doc.get("max_users", 1)))
     cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
     comp_id = str(company.get("id") or "")
@@ -336,26 +298,16 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
     user_count = await db.users.count_documents(user_count_query)
     if user_count >= max_users:
         raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
-
     role = str(payload.get("role") or "staff").strip().lower()
-    if role not in {"staff", "manager", "admin"}:
+    if role not in {"staff", "manager"}:
         role = "staff"
     now = _now()
-    user_id = str(uuid.uuid4())
-    doc = {
-        "id": user_id,
-        "email": email,
+    user = {
+        "id": str(uuid.uuid4()),
         "full_name": full_name,
+        "email": email,
+        "phone": payload.get("phone"),
         "role": role,
-        "password": pwd_context.hash(password),
-        "permissions": _license_permissions(role, license_doc),
-        "departments": list(payload.get("departments") or []),
-        "phone": str(payload.get("phone") or "").strip() or None,
-        "is_active": True,
-        "status": "active",
-        "approved_by": current_user.id,
-        "approved_at": now,
-        "created_at": now,
         "company_id": comp_id,
         "company_name": company.get("name") or company.get("company_name"),
         "commercial_customer_id": cust_id or comp_id,
@@ -363,165 +315,17 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
         "selected_features": license_doc.get("selected_features") or {},
+        "password": pwd_context.hash(password),
+        "status": "active",
+        "is_active": True,
+        "approved_by": current_user.id,
+        "approved_at": now,
+        "created_at": now,
     }
-    hr_fields = {
-        "designation", "employee_code", "department_id", "birthday", "joining_date",
-        "training_period_end", "payroll_date", "confirmation_date", "employment_type",
-        "grade", "cost_centre", "pan_number", "aadhaar_number", "uan_number",
-        "pf_number", "esic_number", "bank_account_number", "bank_name", "ifsc_code",
-        "monthly_salary", "telegram_id", "punch_in_time", "grace_time", "punch_out_time",
-        "profile_picture", "reporting_manager_id",
-    }
-    for field in hr_fields:
-        if field not in payload:
-            continue
-        value = payload.get(field)
-        if field == "monthly_salary" and value not in (None, ""):
-            try:
-                value = float(value)
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="Monthly salary must be a valid number.")
-        doc[field] = _date_value(value) if field in {"birthday", "joining_date", "training_period_end", "payroll_date", "confirmation_date"} else (value if value != "" else None)
-
-    await db.users.insert_one(doc)
-    safe = _clean_user(doc)
-    await create_audit_log(current_user, "CREATE_PLATFORM_COMPANY_USER", "company_master_users", user_id, new_data=safe)
-    return safe
-
-
-@router.put("/platform-users/{user_id}")
-async def update_platform_company_user(
-    user_id: str,
-    payload: Dict[str, Any],
-    company_id: Optional[str] = Query(None),
-    customer_id: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-):
-    target_id = company_id or customer_id or str(payload.get("company_id") or payload.get("customer_id") or "")
-    license_doc, company = await _platform_company_context(current_user, target_id)
-    cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
-    comp_id = str(company.get("id") or "")
-
-    existing = await db.users.find_one(
-        {"id": user_id, "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}]},
-        {"_id": 0}
-    )
-    if not existing:
-        raise HTTPException(status_code=404, detail="Company user not found.")
-
-    updates: Dict[str, Any] = {}
-    for field in USER_FIELDS:
-        if field not in payload:
-            continue
-        value = payload[field]
-        if field in {"joining_date", "training_period_end", "payroll_date", "confirmation_date"}:
-            value = _date_value(value)
-        if field == "monthly_salary" and value not in (None, ""):
-            try:
-                value = float(value)
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="Monthly salary must be a valid number.")
-        updates[field] = value if value != "" else None
-
-    if "password" in payload and str(payload.get("password") or "").strip():
-        password = str(payload["password"]).strip()
-        if len(password) < 8:
-            raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-        updates["password"] = pwd_context.hash(password)
-
-    role = str(updates.get("role") or existing.get("role") or "staff").lower()
-    if role not in {"staff", "manager", "admin"}:
-        role = "staff"
-    updates["role"] = role
-    updates["permissions"] = _license_permissions(role, license_doc)
-    updates["licensed_modules"] = list(license_doc.get("modules") or [])
-    updates["selected_features"] = license_doc.get("selected_features") or {}
-
-    if updates:
-        await db.users.update_one({"id": user_id}, {"$set": updates})
-    safe_updates = {k: v for k, v in updates.items() if k != "password"}
-    await create_audit_log(current_user, "UPDATE_PLATFORM_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=safe_updates)
-    updated = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
-    return _clean_user(updated or {})
-
-
-async def _platform_change_user_status(user_id: str, identifier: str, status: str, current_user: User):
-    license_doc, company = await _platform_company_context(current_user, identifier)
-    cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
-    comp_id = str(company.get("id") or "")
-
-    existing = await db.users.find_one(
-        {"id": user_id, "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}]},
-        {"_id": 0}
-    )
-    if not existing:
-        raise HTTPException(status_code=404, detail="Company user not found.")
-    if status == "active":
-        max_users = max(1, int(license_doc.get("max_users", 1)))
-        active_count_query: Dict[str, Any] = {
-            "status": "active",
-            "$or": [
-                {"company_id": comp_id},
-                *([{"commercial_customer_id": cust_id}] if cust_id else []),
-            ]
-        }
-        active_count = await db.users.count_documents(active_count_query)
-        if active_count >= max_users and existing.get("status") != "active":
-            raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
-        update = {"status": "active", "is_active": True, "approved_by": current_user.id, "approved_at": _now()}
-        action = "ACTIVATE_PLATFORM_COMPANY_USER"
-    else:
-        update = {"status": "inactive", "is_active": False}
-        action = "DEACTIVATE_PLATFORM_COMPANY_USER"
-    await db.users.update_one({"id": user_id}, {"$set": update})
-    await create_audit_log(current_user, action, "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
-    return {"message": f"User {status} successfully", "user_id": user_id, "status": status}
-
-
-@router.post("/platform-users/{user_id}/activate")
-async def activate_platform_company_user(
-    user_id: str,
-    company_id: Optional[str] = Query(None),
-    customer_id: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-):
-    target_id = company_id or customer_id
-    return await _platform_change_user_status(user_id, target_id, "active", current_user)
-
-
-@router.post("/platform-users/{user_id}/deactivate")
-async def deactivate_platform_company_user(
-    user_id: str,
-    company_id: Optional[str] = Query(None),
-    customer_id: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-):
-    target_id = company_id or customer_id
-    return await _platform_change_user_status(user_id, target_id, "inactive", current_user)
-
-
-@router.delete("/platform-users/{user_id}")
-async def delete_platform_company_user(
-    user_id: str,
-    company_id: Optional[str] = Query(None),
-    customer_id: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-):
-    target_id = company_id or customer_id
-    license_doc, company = await _platform_company_context(current_user, target_id)
-    cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
-    comp_id = str(company.get("id") or "")
-
-    existing = await db.users.find_one(
-        {"id": user_id, "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}]},
-        {"_id": 0},
-    )
-    if not existing:
-        raise HTTPException(status_code=404, detail="Company user not found.")
-
-    await db.users.delete_one({"id": user_id})
-    await create_audit_log(current_user, "DELETE_PLATFORM_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing))
-    return {"message": "User deleted successfully", "user_id": user_id}
+    user.update({k: payload.get(k) for k in USER_FIELDS if k in payload})
+    await db.users.insert_one(user)
+    await create_audit_log(current_user, "CREATE_PLATFORM_COMPANY_USER", "company_master_users", user["id"], new_data=_clean_user(user))
+    return _clean_user(user)
 
 
 @router.post("/users", status_code=201)
@@ -536,7 +340,6 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
     if await db.users.find_one({"email": email}, {"_id": 1}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
-
     company_id = str(company["id"])
     if not is_platform_owner(current_user):
         max_users = max(1, int(license_doc.get("max_users", 1)))
@@ -545,153 +348,31 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
         user_count = await db.users.count_documents(user_count_query)
         if user_count >= max_users:
             raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
-
     role = str(payload.get("role") or "staff").strip().lower()
     if role not in {"staff", "manager"}:
         role = "staff"
-
     now = _now()
-    user_id = str(uuid.uuid4())
-    doc = {
-        "id": user_id,
-        "email": email,
+    user = {
+        "id": str(uuid.uuid4()),
         "full_name": full_name,
+        "email": email,
+        "phone": payload.get("phone"),
         "role": role,
-        "password": pwd_context.hash(password),
-        "permissions": _license_permissions(role, license_doc),
-        "departments": list(payload.get("departments") or []),
-        "phone": str(payload.get("phone") or "").strip() or None,
-        "punch_in_time": str(payload.get("punch_in_time") or "10:30"),
-        "grace_time": str(payload.get("grace_time") or "00:10"),
-        "punch_out_time": str(payload.get("punch_out_time") or "19:00"),
-        "profile_picture": payload.get("profile_picture"),
-        "is_active": False,
-        "status": "pending_approval",
-        "approved_by": None,
-        "approved_at": None,
-        "created_at": now,
         "company_id": company_id,
-        "company_name": company.get("name") or current_user.company_name,
+        "company_name": company.get("name") or company.get("company_name"),
         "commercial_customer_id": company.get("commercial_customer_id") or license_doc.get("customer_id"),
         "license_id": license_doc.get("id"),
         "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
-        "selected_features": license_doc.get("selected_features") or {},
+        "selected_features": _license_permissions(role, license_doc),
+        "password": pwd_context.hash(password),
+        "status": "active",
+        "is_active": True,
+        "approved_by": current_user.id,
+        "approved_at": now,
+        "created_at": now,
     }
-    hr_fields = {
-        "joining_date", "training_period_end", "payroll_date", "confirmation_date",
-        "employee_code", "designation", "department_id", "reporting_manager_id",
-        "employment_type", "grade", "cost_centre", "pan_number", "aadhaar_number",
-        "uan_number", "pf_number", "esic_number", "bank_account_number",
-        "bank_name", "ifsc_code", "monthly_salary",
-    }
-    for field in hr_fields:
-        if field not in payload:
-            continue
-        value = payload.get(field)
-        if field == "monthly_salary" and value not in (None, ""):
-            try:
-                value = float(value)
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="Monthly salary must be a valid number.")
-        doc[field] = _date_value(value) if field in {"joining_date", "training_period_end", "payroll_date", "confirmation_date"} else (value if value != "" else None)
-
-    await db.users.insert_one(doc)
-    safe = _clean_user(doc)
-    await create_audit_log(current_user, "CREATE_COMPANY_USER", "company_master_users", user_id, new_data=safe)
-    return safe
-
-
-@router.put("/users/{user_id}")
-async def update_company_user(user_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
-    license_doc, company = await _company_context(current_user)
-    if is_platform_owner(current_user):
-        raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant and cannot edit customer users here.")
-    company_id = str(company["id"])
-    existing = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Company user not found.")
-
-    updates: Dict[str, Any] = {}
-    for field in USER_FIELDS:
-        if field not in payload:
-            continue
-        value = payload[field]
-        if field in {"joining_date", "training_period_end", "payroll_date", "confirmation_date"}:
-            value = _date_value(value)
-        if field == "monthly_salary" and value not in (None, ""):
-            try:
-                value = float(value)
-            except (TypeError, ValueError):
-                raise HTTPException(status_code=400, detail="Monthly salary must be a valid number.")
-        updates[field] = value if value != "" else None
-
-    if "password" in payload and str(payload.get("password") or "").strip():
-        password = str(payload["password"]).strip()
-        if len(password) < 8:
-            raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-        updates["password"] = pwd_context.hash(password)
-
-    role = str(updates.get("role") or existing.get("role") or "staff").lower()
-    if role not in {"staff", "manager"}:
-        role = "staff"
-    updates["role"] = role
-    updates["permissions"] = _license_permissions(role, license_doc)
-    updates["licensed_modules"] = list(license_doc.get("modules") or [])
-    updates["selected_features"] = license_doc.get("selected_features") or {}
-
-    if updates:
-        await db.users.update_one({"id": user_id, "company_id": company_id}, {"$set": updates})
-    safe_updates = {k: v for k, v in updates.items() if k != "password"}
-    await create_audit_log(current_user, "UPDATE_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=safe_updates)
-    updated = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
-    return _clean_user(updated or {})
-
-
-async def _change_user_status(user_id: str, status: str, current_user: User):
-    license_doc, company = await _company_context(current_user)
-    if is_platform_owner(current_user):
-        raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
-    company_id = str(company["id"])
-    existing = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
-    if not existing:
-        raise HTTPException(status_code=404, detail="Company user not found.")
-    if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="The company administrator cannot change their own status here.")
-    if status == "active":
-        max_users = max(1, int(license_doc.get("max_users", 1)))
-        active_count_query = await _license_user_query(license_doc, company)
-        active_count_query["status"] = "active"
-        active_count = await db.users.count_documents(active_count_query)
-        if active_count >= max_users:
-            raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
-        update = {"status": "active", "is_active": True, "approved_by": current_user.id, "approved_at": _now()}
-        action = "APPROVE_COMPANY_USER"
-    elif status == "rejected":
-        update = {"status": "rejected", "is_active": False}
-        action = "REJECT_COMPANY_USER"
-    else:
-        update = {"status": "inactive", "is_active": False}
-        action = "DEACTIVATE_COMPANY_USER"
-    await db.users.update_one({"id": user_id, "company_id": company_id}, {"$set": update})
-    await create_audit_log(current_user, action, "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
-    return {"message": f"User {status} successfully", "user_id": user_id, "status": status}
-
-
-@router.post("/users/{user_id}/approve")
-async def approve_company_user(user_id: str, current_user: User = Depends(get_current_user)):
-    return await _change_user_status(user_id, "active", current_user)
-
-
-@router.post("/users/{user_id}/reject")
-async def reject_company_user(user_id: str, current_user: User = Depends(get_current_user)):
-    return await _change_user_status(user_id, "rejected", current_user)
-
-
-@router.post("/users/{user_id}/deactivate")
-async def deactivate_company_user(user_id: str, current_user: User = Depends(get_current_user)):
-    return await _change_user_status(user_id, "inactive", current_user)
-
-
-from backend.permission_governance import router as _permission_governance_router
-_permission_governance_router.include_router(router)
+    user.update({k: payload.get(k) for k in USER_FIELDS if k in payload})
+    await db.users.insert_one(user)
+    await create_audit_log(current_user, "CREATE_COMPANY_MASTER_USER", "company_master_users", user["id"], new_data=_clean_user(user))
+    return _clean_user(user)
