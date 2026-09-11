@@ -264,29 +264,60 @@ _last_reminder_date_cache: Optional[str] = None
 # ====================== APP ======================
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 
-# === CRITICAL: CORS MUST BE THE VERY FIRST MIDDLEWARE ===
-# Registered BEFORE startup_event and all other middleware.
-# When the Render free-tier backend is sleeping (cold start), it returns no
-# headers at all — the browser shows "No Access-Control-Allow-Origin". This is
-# NOT a CORS misconfiguration; it is a cold-start timing issue. Keeping CORS
-# registered first ensures that once the server wakes, the headers are correct.
+# ====================== CORS CONFIG ======================
+# Works across Vercel, Render, AWS, localhost and future custom domains.
 #
-# allow_origin_regex also covers any Render preview-deploy URL
-# (*.onrender.com) so staging branches don't need separate config updates.
+# Exact origins can be added through:
+# CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com
+#
+# Wildcard regex is intentionally limited to our known deployment platforms.
+# This remains compatible with allow_credentials=True.
+
+CORS_ALLOWED_ORIGINS = [
+    "https://taskosphere.com",
+    "https://www.taskosphere.com",
+
+    # Current Vercel frontend
+    "https://tasko-commercial-frontend.vercel.app",
+
+    # Current Render frontend / legacy deployment
+    "https://final-taskosphere-frontend.onrender.com",
+
+    # Local development
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
+
+# Allow additional production/custom domains without changing code.
+_extra_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if _extra_cors_origins:
+    CORS_ALLOWED_ORIGINS.extend(
+        origin.strip().rstrip("/")
+        for origin in _extra_cors_origins.split(",")
+        if origin.strip()
+    )
+
+# Deployment-preview support:
+# - *.vercel.app   → Vercel production/preview deployments
+# - *.onrender.com → Render deployments
+# - localhost / 127.0.0.1 → local development
+#
+# Do NOT use allow_origins=["*"] because credentials are enabled.
+CORS_ORIGIN_REGEX = (
+    r"^(https://[^/]+\.vercel\.app"
+    r"|https://[^/]+\.onrender\.com"
+    r"|http://localhost(?::[0-9]+)?"
+    r"|http://127\.0\.0\.1(?::[0-9]+)?)$"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://taskosphere.com",
-        "https://www.taskosphere.com",
-        "https://final-taskosphere-frontend.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:3000",
-    ],
-    allow_origin_regex=r"https://.*\.onrender\.com",
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
