@@ -91,6 +91,57 @@ def _public_config(doc: Dict[str, Any] | None) -> Dict[str, Any]:
     config = copy.deepcopy(DEFAULT_WEBSITE_CONFIG)
     if doc:
         config.update({k: v for k, v in doc.items() if k != "_id"})
+    # Extract synchronized root fields from builder if present
+    builder = config.get("builder")
+    if isinstance(builder, dict):
+        identity = builder.get("global", {}).get("identity", {})
+        if identity.get("siteName"):
+            config["site_name"] = identity["siteName"]
+        if identity.get("tagline"):
+            config["site_tagline"] = identity["tagline"]
+        if identity.get("logoUrl"):
+            config["logo_url"] = identity["logoUrl"]
+        if identity.get("faviconUrl"):
+            config["favicon_url"] = identity["faviconUrl"]
+
+        design = builder.get("global", {}).get("design", {})
+        if design.get("primary"):
+            config["primary_color"] = design["primary"]
+        if design.get("accent"):
+            config["accent_color"] = design["accent"]
+
+        footer = builder.get("global", {}).get("footer", {})
+        if footer.get("company"):
+            config["footer_company"] = footer["company"]
+        if footer.get("text"):
+            config["footer_text"] = footer["text"]
+        if footer.get("copyright"):
+            config["footer_copyright"] = footer["copyright"]
+
+        pages = builder.get("pages", [])
+        if isinstance(pages, list) and pages:
+            first_page = pages[0]
+            sections = first_page.get("sections", [])
+            for s in sections:
+                if s.get("type") == "hero" and isinstance(s.get("data"), dict):
+                    hd = s["data"]
+                    if hd.get("title"):
+                        config["hero_title"] = hd["title"]
+                    if hd.get("subtitle"):
+                        config["hero_subtitle"] = hd["subtitle"]
+                    if hd.get("badge"):
+                        config["hero_badge"] = hd["badge"]
+                    if hd.get("primaryText"):
+                        config["hero_cta_text"] = hd["primaryText"]
+                    if hd.get("primaryHref"):
+                        config["hero_cta_href"] = hd["primaryHref"]
+                    if hd.get("secondaryText"):
+                        config["hero_secondary_text"] = hd["secondaryText"]
+                    if hd.get("secondaryHref"):
+                        config["hero_secondary_href"] = hd["secondaryHref"]
+                    if hd.get("image"):
+                        config["hero_image_url"] = hd["image"]
+                    break
     return config
 
 
