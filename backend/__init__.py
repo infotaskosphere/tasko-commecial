@@ -3,6 +3,11 @@
 # `uvicorn backend.server:app` instead of backend/run.py.
 import backend.admin_identity_compat  # noqa: F401
 
+# Authentication must resolve the user before tenant-scoped collection guards
+# are active. The users collection cannot be company-scoped until the company
+# identity has been recovered from the JWT/licensee record.
+import backend.commercial_auth_bootstrap_compat  # noqa: F401
+
 # Establish the commercial-customer tenant context before any route module
 # captures get_current_user. This separates a licensee's multiple legal
 # companies from the Platform Owner and every other licensee.
