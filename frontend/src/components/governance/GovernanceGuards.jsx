@@ -27,7 +27,15 @@ function EntitledHome() {
 export function PageGuard({ module, page, children }) {
   const { user, hasPermission, isPlatformOwner } = useAuth();
   const { hasPageAccess } = useGovernance();
-  const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
+  const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
+  const isCommercialAdmin = isAdmin && !!user?.company_id && !isPlatformOwner;
+
+  // Admin is the application control-plane area, not one of the six
+  // commercially licensed operational modules. Admin-only routes are already
+  // role-gated by AppRoutes and must not be redirected through an operational
+  // module fallback. This keeps Master Data/Roles reachable for a licensee
+  // admin without granting the admin access to unlicensed business modules.
+  if (module === 'admin' && isAdmin) return children;
 
   if (isCommercialAdmin) {
     const moduleFlag = MODULE_FLAGS[module];
