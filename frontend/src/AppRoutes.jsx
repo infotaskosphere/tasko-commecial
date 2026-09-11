@@ -82,7 +82,7 @@ function LicensedDashboardHome() { const { user, loading } = useAuth(); if (load
 function ProtectedLayout(){const {user,loading}=useAuth();const location=useLocation();if(loading)return <AuthLoading/>;if(!user)return <Navigate to="/login" replace/>;return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><RouteAnimatedOutlet/></RouteErrorBoundary></DashboardLayout>}
 function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user)return <Navigate to="/dashboard" replace/>;return children}
 function AdminOnly({children}){const {user}=useAuth();if(user?.role?.toLowerCase()!=='admin')return <Navigate to="/dashboard" replace/>;return children}
-function PlatformOwnerOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;const isOwner=String(user?.email||'').trim().toLowerCase()==='info.taskosphere@gmail.com' || user?.role?.toLowerCase()==='admin';if(!isOwner)return <Navigate to="/dashboard" replace/>;return children}
+function PlatformOwnerOnly({children}){const {user,loading,isPlatformOwner}=useAuth();if(loading)return <AuthLoading/>;const isOwner=Boolean(isPlatformOwner) || String(user?.email||'').trim().toLowerCase()==='info.taskosphere@gmail.com';if(!isOwner)return <Navigate to="/dashboard" replace/>;return children}
 function UsersEntry(){ return <Users/>; }
 
 export default function AppRoutes(){return <Suspense fallback={<AuthLoading/>}><Routes>
