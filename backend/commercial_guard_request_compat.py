@@ -186,10 +186,10 @@ async def get_current_user_with_commercial_guard_compat(
         raise HTTPException(status_code=403, detail="Commercial Console access is restricted to the Platform Owner.")
 
     if await _guard._is_commercial_account(user):
-        module = _guard.module_for_path(request.url.path)
+        module = _guard.module_for_path(request.url.path, request.method)
         if module and not _guard.has_module_access(user, module):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {module} module.")
-        feature = _guard.feature_for_path(request.url.path)
+        feature = _guard.feature_for_path(request.url.path, request.method)
         if feature:
             feature_module, feature_flag = feature
             if not _guard.has_module_access(user, feature_module) or not _guard._permission_flag(user, feature_flag):

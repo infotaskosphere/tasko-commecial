@@ -87,7 +87,7 @@ FEATURE_PREFIXES = {
         "can_view_documents": ("/documents",),
         "can_view_passwords": ("/passwords",),
         "can_edit_passwords": ("/passwords/manage",),
-        "can_view_all_clients": ("/clients", "/client-approvals"),
+        "can_view_clients": ("/client-approvals",),
         "can_edit_clients": ("/clients/manage",),
         "can_approve_clients": ("/clients/approve", "/client-approvals/approve"),
         "can_approve_whatsapp_wishes": ("/automation/whatsapp",),
@@ -100,7 +100,7 @@ FEATURE_PREFIXES = {
         "can_manage_client_discussion": ("/client-discussion/manage",),
     },
     "people_matrix": {
-        "can_view_user_page": ("/users",),
+        "can_view_user_page": ("/users/manage",),
         "can_view_leave": ("/leave",),
         "can_manage_leave": ("/leave/manage",),
         "can_view_payroll": ("/payroll",),
@@ -119,20 +119,36 @@ def _matches(path: str, prefixes: Tuple[str, ...]) -> bool:
     return any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)
 
 
-def module_for_path(path: str) -> Optional[str]:
+def module_for_path(path: str, method: str = "GET") -> Optional[str]:
     normalized = path.split("?", 1)[0]
     if normalized.startswith("/api"):
         normalized = normalized[4:] or "/"
+
+    # Read-only user directory and client lookups are cross-module essentials
+    # needed by Taskosphere (tasks/todos/attendance) as well as People Matrix & Records.
+    if method == "GET":
+        if normalized == "/users" or (normalized.startswith("/users/") and not any(sub in normalized for sub in ("/salary-report", "/offboard"))):
+            return None
+        if normalized in ("/clients", "/clients/search"):
+            return None
+
     for module, prefixes in MODULE_PREFIXES.items():
         if _matches(normalized, prefixes):
             return module
     return None
 
 
-def feature_for_path(path: str) -> Optional[Tuple[str, str]]:
+def feature_for_path(path: str, method: str = "GET") -> Optional[Tuple[str, str]]:
     normalized = path.split("?", 1)[0]
     if normalized.startswith("/api"):
         normalized = normalized[4:] or "/"
+
+    if method == "GET":
+        if normalized == "/users" or (normalized.startswith("/users/") and not any(sub in normalized for sub in ("/salary-report", "/offboard"))):
+            return None
+        if normalized in ("/clients", "/clients/search"):
+            return None
+
     for module, features in FEATURE_PREFIXES.items():
         for flag, prefixes in features.items():
             if _matches(normalized, prefixes):
@@ -173,10 +189,10 @@ async def get_current_user_with_commercial_guard(
 ) -> User:
     user = await _original_get_current_user(credentials)
     if await _is_commercial_account(user):
-        module = module_for_path(request.url.path)
+        module = module_for_path(request.url.path, request.method)
         if module and not has_module_access(user, module):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {module} module.")
-        feature = feature_for_path(request.url.path)
+        feature = feature_for_path(request.url.path, request.method)
         if feature:
             feature_module, feature_flag = feature
             if not has_module_access(user, feature_module) or not _permission_flag(user, feature_flag):

@@ -1158,8 +1158,12 @@ export default function TodoDashboard() {
     queryKey: ['users'],
     enabled:  true,
     queryFn:  async () => {
-      const res = await api.get('/users');
-      return res.data || [];
+      try {
+        const res = await api.get('/users');
+        return res.data || [];
+      } catch {
+        return [];
+      }
     },
   });
 
@@ -1171,6 +1175,10 @@ export default function TodoDashboard() {
         const res = await api.get('/clients');
         return res.data || [];
       } catch (e) {
+        const detail = e?.response?.data?.detail;
+        if (e?.response?.status === 403 && typeof detail === 'string' && (detail.includes('does not include') || detail.includes('license') || detail.includes('feature'))) {
+          return [];
+        }
         if (e?.response?.status === 403) toast.error("You don't have permission to view clients.");
         return [];
       }

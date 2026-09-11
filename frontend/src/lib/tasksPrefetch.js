@@ -39,13 +39,17 @@ const fetchAllClients = async () => {
   const PAGE = 200;
   let page = 1;
   let all = [];
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const res = await api.get('/clients', { params: { page, page_size: PAGE } });
-    const batch = Array.isArray(res.data) ? res.data : [];
-    all = [...all, ...batch];
-    if (batch.length < PAGE) break;
-    page++;
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const res = await api.get('/clients', { params: { page, page_size: PAGE } });
+      const batch = Array.isArray(res.data) ? res.data : [];
+      all = [...all, ...batch];
+      if (batch.length < PAGE) break;
+      page++;
+    }
+  } catch {
+    return all;
   }
   return all;
 };

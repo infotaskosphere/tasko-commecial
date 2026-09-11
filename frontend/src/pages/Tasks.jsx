@@ -893,7 +893,12 @@ export default function Tasks() {
       const res = await api.get(endpoint);
       return res.data;
     } catch (err) {
-      console.error(`apiFetch ${endpoint} failed:`, err?.response?.status, err?.response?.data?.detail || err.message);
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || err.message;
+      if (status === 403 && typeof detail === 'string' && (detail.includes('does not include') || detail.includes('license') || detail.includes('feature'))) {
+        return null;
+      }
+      console.error(`apiFetch ${endpoint} failed:`, status, detail);
       return null;
     }
   }, []);
@@ -1099,12 +1104,17 @@ export default function Tasks() {
       const PAGE = 200;
       let page = 1;
       let all = [];
-      while (true) {
-        const res = await api.get('/clients', { params: { page, page_size: PAGE } });
-        const batch = Array.isArray(res.data) ? res.data : [];
-        all = [...all, ...batch];
-        if (batch.length < PAGE) break;
-        page++;
+      try {
+        while (true) {
+          const res = await api.get('/clients', { params: { page, page_size: PAGE } });
+          const batch = Array.isArray(res.data) ? res.data : [];
+          all = [...all, ...batch];
+          if (batch.length < PAGE) break;
+          page++;
+        }
+      } catch (err) {
+        // Gracefully return whatever was retrieved or empty array if clients/records is forbidden
+        return all;
       }
       return all;
     };
