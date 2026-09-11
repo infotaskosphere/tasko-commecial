@@ -13,6 +13,12 @@ from backend.models import User
 from backend.platform_owner import is_platform_owner
 from backend.commercial_licensee_admin import resolve_license_modules, get_all_admin_permissions
 
+# Capture the authentication dependency that exists immediately before this
+# compatibility layer is installed. commercial_admin_permission_compat is
+# intentionally included here, so commercial admins are hydrated once from
+# their live license and the request wrapper can then add the tenant boundary.
+_BASE_GET_CURRENT_USER = _dependencies.get_current_user
+
 MODULE_PREFIXES = {
     "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
     "finix": ("/finix-dashboard", "/invoicing", "/purchase", "/bank-accounts", "/chart-of-accounts", "/journal-entries", "/accounting-reports", "/zero-touch-entry", "/gst-portal-sync", "/accounting-integrity", "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report", "/bank-reconciliation", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report", "/yearly-report", "/opening-balances", "/accounting-audit-trail", "/bulk-import", "/due-dates", "/import-invoices"),
@@ -121,7 +127,7 @@ def _permission_flag(user: User, flag: str, license_doc: dict) -> bool:
 
 
 async def get_current_user_with_commercial_guard(request: Request, credentials=Depends(_dependencies.security)) -> User:
-    user = await _dependencies.get_current_user(credentials)
+    user = await _BASE_GET_CURRENT_USER(credentials)
     if is_platform_owner(user):
         return user
 
@@ -129,9 +135,6 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
     if not commercial:
         return user
 
-    # The licensee contact is the tenant administrator. Refresh its effective
-    # permissions from the active license on every authenticated request so a
-    # license upgrade/revocation takes effect without requiring a new account.
     user = _hydrate_admin(user, commercial)
 
     module = module_for_path(request.url.path, request.method)
