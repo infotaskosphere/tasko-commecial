@@ -39,20 +39,13 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener("taskosphere:session-replaced", handleSessionReplacement);
   }, [forceLogoutForReplacement]);
 
-  // Poll the authoritative session on a short interval. This is important for
-  // a device that is idle or not making API requests when the same account is
-  // signed in on another device. IP address is intentionally irrelevant.
   useEffect(() => {
     if (!user) return undefined;
     let cancelled = false;
     const checkCurrentSession = async () => {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       if (!token || cancelled) return;
-      try {
-        await api.get("/auth/me", { _silent: true, _skipReadyGate: true });
-      } catch (error) {
-        if (cancelled) return;
-      }
+      try { await api.get("/auth/me", { _silent: true, _skipReadyGate: true }); } catch (error) { if (cancelled) return; }
     };
     const interval = setInterval(checkCurrentSession, 5000);
     const handleVisibility = () => { if (document.visibilityState === "visible") checkCurrentSession(); };
@@ -106,18 +99,27 @@ export const AuthProvider = ({ children }) => {
       storage.setItem("user", JSON.stringify(updatedUser));
       setUser(updatedUser);
       return updatedUser;
-    } catch (error) {
-      console.error("Failed to refresh user:", error);
-    }
+    } catch (error) { console.error("Failed to refresh user:", error); }
   }, []);
-  const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id;
+
+  const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id && String(candidate?.email || "").trim().toLowerCase() !== PLATFORM_OWNER_EMAIL;
   const hasPermission = (permission) => {
     if (!user) return false;
+    // Platform owner remains unrestricted. A licensee administrator is a full
+    // admin only within the permissions hydrated from the active commercial license.
+    if (isPlatformOwner) return true;
+    if (isCommercialAdmin(user)) return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
     if (user.role?.toLowerCase() === "admin") return true;
     return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
   };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
-  const canAccessUser = (permissionKey, targetUserId) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; const allowedIds = (user.permissions || {})[permissionKey]; return Array.isArray(allowedIds) && allowedIds.includes(targetUserId); };
+  const canAccessUser = (permissionKey, targetUserId) => {
+    if (!user) return false;
+    if (isPlatformOwner || isCommercialAdmin(user)) return true;
+    if (user.role?.toLowerCase() === "admin") return true;
+    const allowedIds = (user.permissions || {})[permissionKey];
+    return Array.isArray(allowedIds) && allowedIds.includes(targetUserId);
+  };
   const isOwner = (ownerId) => !!user && ownerId === user.id;
   return <AuthContext.Provider value={{ user, loading, company: user?.company || null, companyId: user?.company_id || null, subscription: user?.subscription || null, login, logout, refreshUser, hasPermission, hasAnyPermission, canAccessUser, isOwner, isPlatformOwner }}>{children}</AuthContext.Provider>;
 };
