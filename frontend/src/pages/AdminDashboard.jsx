@@ -22,14 +22,13 @@ function useAdminFacts() {
         api.get('/users', { _silent: true }),
         api.get('/companies/list/', { _silent: true }),
         api.get('/role-admin/roles', { _silent: true }),
-        api.get('/audit-logs', { params: { module: 'admin' }, _silent: true }),
+        api.get('/audit-logs', { _silent: true }),
         api.get('/auth/me', { _silent: true }),
       ]);
       const [u, c, r, a, me] = results;
       const users = u.status === 'fulfilled' ? list(u.value.data) : [];
       const companies = c.status === 'fulfilled' ? list(c.value.data) : [];
       const roles = r.status === 'fulfilled' ? list(r.value.data) : [];
-      const audits = a.status === 'fulfilled' ? list(a.value.data) : [];
       const user = me.status === 'fulfilled' ? me.value.data : null;
       const activeUsers = users.filter(x => x?.is_active !== false && x?.status !== 'inactive').length;
       const customRoles = roles.filter(x => x?.is_builtin === false).length;
@@ -38,7 +37,7 @@ function useAdminFacts() {
         ['can_access_records', 'Records'], ['can_access_proposals', 'Client Proposals'], ['can_access_people_matrix', 'People Matrix'],
       ].filter(([flag]) => user?.permissions?.[flag] === true).map(([, label]) => label);
       return {
-        users, companies, roles, audits, user, activeUsers, customRoles, licensedModules,
+        users, companies, roles, user, activeUsers, customRoles, licensedModules,
         companiesCount: c.status === 'fulfilled' ? count(c.value.data) : null,
         auditCount: a.status === 'fulfilled' ? count(a.value.data) : null,
       };
