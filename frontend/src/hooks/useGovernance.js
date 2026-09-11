@@ -23,7 +23,7 @@ export function useGovernance() {
   const perms = user?.permissions || {};
 
   const hasModuleAccess = (moduleKey) => {
-    if (isAdmin && !isCommercialAdmin) return true;
+    if (isAdmin) return true;
     if (moduleKey === "admin") return isAdmin;
     const flag = MODULE_FLAGS[moduleKey];
     if (!flag) return false;
@@ -31,17 +31,14 @@ export function useGovernance() {
   };
 
   const hasPageAccess = (moduleKey, pageFlag) => {
-    if (isAdmin && !isCommercialAdmin) return true;
+    if (isAdmin) return true;
     if (!hasModuleAccess(moduleKey)) return false;
-    // Commercial admin is fully empowered inside an entitled module.
-    if (isCommercialAdmin) return true;
     return !!perms[pageFlag];
   };
 
   const hasActionAccess = (moduleKey, pageFlag, action) => {
-    if (isAdmin && !isCommercialAdmin) return true;
+    if (isAdmin) return true;
     if (!hasPageAccess(moduleKey, pageFlag)) return false;
-    if (isCommercialAdmin) return true;
 
     const matrixKey = `${moduleKey}.${pageFlag}`;
     const matrix = perms.governance_matrix || {};

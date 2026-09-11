@@ -70,12 +70,13 @@ def _company_scope_query(query: Any) -> dict[str, Any]:
     if requested is not None and str(requested) != customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
 
-    ownership = {"commercial_customer_id": customer_id}
-    if license_id:
-        ownership = {"$or": [
+    ownership = {
+        "$or": [
             {"commercial_customer_id": customer_id},
-            {"license_id": license_id},
-        ]}
+            {"id": customer_id},
+            *([{"license_id": license_id}] if license_id else []),
+        ]
+    }
     return {"$and": [base, ownership]} if base else ownership
 
 

@@ -19,7 +19,7 @@
 import api from "@/lib/api";
 
 /** Always return an array of companies, whatever wrapper the API used. */
-export function normalizeCompanies(payload) {
+export function normalizeCompanies(payload, options = {}) {
   const d = payload?.data !== undefined ? payload.data : payload;
   let list = [];
   if (Array.isArray(d)) list = d;
@@ -28,15 +28,15 @@ export function normalizeCompanies(payload) {
   else if (Array.isArray(d?.items)) list = d.items;
   else if (Array.isArray(d?.results)) list = d.results;
 
-  // Platform Owner Company Master is for operational companies used to create
-  // tasks, add employees, and issue invoices. Exclude commercial customer companies
-  // created automatically during commercial license generation.
-  return list.filter((c) => {
-    if (!c || typeof c !== 'object') return false;
-    if (c.source === 'commercial-license' || c.source === 'license' || c.source === 'commercial') return false;
-    if (c.commercial_customer_id) return false;
-    return true;
-  });
+  const valid = list.filter((c) => c && typeof c === 'object');
+  if (options?.excludeCommercial) {
+    return valid.filter((c) => {
+      if (c.source === 'commercial-license' || c.source === 'license' || c.source === 'commercial') return false;
+      if (c.commercial_customer_id) return false;
+      return true;
+    });
+  }
+  return valid;
 }
 
 /** Full company master records (needs a logged-in user only). */

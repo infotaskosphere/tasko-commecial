@@ -188,6 +188,9 @@ async def get_current_user_with_commercial_guard(
     credentials=Depends(_dependencies.security),
 ) -> User:
     user = await _original_get_current_user(credentials)
+    # The licensee who is issued license is the admin and does not need permission — has all rights by default
+    if str(getattr(user, "role", "")).lower() == "admin":
+        return user
     if await _is_commercial_account(user):
         module = module_for_path(request.url.path, request.method)
         if module and not has_module_access(user, module):

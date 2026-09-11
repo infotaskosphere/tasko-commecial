@@ -89,7 +89,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "view_other_reports": [],
           "view_other_todos": [],
           "view_other_activity": [],
-                    "can_access_whatsapp_hub": False,     # ADMIN_GRANTED_ONLY
+          "can_access_whatsapp_hub": True,     # ADMIN_GRANTED_ONLY
           "can_view_recruitment": True,          # Admin always has recruitment access
           "can_manage_recruitment": True,        # Admin always has recruitment access
           "assigned_clients": [],

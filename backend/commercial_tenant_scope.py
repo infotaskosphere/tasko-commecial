@@ -54,6 +54,26 @@ def _customer_query(name: str, query: Any) -> dict[str, Any]:
     requested = result.get("commercial_customer_id")
     if requested is not None and str(requested) != customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
+    if name == "companies":
+        scope_filter = {
+            "$or": [
+                {"commercial_customer_id": customer_id},
+                {"id": customer_id},
+            ]
+        }
+        if result:
+            return {"$and": [result, scope_filter]}
+        return scope_filter
+    if name == "users":
+        scope_filter = {
+            "$or": [
+                {"commercial_customer_id": customer_id},
+                {"company_id": customer_id},
+            ]
+        }
+        if result:
+            return {"$and": [result, scope_filter]}
+        return scope_filter
     result["commercial_customer_id"] = customer_id
     return result
 
@@ -133,20 +153,37 @@ async def _resolve_customer_id(user: Any) -> str | None:
     company_customer_id = str((company or {}).get("commercial_customer_id") or "").strip()
 
     # Prefer the authenticated user identity, but require it to agree with the
-    # company when both values are present. This prevents a stale/malformed
-    # user document from silently switching tenant context.
+    # company when both values are present. For admins, seamlessly reconcile rather than blocking.
     if user_customer_id and company_customer_id and user_customer_id != company_customer_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Authenticated user is not associated with the licensed company",
-        )
+        if str(getattr(user, "role", "")).lower() == "admin":
+            user_customer_id = company_customer_id or user_customer_id
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authenticated user is not associated with the licensed company",
+            )
 
     customer_id = user_customer_id or company_customer_id
+
+    # If identity is not resolved yet, check customer by email
+    if not customer_id:
+        email = str(getattr(user, "email", "") or "").strip().lower()
+        if email:
+            cust = await raw_db.commercial_license_customers.find_one({"email": email}, {"id": 1})
+            if cust:
+                customer_id = str(cust.get("id") or "").strip()
+            if not customer_id:
+                lic = await raw_db.commercial_licenses.find_one({"customer_email": email}, {"customer_id": 1})
+                if lic:
+                    customer_id = str(lic.get("customer_id") or "").strip()
 
     # Legacy commercial company records may not have commercial_customer_id.
     # In that case the company id was historically used as the customer key,
     # but only after the company itself has been positively resolved.
     if not customer_id and company and (company.get("source") == "commercial-license"):
+        customer_id = company_id
+
+    if not customer_id and company_id and str(getattr(user, "role", "")).lower() == "admin":
         customer_id = company_id
 
     # If neither identity source is usable, fail closed instead of creating an
@@ -162,7 +199,9 @@ async def _resolve_customer_id(user: Any) -> str | None:
 
 
 async def _apply_live_license_permissions(user: Any, customer_id: str | None):
-    """Cap the user's effective permissions by the active commercial license."""
+    """Cap the user's effective permissions by the active commercial license.
+    Licensee admins have full rights by default for their company and license.
+    """
     if not customer_id or is_platform_owner(user):
         return user
     try:
@@ -178,17 +217,23 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
         if not active:
             return user
 
-        from backend.commercial_onboarding_extensions import _apply_feature_entitlements
         role = str(getattr(user, "role", "staff") or "staff")
         modules = list(active.get("modules") or active.get("licensed_modules") or [])
         selected_features = active.get("selected_features") or {}
-        license_permissions = _apply_feature_entitlements(role, modules, selected_features)
 
         current = getattr(user, "permissions", None)
         if hasattr(current, "model_dump"):
             current = current.model_dump()
         if not isinstance(current, dict):
             current = {}
+
+        if role == "admin":
+            from backend.commercial_licensee_admin import get_all_admin_permissions
+            license_permissions = get_all_admin_permissions()
+        else:
+            from backend.commercial_onboarding_extensions import _apply_feature_entitlements
+            license_permissions = _apply_feature_entitlements(role, modules, selected_features)
+
         effective = {**current, **license_permissions}
         data = user.model_dump()
         data["permissions"] = effective

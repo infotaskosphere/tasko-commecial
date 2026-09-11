@@ -124,7 +124,8 @@ async def create_customer_admin_fixed(payload: Dict[str, Any]):
 
     now = _now().isoformat()
     user_id = __import__("uuid").uuid4().hex
-    permissions = _apply_license_entitlements("admin", list(license_doc.get("modules") or []))
+    from backend.commercial_licensee_admin import get_all_admin_permissions
+    permissions = get_all_admin_permissions()
     user_doc = {
         "id": user_id,
         "email": email,

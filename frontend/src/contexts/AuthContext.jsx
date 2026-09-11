@@ -111,7 +111,11 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
   const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id;
-  const hasPermission = (permission) => { if (!user) return false; if (isCommercialAdmin()) { if (COMMERCIAL_MODULE_FLAGS.has(permission)) return user.permissions?.[permission] === true; return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : true; } if (user.role?.toLowerCase() === "admin") return true; return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false; };
+  const hasPermission = (permission) => {
+    if (!user) return false;
+    if (user.role?.toLowerCase() === "admin") return true;
+    return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
+  };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
   const canAccessUser = (permissionKey, targetUserId) => { if (!user) return false; if (user.role?.toLowerCase() === "admin") return true; const allowedIds = (user.permissions || {})[permissionKey]; return Array.isArray(allowedIds) && allowedIds.includes(targetUserId); };
   const isOwner = (ownerId) => !!user && ownerId === user.id;

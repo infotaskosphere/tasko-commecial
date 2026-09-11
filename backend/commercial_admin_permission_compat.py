@@ -76,14 +76,15 @@ async def _hydrate(user: User) -> User:
         modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
         selected_features = license_doc.get("selected_features")
 
-        from backend.commercial_onboarding_extensions import _apply_feature_entitlements
+        from backend.commercial_licensee_admin import get_all_admin_permissions
 
-        permissions = _apply_feature_entitlements("admin", modules, selected_features)
+        admin_permissions = get_all_admin_permissions()
         current = getattr(user, "permissions", None)
         if hasattr(current, "model_dump"):
             current = current.model_dump()
-        if isinstance(current, dict):
-            permissions = {**current, **permissions}
+        if not isinstance(current, dict):
+            current = {}
+        permissions = {**current, **admin_permissions}
 
         data = user.model_dump()
         data["permissions"] = permissions

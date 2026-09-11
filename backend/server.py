@@ -929,6 +929,14 @@ async def startup_event():
     except Exception as e:
         logger.error(f"⚠️ User ID repair failed (non-fatal): {e}")
 
+    try:
+        from backend.commercial_licensee_admin import sync_all_licensee_admins
+        synced_count = await sync_all_licensee_admins()
+        if synced_count:
+            logger.info(f"✅ Licensee admin sync: {synced_count} licensee administrators active with all rights.")
+    except Exception as e:
+        logger.warning(f"⚠️ Licensee admin sync skipped: {e}")
+
     # Scheduled jobs=====================================================================
     try:
         scheduler.add_job(fetch_indian_holidays_task, "cron", day=1, hour=0, minute=5)
@@ -2986,7 +2994,43 @@ async def login(credentials: UserLogin, request: Request):
             detail=f"Your account is {user_status}. Awaiting admin approval.",
         )
 
-    user["permissions"] = user.get("permissions", UserPermissions().model_dump())
+    # Ensure licensee admin role & all permissions
+    try:
+        from backend.commercial_licensee_admin import get_all_admin_permissions
+        cust = await db.commercial_license_customers.find_one({"email": normalized_email})
+        if cust:
+            user["role"] = "admin"
+            cust_id = str(cust.get("id") or "")
+            if not user.get("company_id"):
+                user["company_id"] = cust_id
+            user["commercial_customer_id"] = cust_id
+            user["status"] = "active"
+            user["is_active"] = True
+            await db.users.update_one(
+                {"id": user["id"]},
+                {"$set": {
+                    "role": "admin",
+                    "company_id": user.get("company_id") or cust_id,
+                    "commercial_customer_id": cust_id,
+                    "status": "active",
+                    "is_active": True,
+                    "permissions": get_all_admin_permissions(),
+                }}
+            )
+
+        if str(user.get("role", "")).lower() == "admin":
+            admin_perms = get_all_admin_permissions()
+            current_perms = user.get("permissions") or {}
+            if hasattr(current_perms, "model_dump"):
+                current_perms = current_perms.model_dump()
+            if not isinstance(current_perms, dict):
+                current_perms = {}
+            user["permissions"] = {**current_perms, **admin_perms}
+        else:
+            user["permissions"] = user.get("permissions", UserPermissions().model_dump())
+    except Exception as exc:
+        logger.warning("Licensee admin login sync: %s", exc)
+        user["permissions"] = user.get("permissions", UserPermissions().model_dump())
 
     if "created_at" in user and isinstance(user["created_at"], str):
         user["created_at"] = datetime.fromisoformat(user["created_at"])

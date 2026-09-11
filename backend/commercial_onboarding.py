@@ -468,6 +468,11 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     company = await _ensure_company_master(customer, license_doc)
     await db.companies.update_one({"id": company["id"]}, {"$set": {"licensed_modules": selected_modules, "selected_features": selected_features, "license_id": license_doc["id"], "license_key": license_doc["license_key"]}})
 
+    # Once a license is issued by the platform owner to the licensee, the mail added in the licensee
+    # account along with company id is by default admin for his company and license with all rights.
+    from backend.commercial_licensee_admin import ensure_licensee_admin, get_all_admin_permissions
+    await ensure_licensee_admin(customer, license_doc, company)
+
     invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
     if not invoice_company_id:
         raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
@@ -507,13 +512,15 @@ async def create_custom_admin(payload: Dict[str, Any]):
     company = await _ensure_company_master(customer, license_doc)
     now = _now().isoformat()
     user_id = str(uuid.uuid4())
-    permissions = _apply_feature_entitlements("admin", list(license_doc.get("modules") or []), license_doc.get("selected_features"))
+    from backend.commercial_licensee_admin import get_all_admin_permissions
+    permissions = get_all_admin_permissions()
     user_doc = {
         "id": user_id, "email": email, "full_name": full_name, "role": "admin",
         "password": pwd_context.hash(password), "permissions": permissions, "departments": [],
         "phone": customer.get("phone"), "is_active": True, "status": "active",
         "approved_by": "commercial-license", "approved_at": now, "created_at": now,
         "company_id": company.get("id"), "company_name": customer.get("company_name"),
+        "commercial_customer_id": str(customer.get("id") or ""),
         "license_id": license_doc.get("id"), "license_key": license_doc.get("license_key"),
         "licensed_modules": list(license_doc.get("modules") or []),
         "selected_features": license_doc.get("selected_features") or {},

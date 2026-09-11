@@ -23,18 +23,13 @@ _MODULE_FLAGS = {
 
 
 def _is_commercial_admin(user: User) -> bool:
-    """Commercial admins have a company_id and persisted module entitlements."""
-    if getattr(user, "role", None) != "admin":
-        return False
-    perms = get_user_permissions(user)
-    return bool(getattr(user, "company_id", None)) and any(
-        flag in perms for flag in _MODULE_FLAGS.values()
-    )
+    """Commercial admins have a company_id."""
+    return str(getattr(user, "role", "")).lower() == "admin" and bool(getattr(user, "company_id", None))
 
 
 def _admin_bypass(user: User) -> bool:
-    """True only for the unrestricted internal/system admin."""
-    return getattr(user, "role", None) == "admin" and not _is_commercial_admin(user)
+    """The licensee who is issued license is the admin and does not need permission — has all rights by default."""
+    return str(getattr(user, "role", "")).lower() == "admin"
 
 
 # =============================================================================
