@@ -84,7 +84,21 @@ export const AuthProvider = ({ children }) => {
   }, [forceLogoutForReplacement]);
 
   const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
-  const logout = async () => { const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token"); window.__STOP_ACTIVITY__ = true; resetAgentAuth(); clearStorage(); setUser(null); try { if (sessionToken) await api.post("/auth/logout", { session_token: sessionToken }, { _silent: true, _skipReadyGate: true }); } catch (error) { console.warn("Session revoke on logout failed (non-fatal).", error); } };
+  const logout = async () => {
+    const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
+    window.__STOP_ACTIVITY__ = true;
+    resetAgentAuth();
+    try {
+      if (sessionToken) {
+        await api.post("/auth/logout", { session_token: sessionToken }, { _silent: true, _skipReadyGate: true });
+      }
+    } catch (error) {
+      console.warn("Session revoke on logout failed (non-fatal).", error);
+    } finally {
+      clearStorage();
+      setUser(null);
+    }
+  };
   const refreshUser = useCallback(async (overrideUser = null) => {
     try {
       if (overrideUser && typeof overrideUser === "object" && (overrideUser.id || overrideUser.email)) {
