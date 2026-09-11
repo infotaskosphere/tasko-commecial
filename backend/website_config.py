@@ -78,6 +78,11 @@ DEFAULT_WEBSITE_CONFIG: Dict[str, Any] = {
     "login_background_image": "",
     "login_show_website_link": True,
     "login_website_link_text": "Visit website",
+    # Holds the full Website Studio page-builder tree (pages/sections/design).
+    # Kept as its own nested key so it never collides with the flat legacy
+    # fields above, and so a payload that only updates `builder` cannot wipe
+    # SEO/login/footer settings edited elsewhere.
+    "builder": None,
     "updated_at": None,
 }
 
