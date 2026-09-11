@@ -252,29 +252,209 @@ export function handleMockRoute(method, url, data) {
     return { status: 200, data: { success: true } };
   }
 
-  if (normUrl === "/website-config/public") {
-    return {
-      status: 200,
-      data: {
-        site_name: "Taskosphere",
-        logo_url: "/logo.png",
-        primary_color: "#0D3B66",
-        accent_color: "#1FAF5A",
-        login_background_image: null,
+  // Website Builder & Public Website Config routes
+  const DEFAULT_MOCK_WEBSITE_CONFIG = {
+    site_name: "Taskosphere",
+    site_tagline: "One platform for tasks, finance, compliance and people.",
+    logo_url: "/logo.png",
+    favicon_url: "/favicon.png",
+    primary_color: "#0D3B66",
+    accent_color: "#1FAF5A",
+    surface_color: "#F7FAFC",
+    hero_badge: "THE MODERN BUSINESS OPERATING SYSTEM",
+    hero_title: "Everything your business needs. Nothing scattered.",
+    hero_subtitle: "Task management, invoicing, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
+    hero_cta_text: "Explore Taskosphere",
+    hero_cta_href: "#features",
+    hero_secondary_text: "Sign in",
+    hero_secondary_href: "/login",
+    hero_image_url: "/logo-transparent.png",
+    features_title: "Everything your team needs. Nothing scattered.",
+    features_subtitle: "Build the exact software package your customer needs and activate it through your commercial license.",
+    features: [
+      { title: "Task Management", description: "Projects, tasks, workflows, reminders and team visibility.", icon: "check" },
+      { title: "Invoicing", description: "Quotations, invoices, purchases and customer billing.", icon: "receipt" },
+      { title: "Accounting", description: "Ledgers, banking, reports and financial controls.", icon: "landmark" },
+      { title: "HRMS", description: "People, attendance, leave, payroll and recruitment.", icon: "users" },
+      { title: "Compliance", description: "GST, ROC, trademark and compliance workflows.", icon: "shield" },
+      { title: "Records", description: "Client records, documents, approvals and business information.", icon: "check" },
+      { title: "AI & Automation", description: "Intelligent document processing and operational assistance.", icon: "sparkles" }
+    ],
+    solutions_title: "Tailored Solutions for Practice & Enterprise",
+    solutions_subtitle: "Scalable tools designed to streamline high-volume statutory filing, taxation, and team management.",
+    solutions: [
+      {
+        title: "Tax & Statutory Compliance",
+        description: "Automated GST reconciliation, ROC tracking, and trademark monitoring with deadline reminders.",
+        points: ["Auto-sync GST & MCA portals", "Bulk filing status tracker", "Intelligent compliance audit trails"],
       },
-    };
+      {
+        title: "Financials & Ledgers",
+        description: "Integrated invoicing, accounting reports, and bank statement processing without switching apps.",
+        points: ["Multi-branch invoicing", "Instant P&L and Balance Sheet", "Zero-touch reconciliation"],
+      },
+      {
+        title: "Team & Practice Governance",
+        description: "Granular role-based controls, client vaults, and task delegation with SLA tracking.",
+        points: ["Role & permission matrix", "Client document vault", "Automated staff time & attendance"],
+      },
+    ],
+    pricing_title: "Simple, transparent licensing",
+    pricing_subtitle: "Choose the package that fits your organization.",
+    pricing: [
+      {
+        name: "Professional",
+        price: "₹4,999",
+        period: "per month",
+        description: "Essential tools for growing tax and accounting practices.",
+        featured: false,
+        cta: "Get Started",
+      },
+      {
+        name: "Enterprise",
+        price: "₹14,999",
+        period: "per month",
+        description: "Comprehensive suite with AI features, multi-company support, and custom modules.",
+        featured: true,
+        cta: "Contact Sales",
+      },
+      {
+        name: "Platform Owner",
+        price: "Custom",
+        period: "annual",
+        description: "Full white-label deployment with commercial console and unlimited tenant licensing.",
+        featured: false,
+        cta: "Inquire Now",
+      },
+    ],
+    footer_company: "Taskosphere Technologies Pvt Ltd",
+    footer_text: "A configurable commercial business operating system.",
+    footer_copyright: "© 2026 Taskosphere. All rights reserved.",
+    footer_email: "info.taskosphere@gmail.com",
+    footer_phone: "+91 98765 43210",
+    footer_address: "Mumbai, India",
+    login_background_image: null,
+    builder: {
+      version: 5,
+      activePageId: "home",
+      pages: [{
+        id: "home", name: "Home", slug: "/", visible: true,
+        sections: [
+          { id: "hero", type: "hero", title: "Hero", visible: true, layout: "split", data: {
+            badge: "THE MODERN BUSINESS OPERATING SYSTEM",
+            title: "Everything your business needs. Nothing scattered.",
+            subtitle: "Task management, invoicing, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
+            primaryText: "Explore Taskosphere", primaryHref: "#features",
+            secondaryText: "Sign in", secondaryHref: "/login", image: "/logo-transparent.png",
+            theme: "dark"
+          } },
+          { id: "features", type: "features", title: "Platform Modules", visible: true, layout: "cards", data: {
+            heading: "One platform. Every business function.",
+            subtitle: "Choose the exact software package your customer needs and activate it through your commercial license.",
+            items: [
+              { title: "Task Management", description: "Projects, tasks, workflows, reminders and team visibility." },
+              { title: "Invoicing", description: "Quotations, invoices, purchases and customer billing." },
+              { title: "Accounting", description: "Ledgers, banking, reports and financial controls." },
+              { title: "HRMS", description: "People, attendance, leave, payroll and recruitment." },
+              { title: "Compliance", description: "GST, ROC, trademark and compliance workflows." },
+              { title: "Records", description: "Client records, documents, approvals and business information." },
+              { title: "AI & Automation", description: "Intelligent document processing and operational assistance." }
+            ]
+          } },
+          { id: "why", type: "text", title: "Why Taskosphere", visible: true, data: {
+            heading: "Run work from one connected workspace",
+            body: "Assign and track work, communicate with your team, manage documents, monitor productivity and keep financial and compliance operations connected — without scattering information across different systems."
+          } },
+          { id: "cta", type: "cta", title: "Call to Action", visible: true, layout: "center", data: {
+            heading: "Ready to build your Taskosphere workspace?", text: "Configure the modules your business needs and get started.", button: "Get started", href: "/login"
+          } }
+        ]
+      }],
+      global: {
+        header: { sticky: true, showLogin: true, logo: true },
+        footer: { show: true, text: "", social: true },
+        design: { primary: "#0D3B66", accent: "#1FAF5A", background: "#FFFFFF", text: "#0F172A", font: "Inter", radius: "medium", width: "wide" }
+      }
+    }
+  };
+
+  const getStoredWebsiteConfig = () => {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        const raw = window.localStorage.getItem("taskosphere_saved_website_config");
+        if (raw) return JSON.parse(raw);
+      }
+    } catch {}
+    return DEFAULT_MOCK_WEBSITE_CONFIG;
+  };
+
+  const syncBuilderToRoot = (cfg) => {
+    const updated = { ...cfg };
+    if (updated.builder && typeof updated.builder === "object") {
+      const idt = updated.builder.global?.identity;
+      if (idt) {
+        if (idt.siteName) updated.site_name = idt.siteName;
+        if (idt.tagline) updated.site_tagline = idt.tagline;
+        if (idt.logoUrl) updated.logo_url = idt.logoUrl;
+        if (idt.faviconUrl) updated.favicon_url = idt.faviconUrl;
+      }
+      const dsg = updated.builder.global?.design;
+      if (dsg) {
+        if (dsg.primary) updated.primary_color = dsg.primary;
+        if (dsg.accent) updated.accent_color = dsg.accent;
+      }
+      const ft = updated.builder.global?.footer;
+      if (ft) {
+        if (ft.company) updated.footer_company = ft.company;
+        if (ft.text) updated.footer_text = ft.text;
+        if (ft.copyright) updated.footer_copyright = ft.copyright;
+      }
+      const firstPage = updated.builder.pages?.[0];
+      const hero = firstPage?.sections?.find((s) => s.type === "hero");
+      if (hero && hero.data) {
+        if (hero.data.title) updated.hero_title = hero.data.title;
+        if (hero.data.subtitle) updated.hero_subtitle = hero.data.subtitle;
+        if (hero.data.badge) updated.hero_badge = hero.data.badge;
+        if (hero.data.primaryText) updated.hero_cta_text = hero.data.primaryText;
+        if (hero.data.primaryHref) updated.hero_cta_href = hero.data.primaryHref;
+        if (hero.data.secondaryText) updated.hero_secondary_text = hero.data.secondaryText;
+        if (hero.data.secondaryHref) updated.hero_secondary_href = hero.data.secondaryHref;
+        if (hero.data.image) updated.hero_image_url = hero.data.image;
+      }
+    }
+    return updated;
+  };
+
+  if (normUrl === "/website-config/public") {
+    const data = getStoredWebsiteConfig();
+    return { status: 200, data };
   }
 
   if (normUrl === "/website-config/admin") {
-    return {
-      status: 200,
-      data: {
-        site_name: "Taskosphere",
-        logo_url: "/logo.png",
-        primary_color: "#0D3B66",
-        accent_color: "#1FAF5A",
-      },
-    };
+    const data = getStoredWebsiteConfig();
+    return { status: 200, data };
+  }
+
+  if (normUrl === "/website-config" && method === "put") {
+    const current = getStoredWebsiteConfig();
+    const merged = syncBuilderToRoot({ ...current, ...requestData, updated_at: new Date().toISOString() });
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("taskosphere_saved_website_config", JSON.stringify(merged));
+        window.dispatchEvent(new CustomEvent("taskosphere:website-updated", { detail: merged }));
+      }
+    } catch {}
+    return { status: 200, data: merged };
+  }
+
+  if (normUrl === "/website-config/reset" && method === "post") {
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem("taskosphere_saved_website_config");
+        window.dispatchEvent(new CustomEvent("taskosphere:website-updated", { detail: DEFAULT_MOCK_WEBSITE_CONFIG }));
+      }
+    } catch {}
+    return { status: 200, data: DEFAULT_MOCK_WEBSITE_CONFIG };
   }
 
   if (normUrl.startsWith("/licensing")) {
@@ -283,10 +463,119 @@ export function handleMockRoute(method, url, data) {
       data: {
         valid: true,
         status: "active",
+        packages: [
+          { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 4999, active: true },
+          { id: "professional", code: "TSO-PRO", name: "Taskosphere Professional", modules: ["TASKS", "INVOICING", "HRMS"], max_users: 25, max_installations: 2, validity_days: 365, price: 9999, active: true },
+          { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"], max_users: 100, max_installations: 5, validity_days: 365, price: 19999, active: true },
+        ],
+        licenses: [
+          {
+            id: "lic-01",
+            license_key: "TSO-COMM-2026-DEMO-0001",
+            company_name: "Manthan Desai And Associates",
+            package_name: "Taskosphere Enterprise",
+            status: "active",
+            valid_until: "2027-12-31T23:59:59Z",
+            max_users: 100,
+            modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"],
+          },
+        ],
+        customers: [
+          {
+            id: "cust-mda-01",
+            company_name: "Manthan Desai And Associates",
+            email: "director@desaiassociates.com",
+            phone: "+91 98765 43210",
+            gstin: "27AAACD1234F1Z5",
+            status: "active",
+          },
+        ],
         license: {
           plan: "Enterprise",
           modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"],
           max_users: 100,
+        },
+      },
+    };
+  }
+
+  if (normUrl.startsWith("/commercial-onboarding/lookup")) {
+    const compName = data?.company_name || "Manthan Desai And Associates";
+    return {
+      status: 200,
+      data: {
+        success: true,
+        customer: {
+          id: "cust-mda-01",
+          company_name: compName,
+          email: "director@desaiassociates.com",
+          gstin: "27AAACD1234F1Z5",
+          phone: "+91 98765 43210",
+          address: "101, Business Center, Mumbai",
+        },
+        license: {
+          id: "lic-01",
+          license_key: data?.license_key || "TSO-COMM-2026-DEMO-0001",
+          package_name: "Taskosphere Enterprise",
+          valid_until: "2027-12-31T23:59:59Z",
+          validity_months: 12,
+        },
+      },
+    };
+  }
+
+  if (
+    normUrl.startsWith("/commercial-onboarding/create-admin") ||
+    normUrl.startsWith("/commercial-onboarding/create-user") ||
+    normUrl.startsWith("/commercial-onboarding/create-staff")
+  ) {
+    const newUser = {
+      ...MOCK_USER,
+      email: data?.email || MOCK_USER.email,
+      full_name: data?.full_name || MOCK_USER.full_name,
+      company_name: data?.company_name || "Manthan Desai And Associates",
+    };
+    return {
+      status: 200,
+      data: {
+        access_token: "mock-jwt-token-taskosphere",
+        token: "mock-jwt-token-taskosphere",
+        user: newUser,
+      },
+    };
+  }
+
+  if (normUrl.startsWith("/commercial-onboarding/module-catalog")) {
+    return {
+      status: 200,
+      data: {
+        modules: [
+          { id: "TASKS", name: "Tasks & Workflows", active: true, monthly_price: 1999 },
+          { id: "INVOICING", name: "Invoicing & Billing", active: true, monthly_price: 1499 },
+          { id: "ACCOUNTING", name: "Accounting & Ledgers", active: true, monthly_price: 2499 },
+          { id: "HRMS", name: "HRMS & Payroll", active: true, monthly_price: 1999 },
+          { id: "COMPLIANCE", name: "Compliance & GST", active: true, monthly_price: 2999 },
+        ],
+      },
+    };
+  }
+
+  if (normUrl.startsWith("/commercial-onboarding/my-company")) {
+    return {
+      status: 200,
+      data: {
+        company: {
+          id: "comp-tasko-01",
+          name: "Taskosphere Commercial Services",
+          gstin: "27AAACD1234F1Z5",
+          email: "admin@taskosphere.in",
+          phone: "+91 98765 43210",
+        },
+        license: {
+          id: "lic-01",
+          package_name: "Taskosphere Enterprise",
+          valid: true,
+          status: "active",
         },
       },
     };
