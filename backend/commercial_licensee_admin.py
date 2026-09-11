@@ -1,7 +1,7 @@
 """Commercial Licensee Admin Management.
 
 The email recorded on a commercial license is the default administrator for
-that license.  It receives normal admin rights inside the licensed tenant, but
+that license. It receives normal admin rights inside the licensed tenant, but
 those rights are hard-capped by the modules/features actually present on the
 active license.
 """
@@ -20,40 +20,38 @@ from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
 logger = logging.getLogger("commercial_licensee_admin")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Legacy package IDs and the newer custom-module IDs both resolve to the same
+# application permission modules. A license can therefore be issued by either
+# licensing flow without silently losing admin access.
+LICENSE_MODULE_ALIASES = {
+    "tasks": "taskosphere",
+    "taskosphere": "taskosphere",
+    "invoicing": "finix",
+    "accounting": "finix",
+    "finix": "finix",
+    "hrms": "people_matrix",
+    "people_matrix": "people_matrix",
+    "people-matrix": "people_matrix",
+    "compliance": "compliance",
+    "records": "records",
+    "proposals": "proposals",
+    "client_proposals": "proposals",
+    "client-proposals": "proposals",
+}
+
 
 def _raw_db():
     return getattr(_dependencies, "_raw_db", _dependencies.db)
 
 
-def _license_modules(license_doc: Dict[str, Any]) -> list[str]:
-    return [str(item).strip().lower() for item in (license_doc.get("modules") or license_doc.get("licensed_modules") or []) if str(item).strip()]
-
-
-def _license_permissions(license_doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Admin permissions are full inside the licensed feature set only."""
-    permissions = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
-    modules = set(_license_modules(license_doc))
-    selected_features = license_doc.get("selected_features") or {}
-
-    for module_id, module_def in MODULE_HIERARCHY.items():
-        if module_id == "admin":
-            continue
-        allowed = module_id in modules
-        module_flag = module_def.get("flag")
-        if module_flag:
-            permissions[module_flag] = allowed
-        selected = set(selected_features.get(module_id) or [])
-        # A legacy module-only license means every page in that module.
-        feature_restriction_exists = module_id in selected_features
-        for page in module_def.get("pages", []) or []:
-            flag = page.get("flag")
-            if not flag:
-                continue
-            permissions[flag] = bool(
-                allowed and (not feature_restriction_exists or flag in selected)
-            )
-
-    return permissions
+def resolve_license_modules(license_doc: Dict[str, Any]) -> set[str]:
+    resolved: set[str] = set()
+    for raw in license_doc.get("modules") or license_doc.get("licensed_modules") or []:
+        key = str(raw).strip().lower()
+        mapped = LICENSE_MODULE_ALIASES.get(key)
+        if mapped:
+            resolved.add(mapped)
+    return resolved
 
 
 def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -62,7 +60,30 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         admin_perms = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
         admin_perms["can_access_whatsapp_hub"] = True
         return admin_perms
-    return _license_permissions(license_doc)
+
+    permissions = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
+    licensed_modules = resolve_license_modules(license_doc)
+    selected_features = license_doc.get("selected_features") or {}
+
+    for module_id, module_def in MODULE_HIERARCHY.items():
+        if module_id == "admin":
+            continue
+        module_allowed = module_id in licensed_modules
+        module_flag = module_def.get("flag")
+        if module_flag:
+            permissions[module_flag] = module_allowed
+
+        # Custom licenses can restrict individual pages. Legacy/package-only
+        # licenses have no feature map and therefore grant every page in an
+        # included module.
+        restriction_exists = module_id in selected_features
+        selected = set(selected_features.get(module_id) or [])
+        for page in module_def.get("pages", []) or []:
+            flag = page.get("flag")
+            if flag:
+                permissions[flag] = bool(module_allowed and (not restriction_exists or flag in selected))
+
+    return permissions
 
 
 async def ensure_licensee_admin(
