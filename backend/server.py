@@ -265,22 +265,25 @@ _last_reminder_date_cache: Optional[str] = None
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 
 # ====================== CORS CONFIG ======================
-# Works across Vercel, Render, AWS, localhost and future custom domains.
+# Supports:
+# - Taskosphere production domains
+# - Vercel production and preview deployments
+# - Render deployments
+# - localhost development
+# - Additional domains through CORS_ALLOWED_ORIGINS
 #
-# Exact origins can be added through:
-# CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com
-#
-# Wildcard regex is intentionally limited to our known deployment platforms.
-# This remains compatible with allow_credentials=True.
+# IMPORTANT:
+# Do NOT use allow_origins=["*"] because credentials are enabled.
 
 CORS_ALLOWED_ORIGINS = [
+    # Taskosphere production
     "https://taskosphere.com",
     "https://www.taskosphere.com",
 
-    # Current Vercel frontend
+    # Vercel production frontend
     "https://tasko-commercial-frontend.vercel.app",
 
-    # Current Render frontend / legacy deployment
+    # Render frontend / legacy frontend
     "https://final-taskosphere-frontend.onrender.com",
 
     # Local development
@@ -292,27 +295,50 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5174",
 ]
 
-# Allow additional production/custom domains without changing code.
-_extra_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
-if _extra_cors_origins:
-    CORS_ALLOWED_ORIGINS.extend(
-        origin.strip().rstrip("/")
-        for origin in _extra_cors_origins.split(",")
-        if origin.strip()
-    )
 
-# Deployment-preview support:
-# - *.vercel.app   → Vercel production/preview deployments
-# - *.onrender.com → Render deployments
-# - localhost / 127.0.0.1 → local development
+# --------------------------------------------------------
+# Additional origins can be supplied through environment
+# variable without modifying this file.
 #
-# Do NOT use allow_origins=["*"] because credentials are enabled.
+# Example:
+# CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com
+# --------------------------------------------------------
+
+_extra_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+
+if _extra_cors_origins:
+    for origin in _extra_cors_origins.split(","):
+        origin = origin.strip().rstrip("/")
+
+        if origin and origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(origin)
+
+
+# --------------------------------------------------------
+# Deployment / preview URL support
+#
+# Vercel:
+# https://anything.vercel.app
+#
+# Render:
+# https://anything.onrender.com
+#
+# Local:
+# http://localhost:3000
+# http://127.0.0.1:5173
+# --------------------------------------------------------
+
 CORS_ORIGIN_REGEX = (
-    r"^(https://[^/]+\.vercel\.app"
-    r"|https://[^/]+\.onrender\.com"
-    r"|http://localhost(?::[0-9]+)?"
-    r"|http://127\.0\.0\.1(?::[0-9]+)?)$"
+    r"^https://[a-zA-Z0-9-]+\.vercel\.app$"
+    r"|^https://[a-zA-Z0-9-]+\.onrender\.com$"
+    r"|^http://localhost(?::[0-9]+)?$"
+    r"|^http://127\.0\.0\.1(?::[0-9]+)?$"
 )
+
+
+# --------------------------------------------------------
+# FastAPI CORS middleware
+# --------------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -324,7 +350,16 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=3600,
 )
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# --------------------------------------------------------
+# GZIP compression
+# --------------------------------------------------------
+
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,
+)
 
 
 # =============================================================
