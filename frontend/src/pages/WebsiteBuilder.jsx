@@ -69,6 +69,27 @@ const DEFAULT_BUILDER = {
   media: []
 };
 
+// Site-wide identity, SEO and footer contact details. These are stored as
+// flat fields (matching the backend's long-standing schema) rather than
+// inside the page-builder tree, because other screens — the customer Login
+// page and the legacy homepage fallback — read them directly by name.
+// Website Studio is now the single place that edits them.
+const DEFAULT_IDENTITY = {
+  site_name: "Taskosphere",
+  site_tagline: "One platform for tasks, finance, compliance and people.",
+  logo_url: "/logo.png",
+  favicon_url: "/favicon.png",
+  seo_title: "Taskosphere — Business Operating System",
+  seo_description: "Task management, invoicing, accounting, HRMS and compliance in one connected platform.",
+  seo_og_image: "",
+  footer_company: "Taskosphere",
+  footer_text: "A configurable commercial business operating system.",
+  footer_email: "",
+  footer_phone: "",
+  footer_address: "",
+  footer_copyright: "© 2026 Taskosphere. All rights reserved."
+};
+
 function Field({ label, value, onChange, area = false, placeholder = "" }) {
   const Tag = area ? "textarea" : "input";
   return <label className="block">
@@ -157,18 +178,57 @@ function DesignPanel({ design, patchDesign }) {
   return <div className="h-full overflow-y-auto bg-white"><div className="border-b border-slate-200 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Design</div><h2 className="mt-1 text-lg font-black">Make it yours</h2><p className="mt-2 text-xs leading-5 text-slate-400">Change colours, width and the overall feel of your website.</p></div><div className="space-y-6 p-4"><div><label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Main colour</label><div className="mt-2 flex flex-wrap gap-2">{colors.map(c=><button key={c} onClick={()=>patchDesign({primary:c})} className={`h-8 w-8 rounded-md border-2 ${design.primary===c?"border-slate-900":"border-white"}`} style={{background:c}}/>)}</div></div><div className="grid grid-cols-2 gap-3"><Field label="Primary" value={design.primary} onChange={v=>patchDesign({primary:v})}/><Field label="Accent" value={design.accent} onChange={v=>patchDesign({accent:v})}/></div><div className="grid grid-cols-2 gap-3"><Field label="Background" value={design.background} onChange={v=>patchDesign({background:v})}/><Field label="Text" value={design.text} onChange={v=>patchDesign({text:v})}/></div><div><label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Website width</label><div className="mt-2 grid grid-cols-2 gap-2"><button onClick={()=>patchDesign({width:"wide"})} className={`rounded-md border px-3 py-2 text-xs font-bold ${design.width==="wide"?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200"}`}>Wide</button><button onClick={()=>patchDesign({width:"contained"})} className={`rounded-md border px-3 py-2 text-xs font-bold ${design.width==="contained"?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200"}`}>Contained</button></div></div><div><label className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Font</label><select value={design.font||"Inter"} onChange={e=>patchDesign({font:e.target.value})} className="mt-2 h-10 w-full rounded-md border border-slate-200 px-3 text-sm"><option>Inter</option><option>Arial</option><option>Georgia</option><option>system-ui</option></select></div></div></div>;
 }
 
-function SettingsPanel({ config, patchGlobal }) {
+function SettingsPanel({ config, patchGlobal, identity, patchIdentity }) {
   const h=config.global?.header||{}; const f=config.global?.footer||{};
-  return <div className="h-full overflow-y-auto bg-white"><div className="border-b border-slate-200 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Settings</div><h2 className="mt-1 text-lg font-black">Website settings</h2><p className="mt-2 text-xs leading-5 text-slate-400">Manage the website identity and global options.</p></div><div className="space-y-5 p-4"><div className="rounded-lg border border-slate-200 p-3"><b className="text-xs">Header</b><label className="mt-3 flex items-center justify-between text-sm"><span>Show logo</span><input type="checkbox" checked={h.logo!==false} onChange={e=>patchGlobal({header:{...h,logo:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Sticky header</span><input type="checkbox" checked={h.sticky!==false} onChange={e=>patchGlobal({header:{...h,sticky:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Show login</span><input type="checkbox" checked={h.showLogin!==false} onChange={e=>patchGlobal({header:{...h,showLogin:e.target.checked}})}/></label></div><div className="rounded-lg border border-slate-200 p-3"><b className="text-xs">Footer</b><label className="mt-3 flex items-center justify-between text-sm"><span>Show footer</span><input type="checkbox" checked={f.show!==false} onChange={e=>patchGlobal({footer:{...f,show:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Social links</span><input type="checkbox" checked={f.social!==false} onChange={e=>patchGlobal({footer:{...f,social:e.target.checked}})}/></label><div className="mt-3"><Field label="Footer text" value={f.text} onChange={v=>patchGlobal({footer:{...f,text:v}})}/></div></div><div className="rounded-lg bg-blue-50 p-3 text-xs leading-5 text-blue-800"><b>Taskosphere branding</b><br/>Your Taskosphere logo and application identity remain separate from the website content editor.</div></div></div>;
+  const [section,setSection]=useState("identity");
+  const groups=[["identity","Site identity"],["seo","SEO"],["header","Header & footer"],["contact","Footer contact"]];
+  return <div className="h-full overflow-y-auto bg-white"><div className="border-b border-slate-200 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Settings</div><h2 className="mt-1 text-lg font-black">Website settings</h2><p className="mt-2 text-xs leading-5 text-slate-400">Manage the website identity and global options.</p></div>
+    <div className="flex gap-1 overflow-x-auto border-b border-slate-200 p-2">{groups.map(([id,label])=><button key={id} onClick={()=>setSection(id)} className={`shrink-0 rounded-md px-3 py-1.5 text-[11px] font-bold ${section===id?"bg-[#0D3B66] text-white":"bg-slate-100 text-slate-600"}`}>{label}</button>)}</div>
+    <div className="space-y-5 p-4">
+      {section==="identity" && <div className="space-y-4">
+        <Field label="Site name" value={identity.site_name} onChange={v=>patchIdentity({site_name:v})}/>
+        <Field label="Tagline" value={identity.site_tagline} onChange={v=>patchIdentity({site_tagline:v})}/>
+        <div><span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Logo</span><MediaBox value={identity.logo_url} onChange={v=>patchIdentity({logo_url:v})}/></div>
+        <div><span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Favicon</span><MediaBox value={identity.favicon_url} onChange={v=>patchIdentity({favicon_url:v})}/></div>
+      </div>}
+      {section==="seo" && <div className="space-y-4">
+        <Field label="SEO title" value={identity.seo_title} onChange={v=>patchIdentity({seo_title:v})}/>
+        <Field label="SEO description" value={identity.seo_description} area onChange={v=>patchIdentity({seo_description:v})}/>
+        <div><span className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-500">Social share image</span><MediaBox value={identity.seo_og_image} onChange={v=>patchIdentity({seo_og_image:v})}/></div>
+      </div>}
+      {section==="header" && <div className="space-y-4">
+        <div className="rounded-lg border border-slate-200 p-3"><b className="text-xs">Header</b><label className="mt-3 flex items-center justify-between text-sm"><span>Show logo</span><input type="checkbox" checked={h.logo!==false} onChange={e=>patchGlobal({header:{...h,logo:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Sticky header</span><input type="checkbox" checked={h.sticky!==false} onChange={e=>patchGlobal({header:{...h,sticky:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Show login</span><input type="checkbox" checked={h.showLogin!==false} onChange={e=>patchGlobal({header:{...h,showLogin:e.target.checked}})}/></label></div>
+        <div className="rounded-lg border border-slate-200 p-3"><b className="text-xs">Footer</b><label className="mt-3 flex items-center justify-between text-sm"><span>Show footer</span><input type="checkbox" checked={f.show!==false} onChange={e=>patchGlobal({footer:{...f,show:e.target.checked}})}/></label><label className="mt-3 flex items-center justify-between text-sm"><span>Social links</span><input type="checkbox" checked={f.social!==false} onChange={e=>patchGlobal({footer:{...f,social:e.target.checked}})}/></label><div className="mt-3"><Field label="Footer note" value={f.text} onChange={v=>patchGlobal({footer:{...f,text:v}})}/></div></div>
+      </div>}
+      {section==="contact" && <div className="space-y-4">
+        <Field label="Footer company name" value={identity.footer_company} onChange={v=>patchIdentity({footer_company:v})}/>
+        <Field label="Footer description" value={identity.footer_text} area onChange={v=>patchIdentity({footer_text:v})}/>
+        <div className="grid grid-cols-2 gap-3"><Field label="Email" value={identity.footer_email} onChange={v=>patchIdentity({footer_email:v})}/><Field label="Phone" value={identity.footer_phone} onChange={v=>patchIdentity({footer_phone:v})}/></div>
+        <Field label="Address" value={identity.footer_address} onChange={v=>patchIdentity({footer_address:v})}/>
+        <Field label="Copyright line" value={identity.footer_copyright} onChange={v=>patchIdentity({footer_copyright:v})}/>
+      </div>}
+      <div className="rounded-lg bg-blue-50 p-3 text-xs leading-5 text-blue-800"><b>Saved with the rest of your website.</b><br/>These settings publish together with your pages when you click “Save website”.</div>
+    </div>
+  </div>;
 }
 
 export default function WebsiteBuilder() {
   const [config,setConfig]=useState(clone(DEFAULT_BUILDER));
+  const [identity,setIdentity]=useState(clone(DEFAULT_IDENTITY));
   const [history,setHistory]=useState([]); const [future,setFuture]=useState([]);
   const [tool,setTool]=useState("pages"); const [selectedId,setSelectedId]=useState("hero");
   const [device,setDevice]=useState("desktop"); const [preview,setPreview]=useState(false); const [saving,setSaving]=useState(false); const [loaded,setLoaded]=useState(false);
 
-  useEffect(()=>{(async()=>{try{const saved=await getAdminWebsiteConfig(); if(saved?.config){setConfig({...clone(DEFAULT_BUILDER),...saved.config,global:{...DEFAULT_BUILDER.global,...saved.config.global},pages:saved.config.pages?.length?saved.config.pages:DEFAULT_BUILDER.pages});}}catch(e){console.error(e);}finally{setLoaded(true);}})();},[]);
+  useEffect(()=>{(async()=>{try{
+    const saved=await getAdminWebsiteConfig();
+    if(saved){
+      setIdentity({...clone(DEFAULT_IDENTITY),...Object.fromEntries(Object.keys(DEFAULT_IDENTITY).map(k=>[k,saved[k]]).filter(([,v])=>v!==undefined&&v!==null))});
+      const builder=saved.builder;
+      if(builder&&Array.isArray(builder.pages)&&builder.pages.length){
+        setConfig({...clone(DEFAULT_BUILDER),...builder,global:{...DEFAULT_BUILDER.global,...builder.global,design:{...DEFAULT_BUILDER.global.design,...builder.global?.design}},pages:builder.pages});
+      }
+    }
+  }catch(e){console.error(e);}finally{setLoaded(true);}})();},[]);
   const page=useMemo(()=>config.pages.find(p=>p.id===config.activePageId)||config.pages[0],[config]);
   const selected=page?.sections.find(s=>s.id===selectedId)||page?.sections[0];
   useEffect(()=>{if(selected&&!page.sections.some(s=>s.id===selectedId))setSelectedId(selected.id);},[page,selected,selectedId]);
@@ -179,6 +239,7 @@ export default function WebsiteBuilder() {
   const patchData=(patch)=>selected&&patchSection(selected.id,{data:{...selected.data,...patch}});
   const patchDesign=(patch)=>commit(prev=>({...prev,global:{...prev.global,design:{...prev.global.design,...patch}}}));
   const patchGlobal=(patch)=>commit(prev=>({...prev,global:{...prev.global,...patch}}));
+  const patchIdentity=(patch)=>setIdentity(prev=>({...prev,...patch}));
   const undo=()=>{if(!history.length)return;const prev=history[history.length-1];setFuture(f=>[clone(config),...f]);setHistory(history.slice(0,-1));setConfig(prev);};
   const redo=()=>{if(!future.length)return;const next=future[0];setHistory(h=>[...h,clone(config)]);setFuture(future.slice(1));setConfig(next);};
   const addSection=(type)=>{const s=newSection(type);patchPage({sections:[...(page.sections||[]),s]});setSelectedId(s.id);setTool("pages");};
@@ -190,8 +251,41 @@ export default function WebsiteBuilder() {
   const patchPageById=(id,patch)=>commit(prev=>({...prev,pages:prev.pages.map(p=>p.id===id?{...p,...patch}:p)}));
   const duplicatePage=(p)=>{const copy={...clone(p),id:uid("page"),name:`${p.name} copy`,slug:`${p.slug}-copy`};commit(prev=>({...prev,pages:[...prev.pages,copy],activePageId:copy.id}));setSelectedId(copy.sections[0]?.id||"");};
   const deletePage=(id)=>{if(config.pages.length===1)return;const remaining=config.pages.filter(p=>p.id!==id);commit(prev=>({...prev,pages:remaining,activePageId:remaining[0].id}));setSelectedId(remaining[0].sections[0]?.id||"");};
-  const save=async()=>{setSaving(true);try{await saveWebsiteConfig(config);toast.success("Website saved");}catch(e){toast.error(e?.message||"Unable to save website");}finally{setSaving(false);}};
-  const reset=async()=>{if(!window.confirm("Reset the website to the last saved version?"))return;try{const result=await resetWebsiteConfig();if(result?.config)setConfig(result.config);toast.success("Website reset");}catch(e){toast.error(e?.message||"Unable to reset website");}};
+  const save=async()=>{
+    setSaving(true);
+    try{
+      // Mirror the design colours into the legacy flat fields too: the
+      // public homepage fallback and the customer Login screen read
+      // primary_color/accent_color directly and don't know about
+      // global.design, so without this the colours picked here would
+      // never actually show up outside the editor.
+      const payload={
+        ...identity,
+        primary_color: config.global?.design?.primary,
+        accent_color: config.global?.design?.accent,
+        builder: config,
+      };
+      await saveWebsiteConfig(payload);
+      toast.success("Website saved and published");
+    }catch(e){
+      toast.error(e?.response?.data?.detail||e?.message||"Unable to save website");
+    }finally{
+      setSaving(false);
+    }
+  };
+  const reset=async()=>{
+    if(!window.confirm("Reset the website to the default template? This clears all your pages, sections and branding."))return;
+    try{
+      await resetWebsiteConfig();
+      setConfig(clone(DEFAULT_BUILDER));
+      setIdentity(clone(DEFAULT_IDENTITY));
+      setHistory([]); setFuture([]);
+      setSelectedId(DEFAULT_BUILDER.pages[0].sections[0].id);
+      toast.success("Website reset to the default template");
+    }catch(e){
+      toast.error(e?.response?.data?.detail||e?.message||"Unable to reset website");
+    }
+  };
 
   if(!loaded)return <div className="flex h-full items-center justify-center bg-slate-100"><div className="text-sm font-bold text-slate-500">Loading Website Studio…</div></div>;
 
@@ -209,7 +303,7 @@ export default function WebsiteBuilder() {
         <div className="flex h-full flex-col"><div className="p-2"><button onClick={()=>setTool("pages")} className={`mb-1 flex w-full flex-col items-center gap-1 rounded-md px-2 py-3 text-[10px] font-bold ${tool==="pages"?"bg-white text-[#0D3B66]":"text-slate-300 hover:bg-white/10"}`}><PanelLeft size={18}/><span>Pages</span></button><button onClick={()=>setTool("add")} className={`mb-1 flex w-full flex-col items-center gap-1 rounded-md px-2 py-3 text-[10px] font-bold ${tool==="add"?"bg-white text-[#0D3B66]":"text-slate-300 hover:bg-white/10"}`}><Plus size={18}/><span>Add</span></button><button onClick={()=>setTool("design")} className={`mb-1 flex w-full flex-col items-center gap-1 rounded-md px-2 py-3 text-[10px] font-bold ${tool==="design"?"bg-white text-[#0D3B66]":"text-slate-300 hover:bg-white/10"}`}><Palette size={18}/><span>Design</span></button><button onClick={()=>setTool("settings")} className={`mb-1 flex w-full flex-col items-center gap-1 rounded-md px-2 py-3 text-[10px] font-bold ${tool==="settings"?"bg-white text-[#0D3B66]":"text-slate-300 hover:bg-white/10"}`}><Settings2 size={18}/><span>Settings</span></button></div><div className="mt-auto border-t border-white/10 p-2"><button onClick={reset} className="flex w-full flex-col items-center gap-1 rounded-md px-2 py-3 text-[10px] font-bold text-slate-400 hover:bg-white/10 hover:text-white"><RefreshCcw size={16}/><span>Reset</span></button></div></div>
       </aside>
 
-      <div className="min-h-0 border-r border-slate-200 bg-white">{tool==="pages"&&<PagesPanel pages={config.pages} activePageId={config.activePageId} setActivePageId={id=>{commit(prev=>({...prev,activePageId:id}));setSelectedId(config.pages.find(p=>p.id===id)?.sections[0]?.id||"");}} addPage={addPage} renamePage={renamePage} duplicatePage={duplicatePage} deletePage={deletePage}/>} {tool==="add"&&<AddPanel addSection={addSection}/>} {tool==="design"&&<DesignPanel design={config.global.design} patchDesign={patchDesign}/>} {tool==="settings"&&<SettingsPanel config={config} patchGlobal={patchGlobal}/>}</div>
+      <div className="min-h-0 border-r border-slate-200 bg-white">{tool==="pages"&&<PagesPanel pages={config.pages} activePageId={config.activePageId} setActivePageId={id=>{commit(prev=>({...prev,activePageId:id}));setSelectedId(config.pages.find(p=>p.id===id)?.sections[0]?.id||"");}} addPage={addPage} renamePage={renamePage} duplicatePage={duplicatePage} deletePage={deletePage}/>} {tool==="add"&&<AddPanel addSection={addSection}/>} {tool==="design"&&<DesignPanel design={config.global.design} patchDesign={patchDesign}/>} {tool==="settings"&&<SettingsPanel config={config} patchGlobal={patchGlobal} identity={identity} patchIdentity={patchIdentity}/>}</div>
 
       <main className="min-h-0 overflow-auto bg-[#eef2f6] p-5">
         <div className="sticky top-0 z-20 mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"><div><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Editing</div><b className="text-sm text-slate-900">{page.name}</b><span className="ml-2 text-xs text-slate-400">{page.slug}</span></div><div className="flex items-center gap-1 rounded-md bg-slate-100 p-1"><ToolButton icon={Monitor} active={device==="desktop"} onClick={()=>setDevice("desktop")}/><ToolButton icon={Smartphone} active={device==="mobile"} onClick={()=>setDevice("mobile")}/></div></div>
@@ -218,7 +312,7 @@ export default function WebsiteBuilder() {
         </div>
       </main>
 
-      <aside className="min-h-0 overflow-y-auto border-l border-slate-200 bg-white"><div className="border-b border-slate-200 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Edit</div><div className="mt-1 flex items-center justify-between"><h2 className="text-lg font-black text-slate-900">{selected?.title||"Select a section"}</h2>{selected&&<button className="text-red-500" onClick={deleteSection} title="Delete section"><Trash2 size={16}/></button>}</div><p className="mt-1 text-xs text-slate-400">Click a section in the page to edit it.</p></div>{selected&&<div className="p-4"><div className="mb-4 flex gap-1 rounded-md bg-slate-100 p-1"><button className="flex-1 rounded px-2 py-2 text-[10px] font-bold text-slate-600" onClick={()=>patchSection(selected.id,{layout:"split"})}>Layout</button><button className="flex-1 rounded px-2 py-2 text-[10px] font-bold text-slate-600" onClick={()=>patchSection(selected.id,{visible:selected.visible===false})}>{selected.visible===false?"Show":"Hide"}</button></div><SectionEditor section={selected} patchData={patchData}/><div className="mt-5 border-t border-slate-200 pt-4"><div className="grid grid-cols-3 gap-2"><button onClick={()=>moveSection(-1)} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><ArrowUp size={13} className="mx-auto"/>Up</button><button onClick={()=>moveSection(1)} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><ArrowDown size={13} className="mx-auto"/>Down</button><button onClick={duplicateSection} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><Copy size={13} className="mx-auto"/>Copy</button></div></div></div>}</aside>
+      <aside className="min-h-0 overflow-y-auto border-l border-slate-200 bg-white"><div className="border-b border-slate-200 p-4"><div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Edit</div><div className="mt-1 flex items-center justify-between"><h2 className="text-lg font-black text-slate-900">{selected?.title||"Select a section"}</h2>{selected&&<button className="text-red-500" onClick={deleteSection} title="Delete section"><Trash2 size={16}/></button>}</div><p className="mt-1 text-xs text-slate-400">Click a section in the page to edit it.</p></div>{selected&&<div className="p-4"><div className="mb-4 flex gap-1 rounded-md bg-slate-100 p-1">{selected.type==="hero"&&<button className="flex-1 rounded px-2 py-2 text-[10px] font-bold text-slate-600" onClick={()=>patchSection(selected.id,{layout:selected.layout==="center"?"split":"center"})} title="Switch between a split layout (image beside text) and a centered layout">Layout: {selected.layout==="center"?"Centered":"Split"}</button>}<button className="flex-1 rounded px-2 py-2 text-[10px] font-bold text-slate-600" onClick={()=>patchSection(selected.id,{visible:selected.visible===false})}>{selected.visible===false?"Show":"Hide"}</button></div><SectionEditor section={selected} patchData={patchData}/><div className="mt-5 border-t border-slate-200 pt-4"><div className="grid grid-cols-3 gap-2"><button onClick={()=>moveSection(-1)} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><ArrowUp size={13} className="mx-auto"/>Up</button><button onClick={()=>moveSection(1)} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><ArrowDown size={13} className="mx-auto"/>Down</button><button onClick={duplicateSection} className="rounded-md border border-slate-200 py-2 text-[10px] font-bold"><Copy size={13} className="mx-auto"/>Copy</button></div></div></div>}</aside>
     </div>
   </div>;
 }
