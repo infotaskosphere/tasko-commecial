@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request
 from backend import dependencies as _dependencies
 from backend.models import User
 from backend.platform_owner import is_platform_owner
-from backend.commercial_licensee_admin import resolve_license_modules
+from backend.commercial_licensee_admin import resolve_license_modules, get_all_admin_permissions
 
 MODULE_PREFIXES = {
     "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
@@ -40,8 +40,6 @@ def module_for_path(path: str, method: str = "GET") -> Optional[str]:
     normalized = path.split("?", 1)[0]
     if normalized.startswith("/api"):
         normalized = normalized[4:] or "/"
-    # User directory and basic client lookup are tenant administration
-    # essentials and are intentionally available without purchasing HRMS/Records.
     if method == "GET":
         if normalized == "/users" or (normalized.startswith("/users/") and not any(sub in normalized for sub in ("/salary-report", "/offboard"))):
             return None
@@ -96,9 +94,20 @@ async def _commercial_license(user: User) -> Optional[dict]:
     return None
 
 
-def _licensed_module(user: User, module: str, license_doc: dict) -> bool:
-    # Use the canonical resolver so package-era values such as TASKS/HRMS and
-    # custom values such as taskosphere/people_matrix behave identically.
+def _hydrate_admin(user: User, license_doc: dict) -> User:
+    if str(getattr(user, "role", "")).lower() != "admin":
+        return user
+    data = user.model_dump()
+    data["commercial_customer_id"] = data.get("commercial_customer_id") or license_doc.get("customer_id")
+    data["license_id"] = license_doc.get("id")
+    data["license_key"] = license_doc.get("license_key")
+    data["licensed_modules"] = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
+    data["selected_features"] = license_doc.get("selected_features") or {}
+    data["permissions"] = get_all_admin_permissions(license_doc)
+    return User.model_validate(data)
+
+
+def _licensed_module(module: str, license_doc: dict) -> bool:
     return module in resolve_license_modules(license_doc)
 
 
@@ -108,14 +117,6 @@ def _permission_flag(user: User, flag: str, license_doc: dict) -> bool:
         permissions = permissions.model_dump()
     if not isinstance(permissions, dict):
         return False
-    # Admins have all rights within their license. Feature-level restrictions
-    # on custom licenses still apply to an admin.
-    if str(getattr(user, "role", "")).lower() == "admin":
-        selected = license_doc.get("selected_features") or {}
-        module = next((m for m, flags in FEATURE_PREFIXES.items() if flag in flags), None)
-        if module and module in selected:
-            return flag in set(selected.get(module) or [])
-        return _licensed_module(user, module, license_doc) if module else True
     return bool(permissions.get(flag, False))
 
 
@@ -124,20 +125,23 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
     if is_platform_owner(user):
         return user
 
-    # Only commercial accounts receive the license boundary. Ordinary internal
-    # application admins keep the existing unrestricted-admin behaviour.
     commercial = await _commercial_license(user)
     if not commercial:
         return user
 
+    # The licensee contact is the tenant administrator. Refresh its effective
+    # permissions from the active license on every authenticated request so a
+    # license upgrade/revocation takes effect without requiring a new account.
+    user = _hydrate_admin(user, commercial)
+
     module = module_for_path(request.url.path, request.method)
-    if module and not _licensed_module(user, module, commercial):
+    if module and not _licensed_module(module, commercial):
         raise HTTPException(status_code=403, detail=f"This company license does not include the {module} module.")
 
     feature = feature_for_path(request.url.path, request.method)
     if feature:
         feature_module, feature_flag = feature
-        if not _licensed_module(user, feature_module, commercial):
+        if not _licensed_module(feature_module, commercial):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_module} module.")
         if not _permission_flag(user, feature_flag, commercial):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_flag} feature.")
