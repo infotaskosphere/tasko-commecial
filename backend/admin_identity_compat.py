@@ -1,9 +1,9 @@
 """Compatibility bootstrap for commercial deployments.
 
-Normalize admin role values and restore the canonical admin permission template,
-while preserving the six commercial module entitlement flags when an admin is
-attached to a licensed company. Internal/system admins keep the old full-access
-behaviour.
+Normalize admin role values and preserve the commercial identity fields that
+older Pydantic User models do not declare.  Those fields are required by the
+license/customer resolvers to recover the company for a licensee account even
+when a legacy user document has no company_id yet.
 """
 
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
@@ -16,6 +16,13 @@ _MODULE_FLAGS = (
     "can_access_records",
     "can_access_proposals",
     "can_access_people_matrix",
+)
+_COMMERCIAL_IDENTITY_FIELDS = (
+    "commercial_customer_id",
+    "license_id",
+    "license_key",
+    "licensed_modules",
+    "selected_features",
 )
 
 
@@ -34,12 +41,11 @@ def _normalized_user_init(self, **data):
             stored = {}
 
         canonical = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
-        # A commercial admin is identified by company_id and has the six
-        # module flags deliberately restricted by the license generator.
-        # Preserve those flags instead of allowing the canonical admin
-        # template to turn every module back on during model construction.
-        is_commercial_admin = bool(data.get("company_id")) and any(
-            flag in stored for flag in _MODULE_FLAGS
+        # A commercial admin is identified by company_id or a commercial
+        # identity field. Preserve the module flags so the live license
+        # entitlement layer can cap them on every authenticated request.
+        is_commercial_admin = bool(data.get("company_id")) or any(
+            data.get(field) not in (None, "", [], {}) for field in _COMMERCIAL_IDENTITY_FIELDS
         )
         if is_commercial_admin:
             for flag in _MODULE_FLAGS:
@@ -48,7 +54,17 @@ def _normalized_user_init(self, **data):
 
         data["permissions"] = canonical
 
+    # Pydantic's User model intentionally ignores unknown legacy/commercial
+    # fields. Keep a runtime copy on the model instance so the authentication
+    # and tenant resolvers can use them without changing the public User schema.
+    identity = {field: data.get(field) for field in _COMMERCIAL_IDENTITY_FIELDS}
     _original_user_init(self, **data)
+    for field, value in identity.items():
+        if value not in (None, "", [], {}):
+            try:
+                object.__setattr__(self, field, value)
+            except Exception:
+                pass
 
 
 if getattr(User.__init__, "__name__", "") != "_normalized_user_init":
