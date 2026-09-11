@@ -1,5 +1,6 @@
 import axios from "axios";
 import api, { getToken } from "@/lib/api";
+import { handleMockRoute } from "@/lib/mockBackend";
 
 export const DEFAULT_PACKAGES = [
   { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", description: "Legacy Task Management + Invoicing", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 0, active: true },
@@ -22,6 +23,43 @@ licensingApi.interceptors.request.use((config) => {
   }
   return config;
 });
+
+licensingApi.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    const isOffline =
+      !error.response ||
+      error.code === "ERR_NETWORK" ||
+      error.message === "Network Error" ||
+      (!import.meta.env.VITE_API_URL && [404, 502, 503, 504].includes(error.response?.status));
+
+    if (isOffline) {
+      try {
+        const method = (error.config?.method || "get").toLowerCase();
+        const rawUrl = error.config?.url || "";
+        let bodyData = error.config?.data;
+        if (typeof bodyData === "string") {
+          try {
+            bodyData = JSON.parse(bodyData);
+          } catch {}
+        }
+        const mockRes = handleMockRoute(method, rawUrl, bodyData);
+        if (mockRes) {
+          return Promise.resolve({
+            data: mockRes.data,
+            status: mockRes.status || 200,
+            statusText: "OK",
+            headers: {},
+            config: error.config,
+          });
+        }
+      } catch (err) {
+        console.warn("[MockBackend] Licensing fallback error:", err);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export const getLicenseState = async () => (await licensingApi.get("/licensing/state")).data;
 export const createLicense = async (input) => (await licensingApi.post("/licensing/licenses", input)).data;

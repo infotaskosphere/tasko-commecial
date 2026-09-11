@@ -158,6 +158,10 @@ def _permission_flag(user: User, flag: str) -> bool:
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
+    if str(getattr(user, "role", "")).lower() == "admin":
+        if isinstance(permissions, dict) and permissions.get(flag) is False:
+            return False
+        return True
     if not isinstance(permissions, dict):
         return False
     return bool(permissions.get(flag, False))

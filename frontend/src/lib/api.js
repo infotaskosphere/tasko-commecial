@@ -1,5 +1,6 @@
 import axios from "axios";
 import { useState, useEffect } from "react";
+import { handleMockRoute } from "./mockBackend";
 
 // ─────────────────────────────────────────────────────────────
 // API BASE URL
@@ -287,7 +288,8 @@ export function ensureBackendReady() {
     // collection-retry logic below for genuine cold-start responses — this
     // gate should only smooth over the first second or two of a cold start,
     // never hold the whole app hostage.
-    const backoffs = [0, 500, 1500];
+    const backoffs = CONFIGURED_API_URL ? [0, 500, 1500] : [0];
+    const checkTimeout = CONFIGURED_API_URL ? 4000 : 600;
 
     for (const wait of backoffs) {
       if (wait) {
@@ -296,7 +298,7 @@ export function ensureBackendReady() {
 
       try {
         await axios.get(HEALTH_URL, {
-          timeout: 4000,
+          timeout: checkTimeout,
         });
 
         _isReady = true;
@@ -455,6 +457,38 @@ api.interceptors.response.use(
     ) {
       emitSessionReplacement();
       return Promise.reject(error);
+    }
+
+    // Offline / Mock fallback when backend server is not running or unreachable
+    const isOffline =
+      !error.response ||
+      error.code === "ERR_NETWORK" ||
+      error.message === "Network Error" ||
+      (!CONFIGURED_API_URL && [404, 502, 503, 504].includes(error.response?.status));
+
+    if (isOffline) {
+      try {
+        const method = (error.config?.method || "get").toLowerCase();
+        const rawUrl = error.config?.url || "";
+        let bodyData = error.config?.data;
+        if (typeof bodyData === "string") {
+          try {
+            bodyData = JSON.parse(bodyData);
+          } catch {}
+        }
+        const mockRes = handleMockRoute(method, rawUrl, bodyData);
+        if (mockRes) {
+          return Promise.resolve({
+            data: mockRes.data,
+            status: mockRes.status || 200,
+            statusText: "OK",
+            headers: {},
+            config: error.config,
+          });
+        }
+      } catch (err) {
+        console.warn("[MockBackend] Fallback error:", err);
+      }
     }
 
     // ─────────────────────────────────────────────────────────

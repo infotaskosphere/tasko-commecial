@@ -56,7 +56,16 @@ function prefetchRoute(path) {
   const loader = ROUTE_PREFETCHERS[path];
   if (!loader) return;
   prefetchedRoutes.add(path);
-  loader().catch(() => prefetchedRoutes.delete(path));
+  try {
+    const promise = loader();
+    if (promise && typeof promise.catch === "function") {
+      promise.catch(() => {
+        prefetchedRoutes.delete(path);
+      });
+    }
+  } catch (err) {
+    prefetchedRoutes.delete(path);
+  }
 }
 
 function RoutePrefetcher() {

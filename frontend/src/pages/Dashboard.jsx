@@ -1085,7 +1085,13 @@ export default function Dashboard() {
       const res = await api.get(endpoint);
       return res.data;
     } catch (err) {
-      console.error(`apiFetch ${endpoint} failed:`, err?.response?.status, err?.response?.data?.detail || err.message);
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail || err.message;
+      // If endpoint is forbidden due to company license tier/module entitlements, treat as graceful empty response
+      if (status === 403 && typeof detail === 'string' && (detail.includes('does not include') || detail.includes('license') || detail.includes('feature'))) {
+        return null;
+      }
+      console.error(`apiFetch ${endpoint} failed:`, status, detail);
       return null;
     }
   }, []);
@@ -1246,12 +1252,17 @@ export default function Dashboard() {
     // ── Wave 2: secondary ──
     let wave2 = {};
     try {
+      const perms = authUser?.permissions || {};
+      const isCommercial = Boolean(authUser?.company_id);
+      const canFetchUsers = !isCommercial || (perms.can_access_people_matrix === true && perms.can_view_user_page !== false);
+      const canFetchLeads = !isCommercial || (perms.can_access_proposals === true && perms.can_view_all_leads !== false);
+
       const [users, leads, rankings] = await Promise.all([
-        apiFetch('/users'),
-        apiFetch('/leads'),
+        canFetchUsers ? apiFetch('/users') : Promise.resolve([]),
+        canFetchLeads ? apiFetch('/leads') : Promise.resolve([]),
         apiFetch(`/reports/performance-rankings?period=${rankingPeriod}`),
       ]);
-      wave2 = { users, leads, rankings };
+      wave2 = { users: users || [], leads: leads || [], rankings };
       applyWave2Data(wave2);
     } catch (e) {
       console.error('Dashboard wave-2 fetch error:', e);

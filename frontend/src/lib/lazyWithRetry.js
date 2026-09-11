@@ -16,8 +16,9 @@ import { lazy } from "react";
  *    reload-looping forever.
  */
 export function lazyWithRetry(componentImport, chunkName) {
+  const name = chunkName || String(componentImport).replace(/[^a-zA-Z0-9_-]/g, '').slice(-32) || 'chunk';
   return lazy(async () => {
-    const storageKey = `chunk-retry:${chunkName}`;
+    const storageKey = `chunk-retry:${name}`;
 
     try {
       const module = await componentImport();

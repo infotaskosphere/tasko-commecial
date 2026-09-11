@@ -1,4 +1,5 @@
-import React, { lazy, Suspense } from 'react';
+import React, { Suspense } from 'react';
+import { lazyWithRetry as lazy } from '@/lib/lazyWithRetry.js';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import DashboardLayout from '@/components/layout/DashboardLayout.jsx';
