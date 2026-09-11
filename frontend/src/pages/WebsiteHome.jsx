@@ -215,7 +215,23 @@ function useSiteMeta(config) {
 export default function WebsiteHome({ configOverride = null }) {
   const [config, setConfig] = useState(configOverride);
   const [error, setError] = useState(false);
-  useEffect(() => { if (configOverride) setConfig(configOverride); else getPublicWebsiteConfig().then(setConfig).catch(() => setError(true)); }, [configOverride]);
+
+  useEffect(() => {
+    if (configOverride) {
+      setConfig(configOverride);
+    } else {
+      getPublicWebsiteConfig().then((data) => {
+        if (data) setConfig(data);
+        else setError(true);
+      }).catch(() => setError(true));
+    }
+
+    const handleUpdate = (e) => {
+      if (e?.detail) setConfig(e.detail);
+    };
+    window.addEventListener("taskosphere:website-updated", handleUpdate);
+    return () => window.removeEventListener("taskosphere:website-updated", handleUpdate);
+  }, [configOverride]);
   useSiteMeta(config);
   if (!config && !error) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">Loading website…</div>;
   if (!config) return <div className="flex min-h-screen items-center justify-center">Website configuration is unavailable.</div>;
