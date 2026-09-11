@@ -16,6 +16,7 @@ const MODULE_FALLBACKS = {
 };
 
 const MODULE_FLAGS = Object.fromEntries(Object.entries(MODULE_FALLBACKS).map(([key, [flag]]) => [key, flag]));
+const MANAGE_ACTIONS = new Set(['create', 'edit', 'delete', 'approve', 'print', 'share']);
 
 function EntitledHome() {
   const { hasPermission } = useAuth();
@@ -28,9 +29,6 @@ export function PageGuard({ module, page, children }) {
   const { hasPageAccess } = useGovernance();
   const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
 
-  // AuthContext is the live license-authoritative permission source. This
-  // explicit branch prevents the generic admin bypass from reopening a page
-  // that the customer's active license does not contain.
   if (isCommercialAdmin) {
     const moduleFlag = MODULE_FLAGS[module];
     if (!moduleFlag || !hasPermission(moduleFlag) || !hasPermission(page)) return <EntitledHome />;
@@ -42,7 +40,22 @@ export function PageGuard({ module, page, children }) {
 }
 
 export function ActionGuard({ module, page, action, fallback = null, children }) {
+  const { user, hasPermission, isPlatformOwner } = useAuth();
   const { hasActionAccess } = useGovernance();
+  const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
+
+  if (isCommercialAdmin) {
+    const moduleFlag = MODULE_FLAGS[module];
+    if (!moduleFlag || !hasPermission(moduleFlag) || !hasPermission(page)) return fallback;
+    if (MANAGE_ACTIONS.has(action)) {
+      const manageFlag = page.startsWith('can_view_') ? page.replace('can_view_', 'can_manage_') : null;
+      if (manageFlag && user?.permissions && Object.prototype.hasOwnProperty.call(user.permissions, manageFlag)) {
+        return user.permissions[manageFlag] === true ? children : fallback;
+      }
+    }
+    return children;
+  }
+
   if (!hasActionAccess(module, page, action)) return fallback;
   return children;
 }
