@@ -160,6 +160,7 @@ function BuilderSection({ section, config }) {
   if (section.type === "cta") return <section className="px-5 py-20 lg:px-8"><div className="mx-auto max-w-5xl rounded-[2rem] p-10 text-white shadow-2xl sm:p-14" style={{ background: `linear-gradient(135deg, ${primary}, #061827)` }}><h2 className="max-w-3xl text-3xl font-black sm:text-4xl">{d.heading}</h2><p className="mt-4 max-w-2xl text-lg leading-8 text-white/70">{d.text}</p><Link to={safeHref(d.href || "/login")} className="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-bold text-slate-900">{d.button || "Get started"}<ArrowRight size={17} /></Link></div></section>;
   if (["content", "text", "heading"].includes(section.type)) return <section className="mx-auto max-w-4xl px-5 py-16 lg:px-8"><h2 className="text-3xl font-black">{d.heading}</h2><p className="mt-5 whitespace-pre-wrap text-lg leading-8 text-slate-600">{d.body || d.subtitle}</p></section>;
   if (section.type === "image") return <section className="mx-auto max-w-7xl px-5 py-16 lg:px-8"><img src={d.src} alt={d.alt || ""} className="max-h-[620px] w-full rounded-3xl object-cover shadow-lg" /></section>;
+  if (section.type === "imageText") return <section className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2 lg:px-8">{d.src ? <img src={d.src} alt={d.alt || ""} className="max-h-[420px] w-full rounded-3xl object-cover shadow-lg" /> : <div className="flex aspect-video items-center justify-center rounded-3xl bg-slate-100 text-slate-300"><ImagePlus size={40} /></div>}<div><h2 className="text-3xl font-black sm:text-4xl">{d.heading}</h2><p className="mt-5 whitespace-pre-wrap text-lg leading-8 text-slate-600">{d.body}</p>{d.button && <a href={safeHref(d.href)} className="mt-7 inline-flex items-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold text-white" style={{ background: primary }}>{d.button}<ArrowRight size={17} /></a>}</div></section>;
   if (section.type === "video") return <section className="mx-auto max-w-5xl px-5 py-16 lg:px-8"><div className="flex h-80 items-center justify-center rounded-3xl bg-slate-950 text-white"><Video size={46} /><span className="ml-3 font-semibold">{d.url || "Video"}</span></div></section>;
   if (section.type === "divider") return <div className="mx-auto max-w-7xl px-5 py-5"><div className="h-px bg-slate-200" /></div>;
   if (section.type === "gallery") return <section className="mx-auto grid max-w-7xl grid-cols-2 gap-3 px-5 py-16 md:grid-cols-3 lg:px-8">{(d.items || []).map((src, i) => <img key={i} src={src} alt="" className="aspect-square rounded-2xl object-cover" />)}</section>;
@@ -178,13 +179,44 @@ function BuilderWebsite({ config, builder }) {
   const pages = Array.isArray(builder.pages) ? builder.pages : [];
   const page = pages.find((x) => x.id === queryPage) || pages.find((x) => x.slug === location.pathname) || pages.find((x) => x.id === builder.activePageId) || pages[0];
   const visiblePages = pages.filter((x) => x.visible !== false);
-  return <div className="min-h-screen bg-white text-slate-900"><header className={`${builder.global?.header?.sticky ? "sticky top-0" : ""} z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl`}><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8"><Link to="/" className="flex items-center gap-3"><img src={config.logo_url || "/logo.png"} alt={config.site_name} className="h-10 w-auto object-contain" /><div className="hidden sm:block"><div className="font-bold">{config.site_name}</div><div className="text-xs text-slate-500">{config.site_tagline}</div></div></Link><nav className="hidden items-center gap-6 lg:flex">{visiblePages.slice(0, 7).map((p) => <a key={p.id} href={`/website?page=${encodeURIComponent(p.id)}`} className="text-sm font-medium text-slate-600 hover:text-slate-950">{p.name}</a>)}</nav>{builder.global?.header?.showLogin && <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white" style={{ background: config.primary_color || "#0D3B66" }}>Sign in</Link>}</div></header><main>{(page?.sections || []).filter((s) => s.visible !== false).map((section) => <BuilderSection key={section.id} section={section} config={config} />)}</main><footer className="border-t border-slate-200"><div className="mx-auto max-w-7xl px-5 py-10 lg:px-8"><div className="font-bold">{config.footer_company || config.site_name}</div><p className="mt-2 max-w-2xl text-sm text-slate-500">{config.footer_text}</p><div className="mt-5 text-xs text-slate-400">{config.footer_copyright}</div></div></footer></div>;
+  const header = builder.global?.header || {};
+  const footer = builder.global?.footer || {};
+  const showFooter = footer.show !== false;
+  const contactLine = [config.footer_email, config.footer_phone, config.footer_address].filter(Boolean).join(" · ");
+  return <div className="min-h-screen bg-white text-slate-900" style={{ fontFamily: builder.global?.design?.font || "Inter" }}>
+    <header className={`${header.sticky !== false ? "sticky top-0" : ""} z-40 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl`}><div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 lg:px-8"><Link to="/" className="flex items-center gap-3">{header.logo !== false && <img src={config.logo_url || "/logo.png"} alt={config.site_name} className="h-10 w-auto object-contain" />}<div className="hidden sm:block"><div className="font-bold">{config.site_name}</div><div className="text-xs text-slate-500">{config.site_tagline}</div></div></Link><nav className="hidden items-center gap-6 lg:flex">{visiblePages.slice(0, 7).map((p) => <a key={p.id} href={`/website?page=${encodeURIComponent(p.id)}`} className="text-sm font-medium text-slate-600 hover:text-slate-950">{p.name}</a>)}</nav>{header.showLogin !== false && <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold text-white" style={{ background: config.primary_color || "#0D3B66" }}>Sign in</Link>}</div></header>
+    <main>{(page?.sections || []).filter((s) => s.visible !== false).map((section) => <BuilderSection key={section.id} section={section} config={config} />)}</main>
+    {showFooter && <footer className="border-t border-slate-200"><div className="mx-auto max-w-7xl px-5 py-10 lg:px-8"><div className="font-bold">{config.footer_company || config.site_name}</div><p className="mt-2 max-w-2xl text-sm text-slate-500">{config.footer_text}</p>{contactLine && <p className="mt-3 text-sm text-slate-500">{contactLine}</p>}<div className="mt-5 text-xs text-slate-400">{config.footer_copyright}</div></div></footer>}
+  </div>;
+}
+
+function useSiteMeta(config) {
+  useEffect(() => {
+    if (!config) return;
+    const setMeta = (name, content, attr = "name") => {
+      if (!content) return;
+      let tag = document.head.querySelector(`meta[${attr}="${name}"]`);
+      if (!tag) { tag = document.createElement("meta"); tag.setAttribute(attr, name); document.head.appendChild(tag); }
+      tag.setAttribute("content", content);
+    };
+    if (config.seo_title || config.site_name) document.title = config.seo_title || config.site_name;
+    setMeta("description", config.seo_description);
+    setMeta("og:title", config.seo_title || config.site_name, "property");
+    setMeta("og:description", config.seo_description, "property");
+    if (config.seo_og_image) setMeta("og:image", config.seo_og_image, "property");
+    if (config.favicon_url) {
+      let link = document.head.querySelector("link[rel~='icon']");
+      if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+      link.href = config.favicon_url;
+    }
+  }, [config]);
 }
 
 export default function WebsiteHome({ configOverride = null }) {
   const [config, setConfig] = useState(configOverride);
   const [error, setError] = useState(false);
   useEffect(() => { if (configOverride) setConfig(configOverride); else getPublicWebsiteConfig().then(setConfig).catch(() => setError(true)); }, [configOverride]);
+  useSiteMeta(config);
   if (!config && !error) return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">Loading website…</div>;
   if (!config) return <div className="flex min-h-screen items-center justify-center">Website configuration is unavailable.</div>;
   if (config.builder?.pages?.length) return <BuilderWebsite config={config} builder={config.builder} />;
