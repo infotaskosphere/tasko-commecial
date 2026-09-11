@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 
 const MODULE_FLAGS = {
@@ -21,14 +21,22 @@ const MODULE_HOME = [
 ];
 
 function ModuleGate({ module, children }) {
-  const { hasPermission } = useAuth();
+  const { user, hasPermission, isPlatformOwner } = useAuth();
+  const location = useLocation();
   const flag = MODULE_FLAGS[module];
   const granted = flag ? hasPermission(flag) : false;
 
-  if (granted) return children;
+  // User administration is a tenant-control-plane capability. A commercial
+  // licensee administrator must always be able to manage the users connected
+  // to his own license, even when the separately licensed People Matrix/HRMS
+  // module was not purchased.
+  const isLicensedAdminUserDirectory = location.pathname === '/users'
+    && !isPlatformOwner
+    && String(user?.role || '').toLowerCase() === 'admin'
+    && !!user?.company_id;
 
-  // Do not bounce a customer without Taskosphere back to /dashboard. Pick the
-  // first licensed module instead so a module-limited license never loops.
+  if (granted || isLicensedAdminUserDirectory) return children;
+
   const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
   return <Navigate to={fallback} replace />;
 }
