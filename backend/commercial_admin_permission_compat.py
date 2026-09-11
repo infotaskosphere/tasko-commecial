@@ -1,19 +1,6 @@
-"""Keep commercial administrator permissions synchronized with the active license.
-
-Some commercial administrator accounts were created before feature-level
-licensing was introduced, so their persisted permission dictionary can be
-missing the new module/page flags. The SaaS session itself is authoritative
-for the company; this shim hydrates the admin's permissions from the active
-commercial license before governance checks run.
-
-Important FastAPI compatibility note: this dependency must preserve the
-HTTPBearer dependency on ``credentials``. Without ``Depends(security)``,
-FastAPI interprets ``credentials`` as a required query parameter and governed
-GET routes return HTTP 422 before their handlers execute.
-"""
+"""Synchronize commercial administrator permissions with the active license."""
 
 from datetime import datetime, timezone
-
 from fastapi import Depends
 
 from backend import dependencies as _dependencies
@@ -36,70 +23,54 @@ def _aware(value):
 
 
 async def _hydrate(user: User) -> User:
-    # Platform owner permissions come from the canonical admin role, not from
-    # any customer's purchased module/feature license.
-    if is_platform_owner(user):
+    if is_platform_owner(user) or str(getattr(user, "role", "")).lower() != "admin":
         return user
 
-    if str(getattr(user, "role", "")).lower() != "admin":
-        return user
     company_id = str(getattr(user, "company_id", "") or "").strip()
-    if not company_id:
+    customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
+    license_id = str(getattr(user, "license_id", "") or "").strip()
+    if not company_id and not customer_id and not license_id:
         return user
 
     try:
-        company = await _dependencies.db.companies.find_one(
-            {"id": company_id}, {"_id": 0, "source": 1}
-        )
-        if not company or company.get("source") != "commercial-license":
+        db = getattr(_dependencies, "_raw_db", _dependencies.db)
+        company = None
+        if company_id:
+            company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+        customer_id = customer_id or str((company or {}).get("commercial_customer_id") or "").strip()
+        license_id = license_id or str((company or {}).get("license_id") or "").strip()
+
+        query = []
+        if customer_id:
+            query.append({"customer_id": customer_id})
+        if license_id:
+            query.append({"id": license_id})
+        if not query:
             return user
 
-        licenses = await _dependencies.db.commercial_licenses.find(
-            {"customer_id": company_id}, {"_id": 0}
-        ).to_list(100)
+        licenses = await db.commercial_licenses.find({"$or": query, "status": {"$in": ["active", "trial"]}}, {"_id": 0}).to_list(100)
         now = datetime.now(timezone.utc)
-        active = []
-        for license_doc in licenses:
-            status = str(license_doc.get("status") or "active").lower()
-            if status not in {"active", "trial"}:
-                continue
-            expires = _aware(license_doc.get("expires_at"))
-            if expires and expires <= now:
-                continue
-            active.append(license_doc)
-
+        active = [doc for doc in licenses if not doc.get("expires_at") or (_aware(doc.get("expires_at")) and _aware(doc.get("expires_at")) > now)]
         if not active:
             return user
-
         active.sort(key=lambda x: str(x.get("issued_at") or ""), reverse=True)
         license_doc = active[0]
-        modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
-        selected_features = license_doc.get("selected_features")
 
         from backend.commercial_licensee_admin import get_all_admin_permissions
-
-        admin_permissions = get_all_admin_permissions()
-        current = getattr(user, "permissions", None)
-        if hasattr(current, "model_dump"):
-            current = current.model_dump()
-        if not isinstance(current, dict):
-            current = {}
-        permissions = {**current, **admin_permissions}
-
+        admin_permissions = get_all_admin_permissions(license_doc)
         data = user.model_dump()
-        data["permissions"] = permissions
-        data["licensed_modules"] = modules
-        data["selected_features"] = selected_features or {}
+        data["commercial_customer_id"] = customer_id or license_doc.get("customer_id")
+        data["licensed_modules"] = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
+        data["selected_features"] = license_doc.get("selected_features") or {}
         data["license_id"] = license_doc.get("id")
         data["license_key"] = license_doc.get("license_key")
+        data["permissions"] = admin_permissions
         return User.model_validate(data)
     except Exception:
         return user
 
 
-async def get_current_user_with_commercial_admin_permissions(
-    credentials=Depends(_dependencies.security),
-):
+async def get_current_user_with_commercial_admin_permissions(credentials=Depends(_dependencies.security)):
     user = await _original_get_current_user(credentials)
     return await _hydrate(user)
 
