@@ -7,6 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "predev": "node scripts/enable-client-excel-import.mjs",
     "prebuild": "node scripts/enable-client-excel-import.mjs",
     "dev": "vite",
     "build": "vite build",
@@ -83,7 +84,7 @@
     "autoprefixer": "^10.4.20",
     "eslint": "8.57.0",
     "eslint-plugin-react": "7.37.4",
-    "eslint-plugin-react-hooks": "4.6.2",
+    "react-hooks": "4.6.2",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^8.2.0"
