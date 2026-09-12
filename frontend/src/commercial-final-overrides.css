@@ -1,118 +1,127 @@
 /* Final commercial UI corrections. */
 
 /* --------------------------------------------------------------------------
-   TOP MODULE SWITCHER
+   TOP MODULE SWITCHER (Screenshot 2 Match)
    -------------------------------------------------------------------------- */
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"]{
-  background:#fff!important;
-  color:#1F6FB2!important;
-  border-top:1px solid #e2e8f0!important;
-  border-bottom:1px solid #d8e1ea!important;
-  box-shadow:none!important;
-  transition:background-color .25s ease,border-color .25s ease,color .25s ease;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"],
+body:not(.website-surface) #root #top-module-switcher-bar {
+  background: #ffffff !important;
+  color: #475569 !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  transition: background-color .25s ease, border-color .25s ease, color .25s ease;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button{
-  position:relative!important;
-  height:40px!important;
-  min-height:40px!important;
-  background:transparent!important;
-  color:#1F6FB2!important;
-  border-radius:0!important;
-  border:0!important;
-  border-bottom:0!important;
-  box-shadow:none!important;
-  font-weight:700!important;
-  overflow:hidden!important;
-  transition:color .2s ease,background-color .2s ease,transform .2s ease;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button,
+body:not(.website-surface) #root #top-module-switcher-bar button {
+  position: relative !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  background: transparent !important;
+  color: #475569 !important;
+  border-radius: 0 !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  overflow: visible !important;
+  transform: none !important;
+  transition: color .15s ease, border-color .15s ease;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{
-  content:"";
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:0;
-  height:3px;
-  border-radius:3px 3px 0 0;
-  background:#1FAF5A;
-  transform:scaleX(0);
-  transform-origin:center;
-  transition:transform .28s cubic-bezier(.22,1,.36,1),background-color .2s ease;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button svg,
+body:not(.website-surface) #root #top-module-switcher-bar button svg {
+  color: #64748b !important;
+  transition: color .15s ease;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{
-  background:#f8fafc!important;
-  color:#0D3B66!important;
-  transform:translateY(-1px);
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button::after,
+body:not(.website-surface) #root #top-module-switcher-bar button::after {
+  display: none !important;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover::after{
-  transform:scaleX(.65);
-  background:#1FAF5A;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button:hover,
+body:not(.website-surface) #root #top-module-switcher-bar button:hover {
+  background: transparent !important;
+  color: #0f172a !important;
+  transform: none !important;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{
-  background:linear-gradient(to bottom,rgba(31,111,178,.10),rgba(31,111,178,.04))!important;
-  color:#0D3B66!important;
-  font-weight:800!important;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button:hover svg,
+body:not(.website-surface) #root #top-module-switcher-bar button:hover svg {
+  color: #0f172a !important;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"]::after,
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]::after{
-  transform:scaleX(1);
-  background:#1FAF5A;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"],
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"],
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"],
+body:not(.website-surface) #root #top-module-switcher-bar button[aria-current="page"],
+body:not(.website-surface) #root #top-module-switcher-bar button[class*="text-slate-900"],
+body:not(.website-surface) #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] {
+  background: transparent !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid #1F6FB2 !important;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{
-  background:#fff!important;
-  border-left:1px solid #e2e8f0!important;
-  transition:background-color .25s ease,border-color .25s ease;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"] svg,
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"] svg,
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"] svg,
+body:not(.website-surface) #root #top-module-switcher-bar button[aria-current="page"] svg,
+body:not(.website-surface) #root #top-module-switcher-bar button[class*="text-slate-900"] svg,
+body:not(.website-surface) #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] svg {
+  color: #0f172a !important;
 }
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{
-  position:relative!important;
-  height:40px!important;
-  min-height:40px!important;
-  background:transparent!important;
-  color:#1F6FB2!important;
-  border-radius:0!important;
-  box-shadow:none!important;
-  transition:color .2s ease,background-color .2s ease;
-}
-body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{
-  background:#f8fafc!important;
-  color:#0D3B66!important;
+body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div,
+body:not(.website-surface) #root #top-module-switcher-bar > div {
+  background: transparent !important;
+  border-left: 0 !important;
 }
 
-/* Dark theme: use the same dark surface as the dashboard header/content. */
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"]{
-  background:#0f172a!important;
-  color:#cbd5e1!important;
-  border-top-color:#1e293b!important;
-  border-bottom-color:#334155!important;
-  box-shadow:0 1px 0 rgba(15,23,42,.8)!important;
+/* Dark theme */
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"],
+html.dark body:not(.website-surface) #root #top-module-switcher-bar {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-top-color: #1e293b !important;
+  border-bottom-color: #1e293b !important;
+  box-shadow: none !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button{
-  background:transparent!important;
-  color:#94a3b8!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button {
+  background: transparent !important;
+  color: #94a3b8 !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{
-  background:#172033!important;
-  color:#f8fafc!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button svg,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button svg {
+  color: #94a3b8 !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{
-  background:linear-gradient(to bottom,rgba(31,111,178,.24),rgba(31,111,178,.10))!important;
-  color:#fff!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button:hover,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button:hover {
+  background: transparent !important;
+  color: #f8fafc !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{
-  background:#5CCB5F;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button:hover svg,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button:hover svg {
+  color: #f8fafc !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{
-  background:#0f172a!important;
-  border-left-color:#334155!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"],
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"],
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[aria-current="page"],
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[class*="text-slate-900"],
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] {
+  background: transparent !important;
+  color: #ffffff !important;
+  border-bottom: 2px solid #3b82f6 !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{
-  background:transparent!important;
-  color:#94a3b8!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"] svg,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"] svg,
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"] svg,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[aria-current="page"] svg,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[class*="text-slate-900"] svg,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] svg {
+  color: #ffffff !important;
 }
-html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{
-  background:#172033!important;
-  color:#fff!important;
+html.dark body:not(.website-surface) #root .fixed.left-0.right-0[style*="top: 64px"] > div,
+html.dark body:not(.website-surface) #root #top-module-switcher-bar > div {
+  background: transparent !important;
+  border-left: 0 !important;
 }
 
 /* Keep any AI status/notification dot circular instead of inheriting a square
@@ -185,97 +194,119 @@ body:not(.website-surface) [data-radix-dialog-content] select{min-height:40px!im
    switcher rules above intentionally do not match it. These rules copy only
    the top module bar treatment; no editor/sidebar/canvas styling is changed.
    -------------------------------------------------------------------------- */
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"]{
-  background:#fff!important;
-  color:#1F6FB2!important;
-  border-top:1px solid #e2e8f0!important;
-  border-bottom:1px solid #d8e1ea!important;
-  box-shadow:none!important;
-  transition:background-color .25s ease,border-color .25s ease,color .25s ease;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"],
+body.website-builder-surface #root #top-module-switcher-bar {
+  background: #ffffff !important;
+  color: #475569 !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  box-shadow: none !important;
+  transition: background-color .25s ease, border-color .25s ease, color .25s ease;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button{
-  position:relative!important;
-  height:40px!important;
-  min-height:40px!important;
-  margin:0!important;
-  background:transparent!important;
-  color:#1F6FB2!important;
-  border:0!important;
-  border-radius:0!important;
-  border-bottom:0!important;
-  box-shadow:none!important;
-  font-weight:700!important;
-  overflow:hidden!important;
-  transform:none!important;
-  transition:color .2s ease,background-color .2s ease;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button,
+body.website-builder-surface #root #top-module-switcher-bar button {
+  position: relative !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  margin: 0 !important;
+  background: transparent !important;
+  color: #475569 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  overflow: visible !important;
+  transform: none !important;
+  transition: color .15s ease, border-color .15s ease;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{
-  content:"";
-  position:absolute;
-  left:0;
-  right:0;
-  bottom:0;
-  height:3px;
-  border-radius:0!important;
-  background:#1FAF5A;
-  transform:scaleX(0);
-  transform-origin:center;
-  transition:transform .28s cubic-bezier(.22,1,.36,1),background-color .2s ease;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button svg,
+body.website-builder-surface #root #top-module-switcher-bar button svg {
+  color: #64748b !important;
+  transition: color .15s ease;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{
-  background:#f8fafc!important;
-  color:#0D3B66!important;
-  transform:none!important;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button::after,
+body.website-builder-surface #root #top-module-switcher-bar button::after {
+  display: none !important;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover::after{
-  transform:scaleX(.65);
-  background:#1FAF5A;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button:hover,
+body.website-builder-surface #root #top-module-switcher-bar button:hover {
+  background: transparent !important;
+  color: #0f172a !important;
+  transform: none !important;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{
-  background:linear-gradient(to bottom,rgba(31,111,178,.10),rgba(31,111,178,.04))!important;
-  color:#0D3B66!important;
-  font-weight:800!important;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button:hover svg,
+body.website-builder-surface #root #top-module-switcher-bar button:hover svg {
+  color: #0f172a !important;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"]::after,
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]::after{
-  transform:scaleX(1);
-  background:#1FAF5A;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"],
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"],
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"],
+body.website-builder-surface #root #top-module-switcher-bar button[aria-current="page"],
+body.website-builder-surface #root #top-module-switcher-bar button[class*="text-slate-900"],
+body.website-builder-surface #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] {
+  background: transparent !important;
+  color: #0f172a !important;
+  font-weight: 600 !important;
+  border-bottom: 2px solid #1F6FB2 !important;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{
-  background:#fff!important;
-  border-left:1px solid #e2e8f0!important;
-  transition:background-color .25s ease,border-color .25s ease;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"] svg,
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"] svg,
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="border-[#1F6FB2]"] svg,
+body.website-builder-surface #root #top-module-switcher-bar button[aria-current="page"] svg,
+body.website-builder-surface #root #top-module-switcher-bar button[class*="text-slate-900"] svg,
+body.website-builder-surface #root #top-module-switcher-bar button[class*="border-[#1F6FB2]"] svg {
+  color: #0f172a !important;
 }
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{
-  position:relative!important;
-  height:40px!important;
-  min-height:40px!important;
-  margin:0!important;
-  background:transparent!important;
-  color:#1F6FB2!important;
-  border-radius:0!important;
-  box-shadow:none!important;
-  transform:none!important;
-  transition:color .2s ease,background-color .2s ease;
-}
-body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{
-  background:#f8fafc!important;
-  color:#0D3B66!important;
+body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div,
+body.website-builder-surface #root #top-module-switcher-bar > div {
+  background: transparent !important;
+  border-left: 0 !important;
 }
 
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"]{
-  background:#0f172a!important;
-  color:#cbd5e1!important;
-  border-top-color:#1e293b!important;
-  border-bottom-color:#334155!important;
-  box-shadow:0 1px 0 rgba(15,23,42,.8)!important;
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"],
+html.dark body.website-builder-surface #root #top-module-switcher-bar {
+  background: #0f172a !important;
+  color: #94a3b8 !important;
+  border-top-color: #1e293b !important;
+  border-bottom-color: #1e293b !important;
+  box-shadow: none !important;
 }
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button{background:transparent!important;color:#94a3b8!important}
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover{background:#172033!important;color:#f8fafc!important}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button {
+  background: transparent !important;
+  color: #94a3b8 !important;
+}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button svg,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button svg {
+  color: #94a3b8 !important;
+}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button:hover,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button:hover {
+  background: transparent !important;
+  color: #f8fafc !important;
+}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button:hover svg,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button:hover svg {
+  color: #f8fafc !important;
+}
 html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[aria-current="page"],
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"]{background:linear-gradient(to bottom,rgba(31,111,178,.24),rgba(31,111,178,.10))!important;color:#fff!important}
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button::after{background:#5CCB5F}
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child{background:#0f172a!important;border-left-color:#334155!important}
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button{background:transparent!important;color:#94a3b8!important}
-html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div:last-child button:hover{background:#172033!important;color:#fff!important}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > button[class*="text-[#0D3B66"],
+html.dark body.website-builder-surface #root #top-module-switcher-bar button[aria-current="page"],
+html.dark body.website-builder-surface #root #top-module-switcher-bar button[class*="text-slate-900"] {
+  background: transparent !important;
+  color: #ffffff !important;
+  border-bottom: 2px solid #3b82f6 !important;
+}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[aria-current="page"] svg,
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] button[class*="text-slate-900"] svg,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button[aria-current="page"] svg,
+html.dark body.website-builder-surface #root #top-module-switcher-bar button[class*="text-slate-900"] svg {
+  color: #ffffff !important;
+}
+html.dark body.website-builder-surface #root .fixed.left-0.right-0[style*="top: 64px"] > div,
+html.dark body.website-builder-surface #root #top-module-switcher-bar > div {
+  background: transparent !important;
+  border-left: 0 !important;
+}
