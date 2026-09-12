@@ -142,6 +142,27 @@ async def update_commercial_license(
         {"$set": {"licensed_modules": modules, "selected_features": selected_features, "license_id": str(license_id)}},
     )
     updated = await db.commercial_licenses.find_one({"id": str(license_id)}, {"_id": 0})
+
+    # The licensee admin's own `permissions` document (what the frontend's
+    # hasPermission() actually reads) is a point-in-time snapshot taken when
+    # the admin was first provisioned. Saving new module/feature selections
+    # here only updated the license + company records above, so without this
+    # the admin kept seeing every tab until the backend happened to restart
+    # (sync_all_licensee_admins runs on startup). Re-provisioning immediately
+    # keeps the sidebar/section tabs in sync with what was just saved.
+    try:
+        from backend.commercial_licensee_admin import ensure_licensee_admin
+        company = await db.companies.find_one(
+            {"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]},
+            {"_id": 0},
+        ) or {"id": customer_id, "name": customer.get("company_name") or "Licensed Company", "commercial_customer_id": customer_id}
+        await ensure_licensee_admin(customer, updated or {}, company)
+    except Exception as exc:
+        import logging
+        logging.getLogger("commercial_customer_directory").warning(
+            "Failed to refresh licensee admin permissions after license update: %s", exc
+        )
+
     return _public(updated or {})
 
 
