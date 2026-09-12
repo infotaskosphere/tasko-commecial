@@ -121,6 +121,18 @@ async def _ensure_company_master(customer: Dict[str, Any], license_doc: Dict[str
     customer_id = str(customer.get("id") or "")
     existing = await db.companies.find_one({"commercial_customer_id": customer_id, "source": "commercial-license"}, {"_id": 0})
     if existing:
+        # Defensive self-heal: some historical company records (created before
+        # "id" was always stamped on write, or left partially written by a
+        # prior failed request) can be missing the "id" field even though
+        # they were matched by commercial_customer_id above. Every caller of
+        # this function relies on company["id"] being present, so backfill it
+        # here rather than letting every call site crash with a KeyError.
+        if not existing.get("id"):
+            existing["id"] = customer_id
+            await db.companies.update_one(
+                {"commercial_customer_id": customer_id, "source": "commercial-license"},
+                {"$set": {"id": customer_id}},
+            )
         return existing
     now = _now().isoformat()
     company_doc = {
@@ -466,7 +478,8 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     await db.commercial_license_customers.update_one({"id": license_doc["customer_id"]}, {"$set": customer_updates})
     customer = {**(customer or {}), **customer_updates}
     company = await _ensure_company_master(customer, license_doc)
-    await db.companies.update_one({"id": company["id"]}, {"$set": {"licensed_modules": selected_modules, "selected_features": selected_features, "license_id": license_doc["id"], "license_key": license_doc["license_key"]}})
+    company_id = company.get("id") or customer.get("id") or ""
+    await db.companies.update_one({"id": company_id}, {"$set": {"licensed_modules": selected_modules, "selected_features": selected_features, "license_id": license_doc["id"], "license_key": license_doc["license_key"]}})
 
     # Once a license is issued by the platform owner to the licensee, the mail added in the licensee
     # account along with company id is by default admin for his company and license with all rights.
@@ -507,7 +520,7 @@ async def create_custom_admin(payload: Dict[str, Any]):
     password = str(payload.get("password") or "")
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"email": email, "status": {"$ne": "deleted"}}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
     company = await _ensure_company_master(customer, license_doc)
     now = _now().isoformat()
@@ -546,7 +559,7 @@ async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depe
     full_name = str(payload.get("full_name") or "").strip()
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"email": email, "status": {"$ne": "deleted"}}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
     active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
     max_users = int(license_doc.get("max_users", 1))
@@ -591,10 +604,20 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
     if remaining == 0 and customer_id:
         await db.commercial_license_customers.delete_one({"id": customer_id})
         await db.companies.delete_one({"id": customer_id, "source": "commercial-license"})
-        await db.users.update_many(
-            {"company_id": customer_id},
-            {"$set": {"is_active": False, "status": "deleted", "commercial_deleted_at": _now().isoformat()}},
-        )
+        # Soft-delete (rather than hard-delete) so historical records — invoices,
+        # audit logs — keep resolving to a real user document. But the email
+        # must be freed up here, otherwise it stays "taken" forever and blocks
+        # re-registering a brand-new admin/license under the same email later
+        # (the create-admin/create-staff conflict checks match on email).
+        deleted_at = _now().isoformat()
+        stale_users = await db.users.find({"company_id": customer_id}, {"_id": 0, "id": 1, "email": 1}).to_list(1000)
+        for stale_user in stale_users:
+            original_email = stale_user.get("email")
+            update_fields = {"is_active": False, "status": "deleted", "commercial_deleted_at": deleted_at}
+            if original_email:
+                update_fields["original_email"] = original_email
+                update_fields["email"] = f"deleted+{uuid.uuid4().hex[:8]}+{original_email}"
+            await db.users.update_one({"id": stale_user["id"]}, {"$set": update_fields})
     return {"deleted": True, "license_id": license_id, "company_name": (customer or {}).get("company_name"), "remaining_licenses": remaining, "historical_invoices_preserved": True}
 
 
