@@ -8,7 +8,16 @@ export const DEFAULT_PACKAGES = [
   { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", description: "Legacy Task Management + Invoicing + Accounting + HRMS", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS"], max_users: 100, max_installations: 5, validity_days: 365, price: 0, active: true },
 ];
 
-const LICENSE_API_BASE = (import.meta.env.VITE_API_URL || "http://localhost:7432").replace(/\/+$/, "");
+const _isLocal =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+const PRODUCTION_API_URL = "https://tasko-commercial-backend.onrender.com";
+
+const LICENSE_API_BASE = (
+  import.meta.env.VITE_API_URL ||
+  (_isLocal ? "http://localhost:7432" : PRODUCTION_API_URL)
+).replace(/\/+$/, "");
 const licensingApi = axios.create({
   baseURL: LICENSE_API_BASE.endsWith("/api") ? LICENSE_API_BASE : `${LICENSE_API_BASE}/api`,
   timeout: 30000,

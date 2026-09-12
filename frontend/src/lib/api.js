@@ -43,6 +43,9 @@ const _isLocalHost =
 // Taskosphere production backend in this commercial repository.
 // ─────────────────────────────────────────────────────────────
 
+// Commercial Render backend default for deployed environments (e.g. Vercel, Render)
+const PRODUCTION_API_URL = "https://tasko-commercial-backend.onrender.com";
+
 let BASE_URL;
 
 if (CONFIGURED_API_URL) {
@@ -50,9 +53,9 @@ if (CONFIGURED_API_URL) {
 } else if (_isLocalHost) {
   BASE_URL = LOCAL_API_URL;
 } else {
-  // If a deployed commercial frontend is missing VITE_API_URL,
-  // fail clearly instead of silently connecting to live production.
-  BASE_URL = LOCAL_API_URL;
+  // When deployed on cloud environments (Vercel, Render, custom domains),
+  // default to the active commercial backend on Render.
+  BASE_URL = PRODUCTION_API_URL;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -288,8 +291,9 @@ export function ensureBackendReady() {
     // collection-retry logic below for genuine cold-start responses — this
     // gate should only smooth over the first second or two of a cold start,
     // never hold the whole app hostage.
-    const backoffs = CONFIGURED_API_URL ? [0, 500, 1500] : [0];
-    const checkTimeout = CONFIGURED_API_URL ? 4000 : 600;
+    const isRemote = Boolean(CONFIGURED_API_URL) || !_isLocalHost;
+    const backoffs = isRemote ? [0, 500, 1500] : [0];
+    const checkTimeout = isRemote ? 4000 : 600;
 
     for (const wait of backoffs) {
       if (wait) {

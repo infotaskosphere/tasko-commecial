@@ -122,7 +122,21 @@ export function resetAgentAuth() {
  */
 export async function autoAuthenticateAgent(token, userId) {
   if (!token || !userId) {
-    console.warn('[AgentAutoAuth] Missing token or userId');
+    return false;
+  }
+
+  // The desktop agent runs locally on PC-SC enabled machines on port 7432.
+  // In cloud/deployed environments (Vercel, Render) or normal web browsing,
+  // do not probe localhost:7432 to avoid ERR_CONNECTION_REFUSED browser console errors.
+  const isLocalHost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+  const isExplicitlyEnabled =
+    import.meta.env?.VITE_ENABLE_DESKTOP_AGENT === "true" ||
+    (typeof window !== "undefined" && window.__TASKOSPHERE_ENABLE_DESKTOP_AGENT__ === true);
+
+  if (!isLocalHost || !isExplicitlyEnabled) {
     return false;
   }
 
