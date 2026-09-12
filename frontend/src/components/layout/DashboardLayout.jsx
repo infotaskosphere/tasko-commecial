@@ -81,8 +81,6 @@ const NAV_GROUPS = [
   { id: 'people-matrix', dividerLabel: 'People Matrix', items: [
     { path: '/people-matrix', icon: LayoutDashboard, label: 'People Matrix Dashboard' },
     { path: '/users', icon: Users, label: 'Users', permission: 'can_view_user_page' },
-    { path: '/staff-activity', icon: Activity, label: 'Team Activity', adminOnly: true },
-    { path: '/reports', icon: BarChart3, label: 'Reports', adminOnly: true },
     { path: '/leave', icon: CalendarOff, label: 'Leave', permission: 'can_view_leave' },
     { path: '/payroll', icon: Wallet, label: 'Payroll', permission: 'can_view_payroll' },
     { path: '/hr', icon: Briefcase, label: 'HR', permission: 'can_view_hr' },
@@ -91,6 +89,8 @@ const NAV_GROUPS = [
   { id: 'admin', dividerLabel: 'Admin', items: [
     { path: '/admin-dashboard', icon: LayoutDashboard, label: 'Admin Dashboard', adminOnly: true },
     { path: '/permission-matrix', icon: ShieldCheck, label: 'Permission Matrix', adminOnly: true },
+    { path: '/staff-activity', icon: Activity, label: 'Team Activity', adminOnly: true },
+    { path: '/reports', icon: BarChart3, label: 'Reports', adminOnly: true },
     { path: '/task-audit', icon: Activity, label: 'Audit Logs', adminOnly: true },
     { path: '/master-data', icon: Database, label: 'Master Data', adminOnly: true },
     { path: '/roles', icon: Fingerprint, label: 'Roles', adminOnly: true },
@@ -180,9 +180,25 @@ const DashboardLayout = ({ children }) => {
   if (!user) { navigate('/login', { replace: true }); return null; }
   const handleLogout = () => { window.__STOP_ACTIVITY__ = true; logout(); toast.success('Logged out successfully'); navigate('/login', { replace: true }); };
   const checkNavPermission = (item) => {
+    // adminOnly items (Admin Dashboard, Roles, Team Activity, Reports, etc.)
+    // are role-gated, not module-gated — they aren't part of any separately
+    // licensed module, so they never require a module flag.
     if (item.adminOnly) return user?.role === 'admin';
-    if (user?.role !== 'admin') { const groupId = ITEM_GROUP_ID.get(item.path); const moduleFlag = GROUP_MODULE_FLAG[groupId]; if (moduleFlag && !hasPermission(moduleFlag)) return false; }
-    const permission = item.permission; if (!permission) return true; if (user?.role === 'admin') return true; if (Array.isArray(permission)) return permission.some(p => hasPermission(p)); return hasPermission(permission);
+    // Module and per-page license checks apply to every role, admin
+    // included. A commercial licensee admin's permissions are already capped
+    // to their purchased modules/pages server-side (see
+    // get_all_admin_permissions in backend/commercial_licensee_admin.py) —
+    // hasPermission() reflects that correctly. Previously this function
+    // short-circuited to `true` for any admin, which meant an admin whose
+    // license only covered one module could still see every other module and
+    // every page in the sidebar.
+    const groupId = ITEM_GROUP_ID.get(item.path);
+    const moduleFlag = GROUP_MODULE_FLAG[groupId];
+    if (moduleFlag && !hasPermission(moduleFlag)) return false;
+    const permission = item.permission;
+    if (!permission) return true;
+    if (Array.isArray(permission)) return permission.some(p => hasPermission(p));
+    return hasPermission(permission);
   };
   const allNavItems = NAV_GROUPS.flatMap(g => g.items);
   const activeLabel = useMemo(() => {
