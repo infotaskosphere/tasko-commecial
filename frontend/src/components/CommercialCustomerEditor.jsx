@@ -523,6 +523,12 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
                                   <div className="min-w-0">
                                     <p className="font-bold text-slate-900">{u.full_name || "—"}</p>
                                     <p className="text-[11px] text-slate-400">{u.email}</p>
+                                    {(u.company_name || company.company_name) && (
+                                      <p className="flex items-center gap-1 text-[10px] text-slate-400">
+                                        <Building2 size={10} className="shrink-0" />
+                                        <span className="truncate">{u.company_name || company.company_name}</span>
+                                      </p>
+                                    )}
                                     {u.phone && <p className="text-[10px] text-slate-400">{u.phone}</p>}
                                   </div>
                                 </div>
