@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Users, ShieldCheck, Activity, Settings, Database, Fingerprint, ScrollText, Phone, Building2, PackageCheck, UserCheck, FileClock } from 'lucide-react';
+import { Users, ShieldCheck, Activity, Settings, Database, Fingerprint, ScrollText, Phone, Building2, PackageCheck, UserCheck, FileClock, BarChart3 } from 'lucide-react';
 import useDark from '@/hooks/useDark';
 import api from '@/lib/api';
 import { HubBanner, LinkCard, HUB_COLORS } from '@/components/SectionHub.jsx';
@@ -67,7 +67,8 @@ export default function AdminDashboard() {
     { path: '/settings/general', icon: Settings, label: 'Settings', description: 'Manage organisation-level configuration.', color: HUB_COLORS.deepBlue },
     { path: '/master-data', icon: Database, label: 'Master Data', description: 'Manage company profiles, clients and staff master records.', color: '#7C3AED' },
     { path: '/roles', icon: Fingerprint, label: 'Roles', description: 'Define roles and their default permission templates.', color: '#DB2777' },
-    { path: '/staff-activity', icon: Activity, label: 'Activity Logs', description: 'Review recorded staff activity for this tenant.', color: HUB_COLORS.lightGreen },
+    { path: '/staff-activity', icon: Activity, label: 'Team Activity', description: 'Monitor login sessions, productivity and desktop activity.', color: HUB_COLORS.lightGreen },
+    { path: '/reports', icon: BarChart3, label: 'Reports', description: 'Performance rankings, attendance and workforce reports.', color: '#F59E0B' },
     { path: '/contact-details', icon: Phone, label: 'Contact Details', description: 'Manage company and department contact information.', color: '#0EA5E9' },
   ];
   return <div className="p-6 space-y-6">
