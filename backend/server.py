@@ -15188,22 +15188,17 @@ async def extract_trademark_notice(
 async def universal_exception_handler(request: Request, exc: Exception):
     logger.error(f"Critical Error on {request.url.path}: {str(exc)}")
     logger.error(traceback.format_exc())
-    # Echo back the request origin when it's a known safe origin.
-    # Also accept any *.onrender.com preview URL so staging branches work.
+    # Echo back the request origin when it's a known safe origin. Reuse the
+    # same allow-list/regex the CORSMiddleware itself uses (CORS_ALLOWED_ORIGINS,
+    # CORS_ORIGIN_REGEX) rather than a separate hardcoded list — otherwise a
+    # real 500 on any origin missing from that second list (e.g. the Vercel
+    # frontend) gets reported to the browser as a misleading CORS error
+    # instead of surfacing the actual server error.
     import re as _re
 
     origin = request.headers.get("origin", "")
-    allowed_origins = [
-        "https://final-taskosphere-frontend.onrender.com",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-        "http://127.0.0.1:3000",
-    ]
-    is_allowed = (origin in allowed_origins) or bool(
-        _re.match(r"https://.*\.onrender\.com$", origin)
+    is_allowed = (origin in CORS_ALLOWED_ORIGINS) or bool(
+        _re.match(CORS_ORIGIN_REGEX, origin)
     )
     cors_origin = (
         origin if is_allowed else "https://final-taskosphere-frontend.onrender.com"
