@@ -1,6 +1,6 @@
 {
   "name": "Taskosphere",
-  "description": "An all-in-one compliance, accounting, and task management system for tax professionals.",
+  "description": "An all-in-one compliance, accounting, and task management platform with dynamic license-gated module navigation.",
   "requestFramePermissions": ["camera", "microphone", "geolocation"],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

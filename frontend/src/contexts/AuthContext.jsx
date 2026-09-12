@@ -7,6 +7,14 @@ export const useAuth = () => { const context = useContext(AuthContext); if (!con
 const isKeepSignedIn = () => localStorage.getItem('taskosphere_keep_signed_in') === 'true';
 const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
 const COMMERCIAL_MODULE_FLAGS = new Set(["can_access_taskosphere", "can_access_finix", "can_access_compliance", "can_access_records", "can_access_proposals", "can_access_people_matrix"]);
+const MODULE_FLAG_TO_KEYS = {
+  can_access_taskosphere: ["taskosphere", "tasks"],
+  can_access_finix: ["finix", "invoicing", "accounting"],
+  can_access_compliance: ["compliance"],
+  can_access_records: ["records"],
+  can_access_proposals: ["proposals", "client_proposals", "client-proposals"],
+  can_access_people_matrix: ["people_matrix", "people-matrix", "hrms", "peoplematrix"],
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -14,7 +22,19 @@ export const AuthProvider = ({ children }) => {
   const normalizePermissions = (permissions) => permissions && typeof permissions === "object" && !Array.isArray(permissions) ? permissions : {};
   const normalizeTenantContext = (userData) => {
     if (!userData || typeof userData !== "object") return userData;
-    return { ...userData, permissions: normalizePermissions(userData.permissions), company_id: userData.company_id ? String(userData.company_id) : null, company: userData.company || null, subscription: userData.subscription || null };
+    const licensedModules = Array.isArray(userData.licensed_modules)
+      ? userData.licensed_modules
+      : (Array.isArray(userData.modules)
+          ? userData.modules
+          : (Array.isArray(userData.company?.licensed_modules) ? userData.company.licensed_modules : null));
+    return {
+      ...userData,
+      permissions: normalizePermissions(userData.permissions),
+      licensed_modules: licensedModules,
+      company_id: userData.company_id ? String(userData.company_id) : null,
+      company: userData.company || null,
+      subscription: userData.subscription || null,
+    };
   };
   const getStoredAuth = () => ({ token: localStorage.getItem("token") || sessionStorage.getItem("token"), storedUser: localStorage.getItem("user") || sessionStorage.getItem("user") });
   const persistAuth = (token, userData, rememberMe = false, sessionToken = null) => { const storage = rememberMe ? localStorage : sessionStorage; storage.setItem("token", token); storage.setItem("user", JSON.stringify(normalizeTenantContext(userData))); if (sessionToken) storage.setItem("session_token", sessionToken); api.defaults.headers.common["Authorization"] = `Bearer ${token}`; };
@@ -116,14 +136,88 @@ export const AuthProvider = ({ children }) => {
     } catch (error) { console.error("Failed to refresh user:", error); }
   }, []);
 
+  const getLicensedModules = useCallback((candidate = user) => {
+    const raw = candidate?.licensed_modules || candidate?.modules || candidate?.company?.licensed_modules || candidate?.company?.modules || candidate?.subscription?.modules || candidate?.license?.modules;
+    if (Array.isArray(raw) && raw.length > 0) {
+      return raw.map((m) => String(m).trim().toLowerCase().replace(/-/g, "_"));
+    }
+    return null;
+  }, [user]);
+
+  useEffect(() => {
+    const handleLicenseUpdated = (event) => {
+      const updatedLicense = event?.detail?.license;
+      if (updatedLicense) {
+        setUser((prev) => {
+          if (!prev) return prev;
+          const modules = updatedLicense.modules || updatedLicense.licensed_modules || [];
+          const normModules = modules.map((m) => String(m).toLowerCase().replace(/-/g, "_"));
+          const updatedPerms = {
+            ...(prev.permissions || {}),
+            can_access_taskosphere: normModules.some((m) => m === "taskosphere" || m === "tasks"),
+            can_access_finix: normModules.some((m) => m === "finix" || m === "invoicing" || m === "accounting"),
+            can_access_compliance: normModules.some((m) => m === "compliance"),
+            can_access_records: normModules.some((m) => m === "records"),
+            can_access_proposals: normModules.some((m) => m === "proposals" || m === "client_proposals"),
+            can_access_people_matrix: normModules.some((m) => m === "people_matrix" || m === "hrms" || m === "peoplematrix"),
+          };
+          const nextUser = {
+            ...prev,
+            licensed_modules: modules,
+            selected_features: updatedLicense.selected_features || prev.selected_features || {},
+            permissions: updatedPerms,
+          };
+          const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
+          storage.setItem("user", JSON.stringify(nextUser));
+          return nextUser;
+        });
+      }
+      refreshUser();
+    };
+    window.addEventListener("license-updated", handleLicenseUpdated);
+    window.addEventListener("commercial-license-updated", handleLicenseUpdated);
+    return () => {
+      window.removeEventListener("license-updated", handleLicenseUpdated);
+      window.removeEventListener("commercial-license-updated", handleLicenseUpdated);
+    };
+  }, [refreshUser]);
+
   const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id && String(candidate?.email || "").trim().toLowerCase() !== PLATFORM_OWNER_EMAIL;
   const hasPermission = (permission) => {
     if (!user) return false;
-    // Platform owner remains unrestricted. A licensee administrator is a full
-    // admin only within the permissions hydrated from the active commercial license.
-    if (isPlatformOwner) return true;
+
+    // Commercial module access: strictly gated by license granted
+    const moduleAliases = MODULE_FLAG_TO_KEYS[permission];
+    if (moduleAliases) {
+      // 1. If explicit licensed_modules exist on the user or company, check membership
+      const licensedList = getLicensedModules(user);
+      if (Array.isArray(licensedList)) {
+        const isModuleLicensed = licensedList.some((mod) =>
+          moduleAliases.includes(mod) ||
+          moduleAliases.includes(mod.replace(/-/g, "_")) ||
+          (mod === "tasks" && permission === "can_access_taskosphere") ||
+          ((mod === "invoicing" || mod === "accounting") && permission === "can_access_finix") ||
+          (mod === "hrms" && permission === "can_access_people_matrix")
+        );
+        if (!isModuleLicensed) return false;
+      }
+
+      // 2. Check explicit permission boolean on user.permissions
+      if (user.permissions && typeof user.permissions[permission] === "boolean") {
+        return user.permissions[permission];
+      }
+
+      // 3. Platform owner without company context has full access
+      if (isPlatformOwner && !user?.company_id && !licensedList) return true;
+
+      // 4. Default to false if not granted
+      return false;
+    }
+
+    // Platform owner remains unrestricted for non-module platform operations
+    if (isPlatformOwner && !user?.company_id) return true;
     if (isCommercialAdmin(user)) return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
-    if (user.role?.toLowerCase() === "admin") return true;
+    if (user.role?.toLowerCase() === "admin") return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : true;
     return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
   };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));

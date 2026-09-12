@@ -210,6 +210,21 @@ const DashboardLayout = ({ children }) => {
   }, [location.pathname]);
   useEffect(() => { document.title = `${activeLabel} · Task-O-Sphere`; }, [activeLabel]);
   const activeSectionId = useMemo(() => getSectionForPath(location.pathname), [location.pathname]);
+
+  useEffect(() => {
+    const currentModuleFlag = GROUP_MODULE_FLAG[activeSectionId];
+    if (currentModuleFlag && !hasPermission(currentModuleFlag)) {
+      const permittedSection = LEFT_SECTIONS.find((id) => {
+        const flag = GROUP_MODULE_FLAG[id];
+        return !flag || hasPermission(flag);
+      });
+      const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
+      if (location.pathname !== target) {
+        navigate(target, { replace: true });
+      }
+    }
+  }, [activeSectionId, hasPermission, navigate, location.pathname]);
+
   const sidebarPx = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED, offsetPx = isDesktop ? sidebarPx : 0;
   const NavItem = ({ item }) => {
     if (!checkNavPermission(item)) return null;
@@ -226,8 +241,14 @@ const DashboardLayout = ({ children }) => {
     </motion.div>;
   };
   const renderSectionTabs = (sectionIds) => sectionIds.map((sectionId) => {
-    const meta = SECTION_META[sectionId], group = NAV_GROUPS.find(g => g.id === sectionId), hasVisibleItems = group?.items.some(item => checkNavPermission(item));
-    if (!hasVisibleItems) return null; const Icon = meta.icon, isActive = sectionId === activeSectionId;
+    const meta = SECTION_META[sectionId];
+    if (!meta) return null;
+    const moduleFlag = GROUP_MODULE_FLAG[sectionId];
+    if (moduleFlag && !hasPermission(moduleFlag)) return null;
+    const group = NAV_GROUPS.find(g => g.id === sectionId);
+    const hasVisibleItems = group?.items.some(item => checkNavPermission(item));
+    if (!hasVisibleItems) return null;
+    const Icon = meta.icon, isActive = sectionId === activeSectionId;
     return <button key={sectionId} onClick={() => navigate(meta.landingPath)} className={`flex items-center gap-1.5 px-2.5 h-full text-[12.5px] font-semibold whitespace-nowrap flex-shrink-0 cursor-pointer border-b-2 transition-colors ${isActive ? 'text-[#0D3B66] border-[#1F6FB2]' : 'text-[#1F6FB2]/70 border-transparent hover:text-[#0D3B66]'}`}><Icon className="h-3.5 w-3.5 flex-shrink-0" />{meta.label}</button>;
   });
   return <div className={`min-h-screen relative ${isDark ? 'bg-[#0f172a]' : 'bg-[#F4F6FA]'}`} style={{ overflowX: 'hidden' }}>

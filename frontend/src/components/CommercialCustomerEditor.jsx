@@ -165,6 +165,10 @@ export default function CommercialCustomerEditor({ license, customer, modules = 
         }),
       ]);
       toast.success("Customer and license details updated.");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("license-updated", { detail: { license: updatedLicense, customer: updatedCustomer } }));
+        window.dispatchEvent(new CustomEvent("commercial-license-updated", { detail: { license: updatedLicense, customer: updatedCustomer } }));
+      }
       onSaved?.({ customer: updatedCustomer, license: updatedLicense });
       onClose?.();
     } catch (error) {

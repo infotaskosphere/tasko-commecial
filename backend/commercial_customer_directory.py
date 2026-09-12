@@ -151,12 +151,26 @@ async def update_commercial_license(
     # (sync_all_licensee_admins runs on startup). Re-provisioning immediately
     # keeps the sidebar/section tabs in sync with what was just saved.
     try:
-        from backend.commercial_licensee_admin import ensure_licensee_admin
+        from backend.commercial_licensee_admin import ensure_licensee_admin, get_all_admin_permissions
         company = await db.companies.find_one(
             {"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]},
             {"_id": 0},
         ) or {"id": customer_id, "name": customer.get("company_name") or "Licensed Company", "commercial_customer_id": customer_id}
         await ensure_licensee_admin(customer, updated or {}, company)
+        new_admin_perms = get_all_admin_permissions(updated)
+        await db.users.update_many(
+            {"$or": [
+                {"company_id": customer_id},
+                {"commercial_customer_id": customer_id},
+                {"email": str(customer.get("email", "")).lower().strip()},
+            ]},
+            {"$set": {
+                "licensed_modules": modules,
+                "selected_features": selected_features,
+                "license_id": str(license_id),
+                "permissions": new_admin_perms,
+            }}
+        )
     except Exception as exc:
         import logging
         logging.getLogger("commercial_customer_directory").warning(

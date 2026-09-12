@@ -694,6 +694,11 @@ class User(BaseModel):
     approved_at: Optional[Any] = None
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    commercial_customer_id: Optional[str] = None
+    license_id: Optional[str] = None
+    license_key: Optional[str] = None
+    licensed_modules: List[str] = Field(default_factory=list)
+    selected_features: Dict[str, Any] = Field(default_factory=dict)
     # ── Employment / Payroll fields ──────────────────────────────────────────
     joining_date: Optional[Any] = None          # Date the employee joined
     training_period_end: Optional[Any] = None   # End date of the training / probation period

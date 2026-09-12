@@ -4,29 +4,127 @@
  * Allows full offline / preview functionality without requiring an external MongoDB/Python instance.
  */
 
+export function derivePermissionsFromModules(modules) {
+  const norm = (modules || []).map((m) => String(m).toLowerCase().replace(/-/g, "_"));
+  return {
+    can_access_taskosphere: norm.some((m) => m === "taskosphere" || m === "tasks"),
+    can_access_finix: norm.some((m) => m === "finix" || m === "invoicing" || m === "accounting"),
+    can_access_compliance: norm.some((m) => m === "compliance"),
+    can_access_records: norm.some((m) => m === "records"),
+    can_access_proposals: norm.some((m) => m === "proposals" || m === "client_proposals"),
+    can_access_people_matrix: norm.some((m) => m === "people_matrix" || m === "hrms" || m === "peoplematrix"),
+  };
+}
+
+export const DEFAULT_MOCK_LICENSES = [
+  {
+    id: "lic-01",
+    customer_id: "cust-mda-01",
+    license_key: "TSO-COMM-2026-DEMO-0001",
+    company_name: "Manthan Desai And Associates",
+    package_name: "Taskosphere Custom",
+    status: "active",
+    valid_until: "2027-12-31T23:59:59Z",
+    max_users: 100,
+    max_installations: 5,
+    modules: ["taskosphere"],
+    licensed_modules: ["taskosphere"],
+    selected_features: {
+      taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
+    },
+  },
+];
+
+export const DEFAULT_MOCK_CUSTOMERS = [
+  {
+    id: "cust-mda-01",
+    company_name: "Manthan Desai And Associates",
+    contact_name: "Manthan P Desai",
+    email: "director@desaiassociates.com",
+    phone: "+91 98765 43210",
+    gstin: "27AAACD1234F1Z5",
+    address: "101, Business Center, Mumbai",
+    status: "active",
+    licensed_modules: ["taskosphere"],
+    selected_features: {
+      taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
+    },
+  },
+];
+
+export function getStoredMockLicenses() {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem("taskosphere_mock_licenses");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+  }
+  if (!globalThis.__mockLicenses) {
+    globalThis.__mockLicenses = JSON.parse(JSON.stringify(DEFAULT_MOCK_LICENSES));
+  }
+  return globalThis.__mockLicenses;
+}
+
+export function saveStoredMockLicenses(licenses) {
+  globalThis.__mockLicenses = licenses;
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem("taskosphere_mock_licenses", JSON.stringify(licenses));
+    } catch {}
+  }
+}
+
+export function getStoredMockCustomers() {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem("taskosphere_mock_customers");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+  }
+  if (!globalThis.__mockCustomers) {
+    globalThis.__mockCustomers = JSON.parse(JSON.stringify(DEFAULT_MOCK_CUSTOMERS));
+  }
+  return globalThis.__mockCustomers;
+}
+
+export function saveStoredMockCustomers(customers) {
+  globalThis.__mockCustomers = customers;
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem("taskosphere_mock_customers", JSON.stringify(customers));
+    } catch {}
+  }
+}
+
 export const MOCK_USER = {
-  id: "usr-admin-01",
-  email: "info.taskosphere@gmail.com",
-  full_name: "Taskosphere Administrator",
+  id: "lic-usr-01",
+  email: "director@desaiassociates.com",
+  full_name: "Manthan P Desai",
   role: "admin",
-  company_id: "comp-tasko-01",
+  company_id: "cust-mda-01",
+  commercial_customer_id: "cust-mda-01",
+  license_id: "lic-01",
   company: {
-    id: "comp-tasko-01",
-    name: "Taskosphere Commercial Services",
-    plan: "Enterprise",
+    id: "cust-mda-01",
+    name: "Manthan Desai And Associates",
+    plan: "Taskosphere",
   },
   subscription: {
     status: "active",
-    package_id: "enterprise",
+    package_id: "taskosphere",
     valid_until: "2030-12-31T23:59:59Z",
+  },
+  licensed_modules: ["taskosphere"],
+  selected_features: {
+    taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
   },
   permissions: {
     can_access_taskosphere: true,
-    can_access_finix: true,
-    can_access_compliance: true,
-    can_access_records: true,
-    can_access_proposals: true,
-    can_access_people_matrix: true,
+    can_access_finix: false,
+    can_access_compliance: false,
+    can_access_records: false,
+    can_access_proposals: false,
+    can_access_people_matrix: false,
   },
 };
 
@@ -233,19 +331,36 @@ export const MOCK_COMPLIANCE = [
 export function handleMockRoute(method, url, data) {
   const normUrl = url.replace(/^\/api/, "").split("?")[0];
 
+  const getActiveMockUser = () => {
+    const licenses = getStoredMockLicenses();
+    const activeLic = licenses.find((l) => l.id === MOCK_USER.license_id || l.customer_id === MOCK_USER.company_id) || licenses[0];
+    const userModules = activeLic ? (activeLic.modules || activeLic.licensed_modules || ["taskosphere"]) : ["taskosphere"];
+    const perms = derivePermissionsFromModules(userModules);
+    return {
+      ...MOCK_USER,
+      licensed_modules: userModules,
+      selected_features: activeLic?.selected_features || MOCK_USER.selected_features || {},
+      permissions: {
+        ...(MOCK_USER.permissions || {}),
+        ...perms,
+      },
+    };
+  };
+
   if (normUrl === "/auth/login" || normUrl === "/auth/signin") {
+    const activeUser = getActiveMockUser();
     return {
       status: 200,
       data: {
         access_token: "mock-jwt-token-taskosphere",
         token: "mock-jwt-token-taskosphere",
-        user: MOCK_USER,
+        user: activeUser,
       },
     };
   }
 
   if (normUrl === "/auth/me") {
-    return { status: 200, data: MOCK_USER };
+    return { status: 200, data: getActiveMockUser() };
   }
 
   if (normUrl === "/auth/logout") {
@@ -458,45 +573,115 @@ export function handleMockRoute(method, url, data) {
   }
 
   if (normUrl.startsWith("/licensing")) {
+    const licenses = getStoredMockLicenses();
+    const customers = getStoredMockCustomers();
+    const activeLic = licenses[0] || DEFAULT_MOCK_LICENSES[0];
     return {
       status: 200,
       data: {
         valid: true,
         status: "active",
         packages: [
-          { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 4999, active: true },
-          { id: "professional", code: "TSO-PRO", name: "Taskosphere Professional", modules: ["TASKS", "INVOICING", "HRMS"], max_users: 25, max_installations: 2, validity_days: 365, price: 9999, active: true },
-          { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"], max_users: 100, max_installations: 5, validity_days: 365, price: 19999, active: true },
+          { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", modules: ["taskosphere", "finix"], max_users: 10, max_installations: 1, validity_days: 365, price: 4999, active: true },
+          { id: "professional", code: "TSO-PRO", name: "Taskosphere Professional", modules: ["taskosphere", "finix", "people_matrix"], max_users: 25, max_installations: 2, validity_days: 365, price: 9999, active: true },
+          { id: "enterprise", code: "TSO-ENTERPRISE", name: "Taskosphere Enterprise", modules: ["taskosphere", "finix", "compliance", "records", "proposals", "people_matrix"], max_users: 100, max_installations: 5, validity_days: 365, price: 19999, active: true },
         ],
-        licenses: [
-          {
-            id: "lic-01",
-            license_key: "TSO-COMM-2026-DEMO-0001",
-            company_name: "Manthan Desai And Associates",
-            package_name: "Taskosphere Enterprise",
-            status: "active",
-            valid_until: "2027-12-31T23:59:59Z",
-            max_users: 100,
-            modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"],
-          },
-        ],
-        customers: [
-          {
-            id: "cust-mda-01",
-            company_name: "Manthan Desai And Associates",
-            email: "director@desaiassociates.com",
-            phone: "+91 98765 43210",
-            gstin: "27AAACD1234F1Z5",
-            status: "active",
-          },
-        ],
+        licenses: licenses,
+        customers: customers,
         license: {
-          plan: "Enterprise",
-          modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"],
-          max_users: 100,
+          id: activeLic.id,
+          plan: activeLic.package_name || "Custom",
+          modules: activeLic.modules || ["taskosphere"],
+          licensed_modules: activeLic.modules || ["taskosphere"],
+          selected_features: activeLic.selected_features || {},
+          max_users: activeLic.max_users || 100,
         },
       },
     };
+  }
+
+  if (normUrl.startsWith("/commercial-master-data/licenses")) {
+    const parts = normUrl.split("/").filter(Boolean);
+    const licenseId = parts[2] || "lic-01";
+    const licenses = getStoredMockLicenses();
+    if (method === "put") {
+      const idx = licenses.findIndex((l) => l.id === licenseId);
+      const incomingModules = data?.modules || (idx >= 0 ? licenses[idx].modules : ["taskosphere"]);
+      const updated = {
+        ...(idx >= 0 ? licenses[idx] : {}),
+        id: licenseId,
+        ...(data || {}),
+        modules: incomingModules,
+        licensed_modules: incomingModules,
+        selected_features: data?.selected_features || (idx >= 0 ? licenses[idx].selected_features : {}),
+        max_users: data?.max_users !== undefined ? Number(data.max_users) : (idx >= 0 ? licenses[idx].max_users : 100),
+        max_installations: data?.max_installations !== undefined ? Number(data.max_installations) : (idx >= 0 ? licenses[idx].max_installations : 5),
+        updated_at: new Date().toISOString(),
+      };
+      if (idx >= 0) licenses[idx] = updated;
+      else licenses.push(updated);
+      saveStoredMockLicenses(licenses);
+
+      // Update customers
+      const customers = getStoredMockCustomers();
+      customers.forEach((c) => {
+        if (c.id === updated.customer_id) {
+          c.licensed_modules = updated.modules;
+          c.selected_features = updated.selected_features;
+        }
+      });
+      saveStoredMockCustomers(customers);
+
+      // Synchronize MOCK_USER
+      const perms = derivePermissionsFromModules(updated.modules);
+      MOCK_USER.licensed_modules = updated.modules;
+      MOCK_USER.selected_features = updated.selected_features;
+      MOCK_USER.permissions = { ...MOCK_USER.permissions, ...perms };
+
+      // Update current user in storage if matching
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          const stored = window.localStorage.getItem("user") || window.sessionStorage.getItem("user");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            parsed.licensed_modules = updated.modules;
+            parsed.selected_features = updated.selected_features;
+            parsed.permissions = { ...(parsed.permissions || {}), ...perms };
+            window.localStorage.setItem("user", JSON.stringify(parsed));
+          }
+        } catch {}
+      }
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("license-updated", { detail: { license: updated } }));
+        window.dispatchEvent(new CustomEvent("commercial-license-updated", { detail: { license: updated } }));
+      }
+
+      return { status: 200, data: updated };
+    }
+    const found = licenses.find((l) => l.id === licenseId) || licenses[0];
+    return { status: 200, data: found || {} };
+  }
+
+  if (normUrl.startsWith("/commercial-master-data/customers")) {
+    const parts = normUrl.split("/").filter(Boolean);
+    const customerId = parts[2] || "cust-mda-01";
+    const customers = getStoredMockCustomers();
+    if (method === "put") {
+      const idx = customers.findIndex((c) => c.id === customerId);
+      const updated = {
+        ...(idx >= 0 ? customers[idx] : {}),
+        id: customerId,
+        ...(data || {}),
+        updated_at: new Date().toISOString(),
+      };
+      if (idx >= 0) customers[idx] = updated;
+      else customers.push(updated);
+      saveStoredMockCustomers(customers);
+      return { status: 200, data: updated };
+    }
+    const found = customers.find((c) => c.id === customerId) || customers[0];
+    return { status: 200, data: found || {} };
   }
 
   if (normUrl.startsWith("/commercial-onboarding/lookup")) {
@@ -701,12 +886,23 @@ export function handleMockRoute(method, url, data) {
       return { status: 201, data: newUser };
     }
 
+    const activeLic = getStoredMockLicenses().find((l) => l.id === "lic-01" || l.customer_id === "cust-mda-01") || getStoredMockLicenses()[0];
+    const userPerms = derivePermissionsFromModules(activeLic.modules);
+    const hydratedUsers = users.map((u) => ({
+      ...u,
+      licensed_modules: activeLic.modules,
+      selected_features: activeLic.selected_features,
+      permissions: {
+        ...(u.permissions || {}),
+        ...userPerms,
+      },
+    }));
     return {
       status: 200,
       data: {
-        users: [...users],
+        users: hydratedUsers,
         company: { id: "cust-mda-01", name: "Manthan Desai And Associates" },
-        license: { id: "lic-01", max_users: 10, modules: ["TASKS", "INVOICING", "ACCOUNTING", "HRMS", "COMPLIANCE"] },
+        license: activeLic,
         platform_owner: true,
       },
     };

@@ -17,28 +17,28 @@ const VIEW_ONLY_ACTIONS = new Set(["view", "export"]);
 const MANAGE_ACTIONS = new Set(["create", "edit", "delete", "approve", "print", "share"]);
 
 export function useGovernance() {
-  const { user } = useAuth();
+  const { user, hasPermission } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === "admin";
   const isCommercialAdmin = isAdmin && !!user?.company_id;
   const perms = user?.permissions || {};
 
   const hasModuleAccess = (moduleKey) => {
-    if (isAdmin) return true;
     if (moduleKey === "admin") return isAdmin;
     const flag = MODULE_FLAGS[moduleKey];
     if (!flag) return false;
-    return perms[flag] === true;
+    return hasPermission(flag);
   };
 
   const hasPageAccess = (moduleKey, pageFlag) => {
-    if (isAdmin) return true;
     if (!hasModuleAccess(moduleKey)) return false;
+    if (isAdmin && !pageFlag) return true;
+    if (hasPermission(pageFlag)) return true;
     return !!perms[pageFlag];
   };
 
   const hasActionAccess = (moduleKey, pageFlag, action) => {
-    if (isAdmin) return true;
     if (!hasPageAccess(moduleKey, pageFlag)) return false;
+    if (isAdmin) return true;
 
     const matrixKey = `${moduleKey}.${pageFlag}`;
     const matrix = perms.governance_matrix || {};

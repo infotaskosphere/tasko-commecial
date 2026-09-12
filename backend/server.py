@@ -2994,40 +2994,64 @@ async def login(credentials: UserLogin, request: Request):
             detail=f"Your account is {user_status}. Awaiting admin approval.",
         )
 
-    # Ensure licensee admin role & all permissions
+    # Ensure licensee admin role & permissions derived from their active license
     try:
-        from backend.commercial_licensee_admin import get_all_admin_permissions
-        cust = await db.commercial_license_customers.find_one({"email": normalized_email})
-        if cust:
-            user["role"] = "admin"
-            cust_id = str(cust.get("id") or "")
-            if not user.get("company_id"):
-                user["company_id"] = cust_id
-            user["commercial_customer_id"] = cust_id
-            user["status"] = "active"
-            user["is_active"] = True
+        from backend.commercial_licensee_admin import get_all_admin_permissions, MODULE_HIERARCHY
+        from backend.platform_owner import is_platform_owner
+        
+        cust_id = str(user.get("commercial_customer_id") or user.get("company_id") or "")
+        if not cust_id:
+            cust = await db.commercial_license_customers.find_one({"email": normalized_email})
+            if not cust:
+                cust = await db.commercial_customers.find_one({"email": normalized_email})
+            if cust:
+                cust_id = str(cust.get("id") or "")
+                user["role"] = "admin"
+                user["company_id"] = user.get("company_id") or cust_id
+                user["commercial_customer_id"] = cust_id
+                user["status"] = "active"
+                user["is_active"] = True
+
+        license_doc = None
+        if cust_id:
+            licenses = await db.commercial_licenses.find(
+                {"customer_id": cust_id, "status": {"$in": ["active", "trial"]}},
+                {"_id": 0}
+            ).to_list(100)
+            if licenses:
+                licenses.sort(key=lambda x: str(x.get("issued_at") or ""), reverse=True)
+                license_doc = licenses[0]
+
+        if license_doc:
+            user["licensed_modules"] = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
+            user["selected_features"] = license_doc.get("selected_features") or {}
+            user["license_id"] = license_doc.get("id")
+            user["license_key"] = license_doc.get("license_key")
+
+        if is_platform_owner(user):
+            admin_perms = get_all_admin_permissions()
+            user["permissions"] = {**(user.get("permissions") or {}), **admin_perms}
+        elif str(user.get("role", "")).lower() == "admin":
+            admin_perms = get_all_admin_permissions(license_doc)
+            user["permissions"] = admin_perms
             await db.users.update_one(
                 {"id": user["id"]},
                 {"$set": {
-                    "role": "admin",
-                    "company_id": user.get("company_id") or cust_id,
+                    "permissions": admin_perms,
+                    "licensed_modules": user.get("licensed_modules", []),
+                    "selected_features": user.get("selected_features", {}),
                     "commercial_customer_id": cust_id,
-                    "status": "active",
-                    "is_active": True,
-                    "permissions": get_all_admin_permissions(),
                 }}
             )
-
-        if str(user.get("role", "")).lower() == "admin":
-            admin_perms = get_all_admin_permissions()
-            current_perms = user.get("permissions") or {}
-            if hasattr(current_perms, "model_dump"):
-                current_perms = current_perms.model_dump()
-            if not isinstance(current_perms, dict):
-                current_perms = {}
-            user["permissions"] = {**current_perms, **admin_perms}
         else:
-            user["permissions"] = user.get("permissions", UserPermissions().model_dump())
+            current_perms = user.get("permissions", UserPermissions().model_dump())
+            if isinstance(current_perms, dict) and license_doc:
+                licensed_mods = set(license_doc.get("modules") or [])
+                for mod_key, flags in MODULE_HIERARCHY.items():
+                    if mod_key not in licensed_mods:
+                        for f in flags:
+                            current_perms[f] = False
+            user["permissions"] = current_perms
     except Exception as exc:
         logger.warning("Licensee admin login sync: %s", exc)
         user["permissions"] = user.get("permissions", UserPermissions().model_dump())
