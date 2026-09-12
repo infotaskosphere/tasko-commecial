@@ -11794,15 +11794,30 @@ async def parse_client_excel_row(
     return result
 
 
+def _client_import_get(row: dict, *aliases: str) -> str:
+    """
+    Case/spacing-insensitive lookup across a row's columns, so imports work
+    whether the sheet uses 'company_name', 'Company Name' or just 'Company'.
+    """
+    normalized = { str(k).strip().lower(): v for k, v in row.items() if k is not None }
+    for alias in aliases:
+        val = normalized.get(alias.strip().lower())
+        if val not in (None, ""):
+            return str(val).strip()
+    return ""
+
+
 @api_router.post("/clients/import")
 async def import_clients_from_csv(
     file: UploadFile = File(...), current_user: User = Depends(get_current_user)
 ):
     """
-    Bulk-import clients from a CSV file.
-    Expected CSV columns (all optional except company_name):
-      company_name, client_type, email, phone, birthday, address,
-      city, state, services, notes, assigned_to, status
+    Bulk-import clients from a CSV or Excel (.xlsx/.xls) file.
+    Recognised columns (all optional except company name), matched
+    case-insensitively and under a few common aliases:
+      company_name / company, client_type / type / constitution, email,
+      phone, birthday, address, city, state, services, notes,
+      assigned_to, status
     Returns: { message, clients_created, clients_skipped, errors }
     """
     if current_user.role not in ("admin", "manager"):
@@ -11811,32 +11826,47 @@ async def import_clients_from_csv(
             raise HTTPException(status_code=403, detail="Permission denied")
 
     filename = (file.filename or "").lower()
-    if not filename.endswith(".csv"):
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx") or filename.endswith(".xls")):
         raise HTTPException(
-            status_code=400, detail="Only CSV files are supported (.csv)"
+            status_code=400,
+            detail="Only CSV or Excel files are supported (.csv, .xlsx, .xls)",
         )
 
     content = await file.read()
-    try:
-        text = content.decode("utf-8-sig")  # handle BOM
-    except UnicodeDecodeError:
-        text = content.decode("latin-1")
 
-    reader = csv.DictReader(StringIO(text))
-    if not reader.fieldnames:
-        raise HTTPException(
-            status_code=422, detail="CSV file is empty or has no header row"
-        )
+    rows: list = []
+    if filename.endswith(".csv"):
+        try:
+            text = content.decode("utf-8-sig")  # handle BOM
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+        reader = csv.DictReader(StringIO(text))
+        if not reader.fieldnames:
+            raise HTTPException(
+                status_code=422, detail="CSV file is empty or has no header row"
+            )
+        rows = list(reader)
+    else:
+        try:
+            engine = "xlrd" if filename.endswith(".xls") else "openpyxl"
+            df = pd.read_excel(BytesIO(content), dtype=str, engine=engine).fillna("")
+        except Exception as e:
+            raise HTTPException(
+                status_code=400, detail=f"Could not read Excel file: {str(e)}"
+            )
+        if df.empty or len(df.columns) == 0:
+            raise HTTPException(
+                status_code=422, detail="Excel file is empty or has no header row"
+            )
+        rows = df.to_dict(orient="records")
 
     created_count = 0
     skipped_count = 0
     errors: list = []
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    for i, row in enumerate(reader, start=2):  # row 1 = header
-        company_name = str(
-            row.get("company_name") or row.get("Company Name") or ""
-        ).strip()
+    for i, row in enumerate(rows, start=2):  # row 1 = header
+        company_name = _client_import_get(row, "company_name", "company name", "company")
         if not company_name:
             skipped_count += 1
             continue
@@ -11856,20 +11886,18 @@ async def import_clients_from_csv(
             skipped_count += 1
             continue
 
-        # Parse services column (comma-separated string → list)
-        raw_services = str(row.get("services") or row.get("Services") or "").strip()
+        # Parse services column (comma/semicolon-separated string → list)
+        raw_services = _client_import_get(row, "services", "service")
         services = (
-            [s.strip() for s in raw_services.split(",") if s.strip()]
+            [s.strip() for s in re.split(r"[;,]", raw_services) if s.strip()]
             if raw_services
             else []
         )
 
         # Normalise client_type
-        raw_type = (
-            str(row.get("client_type") or row.get("Client Type") or "proprietor")
-            .strip()
-            .lower()
-        )
+        raw_type = _client_import_get(
+            row, "client_type", "client type", "type", "constitution"
+        ).lower() or "proprietor"
         valid_types = {
             "proprietor",
             "pvt_ltd",
@@ -11885,23 +11913,16 @@ async def import_clients_from_csv(
             "id": str(uuid.uuid4()),
             "company_name": company_name,
             "client_type": client_type,
-            "email": str(row.get("email") or row.get("Email") or "").strip() or None,
-            "phone": str(row.get("phone") or row.get("Phone") or "").strip() or None,
-            "birthday": str(row.get("birthday") or row.get("Birthday") or "").strip()
-            or None,
-            "address": str(row.get("address") or row.get("Address") or "").strip()
-            or None,
-            "city": str(row.get("city") or row.get("City") or "").strip() or None,
-            "state": str(row.get("state") or row.get("State") or "").strip() or None,
+            "email": _client_import_get(row, "email") or None,
+            "phone": _client_import_get(row, "phone", "mobile") or None,
+            "birthday": _client_import_get(row, "birthday", "dob") or None,
+            "address": _client_import_get(row, "address") or None,
+            "city": _client_import_get(row, "city") or None,
+            "state": _client_import_get(row, "state") or None,
             "services": services,
-            "notes": str(row.get("notes") or row.get("Notes") or "").strip() or None,
-            "assigned_to": str(
-                row.get("assigned_to") or row.get("Assigned To") or ""
-            ).strip()
-            or None,
-            "status": str(row.get("status") or row.get("Status") or "active")
-            .strip()
-            .lower(),
+            "notes": _client_import_get(row, "notes", "referred by") or None,
+            "assigned_to": _client_import_get(row, "assigned_to", "assigned to") or None,
+            "status": (_client_import_get(row, "status") or "active").lower(),
             "created_by": current_user.id,
             "created_at": now_iso,
         }
