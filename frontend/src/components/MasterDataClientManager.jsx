@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import * as XLSX from 'xlsx';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -47,8 +48,82 @@ export default function MasterDataClientManager(){
  const importMds=async(file)=>{if(!file)return;setDocBusy(true);try{const fd=new FormData();fd.append('file',file);const r=await api.post('/clients/parse-mds-excel',fd,{headers:{'Content-Type':'multipart/form-data'}});applyParsed(r.data)}catch(e){toast.error(e?.response?.data?.detail||'Could not read the master-data Excel file')}finally{setDocBusy(false)}};
  const downloadTemplate=()=>{const headers=['company_name','client_type','email','phone','birthday','address','city','state','pincode','gstin','pan','gst_treatment','place_of_supply','default_payment_terms','credit_limit','opening_balance','opening_balance_type','tally_ledger_name','tally_group','website','msme_number','cin','llpin','proprietor_name','services','notes'];const csv=headers.join(',')+'\n';const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='client_master_template.csv';a.click();URL.revokeObjectURL(url)};
  const exportCsv=()=>{const headers=['Company Name','Constitution','GSTIN','PAN','Email','Phone','City','State','Services','Status'];const rows=[headers,...clients.map(c=>[c.company_name||'',TYPES.find(x=>x[0]===c.client_type)?.[1]||c.client_type||'',c.gstin||'',c.pan||'',c.email||'',c.phone||'',c.city||'',c.state||'',(c.services||[]).join('; '),c.status||''])];const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`clients_export_${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(url)};
- const handleImportCSV=async(e)=>{const file=e.target.files?.[0];if(!file)return;setImporting(true);try{const fd=new FormData();fd.append('file',file);const r=await api.post('/clients/import',fd,{headers:{'Content-Type':'multipart/form-data'}});toast.success(r.data?.message||`${r.data?.clients_created||0} clients imported`);await load()}catch(err){toast.error(err?.response?.data?.detail||'Import failed')}finally{setImporting(false);e.target.value=''}};
- return <section id="clients" className="border border-slate-200 bg-white overflow-hidden">
+ const handleImportCSV = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      let uploadFile = file;
+      const isExcel = /\.(xlsx|xls)$/i.test(file.name || '');
+      if (isExcel) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheetName = workbook.SheetNames?.[0];
+        if (!sheetName) throw new Error('Excel workbook has no worksheets');
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+        const normalizeHeader = value => String(value ?? '').trim().toLowerCase().replace(/[\s./()-]+/g, '_').replace(/_+/g, '_');
+        const valueFor = (row, names) => {
+          const aliases = new Set(names.map(normalizeHeader));
+          const key = Object.keys(row).find(k => aliases.has(normalizeHeader(k)));
+          return key == null ? '' : row[key];
+        };
+        const normalizeType = value => {
+          const t = String(value || 'proprietor').trim().toLowerCase().replace(/[\s-]+/g, '_');
+          const map = {
+            proprietorship: 'proprietor',
+            proprietor: 'proprietor',
+            private_limited: 'pvt_ltd',
+            private_limited_company: 'pvt_ltd',
+            pvt_ltd: 'pvt_ltd',
+            limited_liability_partnership: 'llp',
+            llp: 'llp',
+            public_limited: 'public_ltd',
+            public_limited_company: 'public_ltd',
+            section_8_company: 'section_8',
+            partnership: 'partnership',
+            huf: 'huf',
+            trust: 'trust',
+            other: 'other'
+          };
+          return map[t] || 'other';
+        };
+        const expected = ['company_name', 'client_type', 'email', 'phone', 'birthday', 'address', 'city', 'state', 'services', 'notes', 'assigned_to', 'status'];
+        const normalized = rows.map(row => ({
+          company_name: String(valueFor(row, ['company_name', 'company', 'client_name', 'business_name', 'name'])).trim(),
+          client_type: normalizeType(valueFor(row, ['client_type', 'type', 'constitution'])),
+          email: String(valueFor(row, ['email', 'email_address'])).trim(),
+          phone: String(valueFor(row, ['phone', 'mobile', 'mobile_no', 'phone_number'])).trim(),
+          birthday: String(valueFor(row, ['birthday', 'birth_date', 'dob'])).trim(),
+          address: String(valueFor(row, ['address', 'registered_address'])).trim(),
+          city: String(valueFor(row, ['city'])).trim(),
+          state: String(valueFor(row, ['state'])).trim(),
+          services: String(valueFor(row, ['services', 'service'])).replace(/;/g, ',').trim(),
+          notes: String(valueFor(row, ['notes', 'remarks', 'comment', 'comments'])).trim(),
+          assigned_to: String(valueFor(row, ['assigned_to', 'assigned_to_user', 'assignee'])).trim(),
+          status: String(valueFor(row, ['status'])).trim().toLowerCase() || 'active',
+        })).filter(row => row.company_name);
+        const csvSheet = XLSX.utils.json_to_sheet(normalized, { header: expected });
+        const csv = XLSX.utils.sheet_to_csv(csvSheet);
+        uploadFile = new File(['﻿' + csv], file.name.replace(/\.[^.]+$/, '') + '.csv', { type: 'text/csv;charset=utf-8' });
+      }
+      const fd = new FormData();
+      fd.append('file', uploadFile);
+      const r = await api.post('/clients/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const created = Number(r.data?.clients_created || 0);
+      const skipped = Number(r.data?.clients_skipped || 0);
+      toast.success(r.data?.message || String(created) + ' clients imported' + (skipped ? ', ' + String(skipped) + ' skipped' : ''));
+      if (r.data?.errors?.length) console.warn('[Client Import] skipped rows:', r.data.errors);
+      await load();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || err?.message || 'Import failed');
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
+
+  return <section id="clients" className="border border-slate-200 bg-white overflow-hidden">
   <div className="master-data-blue-header"><div className="flex items-center gap-3"><div className="master-data-blue-header-icon"><Building2/></div><div><div className="flex items-center gap-2"><h2 className="text-sm font-bold">Client Details &amp; Access</h2><span className="master-data-blue-header-badge px-2 py-0.5 text-[10px] font-bold">{clients.length}</span></div><p className="text-xs mt-1">Same client master used by Records, Quotations, Invoicing, Compliance and Client Proposals.</p></div></div><div className="master-data-blue-header-actions"><input ref={csvInputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleImportCSV}/><Button variant="outline" className="h-9 rounded-none master-data-blue-header-btn-outline" onClick={downloadTemplate}><FileDown className="h-3.5 w-3.5 mr-1.5"/>Template</Button><Button variant="outline" className="h-9 rounded-none master-data-blue-header-btn-outline" disabled={importing} onClick={()=>csvInputRef.current?.click()}>{importing?<Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin"/>:<Upload className="h-3.5 w-3.5 mr-1.5"/>}Bulk Import</Button><Button variant="outline" className="h-9 rounded-none master-data-blue-header-btn-outline" disabled={!clients.length} onClick={exportCsv}><Download className="h-3.5 w-3.5 mr-1.5"/>Export</Button><Button onClick={openNew} className="h-9 rounded-none master-data-blue-header-btn-solid"><Plus className="h-3.5 w-3.5 mr-1.5"/>Add Client</Button></div></div>
   <div className="px-5 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-3"><div className="relative flex-1"><Search className="h-4 w-4 absolute left-2.5 top-2.5 text-slate-400"/><Input className="pl-8 h-9 rounded-none bg-white" placeholder="Search client, GSTIN, PAN, phone, email…" value={search} onChange={e=>setSearch(e.target.value)}/></div><span className="text-[11px] font-semibold text-slate-500">{visible.length} shown</span></div>
   {loading?<div className="py-12 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-slate-400"/></div>:visible.length===0?<div className="py-12 text-center text-sm text-slate-400">No clients found. Add a client here or create one from Records.</div>:<div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="bg-slate-50 border-b border-slate-200 text-left"><th className="px-4 py-3">Client</th><th className="px-4 py-3">Constitution</th><th className="px-4 py-3">GSTIN / PAN</th><th className="px-4 py-3">Contact</th><th className="px-4 py-3">Services</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody>{visible.map(c=><tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/70"><td className="px-4 py-3"><div className="font-semibold text-slate-800">{c.company_name||'—'}</div><div className="text-[11px] text-slate-400">{c.city||''}{c.state?` · ${c.state}`:''}</div></td><td className="px-4 py-3 text-xs text-slate-600">{TYPES.find(x=>x[0]===c.client_type)?.[1]||c.client_type||'—'}</td><td className="px-4 py-3 text-xs text-slate-600">{c.gstin||'—'}<div className="text-[11px] text-slate-400">{c.pan||'—'}</div></td><td className="px-4 py-3 text-xs text-slate-600">{c.email||'—'}<div>{c.phone||''}</div></td><td className="px-4 py-3 text-xs text-slate-600">{(c.services||[]).slice(0,3).join(', ')||'—'}{(c.services||[]).length>3?'…':''}</td><td className="px-4 py-3 text-right"><Button size="icon" variant="ghost" className="h-8 w-8 rounded-none" onClick={()=>openEdit(c)} title="Edit client"><Pencil className="h-3.5 w-3.5"/></Button></td></tr>)}</tbody></table></div>}
