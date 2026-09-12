@@ -21,11 +21,24 @@ _BASE_GET_CURRENT_USER = _dependencies.get_current_user
 
 MODULE_PREFIXES = {
     "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
-    "finix": ("/finix-dashboard", "/invoicing", "/purchase", "/bank-accounts", "/chart-of-accounts", "/journal-entries", "/accounting-reports", "/zero-touch-entry", "/gst-portal-sync", "/accounting-integrity", "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report", "/bank-reconciliation", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report", "/yearly-report", "/opening-balances", "/accounting-audit-trail", "/bulk-import", "/due-dates", "/import-invoices"),
+    # NOTE: the actual backend report endpoints all live under "/reports/...".
+    # These finix-specific "/reports/<name>" entries must be listed (and
+    # matched) before the generic "/reports" catch-all further down, or every
+    # Finix accounting report (Trial Balance, P&L, Balance Sheet, Cash Flow,
+    # Day Book, etc.) gets mis-classified as a People Matrix feature and
+    # blocked for any customer who didn't buy People Matrix.
+    "finix": ("/finix-dashboard", "/invoicing", "/purchase", "/bank-accounts", "/chart-of-accounts", "/journal-entries", "/accounting-reports", "/zero-touch-entry", "/gst-portal-sync", "/accounting-integrity", "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report", "/bank-reconciliation", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report", "/yearly-report", "/opening-balances", "/accounting-audit-trail", "/bulk-import", "/due-dates", "/import-invoices", "/reports/day-book", "/reports/journal-register", "/reports/cash-bank-book", "/reports/cash-flow", "/reports/outstanding", "/reports/financial-ratios", "/reports/comparative", "/reports/yearly", "/reports/trial-balance", "/reports/profit-loss", "/reports/balance-sheet", "/reports/mis-compliance", "/reports/parties", "/reports/party-ledger", "/reports/validation-engine", "/reports/ledger-by-code", "/reports/finix-dashboard"),
     "compliance": ("/compliance-dashboard", "/compliance", "/gst-reconciliation", "/trademark-sphere", "/mis-report", "/salary-slips", "/roc-sphere"),
     "records": ("/records-dashboard", "/client-approvals", "/dsc", "/documents", "/clients", "/passwords"),
     "proposals": ("/client-proposals-dashboard", "/leads", "/quotations", "/client-discussion"),
-    "people_matrix": ("/people-matrix", "/users", "/staff-activity", "/reports", "/leave", "/payroll", "/hr", "/recruitment", "/performance"),
+    # "/staff-activity" and the generic "/reports" prefix were removed here.
+    # Team Activity (Activity Logs) and the workforce Reports page are
+    # role-gated admin features (see MODULE_HIERARCHY["admin"] and
+    # check_module_permission("reports", ...) in server.py) — they were never
+    # meant to require the separately-sold People Matrix module, and the
+    # broad "/reports" prefix was incorrectly swallowing every other module's
+    # report endpoints too (see the finix entries above).
+    "people_matrix": ("/people-matrix", "/users", "/leave", "/payroll", "/hr", "/recruitment", "/performance"),
 }
 
 FEATURE_PREFIXES = {
