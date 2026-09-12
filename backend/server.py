@@ -2194,49 +2194,64 @@ async def _create_saas_session(user: dict) -> tuple[str, str, User]:
     ttl_days = max(1, int(os.getenv("SAAS_SESSION_TTL_DAYS", "30") or 30))
     session_user_id = user.get("_id") or user.get("id")
 
-    # One account may have only one live SaaS session. Mark every older
+    user_email = str(user.get("email") or "").strip().lower()
+
+    # Non-platform owner accounts may have only one live session. Mark every older
     # browser/mobile session as replaced before issuing the new token. The
-    # authentication guard still performs the authoritative check on every
-    # request, so a request racing this update cannot keep the old session
-    # alive.
-    previous_sessions = []
-    for user_id_value in (session_user_id, str(session_user_id)):
-        if user_id_value is None:
-            continue
+    # platform owner is exempt and may be signed in on multiple devices.
+    from backend.platform_owner import is_platform_owner
+    if not is_platform_owner(user):
+        user_queries = [{"user_id": session_user_id}, {"user_id": str(session_user_id)}]
+        if user_email:
+            user_queries.append({"email": user_email})
+
+        previous_sessions = []
         try:
             previous_sessions.extend(
-                await db.sessions.find({"user_id": user_id_value}).to_list(5000)
+                await db.sessions.find({"$or": user_queries}).to_list(5000)
             )
         except Exception:
-            # The new login must not be blocked by a cleanup/readback failure;
-            # the latest-session check remains the final enforcement boundary.
             logger.warning("Could not enumerate previous SaaS sessions for %s.", session_user_id)
-            break
 
-    seen_session_ids = set()
-    for previous in previous_sessions:
-        previous_id = str(previous.get("_id") or "")
-        if previous_id in seen_session_ids:
-            continue
-        seen_session_ids.add(previous_id)
-        if previous.get("status") in {"revoked", "replaced"}:
-            continue
+        seen_session_ids = set()
+        for previous in previous_sessions:
+            previous_id = str(previous.get("_id") or "")
+            if previous_id in seen_session_ids:
+                continue
+            seen_session_ids.add(previous_id)
+            if previous.get("status") in {"revoked", "replaced"}:
+                continue
+            try:
+                await db.sessions.update_one(
+                    {"_id": previous.get("_id")},
+                    {
+                        "$set": {
+                            "status": "replaced",
+                            "replaced_at": now,
+                            "revoked_reason": "new_login",
+                        }
+                    },
+                )
+            except Exception:
+                logger.warning("Could not mark a previous SaaS session as replaced.")
+
         try:
-            await db.sessions.update_one(
-                {"_id": previous.get("_id")},
+            await db.session_manager.update_many(
+                {"$or": user_queries, "status": "active"},
                 {
                     "$set": {
                         "status": "replaced",
-                        "replaced_at": now,
+                        "replaced_at": now.isoformat(),
                         "revoked_reason": "new_login",
                     }
                 },
             )
         except Exception:
-            logger.warning("Could not mark a previous SaaS session as replaced.")
+            pass
 
     await db.sessions.insert_one({
         "user_id": session_user_id,
+        "email": user_email,
         "company_id": company_id,
         "token_hash": token_hash,
         "status": "active",
@@ -3061,7 +3076,6 @@ async def login(credentials: UserLogin, request: Request):
 
     user.pop("_id", None)
     user_obj = User(**{k: v for k, v in user.items() if k != "password"})
-    access_token = create_access_token({"sub": user_obj.id})
 
     # Off-hours access notice (informational only — does not block login).
     now_hour = datetime.now().time()
@@ -3073,6 +3087,7 @@ async def login(credentials: UserLogin, request: Request):
             user_id=user_obj.id,
             client_ip=client_ip,
             user_agent=request.headers.get("user-agent", "unknown"),
+            email=normalized_email,
         )
         await AuditSecurity.log_security_event(
             event_type="login_success",
@@ -3083,6 +3098,11 @@ async def login(credentials: UserLogin, request: Request):
         )
     except Exception:
         logger.warning("Session tracking / audit log failed on login; continuing.")
+
+    token_data = {"sub": user_obj.id, "email": normalized_email}
+    if session_token:
+        token_data["sid"] = session_token
+    access_token = create_access_token(token_data)
 
     return {
         "access_token": access_token,

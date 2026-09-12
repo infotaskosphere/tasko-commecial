@@ -31,14 +31,18 @@ def _as_utc(value):
     return None
 
 
-async def _latest_session_for_user(user_id: str):
-    """Find the newest SaaS session regardless of Mongo user_id type."""
+async def _latest_session_for_user(user_id: str, email: str = None):
+    """Find the newest session regardless of Mongo user_id type or email."""
     try:
         sessions = await _raw_db().sessions.find({}).to_list(5000)
     except Exception:
-        return None
+        sessions = []
 
-    matching = [s for s in sessions if str(s.get("user_id")) == str(user_id)]
+    norm_email = str(email or "").strip().lower()
+    matching = [
+        s for s in sessions
+        if str(s.get("user_id")) == str(user_id) or (norm_email and str(s.get("email", "")).strip().lower() == norm_email)
+    ]
     if not matching:
         return None
 
@@ -57,8 +61,14 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     if not bearer_token or not user:
         return False
 
+    # Platform owner is completely exempted from single-device login restrictions
+    from backend.platform_owner import is_platform_owner
+    if is_platform_owner(user):
+        return False
+
     user_id = str(getattr(user, "id", "") or "")
-    if not user_id:
+    user_email = str(getattr(user, "email", "") or "").strip().lower()
+    if not user_id and not user_email:
         return False
 
     raw_db = _raw_db()
@@ -73,14 +83,14 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
     if current_saas_session:
         if current_saas_session.get("status") in {"revoked", "replaced"}:
             return True
-        latest = await _latest_session_for_user(user_id)
+        latest = await _latest_session_for_user(user_id, user_email)
         if not latest:
             return False
         return str(latest.get("_id")) != str(current_saas_session.get("_id"))
 
-    # Legacy JWT accounts have a session record created at successful login.
-    # Their historical JWT structure has no session id, so reconstruct the
-    # issuance time from exp and compare it with the newest tracked login.
+    # JWT accounts have a session record created at successful login.
+    sid = None
+    issued_at = None
     try:
         from jose import jwt
 
@@ -90,19 +100,71 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
             algorithms=[dependencies.ALGORITHM],
             options={"verify_exp": False},
         )
+        sid = payload.get("sid")
+        payload_email = str(payload.get("email") or "").strip().lower()
+        if payload_email:
+            user_email = payload_email
         exp = payload.get("exp")
-        if exp is None:
-            return False
-        issued_at = datetime.fromtimestamp(
-            float(exp) - (dependencies.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
-            tz=timezone.utc,
-        )
+        if exp is not None:
+            issued_at = datetime.fromtimestamp(
+                float(exp) - (dependencies.ACCESS_TOKEN_EXPIRE_MINUTES * 60),
+                tz=timezone.utc,
+            )
     except Exception:
         return False
 
+    user_or_filters = [{"user_id": user_id}, {"user_id": str(user_id)}]
+    if user_email:
+        user_or_filters.append({"email": user_email})
+
+    if sid:
+        # Check explicit session doc
+        current_sess = await raw_db.session_manager.find_one({"session_token": sid})
+        if not current_sess:
+            current_sess = await raw_db.sessions.find_one({"session_token": sid})
+
+        if current_sess:
+            if current_sess.get("status") in {"revoked", "replaced"}:
+                return True
+            if current_sess.get("status") != "active":
+                return True
+
+            # If there is another active session for this user/email with a different token
+            newer = await raw_db.session_manager.find_one({
+                "$or": user_or_filters,
+                "status": "active",
+                "session_token": {"$ne": sid},
+            })
+            if not newer:
+                newer = await raw_db.sessions.find_one({
+                    "$or": user_or_filters,
+                    "status": "active",
+                    "session_token": {"$ne": sid},
+                })
+            if newer:
+                newer_time = _as_utc(newer.get("login_at") or newer.get("created_at"))
+                curr_time = _as_utc(current_sess.get("login_at") or current_sess.get("created_at"))
+                if newer_time and curr_time and newer_time > curr_time:
+                    return True
+            return False
+        else:
+            # Session doc was replaced or not found; if another active session exists, this one was replaced
+            active_other = await raw_db.session_manager.find_one({
+                "$or": user_or_filters,
+                "status": "active",
+            })
+            if not active_other:
+                active_other = await raw_db.sessions.find_one({
+                    "$or": user_or_filters,
+                    "status": "active",
+                })
+            if active_other:
+                return True
+
+    # Fallback for JWT tokens without embedded sid
     try:
         active_sessions = await raw_db.session_manager.find(
-            {"user_id": user_id, "status": "active"}
+            {"$or": user_or_filters, "status": "active"}
         ).to_list(1000)
     except Exception:
         return False
@@ -112,16 +174,16 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
 
     latest_login = max(
         (
-            _as_utc(session.get("login_at"))
+            _as_utc(session.get("login_at") or session.get("created_at"))
             for session in active_sessions
-            if _as_utc(session.get("login_at")) is not None
+            if _as_utc(session.get("login_at") or session.get("created_at")) is not None
         ),
         default=None,
     )
-    if latest_login is None:
+    if latest_login is None or issued_at is None:
         return False
 
-    return latest_login > issued_at.replace(microsecond=0) + timedelta(seconds=10)
+    return latest_login > issued_at.replace(microsecond=0) + timedelta(seconds=5)
 
 
 async def _guarded_get_current_user(request, credentials):
@@ -144,45 +206,84 @@ async def _guarded_get_current_user(request, credentials):
 
 class SessionManager:
     @staticmethod
-    async def has_active_user_session(user_id: str) -> bool:
-        """Return True when this legacy account is already signed in elsewhere."""
+    async def has_active_user_session(user_id: str, email: str = None) -> bool:
+        """Return True when this account has an active session."""
         raw_db = _raw_db()
         try:
+            filters = [{"user_id": str(user_id)}]
+            if email:
+                filters.append({"email": str(email).strip().lower()})
             session = await raw_db.session_manager.find_one(
-                {"user_id": str(user_id), "status": "active"}
+                {"$or": filters, "status": "active"}
             )
             return session is not None
         except Exception:
-            logger.exception("Failed to inspect active session for user %s", user_id)
-            # Fail closed for the security boundary: if the current session
-            # state cannot be verified, do not allow another login to proceed.
-            raise HTTPException(
-                status_code=503,
-                detail="Unable to verify your current login session. Please try again.",
-            )
+            return False
 
     @staticmethod
-    async def assert_single_device_login_allowed(user_id: str) -> None:
-        """Block a second login while an existing legacy session is active."""
-        if await SessionManager.has_active_user_session(user_id):
-            raise HTTPException(
-                status_code=403,
-                detail=(
-                    "You are already logged in on another device. "
-                    "Please log out from that device and then log in again."
-                ),
-            )
+    async def assert_single_device_login_allowed(user_id: str, email: str = None) -> None:
+        """Allow single-session logins to proceed by superseding previous sessions."""
+        return
 
     @staticmethod
-    async def create_user_session(user_id: str, client_ip: str, user_agent: str) -> str:
-        """Create the user's single allowed legacy session without replacing an active one."""
+    async def create_user_session(user_id: str, client_ip: str, user_agent: str, email: str = None) -> str:
+        """Create the user's active session.
+
+        For non-platform owners, any prior active session for the same user_id or email
+        is marked as replaced so that older devices/browsers are logged out.
+        Platform owners are exempted from single-device restrictions and can remain
+        concurrently logged in on multiple devices.
+        """
         raw_db = _raw_db()
-        await SessionManager.assert_single_device_login_allowed(user_id)
+        from backend.platform_owner import is_platform_owner
+
+        norm_email = str(email or "").strip().lower()
+        if not norm_email and user_id:
+            try:
+                found_user = await raw_db.users.find_one(
+                    {"$or": [{"id": str(user_id)}, {"_id": user_id}]}
+                )
+                if found_user:
+                    norm_email = str(found_user.get("email") or "").strip().lower()
+            except Exception:
+                pass
+
+        user_identity = {"id": str(user_id)}
+        if norm_email:
+            user_identity["email"] = norm_email
+
+        is_owner = is_platform_owner(user_identity)
         now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+
+        if not is_owner:
+            query_filters = [{"user_id": str(user_id)}]
+            if norm_email:
+                query_filters.append({"email": norm_email})
+
+            replace_query = {"$or": query_filters, "status": "active"}
+            replacement_update = {
+                "$set": {
+                    "status": "replaced",
+                    "replaced_at": now,
+                    "revoked_reason": "new_login",
+                }
+            }
+            try:
+                await raw_db.session_manager.update_many(replace_query, replacement_update)
+            except Exception:
+                logger.warning("Failed to mark previous session_manager sessions replaced.")
+
+            try:
+                await raw_db.sessions.update_many(replace_query, replacement_update)
+            except Exception:
+                logger.warning("Failed to mark previous sessions replaced.")
+
         session_token = f"sess_{uuid.uuid4().hex}"
         session_doc = {
             "session_token": session_token,
             "user_id": str(user_id),
+            "email": norm_email,
             "client_ip": client_ip,
             "user_agent": user_agent,
             "status": "active",
@@ -195,6 +296,27 @@ class SessionManager:
             {"$set": session_doc},
             upsert=True,
         )
+
+        # Mirror in sessions collection with sha256 token hash
+        try:
+            token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+            await raw_db.sessions.update_one(
+                {"token_hash": token_hash},
+                {"$set": {
+                    "session_token": session_token,
+                    "token_hash": token_hash,
+                    "user_id": str(user_id),
+                    "email": norm_email,
+                    "status": "active",
+                    "created_at": now_dt,
+                    "login_at": now,
+                    "last_seen_at": now_dt,
+                }},
+                upsert=True,
+            )
+        except Exception:
+            pass
+
         return session_token
 
     @staticmethod
@@ -213,7 +335,7 @@ class SessionManager:
         # as well as replacement-triggered logout.
         token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
         result = await raw_db.sessions.update_one(
-            {"token_hash": token_hash},
+            {"$or": [{"token_hash": token_hash}, {"session_token": session_token}]},
             {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}},
         )
         return result.modified_count > 0

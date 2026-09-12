@@ -455,6 +455,17 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       error.response?.data?.detail === SESSION_REPLACED_DETAIL
     ) {
+      try {
+        const stored = typeof window !== "undefined" ? (localStorage.getItem("user") || sessionStorage.getItem("user")) : null;
+        if (stored) {
+          const u = JSON.parse(stored);
+          const email = String(u?.email || "").trim().toLowerCase();
+          const uid = String(u?.id || "").trim();
+          if (email === "info.taskosphere@gmail.com" || uid === "usr-admin-01" || uid === "saas-bootstrap-admin") {
+            return Promise.reject(error);
+          }
+        }
+      } catch {}
       emitSessionReplacement();
       return Promise.reject(error);
     }

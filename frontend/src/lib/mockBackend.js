@@ -348,18 +348,48 @@ export function handleMockRoute(method, url, data) {
   };
 
   if (normUrl === "/auth/login" || normUrl === "/auth/signin") {
+    const email = String(data?.email || "").trim().toLowerCase();
+    const isPlatformOwner = email === "info.taskosphere@gmail.com" || email === "admin@taskosphere.com";
+    const newSessionToken = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
+
+    if (typeof window !== "undefined" && window.localStorage && !isPlatformOwner && email) {
+      window.localStorage.setItem("tasko_active_session_" + email, newSessionToken);
+    }
+
     const activeUser = getActiveMockUser();
+    if (email) activeUser.email = email;
     return {
       status: 200,
       data: {
-        access_token: "mock-jwt-token-taskosphere",
-        token: "mock-jwt-token-taskosphere",
+        access_token: `mock-jwt-token-${email || "user"}-${newSessionToken}`,
+        token: `mock-jwt-token-${email || "user"}-${newSessionToken}`,
+        session_token: newSessionToken,
         user: activeUser,
       },
     };
   }
 
   if (normUrl === "/auth/me") {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const stored = window.localStorage.getItem("user") || window.sessionStorage.getItem("user");
+      const currentSessToken = window.localStorage.getItem("session_token") || window.sessionStorage.getItem("session_token");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          const email = String(parsed?.email || "").trim().toLowerCase();
+          const isPlatformOwner = email === "info.taskosphere@gmail.com" || parsed?.id === "usr-admin-01" || parsed?.id === "saas-bootstrap-admin";
+          if (!isPlatformOwner && email && currentSessToken) {
+            const activeToken = window.localStorage.getItem("tasko_active_session_" + email);
+            if (activeToken && activeToken !== currentSessToken) {
+              return {
+                status: 401,
+                data: { detail: "SESSION_REPLACED" },
+              };
+            }
+          }
+        } catch {}
+      }
+    }
     return { status: 200, data: getActiveMockUser() };
   }
 

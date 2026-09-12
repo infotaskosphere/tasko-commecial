@@ -36,13 +36,64 @@ export const AuthProvider = ({ children }) => {
       subscription: userData.subscription || null,
     };
   };
-  const getStoredAuth = () => ({ token: localStorage.getItem("token") || sessionStorage.getItem("token"), storedUser: localStorage.getItem("user") || sessionStorage.getItem("user") });
-  const persistAuth = (token, userData, rememberMe = false, sessionToken = null) => { const storage = rememberMe ? localStorage : sessionStorage; storage.setItem("token", token); storage.setItem("user", JSON.stringify(normalizeTenantContext(userData))); if (sessionToken) storage.setItem("session_token", sessionToken); api.defaults.headers.common["Authorization"] = `Bearer ${token}`; };
-  const clearStorage = () => { ["token", "user", "session_token", "taskosphere_last_active", "taskosphere_tab_closed", "taskosphere_keep_signed_in"].forEach((key) => localStorage.removeItem(key)); ["token", "user", "session_token"].forEach((key) => sessionStorage.removeItem(key)); delete api.defaults.headers.common["Authorization"]; };
+  const getStoredAuth = () => ({
+    token: localStorage.getItem("token") || sessionStorage.getItem("token"),
+    storedUser: localStorage.getItem("user") || sessionStorage.getItem("user"),
+    sessionToken: localStorage.getItem("session_token") || sessionStorage.getItem("session_token"),
+  });
+  const persistAuth = (token, userData, rememberMe = false, sessionToken = null) => {
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem("token", token);
+    storage.setItem("user", JSON.stringify(normalizeTenantContext(userData)));
+    if (sessionToken) {
+      storage.setItem("session_token", sessionToken);
+      localStorage.setItem("session_token", sessionToken);
+      const email = String(userData?.email || "").trim().toLowerCase();
+      const isOwner = email === PLATFORM_OWNER_EMAIL || userData?.id === "usr-admin-01" || userData?.id === "saas-bootstrap-admin";
+      if (!isOwner) {
+        localStorage.setItem("taskosphere_active_session_token", sessionToken);
+        if (email) localStorage.setItem("taskosphere_active_session_email", email);
+      }
+    }
+    api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+  };
+  const clearStorage = () => {
+    [
+      "token",
+      "user",
+      "session_token",
+      "taskosphere_last_active",
+      "taskosphere_tab_closed",
+      "taskosphere_keep_signed_in",
+      "taskosphere_active_session_token",
+      "taskosphere_active_session_email",
+    ].forEach((key) => localStorage.removeItem(key));
+    ["token", "user", "session_token"].forEach((key) => sessionStorage.removeItem(key));
+    delete api.defaults.headers.common["Authorization"];
+  };
   const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
   const LAST_ACTIVE_KEY = 'taskosphere_last_active';
 
+  const isPlatformOwnerAccount = useCallback((targetUser = user) => {
+    let email = targetUser?.email;
+    let uid = targetUser?.id;
+    if (!email && typeof window !== "undefined") {
+      try {
+        const storedStr = localStorage.getItem("user") || sessionStorage.getItem("user");
+        if (storedStr) {
+          const parsed = JSON.parse(storedStr);
+          email = email || parsed?.email;
+          uid = uid || parsed?.id;
+        }
+      } catch {}
+    }
+    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanId = String(uid || "").trim();
+    return cleanEmail === PLATFORM_OWNER_EMAIL || cleanId === "usr-admin-01" || cleanId === "saas-bootstrap-admin";
+  }, [user]);
+
   const forceLogoutForReplacement = useCallback(() => {
+    if (isPlatformOwnerAccount(user)) return;
     if (window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__) return;
     window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = true;
     clearStorage();
@@ -51,32 +102,53 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     try { window.alert("You were logged out because this account was signed in on another device or browser. Only one active login is allowed."); } catch {}
     if (window.location.pathname !== "/login") window.location.replace("/login");
-  }, []);
+  }, [user, isPlatformOwnerAccount]);
 
   useEffect(() => {
-    const handleSessionReplacement = () => forceLogoutForReplacement();
+    const handleSessionReplacement = () => {
+      if (isPlatformOwnerAccount(user)) return;
+      forceLogoutForReplacement();
+    };
     window.addEventListener("taskosphere:session-replaced", handleSessionReplacement);
     return () => window.removeEventListener("taskosphere:session-replaced", handleSessionReplacement);
-  }, [forceLogoutForReplacement]);
+  }, [forceLogoutForReplacement, user, isPlatformOwnerAccount]);
 
   useEffect(() => {
     if (!user) return undefined;
+    if (isPlatformOwnerAccount(user)) return undefined;
     let cancelled = false;
     const checkCurrentSession = async () => {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
       if (!token || cancelled) return;
       try { await api.get("/auth/me", { _silent: true, _skipReadyGate: true }); } catch (error) { if (cancelled) return; }
     };
-    const interval = setInterval(checkCurrentSession, 5000);
+    const interval = setInterval(checkCurrentSession, 4000);
     const handleVisibility = () => { if (document.visibilityState === "visible") checkCurrentSession(); };
     document.addEventListener("visibilitychange", handleVisibility);
     return () => { cancelled = true; clearInterval(interval); document.removeEventListener("visibilitychange", handleVisibility); };
-  }, [user, forceLogoutForReplacement]);
+  }, [user, forceLogoutForReplacement, isPlatformOwnerAccount]);
+
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (isPlatformOwnerAccount(user)) return;
+      if (e.key === "taskosphere_active_session_token") {
+        const newSession = e.newValue;
+        const currentSession = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
+        const activeEmail = localStorage.getItem("taskosphere_active_session_email");
+        const myEmail = String(user?.email || "").trim().toLowerCase();
+        if (newSession && currentSession && newSession !== currentSession && (!activeEmail || activeEmail === myEmail)) {
+          forceLogoutForReplacement();
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
+  }, [user, forceLogoutForReplacement, isPlatformOwnerAccount]);
 
   useEffect(() => { const handleBeforeUnload = () => { if (!isKeepSignedIn() && localStorage.getItem('token')) localStorage.setItem('taskosphere_tab_closed', Date.now().toString()); }; window.addEventListener('beforeunload', handleBeforeUnload); return () => window.removeEventListener('beforeunload', handleBeforeUnload); }, []);
   useEffect(() => { if (!user || isKeepSignedIn()) return; const updateActivity = () => localStorage.setItem(LAST_ACTIVE_KEY, Date.now().toString()); const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']; events.forEach(e => window.addEventListener(e, updateActivity, { passive: true })); updateActivity(); const interval = setInterval(() => { const lastActive = parseInt(localStorage.getItem(LAST_ACTIVE_KEY) || '0', 10); if (Date.now() - lastActive > INACTIVITY_LIMIT_MS) logout(); }, 60 * 1000); return () => { events.forEach(e => window.removeEventListener(e, updateActivity)); clearInterval(interval); }; }, [user]);
 
-  const isPlatformOwner = String(user?.email || "").trim().toLowerCase() === PLATFORM_OWNER_EMAIL;
+  const isPlatformOwner = isPlatformOwnerAccount(user);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
