@@ -31,9 +31,18 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from backend.dependencies import DB_NAME, MONGO_URL, client, db, get_current_user
+from backend.dependencies import DB_NAME, MONGO_URL, client, db, get_current_user, get_user_permissions
 from backend.models import User
 from backend.tenant_runtime import TENANT_COLLECTIONS
+from backend.permission_governance import GOVERNED_MODULES
+
+# Backup is a Permission Governance capability. Admins retain their normal
+# bypass; other users must be approved for this flag before they can create
+# or inspect backups. Restore remains administrator-only.
+GOVERNED_MODULES.setdefault(
+    "backup_restore",
+    {"flag": "can_view_backup_restore", "label": "Backup & Restore"},
+)
 
 router = APIRouter(prefix="/app-backup", tags=["Application Backup"])
 
@@ -78,9 +87,22 @@ MODULE_COLLECTION_MAP = {
 }
 
 
+def _is_admin(user: User) -> bool:
+    return str(getattr(user, "role", "")).lower() == "admin"
+
+
+def _require_backup_access(user: User) -> None:
+    if _is_admin(user):
+        return
+    permissions = get_user_permissions(user)
+    if permissions.get("can_view_backup_restore", False):
+        return
+    raise HTTPException(status_code=403, detail="Backup access has not been approved for your account.")
+
+
 def _require_admin(user: User) -> None:
-    if getattr(user, "role", None) != "admin":
-        raise HTTPException(status_code=403, detail="Only an administrator can create or restore an application backup.")
+    if not _is_admin(user):
+        raise HTTPException(status_code=403, detail="Only an administrator can restore an application backup.")
 
 
 def _raw_db():
@@ -91,19 +113,11 @@ def _raw_db():
 def _key(password: str, salt: bytes) -> bytes:
     if len(password or "") < 8:
         raise HTTPException(status_code=400, detail="Backup password must be at least 8 characters.")
-    return PBKDF2HMAC(
-        algorithm=hashes.SHA256(), length=32, salt=salt, iterations=PBKDF2_ITERATIONS
-    ).derive(password.encode("utf-8"))
+    return PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=PBKDF2_ITERATIONS).derive(password.encode("utf-8"))
 
 
 def _header(salt: bytes, nonce: bytes) -> bytes:
-    metadata = {
-        "format": "taskosphere-backup", "version": FORMAT_VERSION,
-        "cipher": "AES-256-GCM", "kdf": "PBKDF2-HMAC-SHA256",
-        "iterations": PBKDF2_ITERATIONS,
-        "salt": base64.b64encode(salt).decode(),
-        "nonce": base64.b64encode(nonce).decode(),
-    }
+    metadata = {"format": "taskosphere-backup", "version": FORMAT_VERSION, "cipher": "AES-256-GCM", "kdf": "PBKDF2-HMAC-SHA256", "iterations": PBKDF2_ITERATIONS, "salt": base64.b64encode(salt).decode(), "nonce": base64.b64encode(nonce).decode()}
     return FORMAT_MAGIC + json.dumps(metadata, separators=(",", ":")).encode() + b"\n"
 
 
@@ -214,7 +228,6 @@ async def _collection_docs(raw, name: str, company_id: str, user_ids: set[str], 
         return docs
     if name == "users" or name in TENANT_COLLECTIONS:
         return await raw[name].find(_company_query(company_id)).to_list(100000)
-    # Settings and legacy collections are allowed only when tenant/user linked.
     docs = await raw[name].find({"$or": [{"company_id": {"$exists": True}}, {"user_id": {"$exists": True}}]}).to_list(100000)
     return [doc for doc in docs if _linked(doc, user_ids, identities)]
 
@@ -236,19 +249,7 @@ async def _resolve_collections(user: User, requested: list[str] | None):
 async def _build_archive(user: User, password: str, requested: list[str] | None):
     company_id, company, user_ids, identities, selected = await _resolve_collections(user, requested)
     raw = _raw_db()
-    manifest = {
-        "format": "taskosphere-backup", "version": FORMAT_VERSION,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "database": DB_NAME, "scope": "single_customer_tenant",
-        "source_company_id": company_id,
-        "source_license_id": next(iter(identities["license_id"]), None),
-        "source_commercial_customer_id": next(iter(identities["commercial_customer_id"]), None),
-        "owner_user_id": _s(user.id), "company_name": (company or {}).get("name"),
-        "bson_encoding": "MongoDB Extended JSON v2 canonical",
-        "encryption": "AES-256-GCM + PBKDF2-HMAC-SHA256",
-        "selection": "full" if not requested else "custom",
-        "collections": {}, "excluded_collections": sorted(EXCLUDED_COLLECTIONS),
-    }
+    manifest = {"format": "taskosphere-backup", "version": FORMAT_VERSION, "created_at": datetime.now(timezone.utc).isoformat(), "database": DB_NAME, "scope": "single_customer_tenant", "source_company_id": company_id, "source_license_id": next(iter(identities["license_id"]), None), "source_commercial_customer_id": next(iter(identities["commercial_customer_id"]), None), "owner_user_id": _s(user.id), "company_name": (company or {}).get("name"), "bson_encoding": "MongoDB Extended JSON v2 canonical", "encryption": "AES-256-GCM + PBKDF2-HMAC-SHA256", "selection": "full" if not requested else "custom", "collections": {}, "excluded_collections": sorted(EXCLUDED_COLLECTIONS)}
     fd, zip_path = tempfile.mkstemp(prefix="taskosphere-backup-", suffix=".zip")
     os.close(fd)
     try:
@@ -280,48 +281,21 @@ async def _build_archive(user: User, password: str, requested: list[str] | None)
 
 @router.get("/info")
 async def backup_info(current_user: User = Depends(get_current_user)):
-    _require_admin(current_user)
+    _require_backup_access(current_user)
     company_id, company, user_ids, identities = await _tenant_context(current_user)
     raw = _raw_db()
     available = sorted(set(await raw.list_collection_names()) - EXCLUDED_COLLECTIONS)
-    modules = {
-        module: sorted(set(collections) & set(available))
-        for module, collections in MODULE_COLLECTION_MAP.items()
-    }
-    return {
-        "format": "Taskosphere Portable Backup v1",
-        "company_id": company_id,
-        "company_name": (company or {}).get("name"),
-        "user_count": len(user_ids),
-        "collections": available,
-        "modules": modules,
-        "encrypted": True,
-        "requires_password": True,
-        "mongo_database": DB_NAME,
-        "mongo_connection_configured": bool(MONGO_URL),
-        "excluded_security_collections": sorted(EXCLUDED_COLLECTIONS),
-        "notes": [
-            "Full backup includes tenant MongoDB data, tenant-linked settings and index definitions.",
-            "Live sessions, reset tokens and OAuth state are never exported.",
-            "Cross-license restore remaps company/license/customer identifiers to the target tenant.",
-        ],
-    }
+    modules = {module: sorted(set(collections) & set(available)) for module, collections in MODULE_COLLECTION_MAP.items()}
+    return {"format": "Taskosphere Portable Backup v1", "company_id": company_id, "company_name": (company or {}).get("name"), "user_count": len(user_ids), "collections": available, "modules": modules, "encrypted": True, "requires_password": True, "mongo_database": DB_NAME, "mongo_connection_configured": bool(MONGO_URL), "excluded_security_collections": sorted(EXCLUDED_COLLECTIONS), "notes": ["Full backup includes tenant MongoDB data, tenant-linked settings and index definitions.", "Live sessions, reset tokens and OAuth state are never exported.", "Cross-license restore remaps company/license/customer identifiers to the target tenant."]}
 
 
 @router.post("/create")
-async def create_backup(
-    password: str = Form(...),
-    collections: str = Form(""),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
+async def create_backup(password: str = Form(...), collections: str = Form(""), current_user: User = Depends(get_current_user)):
+    _require_backup_access(current_user)
     requested = [item.strip() for item in collections.split(",") if item.strip()] or None
     output, _manifest = await _build_archive(current_user, password, requested)
     filename = f"taskosphere-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.taskosphere"
-    return FileResponse(
-        output, media_type="application/octet-stream", filename=filename,
-        background=BackgroundTask(lambda: os.path.exists(output) and os.unlink(output)),
-    )
+    return FileResponse(output, media_type="application/octet-stream", filename=filename, background=BackgroundTask(lambda: os.path.exists(output) and os.unlink(output)))
 
 
 async def _read_archive(zip_path: str):
@@ -370,14 +344,9 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
     target_customer = next(iter(target_identities["commercial_customer_id"]), "")
     if source_license and target_license: replacements[source_license] = target_license
     if source_customer and target_customer: replacements[source_customer] = target_customer
-
     raw = _raw_db()
     restored = removed = 0
     selected_names = {name for name, _ in collections}
-
-    # Custom backups only replace the selected modules/collections. Full
-    # backups replace all tenant-scoped data. The target administrator and
-    # live security state always survive the restore.
     for name in selected_names:
         if name in EXCLUDED_COLLECTIONS or name == "companies":
             continue
@@ -392,7 +361,6 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
                 if _linked(doc, {_s(current_user.id)}, target_identities) and doc.get("_id") is not None:
                     result.deleted_count += (await raw[name].delete_one({"_id": doc["_id"]})).deleted_count
         removed += getattr(result, "deleted_count", 0)
-
     for name, docs in collections:
         if name in EXCLUDED_COLLECTIONS:
             continue
@@ -432,10 +400,7 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
 
 
 @router.post("/restore")
-async def restore_backup(
-    backup: UploadFile = File(...), password: str = Form(...), confirmation: str = Form(...),
-    current_user: User = Depends(get_current_user),
-):
+async def restore_backup(backup: UploadFile = File(...), password: str = Form(...), confirmation: str = Form(...), current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
     if confirmation.strip() != "RESTORE":
         raise HTTPException(status_code=400, detail="Type RESTORE exactly to confirm the operation.")
