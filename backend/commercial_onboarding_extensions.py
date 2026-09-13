@@ -426,6 +426,25 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
     if not license_doc:
         raise HTTPException(status_code=404, detail="License not found.")
     customer_id = str(license_doc.get("customer_id") or "")
+
+    # The Platform Owner is never a commercial tenant. If the owner's own
+    # account was ever linked to this customer/company id (e.g. a legacy or
+    # test record), deleting the license must never deactivate that account.
+    # A previous version of this cascade did exactly that via the unscoped
+    # update_many below, which soft-deleted the Platform Owner's own login
+    # and broke access to the Commercial Console entirely.
+    from backend.platform_owner import platform_owner_emails
+    owner_emails = list(platform_owner_emails())
+    if customer_id:
+        owner_linked = await db.users.find_one(
+            {"company_id": customer_id, "email": {"$in": owner_emails}}, {"_id": 0, "id": 1}
+        )
+        if owner_linked:
+            raise HTTPException(
+                status_code=400,
+                detail="This company/license is linked to a Platform Owner account and cannot be deleted.",
+            )
+
     customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
     await db.commercial_licenses.delete_one({"id": license_id})
     remaining = await db.commercial_licenses.count_documents({"customer_id": customer_id})
@@ -433,7 +452,7 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
         await db.commercial_license_customers.delete_one({"id": customer_id})
         await db.companies.delete_one({"id": customer_id, "source": "commercial-license"})
         await db.users.update_many(
-            {"company_id": customer_id},
+            {"company_id": customer_id, "email": {"$nin": owner_emails}},
             {"$set": {"is_active": False, "status": "deleted", "commercial_deleted_at": _now().isoformat()}},
         )
     return {"deleted": True, "license_id": license_id, "company_name": (customer or {}).get("company_name"), "remaining_licenses": remaining, "historical_invoices_preserved": True}
