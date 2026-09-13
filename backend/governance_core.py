@@ -3,9 +3,9 @@ Governance Core — the centralized permission architecture used by every
 module. Commercial licenses add a tenant-level entitlement cap above the
 existing MODULE → PAGE → ACTION → VISIBILITY hierarchy.
 
-Internal/system admins retain the historical full-access bypass. A licensed
-company admin retains full access inside the modules purchased for that
-company, but cannot enter an unlicensed module.
+Internal/system admins retain the historical full-access bypass. Commercial
+customer admins are subject to the same module/page entitlement boundary as
+other commercial users.
 """
 
 from typing import Any, Dict, List, Optional
@@ -23,13 +23,12 @@ _MODULE_FLAGS = {
 
 
 def _is_commercial_admin(user: User) -> bool:
-    """Commercial admins have a company_id."""
     return str(getattr(user, "role", "")).lower() == "admin" and bool(getattr(user, "company_id", None))
 
 
 def _admin_bypass(user: User) -> bool:
-    """The licensee who is issued license is the admin and does not need permission — has all rights by default."""
-    return str(getattr(user, "role", "")).lower() == "admin"
+    """Only internal/platform admins bypass per-page governance."""
+    return str(getattr(user, "role", "")).lower() == "admin" and not _is_commercial_admin(user)
 
 
 # =============================================================================
@@ -59,10 +58,8 @@ def has_page_access(user: User, module_key: str, page_flag: str) -> bool:
         return True
     if not has_module_access(user, module_key):
         return False
-
-    # Commercial admins have full page access inside an entitled module.
-    if getattr(user, "role", None) == "admin":
-        return True
+    if not page_flag:
+        return False
 
     perms = get_user_permissions(user)
     return bool(perms.get(page_flag, False))
@@ -82,10 +79,6 @@ def has_action_access(user: User, module_key: str, page_flag: str, action: str) 
         return True
     if not has_page_access(user, module_key, page_flag):
         return False
-
-    # Commercial admin is unrestricted inside the purchased module.
-    if getattr(user, "role", None) == "admin":
-        return True
 
     perms = get_user_permissions(user)
     matrix_key = f"{module_key}.{page_flag}"
@@ -123,7 +116,9 @@ _LEGACY_VISIBILITY_FIELDS = {
 
 
 def get_visibility_scope(user: User, resource_type: str) -> Dict[str, Any]:
-    if _admin_bypass(user) or getattr(user, "role", None) == "admin":
+    # Data visibility remains organization-wide for admins; this is separate
+    # from the commercial page entitlement check above.
+    if getattr(user, "role", None) == "admin":
         return {"scope": "organization", "selected": []}
 
     perms = get_user_permissions(user)
@@ -146,7 +141,7 @@ def has_visibility_access(
     department: Optional[str] = None,
     role: Optional[str] = None,
 ) -> bool:
-    if _admin_bypass(user) or getattr(user, "role", None) == "admin":
+    if getattr(user, "role", None) == "admin":
         return True
 
     scope_info = get_visibility_scope(user, resource_type)
