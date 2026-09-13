@@ -17,6 +17,24 @@ def platform_owner_emails() -> set[str]:
     return values or DEFAULT_PLATFORM_OWNER_EMAILS
 
 
+def _install_owner_auth_compat() -> None:
+    """Install the owner session resolver after the auth modules are loaded.
+
+    ``platform_owner`` is imported very early by the authentication stack, so
+    importing the compatibility module at module import time would create a
+    circular import. Login calls ``is_platform_owner`` after the backend auth
+    functions have been defined, making this a safe lazy installation point.
+    """
+    try:
+        from backend import platform_owner_session_compat
+        platform_owner_session_compat.install()
+    except Exception:
+        # Authentication remains fail-closed if the optional compatibility
+        # layer cannot be installed; the caller still gets the owner identity
+        # result and the normal JWT path remains available.
+        pass
+
+
 def is_platform_owner(user) -> bool:
     if not user:
         return False
@@ -28,8 +46,10 @@ def is_platform_owner(user) -> bool:
         user_id = str(getattr(user, "id", "") or "").strip()
 
     owner_emails = platform_owner_emails()
-    if email and email in owner_emails:
-        return True
-    if user_id and user_id in {"saas-bootstrap-admin", "usr-admin-01"}:
-        return True
-    return False
+    is_owner = bool(
+        (email and email in owner_emails)
+        or (user_id and user_id in {"saas-bootstrap-admin", "usr-admin-01"})
+    )
+    if is_owner:
+        _install_owner_auth_compat()
+    return is_owner
