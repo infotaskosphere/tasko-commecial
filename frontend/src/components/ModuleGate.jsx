@@ -21,9 +21,8 @@ const MODULE_HOME = [
 ];
 
 // Commercial licenses select pages independently from the parent module.
-// Keep this route-to-permission table in the existing route gate rather than
-// introducing another permission system. Unmapped commercial routes fail
-// closed, which is safer than allowing a newly-added page accidentally.
+// Keep this route-to-permission table in the existing route gate. Unknown
+// commercial routes fail closed instead of inheriting the module purchase.
 const ROUTE_PAGE_PREFIXES = {
   taskosphere: [
     ['can_view_dashboard', '/dashboard'],
@@ -44,10 +43,46 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_purchase', '/purchase'],
     ['can_view_purchase', '/purchase-invoices'],
     ['can_view_bank', '/bank-accounts'],
+    ['can_view_bank', '/cash-bank-book'],
+    ['can_view_bank', '/cash-flow'],
     ['can_view_chart_of_accounts', '/chart-of-accounts'],
+    ['can_manage_chart_of_accounts', '/chart-of-accounts/manage'],
     ['can_view_journal_entries', '/journal-entries'],
+    ['can_view_journal_entries', '/day-book'],
+    ['can_post_journal_entries', '/journal-entries/post'],
     ['can_post_journal_entries', '/zero-touch-entry'],
     ['can_match_bank', '/bank-reconciliation'],
+    ['can_view_accounting_reports', '/accounting-reports'],
+    ['can_view_accounting_reports', '/gst-portal-sync'],
+    ['can_view_accounting_reports', '/accounting-integrity'],
+    ['can_view_accounting_reports', '/outstanding-report'],
+    ['can_view_accounting_reports', '/depreciation'],
+    ['can_view_accounting_reports', '/tds-tcs'],
+    ['can_view_accounting_reports', '/financial-ratios'],
+    ['can_view_accounting_reports', '/comparative-report'],
+    ['can_view_accounting_reports', '/yearly-report'],
+    ['can_view_accounting_reports', '/opening-balances'],
+    ['can_view_accounting_reports', '/accounting-audit-trail'],
+    ['can_view_accounting_reports', '/bulk-import'],
+    ['can_view_accounting_reports', '/due-dates'],
+    ['can_view_accounting_reports', '/import-invoices'],
+    ['can_view_accounting_reports', '/reports/day-book'],
+    ['can_view_accounting_reports', '/reports/journal-register'],
+    ['can_view_accounting_reports', '/reports/cash-bank-book'],
+    ['can_view_accounting_reports', '/reports/cash-flow'],
+    ['can_view_accounting_reports', '/reports/outstanding'],
+    ['can_view_accounting_reports', '/reports/financial-ratios'],
+    ['can_view_accounting_reports', '/reports/comparative'],
+    ['can_view_accounting_reports', '/reports/yearly'],
+    ['can_view_accounting_reports', '/reports/trial-balance'],
+    ['can_view_accounting_reports', '/reports/profit-loss'],
+    ['can_view_accounting_reports', '/reports/balance-sheet'],
+    ['can_view_accounting_reports', '/reports/mis-compliance'],
+    ['can_view_accounting_reports', '/reports/parties'],
+    ['can_view_accounting_reports', '/reports/party-ledger'],
+    ['can_view_accounting_reports', '/reports/validation-engine'],
+    ['can_view_accounting_reports', '/reports/ledger-by-code'],
+    ['can_view_accounting_reports', '/reports/finix-dashboard'],
   ],
   compliance: [
     ['can_view_compliance', '/compliance-dashboard'],
@@ -100,11 +135,8 @@ function ModuleGate({ module, children }) {
   const flag = MODULE_FLAGS[module];
   const granted = flag ? hasPermission(flag) : false;
   const isCommercialTenant = !isPlatformOwner
-    && (!!user?.license_id || !!user?.commercial_customer_id);
+    && (!!user?.license_id || !!user?.commercial_customer_id || Array.isArray(user?.licensed_modules));
 
-  // User administration is a tenant-control-plane capability. A commercial
-  // licensee administrator must always be able to manage the users connected
-  // to the license, even when People Matrix itself was not purchased.
   const isLicensedAdminUserDirectory = location.pathname === '/users'
     && isCommercialTenant
     && String(user?.role || '').toLowerCase() === 'admin';
@@ -116,10 +148,6 @@ function ModuleGate({ module, children }) {
 
   if (isCommercialTenant && !isLicensedAdminUserDirectory) {
     const pageFlag = selectedPageForPath(module, location.pathname);
-    // A commercial module purchase is deliberately not sufficient for route
-    // access. Every known page must have its own selected feature permission.
-    // If a route is not mapped yet, fail closed until its page entitlement is
-    // explicitly wired.
     if (!pageFlag || !hasPermission(pageFlag)) {
       const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
       return <Navigate to={fallback} replace />;
