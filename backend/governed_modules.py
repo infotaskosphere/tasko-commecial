@@ -17,6 +17,7 @@ from backend.licensing_api import router as licensing_router
 from backend.permission_governance import router as permission_governance_router
 from backend.website_config import router as website_config_router
 from backend.commercial_onboarding import router as commercial_onboarding_router
+from backend.backup_restore import router as backup_restore_router
 
 # server.py already includes permission_governance_router in /api. Nest the
 # commercial control-plane routers here so their final paths are stable:
@@ -114,4 +115,4 @@ client_discussion_router = _build_router(prefix="/client-discussion", tag="Clien
 master_data_router = _build_router(prefix="/master-data", tag="Master Data", module_key="admin", view_flag="can_view_master_data", manage_flag="can_manage_master_data", collection="master_data", resource_type="master_data", audit_module="master_data")
 roles_router = _build_router(prefix="/roles", tag="Roles", module_key="admin", view_flag="can_view_roles", manage_flag="can_manage_roles", collection="custom_roles", resource_type="roles", audit_module="roles")
 
-ALL_GOVERNED_ROUTERS: List[APIRouter] = [leave_router, payroll_router, hr_router, performance_router, client_discussion_router, master_data_router, roles_router, auth_sync_router]
+ALL_GOVERNED_ROUTERS: List[APIRouter] = [leave_router, payroll_router, hr_router, performance_router, client_discussion_router, master_data_router, roles_router, auth_sync_router, backup_restore_router]
