@@ -31,7 +31,7 @@
           } catch (_) {}
 
           const existing = document.getElementById(id);
-          const isAdmin = user?.role === 'admin';
+          const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
           const isApproved = user?.permissions?.can_view_backup_restore === true;
           if (!user || (!isAdmin && !isApproved) || location.pathname === '/login') {
             if (existing) existing.remove();
@@ -63,18 +63,21 @@
           }
         };
 
-        const scheduleSync = () => {
+        const scheduleSync = (delay = 0) => {
           if (scheduled) return;
           scheduled = true;
-          window.setTimeout(sync, 0);
+          window.setTimeout(sync, delay);
         };
 
-        scheduleSync();
+        // React mounts the sidebar after this document script runs, so wait for
+        // the first React render before attempting to add the governed item.
+        scheduleSync(100);
+        window.addEventListener('load', () => scheduleSync(100));
         document.addEventListener('click', (event) => {
-          if (event.target?.closest?.('a[href^="/settings"], button[id^="nav-tab-settings"]')) scheduleSync();
+          if (event.target?.closest?.('a[href^="/settings"], button[id^="nav-tab-settings"]')) scheduleSync(100);
         }, true);
-        window.addEventListener('storage', scheduleSync);
-        window.addEventListener('popstate', scheduleSync);
+        window.addEventListener('storage', () => scheduleSync(100));
+        window.addEventListener('popstate', () => scheduleSync(100));
       })();
     </script>
     <!-- Vite entry -->
