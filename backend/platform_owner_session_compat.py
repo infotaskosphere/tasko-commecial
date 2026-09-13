@@ -1,12 +1,14 @@
-"""Platform-owner session compatibility.
+"""Platform-owner and SaaS session compatibility.
 
-The commercial session creator intentionally skips customer subscription
-validation for the Platform Owner.  It must still preserve the owner's own
-company workspace so the normal tenant-aware request stack can authenticate
-opaque SaaS session tokens and keep the owner's operational workspace intact.
+The commercial session creator stores an opaque session token, but its legacy
+return tuple used the user's id as the second value. The frontend treats that
+second value as ``access_token`` and sends it as a Bearer token, which causes
+all authenticated API requests to return 401 after a successful login.
 
-This module is installed by the production/Vercel entry points after the app
-module is loaded, so the patch remains isolated from ordinary licensee login.
+This compatibility layer keeps the opaque session token for session lifecycle
+operations and supplies a real signed JWT as the access token. It also keeps
+the Platform Owner attached to the owner's own operational company/workspace
+without applying customer subscription validation.
 """
 
 from __future__ import annotations
@@ -113,7 +115,7 @@ def install() -> None:
 
 
 def install_server_session_patch(server_module: Any) -> None:
-    """Preserve the owner's company workspace in newly-created SaaS sessions."""
+    """Fix the login tuple and preserve the owner's company workspace."""
     original = getattr(server_module, "_create_saas_session", None)
     if original is None or getattr(original, "__name__", "") == "_owner_aware_create_saas_session":
         return
@@ -122,11 +124,21 @@ def install_server_session_patch(server_module: Any) -> None:
         owner = is_platform_owner(user)
         owner_company_id = user.get("company_id") if owner else None
         result = await original(user)
+
+        session_token, _legacy_access_value, session_user = result
+
+        # The legacy function returned the user id in the second tuple slot.
+        # The frontend stores this slot as access_token, so replace it with a
+        # real JWT. /auth/me can then authenticate through the raw JWT path,
+        # while session_token remains available for opaque-session logout and
+        # replacement handling.
+        user_id = str(getattr(session_user, "id", "") or user.get("_id") or user.get("id") or "")
+        access_token = _dependencies.create_access_token({"sub": user_id})
+
         if not owner or not owner_company_id:
-            return result
+            return session_token, access_token, session_user
 
         try:
-            session_token, access_token, session_user = result
             raw_db = getattr(server_module, "_raw_db", getattr(_dependencies, "_raw_db", _dependencies.db))
             token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
             await raw_db.sessions.update_one(
