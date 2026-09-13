@@ -1,2 +1,78 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8" /><title>Taskosphere</title></head><body><div id="root"></div><script type="module" src="/src/index.jsx"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="An all-in-one compliance, accounting, and task management platform with dynamic license-gated module navigation." />
+    <meta property="og:title" content="Taskosphere" />
+    <meta property="og:description" content="An all-in-one compliance, accounting, and task management platform with dynamic license-gated module navigation." />
+    <link rel="stylesheet" href="/src/module-switcher-commercial.css" />
+    <link rel="stylesheet" href="/src/commercial-card-shape-fixes.css" />
+    <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
+    <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
+    <title>Taskosphere</title>
+    <style>
+      @media (max-width: 1023px) { #taskosphere-backup-sidebar-link { display: none !important; } }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script>
+      (() => {
+        const id = 'taskosphere-backup-sidebar-link';
+        const sync = () => {
+          let user = null;
+          try {
+            const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
+            user = raw ? JSON.parse(raw) : null;
+          } catch (_) {}
+
+          const existing = document.getElementById(id);
+          if (!user || user.role !== 'admin' || location.pathname === '/login') {
+            if (existing) existing.remove();
+            return;
+          }
+
+          const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+          const link = existing || document.createElement('a');
+          link.id = id;
+          link.href = '/settings/backup';
+          link.title = collapsed ? 'Backup & Restore' : '';
+          link.setAttribute('aria-label', 'Backup & Restore');
+          link.style.position = 'fixed';
+          link.style.left = '0';
+          link.style.bottom = '76px';
+          link.style.zIndex = '46';
+          link.style.height = '44px';
+          link.style.width = collapsed ? '80px' : '280px';
+          link.style.display = 'flex';
+          link.style.alignItems = 'center';
+          link.style.justifyContent = collapsed ? 'center' : 'flex-start';
+          link.style.gap = '12px';
+          link.style.padding = collapsed ? '0' : '0 16px 0 28px';
+          link.style.boxSizing = 'border-box';
+          link.style.borderRadius = '12px';
+          link.style.background = 'transparent';
+          link.style.color = '#cbd5e1';
+          link.style.textDecoration = 'none';
+          link.style.font = "500 14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
+          link.style.transition = 'background .15s,color .15s';
+          link.innerHTML = '<span aria-hidden="true" style="font-size:17px;line-height:1">▣</span>' + (collapsed ? '' : '<span>Backup &amp; Restore</span>');
+          link.onmouseenter = () => { link.style.background = 'rgba(255,255,255,.07)'; link.style.color = '#fff'; };
+          link.onmouseleave = () => { link.style.background = 'transparent'; link.style.color = '#cbd5e1'; };
+          if (!existing) document.body.appendChild(link);
+        };
+
+        sync();
+        window.setInterval(sync, 300);
+        window.addEventListener('storage', sync);
+        window.addEventListener('popstate', sync);
+      })();
+    </script>
+    <!-- Vite entry -->
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>
