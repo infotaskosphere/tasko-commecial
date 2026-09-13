@@ -1,34 +1,12 @@
-/* Scoped visibility fix for Admin > Roles only. */
-/* Keep the shared layout and card spacing intact. */
-/* Roles is a long governance page, so its content must not be trapped in a
-   fixed-height inner viewport or clipped by DashboardLayout's viewport main. */
+/* Admin > Roles only. */
+/* Roles.jsx removes the three fixed 70vh tab containers. The shared
+   DashboardLayout still gives <main> a fixed viewport height, so this page
+   must opt out of that one layout constraint and grow with its content. */
 
-/* The Roles sidebar item is active while any of the three Roles tabs is open.
-   Use that as the route marker instead of relying on the inline style text. */
-body:has(a[href="/roles"][class*="bg-white/"]) [style*="max-height: 70vh"] {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-/* DashboardLayout intentionally fixes <main> to the viewport for normal
-   screens. Roles needs the full document height so all tab content remains
-   reachable without a clipped card. */
-body:has(a[href="/roles"][class*="bg-white/"]) #root main {
+body:has(.roles-page-shell) #root main {
   height: auto !important;
   min-height: calc(100vh - 104px) !important;
   max-height: none !important;
   overflow-y: visible !important;
   overflow-x: hidden !important;
-}
-
-/* Defensive fallback for browsers that expose the active sidebar class with
-   a generated/changed utility token: the explicit Roles inline viewport is
-   still removed whenever it exists on the page. */
-body:has([style*="max-height: 70vh"]) [style*="max-height: 70vh"] {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
 }
