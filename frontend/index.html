@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
     <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
     <style id="task-management-header-ui">
+      /* This layout is intentionally scoped to /tasks. No global header/sidebar rules. */
       .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
         row-gap: 24px !important;
       }
@@ -21,8 +22,11 @@
         overflow: visible !important;
         text-overflow: clip !important;
       }
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px,
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
+      /* Hide only the legacy header notification trigger. Task-row/detail bells are unaffected. */
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button:has(> svg.lucide-bell) {
+        display: none !important;
+      }
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px {
         display: none !important;
       }
       .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
