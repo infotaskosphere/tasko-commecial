@@ -1,50 +1,7 @@
 /* Scoped visibility fix for Admin > Roles only. */
-/* Roles.jsx is the page that contains the 70vh content windows in all three tabs. */
-body:has([style*="max-height: 70vh"]) {
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-}
-
-body:has([style*="max-height: 70vh"]) #root,
-body:has([style*="max-height: 70vh"]) #root > div {
-  min-height: 100vh !important;
-  height: auto !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-/* DashboardLayout normally makes <main> a fixed viewport-height scroll
-   container. Roles needs normal document flow so the complete tab content can
-   extend below the header and be reached with the page scrollbar. */
-body:has([style*="max-height: 70vh"]) #root main {
-  height: auto !important;
-  min-height: calc(100vh - 104px) !important;
-  max-height: none !important;
-  overflow-y: visible !important;
-  overflow-x: visible !important;
-}
-
-body:has([style*="max-height: 70vh"]) #root main > div,
-body:has([style*="max-height: 70vh"]) #root main > div > div {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-/* Remove the fixed 70vh clipping from the Roles, Permissions and Users tab
-   content windows. Their content should determine the page height instead of
-   creating a nested viewport inside the already scrollable application. */
+/* Keep DashboardLayout's normal page scrolling and card spacing intact. */
+/* Only remove the fixed 70vh inner viewport from the three Roles tabs. */
 body:has([style*="max-height: 70vh"]) [style*="max-height: 70vh"] {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-/* SectionCard uses overflow-hidden for normal card styling. On this page the
-   card itself must be allowed to grow with the selected tab's full content. */
-body:has([style*="max-height: 70vh"]) #root main section:has([style*="max-height: 70vh"]) {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
