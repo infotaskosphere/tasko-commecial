@@ -20,9 +20,6 @@ from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
 logger = logging.getLogger("commercial_licensee_admin")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Legacy package IDs and the newer custom-module IDs both resolve to the same
-# application permission modules. A license can therefore be issued by either
-# licensing flow without silently losing admin access.
 LICENSE_MODULE_ALIASES = {
     "tasks": "taskosphere",
     "taskosphere": "taskosphere",
@@ -55,7 +52,12 @@ def resolve_license_modules(license_doc: Dict[str, Any]) -> set[str]:
 
 
 def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Return admin rights, optionally capped by a commercial license."""
+    """Return admin rights capped by the commercial license's explicit page selections.
+
+    A purchased module is only the parent entitlement. It does not grant every
+    page. If selected_features is absent, no operational page is granted; the
+    platform owner must explicitly select the pages that belong to the license.
+    """
     if license_doc is None:
         admin_perms = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
         admin_perms["can_access_whatsapp_hub"] = True
@@ -63,7 +65,9 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
 
     permissions = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
     licensed_modules = resolve_license_modules(license_doc)
-    selected_features = license_doc.get("selected_features") or {}
+    selected_features = license_doc.get("selected_features")
+    if not isinstance(selected_features, dict):
+        selected_features = {}
 
     for module_id, module_def in MODULE_HIERARCHY.items():
         if module_id == "admin":
@@ -73,15 +77,21 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         if module_flag:
             permissions[module_flag] = module_allowed
 
-        # Custom licenses can restrict individual pages. Legacy/package-only
-        # licenses have no feature map and therefore grant every page in an
-        # included module.
-        restriction_exists = module_id in selected_features
-        selected = set(selected_features.get(module_id) or [])
+        raw_selected = selected_features.get(module_id)
+        if raw_selected is None:
+            for raw_key, value in selected_features.items():
+                normalized = str(raw_key).strip().lower().replace("-", "_")
+                if LICENSE_MODULE_ALIASES.get(normalized) == module_id:
+                    raw_selected = value
+                    break
+
+        selected = {str(flag).strip() for flag in raw_selected} if isinstance(raw_selected, list) else set()
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
             if flag:
-                permissions[flag] = bool(module_allowed and (not restriction_exists or flag in selected))
+                # Explicit feature selection is authoritative. A module with
+                # no selected pages has module access but zero page access.
+                permissions[flag] = bool(module_allowed and flag in selected)
 
     return permissions
 
@@ -92,7 +102,6 @@ async def ensure_licensee_admin(
     company: Dict[str, Any],
     password: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    """Create/update the license contact as the default tenant administrator."""
     raw_db = _raw_db()
     email = str(customer.get("email") or "").strip().lower()
     if not email:
