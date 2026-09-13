@@ -13,53 +13,50 @@
     <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
     <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
     <style id="task-management-header-ui">
-      /* This layout is intentionally scoped to /tasks. No global header/sidebar rules. */
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
-        row-gap: 24px !important;
-      }
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
+      /* Scoped to the Tasks route only. Structural selectors avoid Tailwind-colon escaping. */
+      html.task-management-route h1[data-task-header-title="true"] {
         white-space: nowrap !important;
         overflow: visible !important;
         text-overflow: clip !important;
       }
-      /* Hide only the legacy header notification trigger. Task-row/detail bells are unaffected. */
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button:has(> svg.lucide-bell) {
-        display: none !important;
-      }
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px {
-        display: none !important;
-      }
-      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
+      html.task-management-route [data-task-header-actions="true"] {
+        display: grid !important;
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 8px !important;
         width: 100% !important;
         min-width: 0 !important;
-        white-space: nowrap !important;
+        align-items: stretch !important;
+      }
+      html.task-management-route [data-task-header-actions="true"] > button {
+        width: 100% !important;
+        min-width: 0 !important;
         justify-content: center !important;
+        white-space: nowrap !important;
+      }
+      html.task-management-route [data-task-header-actions="true"] > .task-header-divider {
+        display: none !important;
+      }
+      html.task-management-route [data-task-header-actions="true"] > .task-header-notification {
+        display: none !important;
       }
       @media (min-width: 1024px) {
-        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
+        html.task-management-route [data-task-header-row="true"] {
           display: grid !important;
-          grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.3fr) !important;
-          column-gap: 48px !important;
+          grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr) !important;
+          column-gap: 64px !important;
+          row-gap: 24px !important;
           align-items: center !important;
         }
-        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex-1.min-w-0 {
-          min-width: 240px !important;
-        }
-        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
-          display: grid !important;
-          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-          grid-auto-rows: minmax(34px, auto) !important;
-          gap: 8px !important;
-          align-items: stretch !important;
-          min-width: 0 !important;
-          width: 100% !important;
+        html.task-management-route [data-task-header-title-wrap="true"] {
+          min-width: 280px !important;
         }
       }
       @media (max-width: 1023px) {
-        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
-          display: grid !important;
+        html.task-management-route [data-task-header-row="true"] {
+          row-gap: 20px !important;
+        }
+        html.task-management-route [data-task-header-actions="true"] {
           grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-          gap: 8px !important;
         }
       }
     </style>
@@ -76,6 +73,52 @@
         syncTaskRouteClass();
         window.addEventListener('popstate', syncTaskRouteClass);
         document.addEventListener('click', () => window.setTimeout(syncTaskRouteClass, 0), true);
+      })();
+    </script>
+    <script>
+      (() => {
+        const HEADER_TITLE = 'Task Management';
+        let scheduled = false;
+        let observer = null;
+        const markAndLayout = () => {
+          scheduled = false;
+          if (location.pathname !== '/tasks') {
+            document.documentElement.classList.remove('task-management-route');
+            return;
+          }
+          document.documentElement.classList.add('task-management-route');
+          const title = Array.from(document.querySelectorAll('h1')).find((el) => el.textContent.trim() === HEADER_TITLE);
+          if (!title) return;
+          title.setAttribute('data-task-header-title', 'true');
+          const titleWrap = title.parentElement;
+          const row = titleWrap?.parentElement;
+          if (!titleWrap || !row) return;
+          titleWrap.setAttribute('data-task-header-title-wrap', 'true');
+          row.setAttribute('data-task-header-row', 'true');
+          const actions = Array.from(row.children).find((el) => el !== titleWrap && el.querySelector?.('button'));
+          if (!actions) return;
+          actions.setAttribute('data-task-header-actions', 'true');
+          Array.from(actions.children).forEach((child) => {
+            if (child.classList?.contains('h-8') && child.classList?.contains('w-px')) child.classList.add('task-header-divider');
+            const bell = child.matches?.('button') && child.querySelector?.('svg.lucide-bell');
+            if (bell) child.classList.add('task-header-notification');
+          });
+        };
+        const schedule = () => {
+          if (scheduled) return;
+          scheduled = true;
+          window.setTimeout(markAndLayout, 0);
+        };
+        const start = () => {
+          if (observer) observer.disconnect();
+          observer = new MutationObserver(schedule);
+          observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true });
+          schedule();
+        };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+        else start();
+        window.addEventListener('popstate', schedule);
+        document.addEventListener('click', schedule, true);
       })();
     </script>
     <script>
