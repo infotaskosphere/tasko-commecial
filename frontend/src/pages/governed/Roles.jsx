@@ -94,11 +94,10 @@ export default function Roles() {
   );
   const readOnly = selected?.key === 'admin';
 
-  // ── Permissions tab ──────────────────────────────────────────────────────
   const toggleFlag = (flag, value, pageFlags = null) => {
     setDraftPerms((prev) => {
       const next = { ...prev, [flag]: value };
-      if (pageFlags && !value) pageFlags.forEach((pf) => { next[pf] = false; }); // module off → pages off
+      if (pageFlags && !value) pageFlags.forEach((pf) => { next[pf] = false; });
       return next;
     });
   };
@@ -140,7 +139,6 @@ export default function Roles() {
     } finally { setBusy(false); }
   };
 
-  // ── Roles tab ────────────────────────────────────────────────────────────
   const createRole = async () => {
     if (!newRole.label.trim()) return toast.error('Give the role a name');
     setBusy(true);
@@ -175,7 +173,6 @@ export default function Roles() {
     } finally { setBusy(false); }
   };
 
-  // ── Users tab ────────────────────────────────────────────────────────────
   const changeUserRole = async (user, roleKey) => {
     setBusy(true);
     try {
@@ -253,7 +250,6 @@ export default function Roles() {
         ))}
       </div>
 
-      {/* ── ROLES ─────────────────────────────────────────────────────── */}
       {tab === 'roles' && (
         <SectionCard
           title="Roles"
@@ -266,103 +262,21 @@ export default function Roles() {
         >
           {addingRole && (
             <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700 md:grid-cols-2">
-              <Input
-                placeholder="Role name *  (e.g. Senior Manager)"
-                value={newRole.label}
-                onChange={(e) => setNewRole({ ...newRole, label: e.target.value })}
-              />
-              <Input
-                placeholder="Description (optional)"
-                value={newRole.description}
-                onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
-              />
-              <label className="text-sm">
-                <span className="mb-1 block text-slate-500">Behaves like</span>
-                <select
-                  className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
-                  value={newRole.base_role}
-                  onChange={(e) => setNewRole({ ...newRole, base_role: e.target.value, clone_from: e.target.value })}
-                >
-                  <option value="staff">Staff (own work only)</option>
-                  <option value="manager">Manager (own + team)</option>
-                  <option value="admin">Admin (organisation-wide)</option>
-                </select>
-              </label>
-              <label className="text-sm">
-                <span className="mb-1 block text-slate-500">Start from the permissions of</span>
-                <select
-                  className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
-                  value={newRole.clone_from}
-                  onChange={(e) => setNewRole({ ...newRole, clone_from: e.target.value })}
-                >
-                  {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-                </select>
-              </label>
-              <div className="flex gap-2 md:col-span-2">
-                <Button onClick={createRole} disabled={busy}>
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}
-                  Create
-                </Button>
-                <Button variant="ghost" onClick={() => setAddingRole(false)}>
-                  <X className="mr-1 h-4 w-4" /> Cancel
-                </Button>
-              </div>
+              <Input placeholder="Role name *  (e.g. Senior Manager)" value={newRole.label} onChange={(e) => setNewRole({ ...newRole, label: e.target.value })} />
+              <Input placeholder="Description (optional)" value={newRole.description} onChange={(e) => setNewRole({ ...newRole, description: e.target.value })} />
+              <label className="text-sm"><span className="mb-1 block text-slate-500">Behaves like</span><select className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700" value={newRole.base_role} onChange={(e) => setNewRole({ ...newRole, base_role: e.target.value, clone_from: e.target.value })}><option value="staff">Staff (own work only)</option><option value="manager">Manager (own + team)</option><option value="admin">Admin (organisation-wide)</option></select></label>
+              <label className="text-sm"><span className="mb-1 block text-slate-500">Start from the permissions of</span><select className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700" value={newRole.clone_from} onChange={(e) => setNewRole({ ...newRole, clone_from: e.target.value })}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label>
+              <div className="flex gap-2 md:col-span-2"><Button onClick={createRole} disabled={busy}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}Create</Button><Button variant="ghost" onClick={() => setAddingRole(false)}><X className="mr-1 h-4 w-4" />Cancel</Button></div>
             </div>
           )}
 
           <div className="pr-1 -mr-1">
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {roles.map((r) => (
-                <div
-                  key={r.key}
-                  className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${
-                    selectedKey === r.key
-                      ? 'border-blue-500 ring-1 ring-blue-500/30'
-                      : 'border-slate-200 dark:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 font-semibold break-words">
-                        <span className="break-words">{r.label}</span>
-                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}
-                        </span>
-                      </div>
-                      <p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p>
-                    </div>
-                    {!r.is_builtin && (
-                      <Button size="icon" variant="ghost" className="shrink-0" onClick={() => deleteRole(r)}>
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    )}
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                    <span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span>
-                    <span>{Object.values(r.permissions).filter(Boolean).length} permissions</span>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}
-                    >
-                      <ShieldCheck className="mr-1 h-4 w-4" /> Permissions
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setNewRole({
-                          label: `${r.label} (copy)`, description: r.description,
-                          base_role: r.base_role, clone_from: r.key,
-                        });
-                        setAddingRole(true);
-                      }}
-                    >
-                      <Copy className="mr-1 h-4 w-4" /> Clone
-                    </Button>
-                  </div>
+                <div key={r.key} className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${selectedKey === r.key ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-slate-200 dark:border-slate-700'}`}>
+                  <div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-semibold break-words"><span className="break-words">{r.label}</span><span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}</span></div><p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p></div>{!r.is_builtin && <Button size="icon" variant="ghost" className="shrink-0" onClick={() => deleteRole(r)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500"><span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span><span>{Object.values(r.permissions).filter(Boolean).length} permissions</span></div>
+                  <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}><ShieldCheck className="mr-1 h-4 w-4" />Permissions</Button><Button size="sm" variant="ghost" onClick={() => { setNewRole({ label: `${r.label} (copy)`, description: r.description, base_role: r.base_role, clone_from: r.key }); setAddingRole(true); }}> <Copy className="mr-1 h-4 w-4" />Clone</Button></div>
                 </div>
               ))}
             </div>
@@ -370,188 +284,25 @@ export default function Roles() {
         </SectionCard>
       )}
 
-      {/* ── PERMISSIONS ───────────────────────────────────────────────── */}
       {tab === 'permissions' && (
         <SectionCard
           title={selected ? `${selected.label} — default permissions` : 'Permissions'}
           icon={ShieldCheck}
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                className="rounded-md border border-slate-200 bg-transparent px-3 py-1.5 text-sm dark:border-slate-700"
-                value={selectedKey}
-                onChange={(e) => setSelectedKey(e.target.value)}
-              >
-                {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-              </select>
-              {selected?.is_builtin && !readOnly && (
-                <Button size="sm" variant="ghost" onClick={resetRole} disabled={busy}>
-                  <RotateCcw className="mr-1 h-4 w-4" /> Reset
-                </Button>
-              )}
-              {!readOnly && (
-                <Button size="sm" variant="outline" onClick={applyToUsers} disabled={busy}>
-                  <UsersIcon className="mr-1 h-4 w-4" /> Apply to {selected?.user_count || 0} user(s)
-                </Button>
-              )}
-              {!readOnly && (
-                <Button size="sm" onClick={savePermissions} disabled={busy || !dirty}>
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
-                  Save
-                </Button>
-              )}
-            </div>
-          }
+          actions={<div className="flex flex-wrap items-center gap-2"><select className="rounded-md border border-slate-200 bg-transparent px-3 py-1.5 text-sm dark:border-slate-700" value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>{selected?.is_builtin && !readOnly && <Button size="sm" variant="ghost" onClick={resetRole} disabled={busy}><RotateCcw className="mr-1 h-4 w-4" />Reset</Button>}{!readOnly && <Button size="sm" variant="outline" onClick={applyToUsers} disabled={busy}><UsersIcon className="mr-1 h-4 w-4" />Apply to {selected?.user_count || 0} user(s)</Button>}{!readOnly && <Button size="sm" onClick={savePermissions} disabled={busy || !dirty}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}Save</Button>}</div>}
         >
-          {readOnly ? (
-            <EmptyState
-              icon={ShieldCheck}
-              title="Admin always has full access"
-              hint="The Admin role cannot be restricted. Pick another role to govern its permissions."
-            />
-          ) : (
-            <>
-              <p className="mb-4 text-sm text-slate-500">
-                {grantedCount} permission{grantedCount === 1 ? '' : 's'} granted by default. Turning a module
-                off automatically removes every page under it. Saving only changes the role template — use
-                “Apply to users” to push it onto people who already hold this role.
-              </p>
-              <div className="space-y-4 pr-1 -mr-1">
-                {surface.map((mod) => {
-                  const pageFlags = mod.pages.map((p) => p.flag);
-                  const moduleOn = !!draftPerms[mod.flag];
-                  return (
-                    <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700">
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
-                        <div>
-                          <div className="font-semibold">{mod.label}</div>
-                          <p className="mt-0.5 text-xs text-slate-500">{mod.description}</p>
-                        </div>
-                        <Toggle
-                          checked={moduleOn}
-                          onChange={(v) => toggleFlag(mod.flag, v, pageFlags)}
-                        />
-                      </div>
-                      <div className="grid gap-x-6 gap-y-2 p-4 md:grid-cols-2">
-                        {mod.pages.map((p) => (
-                          <div key={p.flag} className="flex items-center justify-between gap-3 py-1">
-                            <div className={moduleOn ? '' : 'opacity-50'}>
-                              <div className="text-sm">{p.label}</div>
-                              <div className="text-[11px] uppercase tracking-wide text-slate-400">
-                                {(p.actions || []).join(' · ')}
-                              </div>
-                            </div>
-                            <Toggle
-                              checked={!!draftPerms[p.flag]}
-                              disabled={!moduleOn}
-                              onChange={(v) => toggleFlag(p.flag, v)}
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+          {readOnly ? <EmptyState icon={ShieldCheck} title="Admin always has full access" hint="The Admin role cannot be restricted. Pick another role to govern its permissions." /> : <><p className="mb-4 text-sm text-slate-500">{grantedCount} permission{grantedCount === 1 ? '' : 's'} granted by default. Turning a module off automatically removes every page under it. Saving only changes the role template — use “Apply to users” to push it onto people who already hold this role.</p><div className="space-y-4 pr-1 -mr-1">{surface.map((mod) => { const pageFlags = mod.pages.map((p) => p.flag); const moduleOn = !!draftPerms[mod.flag]; return <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700"><div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800"><div><div className="font-semibold">{mod.label}</div><p className="mt-0.5 text-xs text-slate-500">{mod.description}</p></div><Toggle checked={moduleOn} onChange={(v) => toggleFlag(mod.flag, v, pageFlags)} /></div><div className="grid gap-x-6 gap-y-2 p-4 md:grid-cols-2">{mod.pages.map((p) => <div key={p.flag} className="flex items-center justify-between gap-3 py-1"><div className={moduleOn ? '' : 'opacity-50'}><div className="text-sm">{p.label}</div><div className="text-[11px] uppercase tracking-wide text-slate-400">{(p.actions || []).join(' · ')}</div></div><Toggle checked={!!draftPerms[p.flag]} disabled={!moduleOn} onChange={(v) => toggleFlag(p.flag, v)} /></div>)}</div></div>; })}</div></>}
         </SectionCard>
       )}
 
-      {/* ── USERS ─────────────────────────────────────────────────────── */}
       {tab === 'users' && (
         <SectionCard
           title={`Users (${users.length})`}
           icon={UsersIcon}
-          actions={
-            <Button size="sm" onClick={() => setAddingUser((v) => !v)}>
-              <UserPlus className="mr-1 h-4 w-4" /> Add employee
-            </Button>
-          }
+          actions={<Button size="sm" onClick={() => setAddingUser((v) => !v)}><UserPlus className="mr-1 h-4 w-4" />Add employee</Button>}
         >
-          {addingUser && (
-            <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700 md:grid-cols-2">
-              <Input placeholder="Full name *" value={newUser.full_name}
-                onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })} />
-              <Input placeholder="Work email *" type="email" value={newUser.email}
-                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} />
-              <Input placeholder="Temporary password * (min 6 chars)" type="text" value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} />
-              <Input placeholder="Phone (optional)" value={newUser.phone}
-                onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} />
-              <label className="text-sm">
-                <span className="mb-1 block text-slate-500">Role</span>
-                <select
-                  className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700"
-                  value={newUser.role_key}
-                  onChange={(e) => setNewUser({ ...newUser, role_key: e.target.value })}
-                >
-                  {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-                </select>
-              </label>
-              <div className="flex items-end gap-2">
-                <Button onClick={createUser} disabled={busy}>
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}
-                  Add employee
-                </Button>
-                <Button variant="ghost" onClick={() => setAddingUser(false)}>
-                  <X className="mr-1 h-4 w-4" /> Cancel
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="relative mb-3">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input className="pl-9" placeholder="Search people…" value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)} />
-          </div>
-
-          {filteredUsers.length === 0 ? (
-            <EmptyState icon={UsersIcon} title="No users found" hint="Try a different search." />
-          ) : (
-            <div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
-                    <th className="py-2 pr-3">Name</th>
-                    <th className="py-2 pr-3">Email</th>
-                    <th className="py-2 pr-3">Departments</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                      <td className="py-2 pr-3 font-medium">{u.full_name}</td>
-                      <td className="py-2 pr-3 text-slate-500">{u.email}</td>
-                      <td className="py-2 pr-3 text-slate-500">{(u.departments || []).join(', ') || '—'}</td>
-                      <td className="py-2 pr-3">
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          u.is_active
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
-                        }`}>
-                          {u.is_active ? 'Active' : (u.status || 'Inactive')}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-3">
-                        <select
-                          className="rounded-md border border-slate-200 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
-                          value={u.role_key}
-                          disabled={busy}
-                          onChange={(e) => changeUserRole(u, e.target.value)}
-                        >
-                          {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {addingUser && <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700 md:grid-cols-2"><Input placeholder="Full name *" value={newUser.full_name} onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })} /><Input placeholder="Work email *" type="email" value={newUser.email} onChange={(e) => setNewUser({ ...newUser, email: e.target.value })} /><Input placeholder="Temporary password * (min 6 chars)" type="text" value={newUser.password} onChange={(e) => setNewUser({ ...newUser, password: e.target.value })} /><Input placeholder="Phone (optional)" value={newUser.phone} onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })} /><label className="text-sm"><span className="mb-1 block text-slate-500">Role</span><select className="w-full rounded-md border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700" value={newUser.role_key} onChange={(e) => setNewUser({ ...newUser, role_key: e.target.value })}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></label><div className="flex items-end gap-2"><Button onClick={createUser} disabled={busy}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Check className="mr-1 h-4 w-4" />}Add employee</Button><Button variant="ghost" onClick={() => setAddingUser(false)}><X className="mr-1 h-4 w-4" />Cancel</Button></div></div>}
+          <div className="relative mb-3"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><Input className="pl-9" placeholder="Search people…" value={userSearch} onChange={(e) => setUserSearch(e.target.value)} /></div>
+          {filteredUsers.length === 0 ? <EmptyState icon={UsersIcon} title="No users found" hint="Try a different search." /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700"><th className="py-2 pr-3">Name</th><th className="py-2 pr-3">Email</th><th className="py-2 pr-3">Departments</th><th className="py-2 pr-3">Status</th><th className="py-2 pr-3">Role</th></tr></thead><tbody>{filteredUsers.map((u) => <tr key={u.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800"><td className="py-2 pr-3 font-medium">{u.full_name}</td><td className="py-2 pr-3 text-slate-500">{u.email}</td><td className="py-2 pr-3 text-slate-500">{(u.departments || []).join(', ') || '—'}</td><td className="py-2 pr-3"><span className={`rounded-full px-2 py-0.5 text-[11px] ${u.is_active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>{u.is_active ? 'Active' : (u.status || 'Inactive')}</span></td><td className="py-2 pr-3"><select className="rounded-md border border-slate-200 bg-transparent px-2 py-1 text-sm dark:border-slate-700" value={u.role_key} disabled={busy} onChange={(e) => changeUserRole(u, e.target.value)}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select></td></tr>)}</tbody></table></div>}
         </SectionCard>
       )}
     </PageShell>
