@@ -139,6 +139,55 @@ client_discussion_router = _build_router(prefix="/client-discussion", tag="Clien
 master_data_router = _build_router(prefix="/master-data", tag="Master Data", module_key="admin", view_flag="can_view_master_data", manage_flag="can_manage_master_data", collection="master_data", resource_type="master_data", audit_module="master_data")
 roles_router = _build_router(prefix="/roles", tag="Roles", module_key="admin", view_flag="can_view_roles", manage_flag="can_manage_roles", collection="custom_roles", resource_type="roles", audit_module="roles")
 
+# Commercial Master Data must resolve the tenant from the commercial license,
+# not assume that every historical user still has a matching `companies.id`.
+# A previous deployment left valid licenses/users in MongoDB while the company
+# master row was missing; the role page could still read `users`, but
+# /commercial-master-data/users failed before it ever queried that collection.
+# Recreate the company master deterministically from the license/customer pair
+# before the route runs. This is a compatibility repair, not a privilege
+# escalation: the caller still has to be the licensed company administrator.
+import backend.commercial_master_data as _commercial_master_data_module  # noqa: E402
+from backend.commercial_onboarding import _active_company_license, _ensure_company_master  # noqa: E402
+from backend.platform_owner import is_platform_owner  # noqa: E402
+
+_original_commercial_company_context = _commercial_master_data_module._company_context
+
+
+async def _resilient_commercial_company_context(current_user: User):
+    if is_platform_owner(current_user):
+        return await _original_commercial_company_context(current_user)
+
+    if getattr(current_user, "role", None) != "admin" or not getattr(current_user, "company_id", None):
+        return await _original_commercial_company_context(current_user)
+
+    license_doc = await _active_company_license(current_user)
+    company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if company:
+        return license_doc, company
+
+    customer_id = str(license_doc.get("customer_id") or company_id).strip()
+    customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
+    if not customer:
+        # Some historical company rows used the license id instead of the
+        # customer id. Resolve that legacy link before declaring the tenant
+        # missing.
+        license_id = str(license_doc.get("id") or "").strip()
+        if license_id:
+            company = await db.companies.find_one({"license_id": license_id}, {"_id": 0})
+            if company:
+                return license_doc, company
+        raise HTTPException(status_code=404, detail="Licensed company profile not found.")
+
+    # `_ensure_company_master` is the canonical company-master constructor and
+    # also repairs historical rows that are missing their `id` field.
+    company = await _ensure_company_master(customer, license_doc)
+    return license_doc, company
+
+
+_commercial_master_data_module._company_context = _resilient_commercial_company_context
+
 # commercial_master_data_router is included here exactly once. It must not be
 # nested into permission_governance_router as well, otherwise FastAPI can
 # expose duplicate route registrations and make the /users endpoint behavior
