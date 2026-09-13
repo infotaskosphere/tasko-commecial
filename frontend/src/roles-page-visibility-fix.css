@@ -1,0 +1,25 @@
+/* Scoped visibility fix for Admin > Roles only. */
+body[data-taskosphere-role-page] {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
+body[data-taskosphere-role-page] #root {
+  min-height: 100vh !important;
+  height: auto !important;
+}
+
+body[data-taskosphere-role-page] main,
+body[data-taskosphere-role-page] [role="main"] {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow-y: visible !important;
+}
+
+/* Roles.jsx currently uses an inline 70vh scroll window for the role cards.
+   On the Roles page, let the document carry the scroll so all three tabs can
+   display their complete data without being clipped by the viewport. */
+body[data-taskosphere-role-page] [style*="max-height: 70vh"] {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
