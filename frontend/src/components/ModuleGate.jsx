@@ -11,6 +11,8 @@ const MODULE_FLAGS = {
   peopleMatrix: 'can_access_people_matrix',
 };
 
+// Commercial fallback pages are resolved from the same page-entitlement map
+// below. A module purchase alone must never become a route fallback.
 const MODULE_HOME = [
   ['can_access_taskosphere', '/dashboard'],
   ['can_access_finix', '/finix-dashboard'],
@@ -23,6 +25,10 @@ const MODULE_HOME = [
 // Commercial licenses select pages independently from the parent module.
 // Keep this route-to-permission table in the existing route gate. Unknown
 // commercial routes fail closed instead of inheriting the module purchase.
+//
+// IMPORTANT: can_view_accounting_reports represents the Finix Dashboard in the
+// commercial catalog. Legacy accounting-report URLs are intentionally omitted
+// so selecting the Dashboard feature cannot unlock them.
 const ROUTE_PAGE_PREFIXES = {
   taskosphere: [
     ['can_view_dashboard', '/dashboard'],
@@ -34,6 +40,8 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_client_visits', '/visits'],
     ['can_view_ai_document_reader', '/ai-reader'],
     ['can_view_client_portal', '/client-portal-manager'],
+    ['can_reset_client_passwords', '/client-portal-manager/password'],
+    ['can_reset_client_passwords', '/client-portal-manager/reset'],
   ],
   finix: [
     ['can_view_accounting_reports', '/finix-dashboard'],
@@ -52,37 +60,6 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_post_journal_entries', '/journal-entries/post'],
     ['can_post_journal_entries', '/zero-touch-entry'],
     ['can_match_bank', '/bank-reconciliation'],
-    ['can_view_accounting_reports', '/accounting-reports'],
-    ['can_view_accounting_reports', '/gst-portal-sync'],
-    ['can_view_accounting_reports', '/accounting-integrity'],
-    ['can_view_accounting_reports', '/outstanding-report'],
-    ['can_view_accounting_reports', '/depreciation'],
-    ['can_view_accounting_reports', '/tds-tcs'],
-    ['can_view_accounting_reports', '/financial-ratios'],
-    ['can_view_accounting_reports', '/comparative-report'],
-    ['can_view_accounting_reports', '/yearly-report'],
-    ['can_view_accounting_reports', '/opening-balances'],
-    ['can_view_accounting_reports', '/accounting-audit-trail'],
-    ['can_view_accounting_reports', '/bulk-import'],
-    ['can_view_accounting_reports', '/due-dates'],
-    ['can_view_accounting_reports', '/import-invoices'],
-    ['can_view_accounting_reports', '/reports/day-book'],
-    ['can_view_accounting_reports', '/reports/journal-register'],
-    ['can_view_accounting_reports', '/reports/cash-bank-book'],
-    ['can_view_accounting_reports', '/reports/cash-flow'],
-    ['can_view_accounting_reports', '/reports/outstanding'],
-    ['can_view_accounting_reports', '/reports/financial-ratios'],
-    ['can_view_accounting_reports', '/reports/comparative'],
-    ['can_view_accounting_reports', '/reports/yearly'],
-    ['can_view_accounting_reports', '/reports/trial-balance'],
-    ['can_view_accounting_reports', '/reports/profit-loss'],
-    ['can_view_accounting_reports', '/reports/balance-sheet'],
-    ['can_view_accounting_reports', '/reports/mis-compliance'],
-    ['can_view_accounting_reports', '/reports/parties'],
-    ['can_view_accounting_reports', '/reports/party-ledger'],
-    ['can_view_accounting_reports', '/reports/validation-engine'],
-    ['can_view_accounting_reports', '/reports/ledger-by-code'],
-    ['can_view_accounting_reports', '/reports/finix-dashboard'],
   ],
   compliance: [
     ['can_view_compliance', '/compliance-dashboard'],
@@ -129,28 +106,45 @@ function selectedPageForPath(module, pathname) {
     .sort((a, b) => b[1].length - a[1].length)[0]?.[0] || null;
 }
 
+function firstAccessiblePage(module, hasPermission) {
+  const entries = ROUTE_PAGE_PREFIXES[module] || [];
+  return entries.find(([flag]) => hasPermission(flag))?.[1] || null;
+}
+
+function firstAccessibleHome(hasPermission, preferredModule = null) {
+  if (preferredModule) {
+    const preferred = firstAccessiblePage(preferredModule, hasPermission);
+    if (preferred) return preferred;
+  }
+
+  for (const [moduleFlag, moduleHome] of MODULE_HOME) {
+    if (!hasPermission(moduleFlag)) continue;
+    const module = Object.keys(MODULE_FLAGS).find((key) => MODULE_FLAGS[key] === moduleFlag) ||
+      (moduleFlag === 'can_access_people_matrix' ? 'peopleMatrix' : null);
+    const entitled = module ? firstAccessiblePage(module, hasPermission) : null;
+    if (entitled) return entitled;
+    // Non-commercial/internal callers may legitimately rely on the module home.
+    return moduleHome;
+  }
+  return '/login';
+}
+
 function ModuleGate({ module, children }) {
   const { user, hasPermission, isPlatformOwner } = useAuth();
   const location = useLocation();
   const flag = MODULE_FLAGS[module];
   const granted = flag ? hasPermission(flag) : false;
   const isCommercialTenant = !isPlatformOwner
-    && (!!user?.license_id || !!user?.commercial_customer_id || Array.isArray(user?.licensed_modules));
+    && (!!user?.license_id || !!user?.commercial_customer_id || (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0));
 
-  const isLicensedAdminUserDirectory = location.pathname === '/users'
-    && isCommercialTenant
-    && String(user?.role || '').toLowerCase() === 'admin';
-
-  if (!granted && !isLicensedAdminUserDirectory) {
-    const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
-    return <Navigate to={fallback} replace />;
+  if (!granted) {
+    return <Navigate to={firstAccessibleHome(hasPermission)} replace />;
   }
 
-  if (isCommercialTenant && !isLicensedAdminUserDirectory) {
+  if (isCommercialTenant) {
     const pageFlag = selectedPageForPath(module, location.pathname);
     if (!pageFlag || !hasPermission(pageFlag)) {
-      const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
-      return <Navigate to={fallback} replace />;
+      return <Navigate to={firstAccessibleHome(hasPermission, module)} replace />;
     }
   }
 
