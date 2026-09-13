@@ -25,11 +25,14 @@ from backend.commercial_master_data import router as commercial_master_data_rout
 # /auth/me deterministic after both login and hard refresh.
 import backend.commercial_entitlement_runtime  # noqa: F401,E402
 
+# The commercial governance UI stores Sales/Invoicing as `can_view_sale`,
+# while the legacy invoicing API uses `can_manage_invoices`. Install the
+# compatibility bridge before route modules capture permission dependencies.
+import backend.commercial_invoicing_permission_compat as _commercial_invoicing_permission_compat  # noqa: E402
+_commercial_invoicing_permission_compat.install()
+
 # Keep the commercial-admin permission template aligned with the governance
 # rule that an admin has full access to every page inside a licensed module.
-# Older admin documents may not contain these newer People Matrix flags;
-# dependencies._normalize_permissions merges this template into the stored
-# permissions on every authenticated request.
 DEFAULT_ROLE_PERMISSIONS.setdefault("admin", {}).update({
     "can_view_leave": True,
     "can_manage_leave": True,
