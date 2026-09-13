@@ -15,6 +15,7 @@ without recreating a licensee/customer record.
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from typing import Any
 
@@ -93,7 +94,7 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
         now = datetime.now(timezone.utc).isoformat()
         owner_name = str(
             user.get("company_name")
-            or _dependencies.os.getenv("PLATFORM_OWNER_COMPANY_NAME", "Taskosphere Platform Owner")
+            or os.getenv("PLATFORM_OWNER_COMPANY_NAME", "Taskosphere Platform Owner")
         ).strip()
         company = {
             "id": owner_workspace_id,
