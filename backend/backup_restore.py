@@ -51,6 +51,7 @@ FORMAT_MAGIC = b"TASKOSPHERE-BACKUP-V1\n"
 FORMAT_VERSION = 1
 PBKDF2_ITERATIONS = 390_000
 CHUNK_SIZE = 1024 * 1024
+MAX_BACKUP_UPLOAD_BYTES = 100 * 1024 * 1024
 
 EXCLUDED_COLLECTIONS = {
     "sessions", "refresh_tokens", "access_tokens", "password_resets",
@@ -419,8 +420,12 @@ async def restore_backup(backup: UploadFile = File(...), password: str = Form(..
     os.close(fd)
     zip_path = None
     try:
+        total = 0
         with open(source_path, "wb") as out:
             while chunk := await backup.read(CHUNK_SIZE):
+                total += len(chunk)
+                if total > MAX_BACKUP_UPLOAD_BYTES:
+                    raise HTTPException(status_code=413, detail="Backup file exceeds the 100 MB upload limit.")
                 out.write(chunk)
         zip_path = _decrypt(source_path, password)
         manifest, collections = await _read_archive(zip_path)
