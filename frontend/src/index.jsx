@@ -41,7 +41,8 @@ if (typeof window !== "undefined") {
   });
 
   // Keep dynamically-rendered form controls free of Chrome's form-field
-  // Issues warnings without changing their existing behavior or values.
+  // Issues warnings without changing form submission behavior. Existing
+  // names/labels are preserved; only missing accessibility metadata is added.
   let taskosphereFieldId = 0;
   const ensureFormFieldMetadata = (scope = document) => {
     const fields = scope.querySelectorAll?.("input, select, textarea") || [];
@@ -62,32 +63,10 @@ if (typeof window !== "undefined") {
         field.id = `taskosphere-field-${taskosphereFieldId}`;
       }
 
-      if (!field.getAttribute("name")) {
-        const baseName = labelText
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-|-$/g, "") || "field";
-        taskosphereFieldId += 1;
-        field.setAttribute("name", `${baseName}-${taskosphereFieldId}`);
-      }
-
-      // Chrome's Issues panel specifically checks for a real label
-      // association. Preserve any existing association and only add a
-      // visually-hidden label where none exists.
-      if (!field.labels?.length) {
-        const label = document.createElement("label");
-        label.htmlFor = field.id;
-        label.textContent = labelText;
-        label.style.position = "absolute";
-        label.style.width = "1px";
-        label.style.height = "1px";
-        label.style.padding = "0";
-        label.style.margin = "-1px";
-        label.style.overflow = "hidden";
-        label.style.clip = "rect(0, 0, 0, 0)";
-        label.style.whiteSpace = "nowrap";
-        label.style.border = "0";
-        field.parentNode?.insertBefore(label, field);
+      // An aria-label provides an explicit accessible name without changing
+      // the field's existing form name/value semantics.
+      if (!field.getAttribute("aria-label")) {
+        field.setAttribute("aria-label", labelText || "Form field");
       }
     });
   };
