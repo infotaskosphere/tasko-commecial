@@ -28,7 +28,9 @@
           } catch (_) {}
 
           const existing = document.getElementById(id);
-          if (!user || user.role !== 'admin' || location.pathname === '/login') {
+          const isAdmin = user?.role === 'admin';
+          const isApproved = user?.permissions?.can_view_backup_restore === true;
+          if (!user || (!isAdmin && !isApproved) || location.pathname === '/login') {
             if (existing) existing.remove();
             return;
           }
