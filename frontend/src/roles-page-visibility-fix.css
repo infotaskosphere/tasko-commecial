@@ -1,9 +1,21 @@
 /* Scoped visibility fix for Admin > Roles only. */
-/* Keep DashboardLayout's normal page scrolling and card spacing intact. */
-/* Only remove the fixed 70vh inner viewport from the three Roles tabs. */
+/* Keep the shared layout and card spacing intact. */
+/* The Roles screen must use the document/page height, not a second fixed viewport. */
+
 body:has([style*="max-height: 70vh"]) [style*="max-height: 70vh"] {
   height: auto !important;
   min-height: 0 !important;
   max-height: none !important;
   overflow: visible !important;
+}
+
+/* DashboardLayout's <main> is intentionally fixed to the viewport for most
+   screens. Roles is a long governance page, so only this route is allowed to
+   grow naturally and use the browser/page scrollbar. */
+body:has([style*="max-height: 70vh"]) #root main {
+  height: auto !important;
+  min-height: calc(100vh - 104px) !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
 }
