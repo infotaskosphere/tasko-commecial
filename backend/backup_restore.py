@@ -271,9 +271,16 @@ async def _build_archive(user: User, password: str, requested: list[str] | None)
                     pass
                 manifest["collections"][name] = {"documents": len(docs), "safe_name": safe}
             archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
-        output = tempfile.mktemp(prefix="taskosphere-backup-", suffix=".taskosphere")
+        fd, output = tempfile.mkstemp(prefix="taskosphere-backup-", suffix=".taskosphere")
+        os.close(fd)
         _encrypt(zip_path, output, password)
         return output, manifest
+    except Exception:
+        try:
+            os.unlink(locals().get("output", ""))
+        except (FileNotFoundError, TypeError):
+            pass
+        raise
     finally:
         try:
             os.unlink(zip_path)
