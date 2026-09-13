@@ -2148,45 +2148,71 @@ async def _sync_saas_bootstrap_password() -> None:
 
 async def _create_saas_session(user: dict) -> tuple[str, str, User]:
     """Create the opaque session consumed by dependencies.get_current_user()."""
+    from backend.platform_owner import is_platform_owner
+
+    is_owner = is_platform_owner(user)
     company_id = user.get("company_id")
-    if company_id is None:
-        raise HTTPException(status_code=403, detail="Authenticated user is not associated with a company")
 
-    company_query_id = _saas_object_id(company_id)
-    company = await db.companies.find_one(
-        {"_id": company_query_id, "status": "active"}
-    )
-    if not company and company_query_id != company_id:
+    # The platform owner is not a commercial tenant and therefore must not be
+    # blocked by customer company/subscription checks. Normal commercial users
+    # continue through the existing tenant validation path unchanged.
+    company = None
+    if is_owner:
+        company_id = None
+    else:
+        if company_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail="Authenticated user is not associated with a company",
+            )
+
+        company_query_id = _saas_object_id(company_id)
         company = await db.companies.find_one(
-            {"_id": company_id, "status": "active"}
+            {"_id": company_query_id, "status": "active"}
         )
-    if not company:
-        raise HTTPException(status_code=403, detail="Commercial company is inactive or unavailable")
+        if not company and company_query_id != company_id:
+            company = await db.companies.find_one(
+                {"_id": company_id, "status": "active"}
+            )
+        if not company:
+            raise HTTPException(
+                status_code=403,
+                detail="Commercial company is inactive or unavailable",
+            )
 
-    subscription = await db.subscriptions.find_one({"company_id": company_id})
-    if not subscription:
-        subscription = await db.subscriptions.find_one(
-            {"company_id": company_query_id}
-        )
-    if not subscription:
-        raise HTTPException(status_code=403, detail="Commercial subscription is unavailable")
+        subscription = await db.subscriptions.find_one({"company_id": company_id})
+        if not subscription:
+            subscription = await db.subscriptions.find_one(
+                {"company_id": company_query_id}
+            )
+        if not subscription:
+            raise HTTPException(
+                status_code=403,
+                detail="Commercial subscription is unavailable",
+            )
 
-    subscription_status = subscription.get("status")
-    if subscription_status not in ("trial", "active"):
-        raise HTTPException(status_code=403, detail="Commercial subscription is not active")
+        subscription_status = subscription.get("status")
+        if subscription_status not in ("trial", "active"):
+            raise HTTPException(
+                status_code=403,
+                detail="Commercial subscription is not active",
+            )
 
-    expires_at = subscription.get("expires_at")
-    if expires_at:
-        if isinstance(expires_at, str):
-            try:
-                expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-            except Exception:
-                expires_at = None
+        expires_at = subscription.get("expires_at")
         if expires_at:
-            if expires_at.tzinfo is None:
-                expires_at = expires_at.replace(tzinfo=timezone.utc)
-            if expires_at <= datetime.now(timezone.utc):
-                raise HTTPException(status_code=403, detail="Commercial subscription has expired")
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                except Exception:
+                    expires_at = None
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                if expires_at <= datetime.now(timezone.utc):
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Commercial subscription has expired",
+                    )
 
     session_token = secrets.token_urlsafe(32)
     token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
@@ -2266,8 +2292,8 @@ async def _create_saas_session(user: dict) -> tuple[str, str, User]:
         if key not in {"_id", "password", "password_hash", "password_salt", "bootstrap_managed"}
     }
     user_data["id"] = str(user.get("_id") or user.get("id"))
-    user_data["company_id"] = str(company_id)
-    user_data["company_name"] = company.get("name")
+    user_data["company_id"] = str(company_id) if company_id is not None else None
+    user_data["company_name"] = company.get("name") if company else None
     user_data["status"] = "active"
     user_data["is_active"] = True
     user_data.setdefault("created_at", now)
