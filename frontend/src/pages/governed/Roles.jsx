@@ -210,11 +210,15 @@ export default function Roles() {
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     if (!q) return users;
-    return users.filter((u) => `${u.full_name} ${u.email} ${u.role_label}`.toLowerCase().includes(q));
+    return users.filter((u) =>
+      `${u.full_name || ''} ${u.email || ''} ${u.role_label || ''} ${u.role_key || ''} ${u.role || ''} ${(u.departments || []).join(' ')} ${u.department_id || ''}`
+        .toLowerCase()
+        .includes(q),
+    );
   }, [users, userSearch]);
 
   const grantedCount = useMemo(
-    () => Object.values(draftPerms).filter(Boolean).length, [draftPerms],
+    () => Object.values(draftPerms || {}).filter(Boolean).length, [draftPerms],
   );
 
   if (loading) return <PageShell width="wide"><LoadingState label="Loading roles…" /></PageShell>;
@@ -244,11 +248,11 @@ export default function Roles() {
             onClick={() => setTab(t.key)}
             className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
               tab === t.key
-                ? 'bg-blue-600 text-white'
+                ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200'
             }`}
           >
-            <t.icon className="h-4 w-4" /> {t.label}
+            <t.icon className="h-4 w-4 shrink-0" /> {t.label}
           </button>
         ))}
       </div>
@@ -258,6 +262,7 @@ export default function Roles() {
         <SectionCard
           title="Roles"
           icon={Fingerprint}
+          className="overflow-visible"
           actions={
             <Button size="sm" onClick={() => setAddingRole((v) => !v)}>
               <Plus className="mr-1 h-4 w-4" /> New role
@@ -310,47 +315,51 @@ export default function Roles() {
             </div>
           )}
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {roles.map((r) => (
               <div
                 key={r.key}
-                className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${
+                className={`rounded-xl border p-4 transition-all hover:shadow-md flex flex-col justify-between min-w-0 bg-white dark:bg-slate-800/60 ${
                   selectedKey === r.key
-                    ? 'border-blue-500 ring-1 ring-blue-500/30'
+                    ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
                     : 'border-slate-200 dark:border-slate-700'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2 font-semibold">
-                      {r.label}
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        {r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}
-                      </span>
+                <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-2 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap font-semibold text-sm sm:text-base">
+                        <span className="text-slate-900 dark:text-slate-100">{r.label}</span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500 break-words leading-relaxed">{r.description || 'No description'}</p>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">{r.description || 'No description'}</p>
+                    {!r.is_builtin && (
+                      <Button size="icon" variant="ghost" className="shrink-0 h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40" onClick={() => deleteRole(r)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
-                  {!r.is_builtin && (
-                    <Button size="icon" variant="ghost" onClick={() => deleteRole(r)}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
-                    </Button>
-                  )}
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500 font-medium">
+                    <span>{r.user_count || 0} user{(r.user_count || 0) === 1 ? '' : 's'}</span>
+                    <span>{Object.values(r.permissions || {}).filter(Boolean).length} permissions</span>
+                  </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span>
-                  <span>{Object.values(r.permissions).filter(Boolean).length} permissions</span>
-                </div>
-                <div className="mt-3 flex gap-2">
+                <div className="mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-700/60">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="flex-1 sm:flex-initial"
                     onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}
                   >
-                    <ShieldCheck className="mr-1 h-4 w-4" /> Permissions
+                    <ShieldCheck className="mr-1.5 h-4 w-4 text-blue-600" /> Permissions
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
+                    className="flex-1 sm:flex-initial"
                     onClick={() => {
                       setNewRole({
                         label: `${r.label} (copy)`, description: r.description,
@@ -359,7 +368,7 @@ export default function Roles() {
                       setAddingRole(true);
                     }}
                   >
-                    <Copy className="mr-1 h-4 w-4" /> Clone
+                    <Copy className="mr-1.5 h-4 w-4 text-slate-500" /> Clone
                   </Button>
                 </div>
               </div>
@@ -373,10 +382,11 @@ export default function Roles() {
         <SectionCard
           title={selected ? `${selected.label} — default permissions` : 'Permissions'}
           icon={ShieldCheck}
+          className="overflow-visible"
           actions={
             <div className="flex flex-wrap items-center gap-2">
               <select
-                className="rounded-md border border-slate-200 bg-transparent px-3 py-1.5 text-sm dark:border-slate-700"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 value={selectedKey}
                 onChange={(e) => setSelectedKey(e.target.value)}
               >
@@ -384,17 +394,17 @@ export default function Roles() {
               </select>
               {selected?.is_builtin && !readOnly && (
                 <Button size="sm" variant="ghost" onClick={resetRole} disabled={busy}>
-                  <RotateCcw className="mr-1 h-4 w-4" /> Reset
+                  <RotateCcw className="mr-1.5 h-4 w-4" /> Reset
                 </Button>
               )}
               {!readOnly && (
                 <Button size="sm" variant="outline" onClick={applyToUsers} disabled={busy}>
-                  <UsersIcon className="mr-1 h-4 w-4" /> Apply to {selected?.user_count || 0} user(s)
+                  <UsersIcon className="mr-1.5 h-4 w-4" /> Apply to {selected?.user_count || 0} user(s)
                 </Button>
               )}
               {!readOnly && (
                 <Button size="sm" onClick={savePermissions} disabled={busy || !dirty}>
-                  {busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+                  {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
                   Save
                 </Button>
               )}
@@ -409,7 +419,7 @@ export default function Roles() {
             />
           ) : (
             <>
-              <p className="mb-4 text-sm text-slate-500">
+              <p className="mb-4 text-sm text-slate-500 leading-relaxed">
                 {grantedCount} permission{grantedCount === 1 ? '' : 's'} granted by default. Turning a module
                 off automatically removes every page under it. Saving only changes the role template — use
                 “Apply to users” to push it onto people who already hold this role.
@@ -419,31 +429,35 @@ export default function Roles() {
                   const pageFlags = mod.pages.map((p) => p.flag);
                   const moduleOn = !!draftPerms[mod.flag];
                   return (
-                    <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700">
-                      <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800">
-                        <div>
-                          <div className="font-semibold">{mod.label}</div>
-                          <p className="mt-0.5 text-xs text-slate-500">{mod.description}</p>
+                    <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 overflow-hidden shadow-sm">
+                      <div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-slate-900 dark:text-slate-100">{mod.label}</div>
+                          <p className="mt-0.5 text-xs text-slate-500 break-words">{mod.description}</p>
                         </div>
-                        <Toggle
-                          checked={moduleOn}
-                          onChange={(v) => toggleFlag(mod.flag, v, pageFlags)}
-                        />
+                        <div className="shrink-0 pt-0.5">
+                          <Toggle
+                            checked={moduleOn}
+                            onChange={(v) => toggleFlag(mod.flag, v, pageFlags)}
+                          />
+                        </div>
                       </div>
-                      <div className="grid gap-x-6 gap-y-2 p-4 md:grid-cols-2">
+                      <div className="grid gap-x-6 gap-y-2.5 p-4 sm:grid-cols-2">
                         {mod.pages.map((p) => (
-                          <div key={p.flag} className="flex items-center justify-between gap-3 py-1">
-                            <div className={moduleOn ? '' : 'opacity-50'}>
-                              <div className="text-sm">{p.label}</div>
-                              <div className="text-[11px] uppercase tracking-wide text-slate-400">
+                          <div key={p.flag} className="flex items-center justify-between gap-3 py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/60 min-w-0 transition-colors">
+                            <div className={`min-w-0 flex-1 pr-2 ${moduleOn ? '' : 'opacity-50'}`}>
+                              <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate" title={p.label}>{p.label}</div>
+                              <div className="text-[11px] uppercase tracking-wide text-slate-400 break-words">
                                 {(p.actions || []).join(' · ')}
                               </div>
                             </div>
-                            <Toggle
-                              checked={!!draftPerms[p.flag]}
-                              disabled={!moduleOn}
-                              onChange={(v) => toggleFlag(p.flag, v)}
-                            />
+                            <div className="shrink-0">
+                              <Toggle
+                                checked={!!draftPerms[p.flag]}
+                                disabled={!moduleOn}
+                                onChange={(v) => toggleFlag(p.flag, v)}
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -461,6 +475,7 @@ export default function Roles() {
         <SectionCard
           title={`Users (${users.length})`}
           icon={UsersIcon}
+          className="overflow-visible"
           actions={
             <Button size="sm" onClick={() => setAddingUser((v) => !v)}>
               <UserPlus className="mr-1 h-4 w-4" /> Add employee
@@ -499,49 +514,68 @@ export default function Roles() {
             </div>
           )}
 
-          <div className="relative mb-3">
+          <div className="relative mb-4">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input className="pl-9" placeholder="Search people…" value={userSearch}
+            <Input className="pl-9 bg-white dark:bg-slate-900" placeholder="Search people by name, email, department or role…" value={userSearch}
               onChange={(e) => setUserSearch(e.target.value)} />
           </div>
 
           {filteredUsers.length === 0 ? (
             <EmptyState icon={UsersIcon} title="No users found" hint="Try a different search." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="w-full overflow-x-auto rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm">
+              <table className="w-full text-sm !table-auto" style={{ tableLayout: 'auto', minWidth: '780px', width: '100%' }}>
                 <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
-                    <th className="py-2 pr-3">Name</th>
-                    <th className="py-2 pr-3">Email</th>
-                    <th className="py-2 pr-3">Departments</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Role</th>
+                  <tr className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wider font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300">
+                    <th className="py-3 px-4 min-w-[170px]">Name</th>
+                    <th className="py-3 px-4 min-w-[220px]">Email</th>
+                    <th className="py-3 px-4 min-w-[180px]">Departments</th>
+                    <th className="py-3 px-4 min-w-[110px]">Status</th>
+                    <th className="py-3 px-4 min-w-[190px]">Role</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {filteredUsers.map((u) => (
-                    <tr key={u.id} className="border-b border-slate-100 last:border-0 dark:border-slate-800">
-                      <td className="py-2 pr-3 font-medium">{u.full_name}</td>
-                      <td className="py-2 pr-3 text-slate-500">{u.email}</td>
-                      <td className="py-2 pr-3 text-slate-500">{(u.departments || []).join(', ') || '—'}</td>
-                      <td className="py-2 pr-3">
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] ${
+                    <tr key={u.id} className="transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40">
+                      <td className="py-3 px-4 font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
+                        {u.full_name || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {u.email || '—'}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 dark:text-slate-400">
+                        <div className="flex flex-wrap gap-1 max-w-[260px]">
+                          {Array.isArray(u.departments) && u.departments.length > 0 ? (
+                            u.departments.map((d) => (
+                              <span key={d} className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+                                {d}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400">{u.department_id || '—'}</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                           u.is_active
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800'
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                         }`}>
                           {u.is_active ? 'Active' : (u.status || 'Inactive')}
                         </span>
                       </td>
-                      <td className="py-2 pr-3">
+                      <td className="py-3 px-4 whitespace-nowrap">
                         <select
-                          className="rounded-md border border-slate-200 bg-transparent px-2 py-1 text-sm dark:border-slate-700"
-                          value={u.role_key}
+                          className="w-full min-w-[140px] max-w-[210px] rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-800 shadow-sm transition-colors hover:border-slate-300 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                          value={u.role_key || u.role || 'staff'}
                           disabled={busy}
                           onChange={(e) => changeUserRole(u, e.target.value)}
                         >
                           {roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+                          {!roles.some((r) => r.key === (u.role_key || u.role)) && (
+                            <option value={u.role_key || u.role}>{u.role_label || u.role_key || u.role}</option>
+                          )}
                         </select>
                       </td>
                     </tr>
