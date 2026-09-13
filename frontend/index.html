@@ -13,22 +13,35 @@
     <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
     <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
     <style id="task-management-header-ui">
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
+        row-gap: 24px !important;
+      }
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+      }
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px,
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
+        display: none !important;
+      }
+      .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
+        width: 100% !important;
+        min-width: 0 !important;
+        white-space: nowrap !important;
+        justify-content: center !important;
+      }
       @media (min-width: 1024px) {
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
+        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
           display: grid !important;
           grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.3fr) !important;
           column-gap: 48px !important;
           align-items: center !important;
         }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex-1.min-w-0 {
+        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex-1.min-w-0 {
           min-width: 240px !important;
         }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
-          white-space: nowrap !important;
-          overflow: visible !important;
-          text-overflow: clip !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
+        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
           display: grid !important;
           grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
           grid-auto-rows: minmax(34px, auto) !important;
@@ -37,42 +50,12 @@
           min-width: 0 !important;
           width: 100% !important;
         }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px {
-          display: none !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
-          display: none !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
-          width: 100% !important;
-          min-width: 0 !important;
-          white-space: nowrap !important;
-          justify-content: center !important;
-        }
       }
       @media (max-width: 1023px) {
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
-          row-gap: 24px !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
-          white-space: nowrap !important;
-          overflow: visible !important;
-          text-overflow: clip !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
+        .task-management-route .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
           display: grid !important;
           grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
           gap: 8px !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px,
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
-          display: none !important;
-        }
-        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
-          width: 100% !important;
-          min-width: 0 !important;
-          white-space: nowrap !important;
-          justify-content: center !important;
         }
       }
     </style>
@@ -81,6 +64,16 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+    <script>
+      (() => {
+        const syncTaskRouteClass = () => {
+          document.documentElement.classList.toggle('task-management-route', location.pathname === '/tasks');
+        };
+        syncTaskRouteClass();
+        window.addEventListener('popstate', syncTaskRouteClass);
+        document.addEventListener('click', () => window.setTimeout(syncTaskRouteClass, 0), true);
+      })();
+    </script>
     <script>
       (() => {
         const id = 'taskosphere-backup-sidebar-link';
