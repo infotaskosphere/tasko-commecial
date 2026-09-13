@@ -287,7 +287,7 @@ const DashboardLayout = ({ children }) => {
         </div>
       )}
     </div>
-    <div className="transition-all duration-300 ease-in-out min-h-screen flex flex-col" style={{ marginLeft: offsetPx, paddingTop: TOTAL_HEADER_H, minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}><main ref={mainRef} className="flex-1 overflow-y-auto overflow-x-hidden" style={{ padding: 'clamp(0.875rem, 2vw, 1.75rem)', position: 'relative' }}><div className="mx-auto w-full min-w-0" style={{ maxWidth: 'var(--content-max, 1400px)' }}><div className="w-full min-w-0">{children}</div></div></main></div>
+    <div className="transition-all duration-300 ease-in-out" style={{ marginLeft: offsetPx, paddingTop: TOTAL_HEADER_H, minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}><main ref={mainRef} style={{ padding: 'clamp(0.875rem, 2vw, 1.75rem)', position: 'relative', height: `calc(100vh - ${TOTAL_HEADER_H}px)`, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}><div className="mx-auto w-full min-w-0" style={{ maxWidth: 'var(--content-max, 1400px)' }}><div className="w-full min-w-0">{children}</div></div></main></div>
     <EnterpriseSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} isDark={isDark} /><AICopilotDrawer isOpen={copilotOpen} onClose={() => setCopilotOpen(false)} isDark={isDark} />
   </div>;
 };
