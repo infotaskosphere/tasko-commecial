@@ -237,7 +237,7 @@ export default function Roles() {
         ]}
       />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
             key={t.key}
