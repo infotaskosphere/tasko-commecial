@@ -18,6 +18,7 @@ import json
 import os
 import secrets
 import tempfile
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from typing import Any
@@ -37,9 +38,6 @@ from backend.tenant_runtime import TENANT_COLLECTIONS
 from backend.permission_governance import GOVERNED_MODULES
 from backend.platform_owner import is_platform_owner
 
-# Backup is a Permission Governance capability. Admins and the platform owner
-# retain their bypass; other users must be approved for this flag before they
-# can create or inspect backups. Restore remains administrator/platform-owner only.
 GOVERNED_MODULES.setdefault(
     "backup_restore",
     {"flag": "can_view_backup_restore", "label": "Backup & Restore"},
@@ -51,6 +49,9 @@ FORMAT_MAGIC = b"TASKOSPHERE-BACKUP-V1\n"
 FORMAT_VERSION = 1
 PBKDF2_ITERATIONS = 390_000
 CHUNK_SIZE = 1024 * 1024
+MAX_BACKUP_BYTES = 100 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 250 * 1024 * 1024
+MAX_ARCHIVE_ENTRIES = 2000
 
 EXCLUDED_COLLECTIONS = {
     "sessions", "refresh_tokens", "access_tokens", "password_resets",
@@ -151,6 +152,8 @@ def _encrypt(zip_path: str, output_path: str, password: str) -> None:
 
 
 def _decrypt(source_path: str, password: str) -> str:
+    if os.path.getsize(source_path) > MAX_BACKUP_BYTES:
+        raise HTTPException(status_code=413, detail="Backup file exceeds the 100 MB limit.")
     with open(source_path, "rb") as source:
         salt, nonce = _read_header(source)
         payload = source.read()
@@ -162,11 +165,20 @@ def _decrypt(source_path: str, password: str) -> str:
         plaintext = decryptor.update(ciphertext) + decryptor.finalize()
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Backup password is incorrect or the backup is corrupted.") from exc
+    if len(plaintext) > MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail="Backup archive exceeds the 250 MB limit.")
     fd, path = tempfile.mkstemp(prefix="taskosphere-restore-", suffix=".zip")
     os.close(fd)
-    with open(path, "wb") as out:
-        out.write(plaintext)
-    return path
+    try:
+        with open(path, "wb") as out:
+            out.write(plaintext)
+        return path
+    except Exception:
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _dump(value: Any) -> str:
@@ -254,6 +266,7 @@ async def _build_archive(user: User, password: str, requested: list[str] | None)
     manifest = {"format": "taskosphere-backup", "version": FORMAT_VERSION, "created_at": datetime.now(timezone.utc).isoformat(), "database": DB_NAME, "scope": "single_customer_tenant", "source_company_id": company_id, "source_license_id": next(iter(identities["license_id"]), None), "source_commercial_customer_id": next(iter(identities["commercial_customer_id"]), None), "owner_user_id": _s(user.id), "company_name": (company or {}).get("name"), "bson_encoding": "MongoDB Extended JSON v2 canonical", "encryption": "AES-256-GCM + PBKDF2-HMAC-SHA256", "selection": "full" if not requested else "custom", "collections": {}, "excluded_collections": sorted(EXCLUDED_COLLECTIONS)}
     fd, zip_path = tempfile.mkstemp(prefix="taskosphere-backup-", suffix=".zip")
     os.close(fd)
+    output = None
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             for name in selected:
@@ -271,14 +284,24 @@ async def _build_archive(user: User, password: str, requested: list[str] | None)
                     pass
                 manifest["collections"][name] = {"documents": len(docs), "safe_name": safe}
             archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
-        output = tempfile.mktemp(prefix="taskosphere-backup-", suffix=".taskosphere")
+        if os.path.getsize(zip_path) > MAX_ARCHIVE_BYTES:
+            raise HTTPException(status_code=413, detail="Backup archive exceeds the 250 MB limit.")
+        fd, output = tempfile.mkstemp(prefix="taskosphere-backup-", suffix=".taskosphere")
+        os.close(fd)
         _encrypt(zip_path, output, password)
+        if os.path.getsize(output) > MAX_BACKUP_BYTES:
+            raise HTTPException(status_code=413, detail="Encrypted backup exceeds the 100 MB limit.")
         return output, manifest
     finally:
         try:
             os.unlink(zip_path)
         except FileNotFoundError:
             pass
+        if output and os.path.exists(output):
+            try:
+                os.unlink(output)
+            except FileNotFoundError:
+                pass
 
 
 @router.get("/info")
@@ -288,7 +311,7 @@ async def backup_info(current_user: User = Depends(get_current_user)):
     raw = _raw_db()
     available = sorted(set(await raw.list_collection_names()) - EXCLUDED_COLLECTIONS)
     modules = {module: sorted(set(collections) & set(available)) for module, collections in MODULE_COLLECTION_MAP.items()}
-    return {"format": "Taskosphere Portable Backup v1", "company_id": company_id, "company_name": (company or {}).get("name"), "user_count": len(user_ids), "collections": available, "modules": modules, "encrypted": True, "requires_password": True, "mongo_database": DB_NAME, "mongo_connection_configured": bool(MONGO_URL), "excluded_security_collections": sorted(EXCLUDED_COLLECTIONS), "notes": ["Full backup includes tenant MongoDB data, tenant-linked settings and index definitions.", "Live sessions, reset tokens and OAuth state are never exported.", "Cross-license restore remaps company/license/customer identifiers to the target tenant."]}
+    return {"format": "Taskosphere Portable Backup v1", "company_id": company_id, "company_name": (company or {}).get("name"), "user_count": len(user_ids), "collections": available, "modules": modules, "encrypted": True, "requires_password": True, "mongo_database": DB_NAME, "mongo_connection_configured": bool(MONGO_URL), "excluded_security_collections": sorted(EXCLUDED_COLLECTIONS), "limits": {"encrypted_backup_bytes": MAX_BACKUP_BYTES, "archive_bytes": MAX_ARCHIVE_BYTES, "archive_entries": MAX_ARCHIVE_ENTRIES}, "notes": ["Full backup includes tenant MongoDB data, tenant-linked settings and index definitions.", "Live sessions, reset tokens and OAuth state are never exported.", "Cross-license restore remaps company/license/customer identifiers to the target tenant."]}
 
 
 @router.post("/create")
@@ -302,8 +325,16 @@ async def create_backup(password: str = Form(...), collections: str = Form(""), 
 
 async def _read_archive(zip_path: str):
     try:
+        if os.path.getsize(zip_path) > MAX_ARCHIVE_BYTES:
+            raise ValueError("archive exceeds the 250 MB limit")
         with zipfile.ZipFile(zip_path, "r") as archive:
-            names = set(archive.namelist())
+            infos = archive.infolist()
+            if len(infos) > MAX_ARCHIVE_ENTRIES:
+                raise ValueError("archive contains too many entries")
+            total_uncompressed = sum(max(0, info.file_size) for info in infos)
+            if total_uncompressed > MAX_ARCHIVE_BYTES:
+                raise ValueError("archive expands beyond the 250 MB limit")
+            names = {info.filename for info in infos}
             if "manifest.json" not in names:
                 raise ValueError("manifest.json is missing")
             manifest = json.loads(archive.read("manifest.json").decode())
@@ -311,7 +342,10 @@ async def _read_archive(zip_path: str):
                 raise ValueError("unsupported backup format")
             collections = []
             for name, meta in (manifest.get("collections") or {}).items():
-                entry = f"collections/{meta['safe_name']}.jsonl"
+                safe_name = meta.get("safe_name") if isinstance(meta, dict) else None
+                if not safe_name or safe_name.replace("/", "_") != safe_name:
+                    raise ValueError(f"Invalid collection archive name: {name}")
+                entry = f"collections/{safe_name}.jsonl"
                 if entry not in names:
                     raise ValueError(f"Collection payload missing: {name}")
                 docs = [_load(line) for line in archive.read(entry).decode().splitlines() if line.strip()]
@@ -333,36 +367,99 @@ def _replace(value: Any, replacements: dict[str, str]) -> Any:
     return value
 
 
+def _user_email(doc: dict) -> str:
+    for field in ("email", "email_address", "username"):
+        value = _s(doc.get(field)).lower()
+        if "@" in value:
+            return value
+    return ""
+
+
+async def _build_user_mapping(raw, source_users: list[dict], current_user: User, target_company_id: str) -> dict[str, str]:
+    target_users = await raw.users.find(_company_query(target_company_id)).to_list(100000)
+    by_email = {}
+    for user in target_users:
+        email = _user_email(user)
+        if email:
+            by_email[email] = _s(user.get("id"))
+    mapping = {}
+    current_id = _s(current_user.id)
+    for source in source_users:
+        source_id = _s(source.get("id"))
+        if not source_id:
+            continue
+        if source_id == _s(source_users[0].get("id")) and _s(source.get("email")) == _s(current_user.email):
+            mapping[source_id] = current_id
+            continue
+        email = _user_email(source)
+        if email and email in by_email:
+            mapping[source_id] = by_email[email]
+        else:
+            mapping[source_id] = str(uuid.uuid4())
+    mapping.setdefault(_s(source_users[0].get("id")) if source_users else "", current_id)
+    mapping.pop("", None)
+    return mapping
+
+
+def _validate_restore_documents(collections: list[tuple[str, list[dict]]], source_user_ids: set[str]) -> None:
+    for name, docs in collections:
+        if name in EXCLUDED_COLLECTIONS:
+            raise HTTPException(status_code=400, detail=f"Backup contains excluded security collection: {name}")
+        if not isinstance(docs, list):
+            raise HTTPException(status_code=400, detail=f"Invalid document payload for collection: {name}")
+        for doc in docs:
+            if not isinstance(doc, dict):
+                raise HTTPException(status_code=400, detail=f"Invalid document in collection: {name}")
+            if name == "users" and not _s(doc.get("id")):
+                raise HTTPException(status_code=400, detail="Backup contains a user without an id.")
+    if "users" in {name for name, _ in collections} and not source_user_ids:
+        raise HTTPException(status_code=400, detail="Backup user collection is empty or invalid.")
+
+
 async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], current_user: User):
     target_company_id, target_company, target_user_ids, target_identities = await _tenant_context(current_user)
     source_company = _s(manifest.get("source_company_id"))
     source_owner = _s(manifest.get("owner_user_id"))
     if not source_company or not source_owner:
         raise HTTPException(status_code=400, detail="Backup is missing tenant ownership metadata.")
-    replacements = {source_company: target_company_id, source_owner: _s(current_user.id)}
     source_license = _s(manifest.get("source_license_id"))
     source_customer = _s(manifest.get("source_commercial_customer_id"))
     target_license = next(iter(target_identities["license_id"]), "")
     target_customer = next(iter(target_identities["commercial_customer_id"]), "")
-    if source_license and target_license: replacements[source_license] = target_license
-    if source_customer and target_customer: replacements[source_customer] = target_customer
+    source_users = next((docs for name, docs in collections if name == "users"), [])
+    source_user_ids = {_s(doc.get("id")) for doc in source_users if _s(doc.get("id"))}
+    if source_owner not in source_user_ids:
+        source_user_ids.add(source_owner)
+    _validate_restore_documents(collections, source_user_ids)
     raw = _raw_db()
-    restored = removed = 0
+    user_mapping = await _build_user_mapping(raw, source_users, current_user, target_company_id) if source_users else {source_owner: _s(current_user.id)}
+    user_mapping[source_owner] = _s(current_user.id)
+    replacements = {source_company: target_company_id, **user_mapping}
+    if source_license and target_license:
+        replacements[source_license] = target_license
+    if source_customer and target_customer:
+        replacements[source_customer] = target_customer
+
     selected_names = {name for name, _ in collections}
+    delete_plan = []
     for name in selected_names:
         if name in EXCLUDED_COLLECTIONS or name == "companies":
             continue
         if name == "users":
-            result = await raw.users.delete_many({"company_id": target_company_id, "id": {"$ne": current_user.id}})
+            delete_plan.append((name, {"company_id": target_company_id, "id": {"$ne": _s(current_user.id)}}))
         elif name in TENANT_COLLECTIONS:
-            result = await raw[name].delete_many({"company_id": target_company_id})
+            delete_plan.append((name, {"company_id": target_company_id}))
         else:
             existing = await raw[name].find({}).to_list(100000)
-            result = type("DeleteResult", (), {"deleted_count": 0})()
-            for doc in existing:
-                if _linked(doc, {_s(current_user.id)}, target_identities) and doc.get("_id") is not None:
-                    result.deleted_count += (await raw[name].delete_one({"_id": doc["_id"]})).deleted_count
+            ids = [doc["_id"] for doc in existing if _linked(doc, {_s(current_user.id)}, target_identities) and doc.get("_id") is not None]
+            delete_plan.append((name, {"_id": {"$in": ids}}) if ids else None)
+    delete_plan = [item for item in delete_plan if item]
+
+    restored = removed = 0
+    for name, query in delete_plan:
+        result = await raw[name].delete_many(query)
         removed += getattr(result, "deleted_count", 0)
+
     for name, docs in collections:
         if name in EXCLUDED_COLLECTIONS:
             continue
@@ -372,9 +469,12 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
                 continue
             doc = rewritten[0]
             doc["id"] = target_company_id
-            if target_license: doc["license_id"] = target_license
-            if target_customer: doc["commercial_customer_id"] = target_customer
-            if target_company and target_company.get("_id") is not None: doc["_id"] = target_company["_id"]
+            if target_license:
+                doc["license_id"] = target_license
+            if target_customer:
+                doc["commercial_customer_id"] = target_customer
+            if target_company and target_company.get("_id") is not None:
+                doc["_id"] = target_company["_id"]
             query = {"_id": target_company["_id"]} if target_company and target_company.get("_id") is not None else {"id": target_company_id}
             await raw.companies.replace_one(query, doc, upsert=True)
             restored += 1
@@ -385,7 +485,8 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
                 if _s(doc.get("id")) == _s(current_user.id):
                     if live_admin:
                         for field in AUTH_FIELDS_TO_PRESERVE:
-                            if field in live_admin: doc[field] = live_admin[field]
+                            if field in live_admin:
+                                doc[field] = live_admin[field]
                     doc["id"] = current_user.id
                     doc["company_id"] = target_company_id
                 else:
@@ -394,11 +495,33 @@ async def _restore(manifest: dict, collections: list[tuple[str, list[dict]]], cu
                 restored += 1
             continue
         for doc in rewritten:
-            if "company_id" in doc: doc["company_id"] = target_company_id
+            if "company_id" in doc:
+                doc["company_id"] = target_company_id
             query = {"_id": doc["_id"]} if doc.get("_id") is not None else {"id": doc.get("id")}
             await raw[name].replace_one(query, doc, upsert=True)
             restored += 1
-    return {"restored_documents": restored, "removed_documents": removed, "target_company_id": target_company_id}
+
+    indexes_restored = 0
+    with zipfile.ZipFile(_restore_zip_path, "r") as archive:
+        for name in selected_names:
+            meta = next((meta for cname, meta in (manifest.get("collections") or {}).items() if cname == name), None)
+            if not meta:
+                continue
+            safe = meta.get("safe_name")
+            index_entry = f"indexes/{safe}.json"
+            if index_entry not in archive.namelist():
+                continue
+            try:
+                for index in _load(archive.read(index_entry).decode()):
+                    if not isinstance(index, dict) or not index.get("key") or index.get("name") == "_id_":
+                        continue
+                    key = index["key"]
+                    options = {k: v for k, v in index.items() if k not in {"key", "name", "v", "ns"}}
+                    await raw[name].create_index(list(key.items()), **options)
+                    indexes_restored += 1
+            except Exception:
+                continue
+    return {"restored_documents": restored, "removed_documents": removed, "restored_indexes": indexes_restored, "target_company_id": target_company_id}
 
 
 @router.post("/restore")
@@ -411,19 +534,31 @@ async def restore_backup(backup: UploadFile = File(...), password: str = Form(..
     fd, source_path = tempfile.mkstemp(prefix="taskosphere-upload-", suffix=".taskosphere")
     os.close(fd)
     zip_path = None
+    global _restore_zip_path
+    _restore_zip_path = None
     try:
+        total = 0
         with open(source_path, "wb") as out:
             while chunk := await backup.read(CHUNK_SIZE):
+                total += len(chunk)
+                if total > MAX_BACKUP_BYTES:
+                    raise HTTPException(status_code=413, detail="Backup file exceeds the 100 MB limit.")
                 out.write(chunk)
         zip_path = _decrypt(source_path, password)
+        _restore_zip_path = zip_path
         manifest, collections = await _read_archive(zip_path)
         if manifest.get("scope") != "single_customer_tenant":
             raise HTTPException(status_code=400, detail="Unsupported backup scope.")
         result = await _restore(manifest, collections, current_user)
         return {"success": True, "message": "Application backup restored successfully.", **result}
     finally:
-        try: os.unlink(source_path)
-        except FileNotFoundError: pass
+        _restore_zip_path = None
+        try:
+            os.unlink(source_path)
+        except FileNotFoundError:
+            pass
         if zip_path:
-            try: os.unlink(zip_path)
-            except FileNotFoundError: pass
+            try:
+                os.unlink(zip_path)
+            except FileNotFoundError:
+                pass
