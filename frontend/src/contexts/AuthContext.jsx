@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "../lib/api";
 import { autoAuthenticateAgent, resetAgentAuth } from "../lib/agentAutoAuth";
 
@@ -19,6 +19,7 @@ const MODULE_FLAG_TO_KEYS = {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const authGenerationRef = useRef(0);
   const normalizePermissions = (permissions) => permissions && typeof permissions === "object" && !Array.isArray(permissions) ? permissions : {};
   const normalizeTenantContext = (userData) => {
     if (!userData || typeof userData !== "object") return userData;
@@ -96,6 +97,7 @@ export const AuthProvider = ({ children }) => {
     if (isPlatformOwnerAccount(user)) return;
     if (window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__) return;
     window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = true;
+    authGenerationRef.current += 1;
     clearStorage();
     resetAgentAuth();
     window.__STOP_ACTIVITY__ = true;
@@ -119,7 +121,7 @@ export const AuthProvider = ({ children }) => {
     let cancelled = false;
     const checkCurrentSession = async () => {
       const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      if (!token || cancelled) return;
+      if (!token || cancelled || window.__TASKO_LOGOUT_IN_PROGRESS__) return;
       try { await api.get("/auth/me", { _silent: true, _skipReadyGate: true }); } catch (error) { if (cancelled) return; }
     };
     const interval = setInterval(checkCurrentSession, 4000);
@@ -162,28 +164,49 @@ export const AuthProvider = ({ children }) => {
   }, [user, isPlatformOwner]);
 
   useEffect(() => {
+    let cancelled = false;
     const restoreSession = async () => {
       const { token, storedUser } = getStoredAuth();
+      const generation = authGenerationRef.current;
       if (!token || !storedUser) { setLoading(false); return; }
       const navType = window.performance?.getEntriesByType?.('navigation')?.[0]?.type ?? (window.performance?.navigation?.type === 1 ? 'reload' : 'navigate');
       const isReload = navType === 'reload'; const tabClosedAt = localStorage.getItem('taskosphere_tab_closed');
       if (tabClosedAt && localStorage.getItem('token')) { localStorage.removeItem('taskosphere_tab_closed'); if (!isKeepSignedIn() && !isReload) { clearStorage(); setLoading(false); return; } }
-      try { api.defaults.headers.common["Authorization"] = `Bearer ${token}`; const meRes = await api.get("/auth/me"); const freshUser = normalizeTenantContext(meRes.data); const storage = localStorage.getItem("token") ? localStorage : sessionStorage; storage.setItem("user", JSON.stringify(freshUser)); setUser(freshUser); autoAuthenticateAgent(token, freshUser.id).catch(() => {}); }
-      catch (error) { if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser))); else if (error.response && [401, 403].includes(error.response.status)) { clearStorage(); setUser(null); } else console.error("Session restore error:", error); }
-      finally { setLoading(false); }
+      try {
+        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+        const meRes = await api.get("/auth/me");
+        if (cancelled || generation !== authGenerationRef.current || window.__TASKO_LOGOUT_IN_PROGRESS__) return;
+        const currentToken = localStorage.getItem("token") || sessionStorage.getItem("token");
+        if (currentToken !== token) return;
+        const freshUser = normalizeTenantContext(meRes.data);
+        const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
+        storage.setItem("user", JSON.stringify(freshUser));
+        setUser(freshUser);
+        autoAuthenticateAgent(token, freshUser.id).catch(() => {});
+      }
+      catch (error) {
+        if (cancelled || generation !== authGenerationRef.current || window.__TASKO_LOGOUT_IN_PROGRESS__) return;
+        if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser)));
+        else if (error.response && [401, 403].includes(error.response.status)) { clearStorage(); setUser(null); }
+        else console.error("Session restore error:", error);
+      }
+      finally { if (!cancelled) setLoading(false); }
     };
     restoreSession();
-  }, [forceLogoutForReplacement]);
+    return () => { cancelled = true; };
+  }, []);
 
-  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
+  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); authGenerationRef.current += 1; window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; window.__TASKO_LOGOUT_IN_PROGRESS__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
   const logout = async () => {
     const token = localStorage.getItem("token") || sessionStorage.getItem("token");
     const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
+    authGenerationRef.current += 1;
+    window.__TASKO_LOGOUT_IN_PROGRESS__ = true;
     window.__STOP_ACTIVITY__ = true;
     resetAgentAuth();
 
-    // Clear the client session immediately. This unmounts protected pages and
-    // stops their polling/fetch effects before the server-side revoke finishes.
+    // Invalidate the client session before the server revoke so protected
+    // components unmount immediately and stale auth responses cannot restore it.
     clearStorage();
     setUser(null);
 
@@ -204,6 +227,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
   const refreshUser = useCallback(async (overrideUser = null) => {
+    const generation = authGenerationRef.current;
     try {
       if (overrideUser && typeof overrideUser === "object" && (overrideUser.id || overrideUser.email)) {
         const optimisticUser = normalizeTenantContext(overrideUser);
@@ -212,6 +236,9 @@ export const AuthProvider = ({ children }) => {
         setUser(optimisticUser);
       }
       const response = await api.get("/auth/me");
+      if (generation !== authGenerationRef.current || window.__TASKO_LOGOUT_IN_PROGRESS__) return null;
+      const currentToken = localStorage.getItem("token") || sessionStorage.getItem("token");
+      if (!currentToken) return null;
       const updatedUser = normalizeTenantContext(response.data);
       const storage = localStorage.getItem("token") ? localStorage : sessionStorage;
       storage.setItem("user", JSON.stringify(updatedUser));
