@@ -1,12 +1,11 @@
 """License-authoritative entitlement hydration for commercial customer admins.
 
 A commercial customer has one license and may own multiple legal companies.
-Older accounts sometimes stored the legal company's id where the newer model
-expects the commercial customer id. This shim resolves the active license
-through the customer's explicit commercial_customer_id first and falls back to
-an authenticated user's license_id. It then grants an admin access to every
-page/feature inside the modules actually purchased by that license, without
-opening any unlicensed module.
+This compatibility layer resolves the active license and delegates permission
+construction to the canonical commercial-license permission helper. Module
+selection and page selection are intentionally independent: buying a module
+turns on only the module switch; only the page flags present in
+``selected_features`` become accessible.
 """
 from __future__ import annotations
 
@@ -16,11 +15,11 @@ from typing import Any
 from fastapi import Depends
 
 from backend import dependencies as _dependencies
-from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
+from backend.models import User
 from backend.platform_owner import is_platform_owner
+from backend.commercial_licensee_admin import get_all_admin_permissions
 
 _original_get_current_user = _dependencies.get_current_user
-_INSTALLED = "_commercial_license_entitlement_compat_installed"
 
 
 def _raw_db():
@@ -37,34 +36,6 @@ def _aware(value: Any):
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
-
-
-def _module_flag(module_id: str) -> str | None:
-    definition = MODULE_HIERARCHY.get(module_id)
-    return str(definition.get("flag")) if definition and definition.get("flag") else None
-
-
-def _apply_license_admin_permissions(modules: list[str], current: Any) -> dict[str, Any]:
-    permissions = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
-    if hasattr(current, "model_dump"):
-        current = current.model_dump()
-    if isinstance(current, dict):
-        permissions.update(current)
-
-    selected = {str(item).strip().lower() for item in modules if str(item).strip()}
-    known_modules = [key for key in MODULE_HIERARCHY.keys() if key != "admin"]
-    for module_id in known_modules:
-        allowed = module_id in selected
-        flag = _module_flag(module_id)
-        if flag:
-            permissions[flag] = allowed
-        definition = MODULE_HIERARCHY.get(module_id) or {}
-        for page in definition.get("pages", []) or []:
-            page_flag = page.get("flag")
-            if page_flag:
-                permissions[page_flag] = allowed
-
-    return permissions
 
 
 async def _resolve_customer_id(user: User) -> str | None:
@@ -139,7 +110,11 @@ async def get_current_user_with_license_entitlements(
         data["license_key"] = license_doc.get("license_key")
         data["licensed_modules"] = modules
         data["selected_features"] = license_doc.get("selected_features") or {}
-        data["permissions"] = _apply_license_admin_permissions(modules, data.get("permissions"))
+        # IMPORTANT: do not derive page permissions from module selection.
+        # get_all_admin_permissions() is the canonical implementation and
+        # honors selected_features independently for every one of the six
+        # commercial modules.
+        data["permissions"] = get_all_admin_permissions(license_doc)
         return User.model_validate(data)
     except Exception:
         # Never turn authentication into a 500 because a legacy entitlement
