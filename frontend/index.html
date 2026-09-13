@@ -13,9 +13,6 @@
     <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
     <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
     <title>Taskosphere</title>
-    <style>
-      @media (max-width: 1023px) { #taskosphere-backup-sidebar-link { display: none !important; } }
-    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -36,38 +33,34 @@
             return;
           }
 
-          const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+          const settingsItem = document.querySelector('a[href="/settings/whatsapp"]');
+          if (!settingsItem) {
+            if (existing) existing.remove();
+            return;
+          }
+
           const link = existing || document.createElement('a');
           link.id = id;
           link.href = '/settings/backup';
-          link.title = collapsed ? 'Backup & Restore' : '';
           link.setAttribute('aria-label', 'Backup & Restore');
-          link.style.position = 'fixed';
-          link.style.left = '0';
-          link.style.bottom = '76px';
-          link.style.zIndex = '46';
-          link.style.height = '44px';
-          link.style.width = collapsed ? '80px' : '280px';
-          link.style.display = 'flex';
-          link.style.alignItems = 'center';
-          link.style.justifyContent = collapsed ? 'center' : 'flex-start';
-          link.style.gap = '12px';
-          link.style.padding = collapsed ? '0' : '0 16px 0 28px';
-          link.style.boxSizing = 'border-box';
-          link.style.borderRadius = '12px';
-          link.style.background = 'transparent';
-          link.style.color = '#cbd5e1';
-          link.style.textDecoration = 'none';
-          link.style.font = "500 14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
-          link.style.transition = 'background .15s,color .15s';
-          link.innerHTML = '<span aria-hidden="true" style="font-size:17px;line-height:1">▣</span>' + (collapsed ? '' : '<span>Backup &amp; Restore</span>');
-          link.onmouseenter = () => { link.style.background = 'rgba(255,255,255,.07)'; link.style.color = '#fff'; };
-          link.onmouseleave = () => { link.style.background = 'transparent'; link.style.color = '#cbd5e1'; };
-          if (!existing) document.body.appendChild(link);
+          link.title = 'Backup & Restore';
+          link.className = settingsItem.className;
+          link.innerHTML = '<span aria-hidden="true" class="flex-shrink-0 transition-colors h-4 w-4 text-slate-400">▣</span><span class="font-medium text-sm whitespace-nowrap tracking-tight truncate">Backup &amp; Restore</span>';
+
+          const isActive = location.pathname === '/settings/backup' || location.pathname.startsWith('/settings/backup/');
+          if (isActive) {
+            link.className += ' bg-white/[0.09] text-white';
+          }
+
+          if (!existing || existing.previousElementSibling !== settingsItem) {
+            settingsItem.parentNode.insertBefore(link, settingsItem.nextSibling);
+          }
         };
 
         sync();
-        window.setInterval(sync, 300);
+        const observer = new MutationObserver(sync);
+        observer.observe(document.getElementById('root'), { childList: true, subtree: true });
+        window.setInterval(sync, 500);
         window.addEventListener('storage', sync);
         window.addEventListener('popstate', sync);
       })();
