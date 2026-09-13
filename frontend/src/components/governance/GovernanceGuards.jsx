@@ -33,17 +33,17 @@ export function PageGuard({ module, page, children }) {
   // Admin is the application control-plane area, not one of the six
   // commercially licensed operational modules. Admin-only routes are already
   // role-gated by AppRoutes and must not be redirected through an operational
-  // module fallback. This keeps Master Data/Roles reachable for a licensee
-  // admin without granting the admin access to unlicensed business modules.
+  // module fallback.
   if (module === 'admin' && isAdmin) return children;
 
   if (isCommercialAdmin) {
-    // A licensed commercial admin has full access to every page/action inside
-    // the purchased module. Backend governance applies the same admin bypass;
-    // requiring individual page flags here caused Leave, Payroll and HR to
-    // disappear when older admin permission documents lacked those flags.
+    // Commercial admins are subject to the exact same page selection as every
+    // other commercial user. A purchased module is NOT a grant of every page
+    // inside that module. The module flag and the selected page flag are two
+    // independent checks.
     const moduleFlag = MODULE_FLAGS[module];
     if (!moduleFlag || !hasPermission(moduleFlag)) return <EntitledHome />;
+    if (!page || !hasPermission(page)) return <EntitledHome />;
     return children;
   }
 
@@ -57,9 +57,11 @@ export function ActionGuard({ module, page, action, fallback = null, children })
   const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
 
   if (isCommercialAdmin) {
+    // Actions are bounded by the selected page. Commercial license selection
+    // does not create a second action-grant system; once a page is selected,
+    // the existing application action permissions remain authoritative.
     const moduleFlag = MODULE_FLAGS[module];
-    if (!moduleFlag || !hasPermission(moduleFlag)) return fallback;
-    // Commercial admins inherit the module's full page/action access.
+    if (!moduleFlag || !hasPermission(moduleFlag) || !page || !hasPermission(page)) return fallback;
     return children;
   }
 
