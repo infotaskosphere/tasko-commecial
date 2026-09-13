@@ -38,8 +38,12 @@ export function PageGuard({ module, page, children }) {
   if (module === 'admin' && isAdmin) return children;
 
   if (isCommercialAdmin) {
+    // A licensed commercial admin has full access to every page/action inside
+    // the purchased module. Backend governance applies the same admin bypass;
+    // requiring individual page flags here caused Leave, Payroll and HR to
+    // disappear when older admin permission documents lacked those flags.
     const moduleFlag = MODULE_FLAGS[module];
-    if (!moduleFlag || !hasPermission(moduleFlag) || !hasPermission(page)) return <EntitledHome />;
+    if (!moduleFlag || !hasPermission(moduleFlag)) return <EntitledHome />;
     return children;
   }
 
@@ -54,13 +58,8 @@ export function ActionGuard({ module, page, action, fallback = null, children })
 
   if (isCommercialAdmin) {
     const moduleFlag = MODULE_FLAGS[module];
-    if (!moduleFlag || !hasPermission(moduleFlag) || !hasPermission(page)) return fallback;
-    if (MANAGE_ACTIONS.has(action)) {
-      const manageFlag = page.startsWith('can_view_') ? page.replace('can_view_', 'can_manage_') : null;
-      if (manageFlag && user?.permissions && Object.prototype.hasOwnProperty.call(user.permissions, manageFlag)) {
-        return user.permissions[manageFlag] === true ? children : fallback;
-      }
-    }
+    if (!moduleFlag || !hasPermission(moduleFlag)) return fallback;
+    // Commercial admins inherit the module's full page/action access.
     return children;
   }
 
