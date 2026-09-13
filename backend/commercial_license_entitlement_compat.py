@@ -1,25 +1,23 @@
 """License-authoritative entitlement hydration for commercial customer admins.
 
-A commercial customer has one license and may own multiple legal companies.
-This compatibility layer resolves the active license and delegates permission
-construction to the canonical commercial-license permission helper. Module
-selection and page selection are intentionally independent: buying a module
-turns on only the module switch; only the page flags present in
-``selected_features`` become accessible.
+This compatibility layer patches the existing authentication function *in place*
+so every FastAPI dependency that already captured ``get_current_user`` sees the
+same commercial-license hydration after login and hard refresh. No second auth
+path is introduced.
+
+Module selection and page selection are independent: a purchased module only
+sets the module switch; individual page permissions come exclusively from the
+license ``selected_features`` map.
 """
 from __future__ import annotations
 
+import types
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Depends
-
 from backend import dependencies as _dependencies
-from backend.models import User
-from backend.platform_owner import is_platform_owner
 from backend.commercial_licensee_admin import get_all_admin_permissions
-
-_original_get_current_user = _dependencies.get_current_user
+from backend.platform_owner import is_platform_owner
 
 
 def _raw_db():
@@ -38,7 +36,7 @@ def _aware(value: Any):
         return None
 
 
-async def _resolve_customer_id(user: User) -> str | None:
+async def _resolve_customer_id(user: Any) -> str | None:
     direct = str(getattr(user, "commercial_customer_id", "") or "").strip()
     if direct:
         return direct
@@ -70,7 +68,8 @@ async def _resolve_customer_id(user: User) -> str | None:
         license_doc = await db.commercial_licenses.find_one(
             {"id": license_id}, {"_id": 0, "customer_id": 1}
         )
-        return str((license_doc or {}).get("customer_id") or "").strip() or None
+        customer_id = str((license_doc or {}).get("customer_id") or "").strip()
+        return customer_id or None
     return None
 
 
@@ -79,7 +78,7 @@ async def _active_license(customer_id: str) -> dict[str, Any] | None:
     docs = await db.commercial_licenses.find(
         {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
         {"_id": 0},
-    ).sort("issued_at", -1).limit(10).to_list(10)
+    ).sort("issued_at", -1).limit(20).to_list(20)
     now = datetime.now(timezone.utc)
     for doc in docs:
         expires = _aware(doc.get("expires_at"))
@@ -88,44 +87,63 @@ async def _active_license(customer_id: str) -> dict[str, Any] | None:
     return None
 
 
-async def get_current_user_with_license_entitlements(
-    credentials=Depends(_dependencies.security),
-):
-    user = await _original_get_current_user(credentials)
+async def _hydrate(user: Any):
     if is_platform_owner(user) or str(getattr(user, "role", "")).lower() != "admin":
         return user
-
-    try:
-        customer_id = await _resolve_customer_id(user)
-        if not customer_id:
-            return user
-        license_doc = await _active_license(customer_id)
-        if not license_doc:
-            return user
-
-        modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
-        data = user.model_dump()
-        data["commercial_customer_id"] = customer_id
-        data["license_id"] = license_doc.get("id")
-        data["license_key"] = license_doc.get("license_key")
-        data["licensed_modules"] = modules
-        data["selected_features"] = license_doc.get("selected_features") or {}
-        # IMPORTANT: do not derive page permissions from module selection.
-        # get_all_admin_permissions() is the canonical implementation and
-        # honors selected_features independently for every one of the six
-        # commercial modules.
-        data["permissions"] = get_all_admin_permissions(license_doc)
-        return User.model_validate(data)
-    except Exception:
-        # Never turn authentication into a 500 because a legacy entitlement
-        # record is malformed. The downstream commercial guard will fail closed.
+    customer_id = await _resolve_customer_id(user)
+    if not customer_id:
         return user
+    license_doc = await _active_license(customer_id)
+    if not license_doc:
+        return user
+
+    modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
+    data = user.model_dump()
+    data["commercial_customer_id"] = customer_id
+    data["license_id"] = license_doc.get("id")
+    data["license_key"] = license_doc.get("license_key")
+    data["licensed_modules"] = modules
+    data["selected_features"] = license_doc.get("selected_features") or {}
+    data["permissions"] = get_all_admin_permissions(license_doc)
+    return type(user).model_validate(data)
 
 
 def install() -> None:
-    if getattr(_dependencies.get_current_user, "__name__", "") == "get_current_user_with_license_entitlements":
+    current = _dependencies.get_current_user
+    if getattr(_dependencies, "_commercial_entitlement_patch_installed", False):
         return
-    _dependencies.get_current_user = get_current_user_with_license_entitlements
+
+    # Clone the original function object so replacing its code does not make
+    # the wrapper recursively call itself. Existing Depends(get_current_user)
+    # references keep pointing to the same function object, now with the
+    # commercial hydration logic in its code.
+    base = types.FunctionType(
+        current.__code__,
+        current.__globals__,
+        current.__name__,
+        current.__defaults__,
+        current.__closure__,
+    )
+    base.__kwdefaults__ = current.__kwdefaults__
+
+    _dependencies._commercial_entitlement_base_get_current_user = base
+    _dependencies._commercial_entitlement_hydrate = _hydrate
+    _dependencies._commercial_entitlement_patch_installed = True
+
+    async def _patched_get_current_user(credentials):
+        user = await _commercial_entitlement_base_get_current_user(credentials)
+        try:
+            return await _commercial_entitlement_hydrate(user)
+        except Exception:
+            # Authentication must never become a 500 because a malformed or
+            # legacy license record could not be hydrated. The commercial route
+            # guard will still fail closed when entitlement data is unavailable.
+            return user
+
+    # Execute wrapper code in backend.dependencies globals so all references
+    # resolve from the same module namespace as the original auth function.
+    current.__code__ = _patched_get_current_user.__code__
+    current.__kwdefaults__ = _patched_get_current_user.__kwdefaults__
 
 
 install()
