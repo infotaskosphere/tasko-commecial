@@ -99,22 +99,22 @@ function ModuleGate({ module, children }) {
   const location = useLocation();
   const flag = MODULE_FLAGS[module];
   const granted = flag ? hasPermission(flag) : false;
-  const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin'
-    && !!user?.company_id
-    && !isPlatformOwner;
+  const isCommercialTenant = !isPlatformOwner
+    && (!!user?.license_id || !!user?.commercial_customer_id);
 
   // User administration is a tenant-control-plane capability. A commercial
   // licensee administrator must always be able to manage the users connected
   // to the license, even when People Matrix itself was not purchased.
   const isLicensedAdminUserDirectory = location.pathname === '/users'
-    && isCommercialAdmin;
+    && isCommercialTenant
+    && String(user?.role || '').toLowerCase() === 'admin';
 
   if (!granted && !isLicensedAdminUserDirectory) {
     const fallback = MODULE_HOME.find(([permission]) => hasPermission(permission))?.[1] || '/login';
     return <Navigate to={fallback} replace />;
   }
 
-  if (isCommercialAdmin && !isLicensedAdminUserDirectory) {
+  if (isCommercialTenant && !isLicensedAdminUserDirectory) {
     const pageFlag = selectedPageForPath(module, location.pathname);
     // A commercial module purchase is deliberately not sufficient for route
     // access. Every known page must have its own selected feature permission.
