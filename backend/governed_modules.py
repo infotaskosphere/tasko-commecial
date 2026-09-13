@@ -12,12 +12,30 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from backend.dependencies import db, get_current_user, create_audit_log
 from backend.governance_core import require_page, require_action, get_visibility_scope
-from backend.models import User
+from backend.models import User, DEFAULT_ROLE_PERMISSIONS
 from backend.licensing_api import router as licensing_router
 from backend.permission_governance import router as permission_governance_router
 from backend.website_config import router as website_config_router
 from backend.commercial_onboarding import router as commercial_onboarding_router
 from backend.backup_restore import router as backup_restore_router
+
+# Keep the commercial-admin permission template aligned with the governance
+# rule that an admin has full access to every page inside a licensed module.
+# Older admin documents may not contain these newer People Matrix flags;
+# dependencies._normalize_permissions merges this template into the stored
+# permissions on every authenticated request.
+DEFAULT_ROLE_PERMISSIONS.setdefault("admin", {}).update({
+    "can_view_leave": True,
+    "can_manage_leave": True,
+    "can_view_payroll": True,
+    "can_manage_payroll": True,
+    "can_view_hr": True,
+    "can_manage_hr": True,
+    "can_view_recruitment": True,
+    "can_manage_recruitment": True,
+    "can_view_performance": True,
+    "can_manage_performance": True,
+})
 
 # server.py already includes permission_governance_router in /api. Nest the
 # commercial control-plane routers here so their final paths are stable:
