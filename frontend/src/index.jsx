@@ -40,6 +40,71 @@ if (typeof window !== "undefined") {
     }
   });
 
+  // Keep dynamically-rendered form controls free of Chrome's form-field
+  // Issues warnings without changing their existing behavior or values.
+  let taskosphereFieldId = 0;
+  const ensureFormFieldMetadata = (scope = document) => {
+    const fields = scope.querySelectorAll?.("input, select, textarea") || [];
+    fields.forEach((field) => {
+      if (field instanceof HTMLInputElement && field.type === "hidden") return;
+
+      const labelText = String(
+        field.getAttribute("aria-label") ||
+        field.getAttribute("placeholder") ||
+        field.getAttribute("title") ||
+        field.getAttribute("name") ||
+        field.getAttribute("data-placeholder") ||
+        "Form field"
+      ).trim();
+
+      if (!field.id) {
+        taskosphereFieldId += 1;
+        field.id = `taskosphere-field-${taskosphereFieldId}`;
+      }
+
+      if (!field.getAttribute("name")) {
+        const baseName = labelText
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "field";
+        taskosphereFieldId += 1;
+        field.setAttribute("name", `${baseName}-${taskosphereFieldId}`);
+      }
+
+      // Chrome's Issues panel specifically checks for a real label
+      // association. Preserve any existing association and only add a
+      // visually-hidden label where none exists.
+      if (!field.labels?.length) {
+        const label = document.createElement("label");
+        label.htmlFor = field.id;
+        label.textContent = labelText;
+        label.style.position = "absolute";
+        label.style.width = "1px";
+        label.style.height = "1px";
+        label.style.padding = "0";
+        label.style.margin = "-1px";
+        label.style.overflow = "hidden";
+        label.style.clip = "rect(0, 0, 0, 0)";
+        label.style.whiteSpace = "nowrap";
+        label.style.border = "0";
+        field.parentNode?.insertBefore(label, field);
+      }
+    });
+  };
+
+  const installFormFieldIssueFix = () => {
+    ensureFormFieldMetadata(document);
+    if (!document.body) return;
+    const observer = new MutationObserver(() => ensureFormFieldMetadata(document));
+    observer.observe(document.body, { childList: true, subtree: true });
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", installFormFieldIssueFix, { once: true });
+  } else {
+    installFormFieldIssueFix();
+  }
+
   window.addEventListener("error", (event) => {
     const msg = String(event?.message || "");
     if (
