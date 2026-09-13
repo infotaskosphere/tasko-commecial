@@ -12,6 +12,7 @@ import BulkWASenderWidget from "@/contexts/BulkWASenderWidget";
 import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import "./commercial-business-ui.css";
 import "./email-google-oauth.css";
 
@@ -195,5 +196,5 @@ function WebsiteSurfaceScope() {
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /><SpeedInsights /></DocumentUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }
