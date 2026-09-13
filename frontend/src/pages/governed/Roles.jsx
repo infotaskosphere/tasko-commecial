@@ -310,6 +310,7 @@ export default function Roles() {
             </div>
           )}
 
+          <div className="max-h-[70vh] overflow-y-auto pr-1 -mr-1">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {roles.map((r) => (
               <div
@@ -365,6 +366,7 @@ export default function Roles() {
               </div>
             ))}
           </div>
+          </div>
         </SectionCard>
       )}
 
@@ -414,7 +416,7 @@ export default function Roles() {
                 off automatically removes every page under it. Saving only changes the role template — use
                 “Apply to users” to push it onto people who already hold this role.
               </p>
-              <div className="space-y-4">
+              <div className="max-h-[70vh] overflow-y-auto pr-1 -mr-1 space-y-4">
                 {surface.map((mod) => {
                   const pageFlags = mod.pages.map((p) => p.flag);
                   const moduleOn = !!draftPerms[mod.flag];
@@ -508,7 +510,7 @@ export default function Roles() {
           {filteredUsers.length === 0 ? (
             <EmptyState icon={UsersIcon} title="No users found" hint="Try a different search." />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-h-[70vh] overflow-y-auto overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
