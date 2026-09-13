@@ -157,6 +157,21 @@ async def _get_saas_session_user(token: str):
                 user=await raw_db.users.find_one({"id": str(user_id), "status": "active"})
         if not user:
             return None
+
+        # The platform owner is not a commercial tenant: they have no
+        # company_id by design and must not be forced through the
+        # company/subscription checks below (that path is only for
+        # licensed customer users). Mirrors the same exemption already
+        # applied in _create_saas_session() at login time.
+        if is_platform_owner(user):
+            await raw_db.sessions.update_one({"_id": session.get("_id")}, {"$set": {"last_seen_at": datetime.now(timezone.utc)}})
+            user_data={k:v for k,v in user.items() if k != "_id"}
+            user_data["id"]=str(user.get("_id") or user.get("id"))
+            user_data["company_id"]=None
+            user_data["company_name"]=None
+            user_data=_normalize_permissions(user_data)
+            return User(**user_data)
+
         company_id=user.get("company_id") or session.get("company_id")
         if not company_id:
             return None
