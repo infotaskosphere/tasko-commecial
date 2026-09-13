@@ -27,8 +27,11 @@ export { HUB_COLORS };
 export function PageShell({ children, width = 'wide', className = '' }) {
   const max =
     width === 'narrow' ? 'max-w-3xl' : width === 'medium' ? 'max-w-5xl' : 'max-w-7xl';
+  // flex + gap (not space-y/margins) so vertical rhythm is guaranteed by the
+  // layout engine itself — a child's own margin/shadow can never collapse
+  // into, or bleed onto, the next child and make cards look like they overlap.
   return (
-    <div className={`p-4 sm:p-6 ${max} mx-auto space-y-5 ${className}`}>{children}</div>
+    <div className={`p-4 sm:p-6 ${max} mx-auto flex flex-col gap-5 ${className}`}>{children}</div>
   );
 }
 
@@ -68,10 +71,9 @@ export function SectionCard({
   className = '',
 }) {
   const isDark = useDark();
-  const overflowClass = className.includes('overflow-') ? '' : 'overflow-hidden';
   return (
     <section
-      className={`rounded-2xl border ${overflowClass} ${
+      className={`rounded-2xl border overflow-hidden ${
         isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100 shadow-sm'
       } ${className}`}
     >
