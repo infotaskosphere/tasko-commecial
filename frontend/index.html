@@ -12,6 +12,70 @@
     <link rel="stylesheet" href="/src/commercial-card-shape-fixes.css" />
     <link rel="stylesheet" href="/src/commercial-console-sidebar.css" />
     <link rel="stylesheet" href="/src/commercial-console-native-tab.css" />
+    <style id="task-management-header-ui">
+      @media (min-width: 1024px) {
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
+          display: grid !important;
+          grid-template-columns: minmax(240px, 0.7fr) minmax(0, 1.3fr) !important;
+          column-gap: 48px !important;
+          align-items: center !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex-1.min-w-0 {
+          min-width: 240px !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
+          white-space: nowrap !important;
+          overflow: visible !important;
+          text-overflow: clip !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          grid-auto-rows: minmax(34px, auto) !important;
+          gap: 8px !important;
+          align-items: stretch !important;
+          min-width: 0 !important;
+          width: 100% !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px {
+          display: none !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
+          display: none !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
+          width: 100% !important;
+          min-width: 0 !important;
+          white-space: nowrap !important;
+          justify-content: center !important;
+        }
+      }
+      @media (max-width: 1023px) {
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row {
+          row-gap: 24px !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) h1.text-lg.sm\\:text-2xl {
+          white-space: nowrap !important;
+          overflow: visible !important;
+          text-overflow: clip !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 {
+          display: grid !important;
+          grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+          gap: 8px !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) .h-8.w-px,
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > :has(> svg.lucide-bell) {
+          display: none !important;
+        }
+        .relative.overflow-hidden.rounded-2xl:has(h1.text-lg) > .relative.flex.flex-col.lg\\:flex-row > .flex.flex-wrap.items-center.gap-2.min-w-0 > button {
+          width: 100% !important;
+          min-width: 0 !important;
+          white-space: nowrap !important;
+          justify-content: center !important;
+        }
+      }
+    </style>
     <title>Taskosphere</title>
   </head>
   <body>
@@ -21,7 +85,6 @@
       (() => {
         const id = 'taskosphere-backup-sidebar-link';
         let scheduled = false;
-
         const sync = () => {
           scheduled = false;
           let user = null;
@@ -29,7 +92,6 @@
             const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
             user = raw ? JSON.parse(raw) : null;
           } catch (_) {}
-
           const existing = document.getElementById(id);
           const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
           const isApproved = user?.permissions?.can_view_backup_restore === true;
@@ -37,13 +99,11 @@
             if (existing) existing.remove();
             return;
           }
-
           const settingsItem = document.querySelector('a[href="/settings/whatsapp"]');
           if (!settingsItem) {
             if (existing) existing.remove();
             return;
           }
-
           const link = existing || document.createElement('a');
           link.id = id;
           link.href = '/settings/backup';
@@ -53,24 +113,16 @@
           if (!existing) {
             link.innerHTML = '<span aria-hidden="true" class="flex-shrink-0 transition-colors h-4 w-4 text-slate-400">▣</span><span class="font-medium text-sm whitespace-nowrap tracking-tight truncate">Backup &amp; Restore</span>';
           }
-
           const isActive = location.pathname === '/settings/backup' || location.pathname.startsWith('/settings/backup/');
           const nextClass = settingsItem.className + (isActive ? ' bg-white/[0.09] text-white' : '');
           if (link.className !== nextClass) link.className = nextClass;
-
-          if (!existing || link.previousElementSibling !== settingsItem) {
-            settingsItem.parentNode.insertBefore(link, settingsItem.nextSibling);
-          }
+          if (!existing || link.previousElementSibling !== settingsItem) settingsItem.parentNode.insertBefore(link, settingsItem.nextSibling);
         };
-
         const scheduleSync = (delay = 0) => {
           if (scheduled) return;
           scheduled = true;
           window.setTimeout(sync, delay);
         };
-
-        // React mounts the sidebar after this document script runs, so wait for
-        // the first React render before attempting to add the governed item.
         scheduleSync(100);
         window.addEventListener('load', () => scheduleSync(100));
         document.addEventListener('click', (event) => {
@@ -80,7 +132,6 @@
         window.addEventListener('popstate', () => scheduleSync(100));
       })();
     </script>
-    <!-- Vite entry -->
     <script type="module" src="/src/index.jsx"></script>
   </body>
 </html>
