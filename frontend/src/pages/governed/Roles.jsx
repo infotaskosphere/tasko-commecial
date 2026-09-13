@@ -1,20 +1,18 @@
 // Roles.jsx — "Admin › Roles" control room.
 //
 // Three tabs, all powered by backend/roles_admin.py (/api/role-admin/*):
-//   Roles        — every role (built-in + custom), create / clone / delete.
-//   Permissions  — the default permission governance for the selected role:
-//                  Module → Page toggles, e.g. exactly what a Manager can do
-//                  by default and which permissions may be added or removed.
+//   Roles        — every role (built-in + custom), create / edit / clone / delete.
+//   Permissions  — editable Module → Page permission governance.
 //   Users        — every user with their role, change any user's role, and
 //                  add a new employee with a role attached from day one.
 //
-// Admin role is intentionally read-only (always full access). Page access is
-// still governed by admin/can_view_roles like before.
+// Admin role remains full-access and its permissions are intentionally protected
+// by the backend. All other roles can be edited and saved.
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Trash2, Loader2, Search, ShieldCheck, Users as UsersIcon, Save,
-  RotateCcw, Copy, UserPlus, Check, X, Fingerprint, Layers,
+  RotateCcw, Copy, UserPlus, Check, X, Fingerprint, Layers, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,22 +28,17 @@ const TABS = [
   { key: 'users', label: 'Users', icon: UsersIcon },
 ];
 
-function Toggle({ checked, disabled, onChange }) {
+function Toggle({ checked, disabled, onChange, label }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
-        checked ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-600'
-      } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}
+      className={`roles-toggle-switch ${checked ? 'is-checked' : ''} ${disabled ? 'is-disabled' : ''}`}
       aria-pressed={checked}
+      aria-label={label || (checked ? 'Disable permission' : 'Enable permission')}
     >
-      <span
-        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${
-          checked ? 'left-[1.15rem]' : 'left-0.5'
-        }`}
-      />
+      <span className="roles-toggle-knob" />
     </button>
   );
 }
@@ -61,6 +54,8 @@ export default function Roles() {
   const [draftPerms, setDraftPerms] = useState({});
   const [userSearch, setUserSearch] = useState('');
   const [addingRole, setAddingRole] = useState(false);
+  const [editingRole, setEditingRole] = useState(null);
+  const [roleEdit, setRoleEdit] = useState({ label: '', description: '' });
   const [newRole, setNewRole] = useState({ label: '', description: '', base_role: 'staff', clone_from: 'staff' });
   const [addingUser, setAddingUser] = useState(false);
   const [newUser, setNewUser] = useState({ full_name: '', email: '', password: '', role_key: 'staff', phone: '' });
@@ -94,6 +89,34 @@ export default function Roles() {
   );
   const readOnly = selected?.key === 'admin';
 
+  const startEditRole = (role) => {
+    setEditingRole(role.key);
+    setRoleEdit({ label: role.label || '', description: role.description || '' });
+    setAddingRole(false);
+  };
+
+  const cancelEditRole = () => {
+    setEditingRole(null);
+    setRoleEdit({ label: '', description: '' });
+  };
+
+  const saveRoleDetails = async () => {
+    if (!editingRole) return;
+    if (!roleEdit.label.trim()) return toast.error('Role name is required');
+    setBusy(true);
+    try {
+      const { data } = await api.put(`/role-admin/roles/${editingRole}`, {
+        label: roleEdit.label.trim(),
+        description: roleEdit.description.trim(),
+      });
+      setRoles((prev) => prev.map((r) => (r.key === data.key ? { ...r, ...data } : r)));
+      setEditingRole(null);
+      toast.success(`${data.label} updated`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not update role');
+    } finally { setBusy(false); }
+  };
+
   const toggleFlag = (flag, value, pageFlags = null) => {
     setDraftPerms((prev) => {
       const next = { ...prev, [flag]: value };
@@ -103,11 +126,12 @@ export default function Roles() {
   };
 
   const savePermissions = async () => {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     setBusy(true);
     try {
       const { data } = await api.put(`/role-admin/roles/${selected.key}`, { permissions: draftPerms });
       setRoles((prev) => prev.map((r) => (r.key === data.key ? { ...r, ...data } : r)));
+      setDraftPerms({ ...data.permissions });
       toast.success(`${data.label} permissions saved`);
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not save permissions');
@@ -133,7 +157,7 @@ export default function Roles() {
     try {
       const { data } = await api.post(`/role-admin/roles/${selected.key}/apply-to-users`);
       toast.success(data.message || 'Applied');
-      load();
+      await load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not apply');
     } finally { setBusy(false); }
@@ -167,7 +191,7 @@ export default function Roles() {
       await api.delete(`/role-admin/roles/${role.key}`);
       toast.success('Role deleted');
       if (selectedKey === role.key) setSelectedKey('manager');
-      load();
+      await load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not delete role');
     } finally { setBusy(false); }
@@ -181,7 +205,7 @@ export default function Roles() {
         apply_defaults: true,
       });
       toast.success(data.message || 'Role updated');
-      load();
+      await load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not change role');
     } finally { setBusy(false); }
@@ -198,7 +222,7 @@ export default function Roles() {
       toast.success('Employee added');
       setAddingUser(false);
       setNewUser({ full_name: '', email: '', password: '', role_key: 'staff', phone: '' });
-      load();
+      await load();
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Could not add employee');
     } finally { setBusy(false); }
@@ -238,6 +262,7 @@ export default function Roles() {
         {TABS.map((t) => (
           <button
             key={t.key}
+            type="button"
             onClick={() => setTab(t.key)}
             className={`inline-flex items-center gap-2 rounded-none px-4 py-2 text-sm font-medium transition-colors ${
               tab === t.key
@@ -254,11 +279,7 @@ export default function Roles() {
         <SectionCard
           title="Roles"
           icon={Fingerprint}
-          actions={
-            <Button size="sm" onClick={() => setAddingRole((v) => !v)}>
-              <Plus className="mr-1 h-4 w-4" /> New role
-            </Button>
-          }
+          actions={<Button size="sm" onClick={() => { setAddingRole((v) => !v); setEditingRole(null); }}><Plus className="mr-1 h-4 w-4" /> New role</Button>}
         >
           {addingRole && (
             <div className="mb-4 grid gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700 md:grid-cols-2">
@@ -274,9 +295,19 @@ export default function Roles() {
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {roles.map((r) => (
                 <div key={r.key} className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${selectedKey === r.key ? 'border-blue-500 ring-1 ring-blue-500/30' : 'border-slate-200 dark:border-slate-700'}`}>
-                  <div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-semibold break-words"><span className="break-words">{r.label}</span><span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}</span></div><p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p></div>{!r.is_builtin && <Button size="icon" variant="ghost" className="shrink-0" onClick={() => deleteRole(r)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500"><span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span><span>{Object.values(r.permissions).filter(Boolean).length} permissions</span></div>
-                  <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}><ShieldCheck className="mr-1 h-4 w-4" />Permissions</Button><Button size="sm" variant="ghost" onClick={() => { setNewRole({ label: `${r.label} (copy)`, description: r.description, base_role: r.base_role, clone_from: r.key }); setAddingRole(true); }}> <Copy className="mr-1 h-4 w-4" />Clone</Button></div>
+                  {editingRole === r.key ? (
+                    <div className="space-y-3">
+                      <Input value={roleEdit.label} onChange={(e) => setRoleEdit({ ...roleEdit, label: e.target.value })} placeholder="Role name" autoFocus />
+                      <Input value={roleEdit.description} onChange={(e) => setRoleEdit({ ...roleEdit, description: e.target.value })} placeholder="Role description" />
+                      <div className="flex flex-wrap gap-2"><Button size="sm" onClick={saveRoleDetails} disabled={busy}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}Save</Button><Button size="sm" variant="ghost" onClick={cancelEditRole} disabled={busy}><X className="mr-1 h-4 w-4" />Cancel</Button></div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-semibold break-words"><span className="break-words">{r.label}</span><span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}</span></div><p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p></div><div className="flex shrink-0 items-center gap-1">{r.key !== 'admin' && <Button size="icon" variant="ghost" title="Edit role" onClick={() => startEditRole(r)}><Pencil className="h-4 w-4" /></Button>}{!r.is_builtin && <Button size="icon" variant="ghost" title="Delete role" onClick={() => deleteRole(r)}><Trash2 className="h-4 w-4 text-red-500" /></Button>}</div></div>
+                      <div className="mt-3 flex items-center justify-between text-xs text-slate-500"><span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span><span>{Object.values(r.permissions).filter(Boolean).length} permissions</span></div>
+                      <div className="mt-3 flex gap-2"><Button size="sm" variant="outline" onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}><ShieldCheck className="mr-1 h-4 w-4" />Permissions</Button><Button size="sm" variant="ghost" onClick={() => { setNewRole({ label: `${r.label} (copy)`, description: r.description, base_role: r.base_role, clone_from: r.key }); setAddingRole(true); setEditingRole(null); }}> <Copy className="mr-1 h-4 w-4" />Clone</Button></div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
@@ -288,9 +319,9 @@ export default function Roles() {
         <SectionCard
           title={selected ? `${selected.label} — default permissions` : 'Permissions'}
           icon={ShieldCheck}
-          actions={<div className="flex flex-wrap items-center gap-2"><select className="rounded-md border border-slate-200 bg-transparent px-3 py-1.5 text-sm dark:border-slate-700" value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>{selected?.is_builtin && !readOnly && <Button size="sm" variant="ghost" onClick={resetRole} disabled={busy}><RotateCcw className="mr-1 h-4 w-4" />Reset</Button>}{!readOnly && <Button size="sm" variant="outline" onClick={applyToUsers} disabled={busy}><UsersIcon className="mr-1 h-4 w-4" />Apply to {selected?.user_count || 0} user(s)</Button>}{!readOnly && <Button size="sm" onClick={savePermissions} disabled={busy || !dirty}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}Save</Button>}</div>}
+          actions={<div className="flex flex-wrap items-center gap-2"><select className="roles-role-select rounded-md border border-slate-200 bg-transparent px-3 py-1.5 text-sm dark:border-slate-700" value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}>{roles.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}</select>{selected?.is_builtin && !readOnly && <Button size="sm" variant="ghost" onClick={resetRole} disabled={busy}><RotateCcw className="mr-1 h-4 w-4" />Reset</Button>}{!readOnly && <Button size="sm" variant="outline" onClick={applyToUsers} disabled={busy}><UsersIcon className="mr-1 h-4 w-4" />Apply to {selected?.user_count || 0} user(s)</Button>}{!readOnly && <Button size="sm" onClick={savePermissions} disabled={busy || !dirty}>{busy ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}Save</Button>}</div>}
         >
-          {readOnly ? <EmptyState icon={ShieldCheck} title="Admin always has full access" hint="The Admin role cannot be restricted. Pick another role to govern its permissions." /> : <><p className="mb-4 text-sm text-slate-500">{grantedCount} permission{grantedCount === 1 ? '' : 's'} granted by default. Turning a module off automatically removes every page under it. Saving only changes the role template — use “Apply to users” to push it onto people who already hold this role.</p><div className="space-y-4 pr-1 -mr-1">{surface.map((mod) => { const pageFlags = mod.pages.map((p) => p.flag); const moduleOn = !!draftPerms[mod.flag]; return <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700"><div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800"><div><div className="font-semibold">{mod.label}</div><p className="mt-0.5 text-xs text-slate-500">{mod.description}</p></div><Toggle checked={moduleOn} onChange={(v) => toggleFlag(mod.flag, v, pageFlags)} /></div><div className="grid gap-x-6 gap-y-2 p-4 md:grid-cols-2">{mod.pages.map((p) => <div key={p.flag} className="flex items-center justify-between gap-3 py-1"><div className={moduleOn ? '' : 'opacity-50'}><div className="text-sm">{p.label}</div><div className="text-[11px] uppercase tracking-wide text-slate-400">{(p.actions || []).join(' · ')}</div></div><Toggle checked={!!draftPerms[p.flag]} disabled={!moduleOn} onChange={(v) => toggleFlag(p.flag, v)} /></div>)}</div></div>; })}</div></>}
+          {readOnly ? <EmptyState icon={ShieldCheck} title="Admin always has full access" hint="The Admin role is protected so an administrator cannot accidentally remove their own management access. Pick Manager, Staff, or a custom role to edit permissions." /> : <><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><p className="text-sm text-slate-500">{grantedCount} permission{grantedCount === 1 ? '' : 's'} granted by default. Toggle modules and individual pages, then press <strong>Save</strong> to persist the changes.</p>{dirty && <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">Unsaved changes</span>}</div><div className="space-y-4 pr-1 -mr-1">{surface.map((mod) => { const pageFlags = mod.pages.map((p) => p.flag); const moduleOn = !!draftPerms[mod.flag]; return <div key={mod.module} className="rounded-xl border border-slate-200 dark:border-slate-700"><div className="flex items-start justify-between gap-3 border-b border-slate-100 p-4 dark:border-slate-800"><div className="min-w-0 flex-1"><div className="font-semibold">{mod.label}</div><p className="mt-0.5 text-xs text-slate-500">{mod.description}</p></div><Toggle checked={moduleOn} disabled={busy} onChange={(v) => toggleFlag(mod.flag, v, pageFlags)} label={`${moduleOn ? 'Disable' : 'Enable'} ${mod.label}`} /></div><div className="grid gap-x-6 gap-y-2 p-4 md:grid-cols-2">{mod.pages.map((p) => <div key={p.flag} className="flex items-center justify-between gap-3 py-1"><div className={moduleOn ? 'min-w-0' : 'min-w-0 opacity-50'}><div className="text-sm">{p.label}</div><div className="text-[11px] uppercase tracking-wide text-slate-400">{(p.actions || []).join(' · ')}</div></div><Toggle checked={!!draftPerms[p.flag]} disabled={!moduleOn || busy} onChange={(v) => toggleFlag(p.flag, v)} label={`${draftPerms[p.flag] ? 'Disable' : 'Enable'} ${p.label}`} /></div>)}</div></div>; })}</div></>}
         </SectionCard>
       )}
 
