@@ -111,25 +111,6 @@ export function isAgentAuthed() {
 export function resetAgentAuth() {
   isAuthed = false;
   lastAuthTime = 0;
-
-  // Intentional logout already marks the flow as in progress in
-  // DashboardLayout. Redirect on the next event-loop turn so the logout
-  // request can be started, while preventing the authenticated dashboard
-  // from remaining mounted during the server-side revoke.
-  if (
-    typeof window !== 'undefined' &&
-    window.__TASKO_LOGOUT_IN_PROGRESS__ &&
-    window.location.pathname !== '/login'
-  ) {
-    window.setTimeout(() => {
-      if (
-        window.__TASKO_LOGOUT_IN_PROGRESS__ &&
-        window.location.pathname !== '/login'
-      ) {
-        window.location.replace('/login');
-      }
-    }, 0);
-  }
 }
 
 /**
