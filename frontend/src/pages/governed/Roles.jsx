@@ -217,10 +217,10 @@ export default function Roles() {
     () => Object.values(draftPerms).filter(Boolean).length, [draftPerms],
   );
 
-  if (loading) return <PageShell width="wide"><LoadingState label="Loading roles…" /></PageShell>;
+  if (loading) return <PageShell width="wide" className="roles-page-shell"><LoadingState label="Loading roles…" /></PageShell>;
 
   return (
-    <PageShell width="wide">
+    <PageShell width="wide" className="roles-page-shell">
       <PageBanner
         eyebrow="ADMIN"
         title="Roles & Permission Governance"
@@ -310,62 +310,62 @@ export default function Roles() {
             </div>
           )}
 
-          <div className="pr-1 -mr-1" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {roles.map((r) => (
-              <div
-                key={r.key}
-                className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${
-                  selectedKey === r.key
-                    ? 'border-blue-500 ring-1 ring-blue-500/30'
-                    : 'border-slate-200 dark:border-slate-700'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2 font-semibold break-words">
-                      <span className="break-words">{r.label}</span>
-                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                        {r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}
-                      </span>
+          <div className="pr-1 -mr-1">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {roles.map((r) => (
+                <div
+                  key={r.key}
+                  className={`rounded-xl border p-4 transition-shadow hover:shadow-sm ${
+                    selectedKey === r.key
+                      ? 'border-blue-500 ring-1 ring-blue-500/30'
+                      : 'border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 font-semibold break-words">
+                        <span className="break-words">{r.label}</span>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {r.is_builtin ? 'Built-in' : `Custom · like ${r.base_role}`}
+                        </span>
+                      </div>
+                      <p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p>
                     </div>
-                    <p className="mt-1 break-words text-xs text-slate-500">{r.description || 'No description'}</p>
+                    {!r.is_builtin && (
+                      <Button size="icon" variant="ghost" className="shrink-0" onClick={() => deleteRole(r)}>
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    )}
                   </div>
-                  {!r.is_builtin && (
-                    <Button size="icon" variant="ghost" className="shrink-0" onClick={() => deleteRole(r)}>
-                      <Trash2 className="h-4 w-4 text-red-500" />
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                    <span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span>
+                    <span>{Object.values(r.permissions).filter(Boolean).length} permissions</span>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}
+                    >
+                      <ShieldCheck className="mr-1 h-4 w-4" /> Permissions
                     </Button>
-                  )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setNewRole({
+                          label: `${r.label} (copy)`, description: r.description,
+                          base_role: r.base_role, clone_from: r.key,
+                        });
+                        setAddingRole(true);
+                      }}
+                    >
+                      <Copy className="mr-1 h-4 w-4" /> Clone
+                    </Button>
+                  </div>
                 </div>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
-                  <span>{r.user_count} user{r.user_count === 1 ? '' : 's'}</span>
-                  <span>{Object.values(r.permissions).filter(Boolean).length} permissions</span>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setSelectedKey(r.key); setTab('permissions'); }}
-                  >
-                    <ShieldCheck className="mr-1 h-4 w-4" /> Permissions
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setNewRole({
-                        label: `${r.label} (copy)`, description: r.description,
-                        base_role: r.base_role, clone_from: r.key,
-                      });
-                      setAddingRole(true);
-                    }}
-                  >
-                    <Copy className="mr-1 h-4 w-4" /> Clone
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
           </div>
         </SectionCard>
       )}
@@ -416,7 +416,7 @@ export default function Roles() {
                 off automatically removes every page under it. Saving only changes the role template — use
                 “Apply to users” to push it onto people who already hold this role.
               </p>
-              <div className="space-y-4 pr-1 -mr-1" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+              <div className="space-y-4 pr-1 -mr-1">
                 {surface.map((mod) => {
                   const pageFlags = mod.pages.map((p) => p.flag);
                   const moduleOn = !!draftPerms[mod.flag];
@@ -510,7 +510,7 @@ export default function Roles() {
           {filteredUsers.length === 0 ? (
             <EmptyState icon={UsersIcon} title="No users found" hint="Try a different search." />
           ) : (
-            <div style={{ maxHeight: '70vh', overflowY: 'auto', overflowX: 'auto' }}>
+            <div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500 dark:border-slate-700">
