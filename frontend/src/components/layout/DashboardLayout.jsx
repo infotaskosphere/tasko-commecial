@@ -178,18 +178,18 @@ const DashboardLayout = ({ children }) => {
   }, []);
   if (loading) return <GifLoader />;
   if (!user) { navigate('/login', { replace: true }); return null; }
-  const handleLogout = async () => {
+  const handleLogout = () => {
     if (window.__TASKO_LOGOUT_IN_PROGRESS__) return;
     window.__TASKO_LOGOUT_IN_PROGRESS__ = true;
     window.__STOP_ACTIVITY__ = true;
     setUserMenuOpen(false);
-    try {
-      await logout();
-    } finally {
-      toast.success('Logged out successfully');
-      navigate('/login', { replace: true });
-      window.setTimeout(() => { window.__TASKO_LOGOUT_IN_PROGRESS__ = false; }, 500);
-    }
+
+    // Start server-side revoke without blocking the UI redirect.
+    void logout();
+
+    toast.success('Logged out successfully');
+    navigate('/login', { replace: true });
+    window.setTimeout(() => { window.__TASKO_LOGOUT_IN_PROGRESS__ = false; }, 500);
   };
   const checkNavPermission = (item) => {
     if (item.adminOnly) return user?.role === 'admin';
@@ -254,7 +254,7 @@ const DashboardLayout = ({ children }) => {
       <div className="relative flex-shrink-0" data-user-menu><motion.button onClick={() => setUserMenuOpen(prev => !prev)} className={`flex items-center gap-1.5 sm:gap-2 pl-1.5 pr-2 sm:pr-3 py-1 sm:py-1.5 rounded-xl border transition-all ${isDark ? 'border-slate-600 hover:border-slate-500 hover:bg-slate-700/60 bg-slate-800/60' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }} aria-label="Open user menu"><div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden flex-shrink-0 ring-2 ring-offset-2 transition-shadow" style={{ boxShadow: isDark ? '0 0 0 1px rgba(31,175,90,0.35), 0 2px 8px rgba(0,0,0,0.35)' : '0 0 0 1px rgba(13,59,102,0.15), 0 2px 8px rgba(13,59,102,0.12)', ['--tw-ring-color']: isDark ? '#1FAF5A' : '#0D3B66', ['--tw-ring-offset-color']: isDark ? '#0f172a' : '#ffffff' }}>{user?.profile_picture ? <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-white font-bold text-xs" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>{user?.full_name?.[0]?.toUpperCase() || 'U'}</div>}</div><span className={`hidden md:block text-xs sm:text-sm font-semibold max-w-[100px] truncate ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{user?.full_name?.split(' ')[0]}</span><motion.div animate={{ rotate: userMenuOpen ? 180 : 0 }} transition={springSoft}><ChevronDown className="h-3.5 w-3.5 text-slate-400" /></motion.div></motion.button><AnimatePresence>{userMenuOpen && <motion.div initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }} transition={springSoft} className="absolute right-0 mt-2 z-[200] overflow-hidden" style={{ width: 'min(240px, calc(100vw - 2rem))', background: isDark ? '#1e293b' : '#ffffff', borderRadius: '16px', boxShadow: isDark ? '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(51,65,85,0.8)' : '0 8px 32px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06)' }}><div className="px-4 py-3.5" style={{ borderBottom: isDark ? '1px solid #334155' : '1px solid #f1f5f9' }}><div className="flex items-center gap-3 min-w-0"><div className="w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-slate-100 dark:ring-slate-700">{user?.profile_picture ? <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-white font-bold text-sm" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>{user?.full_name?.[0]?.toUpperCase() || 'U'}</div>}</div><div className="min-w-0 flex-1"><p className={`font-semibold text-sm truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{user?.full_name}</p><p className="text-xs truncate mt-0.5 text-slate-400">{user?.email}</p></div></div></div><div className="p-1.5"><motion.button onClick={() => { setUserMenuOpen(false); navigate('/settings'); }} whileHover={{ x: 2 }} transition={springSnap} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-colors mb-0.5 ${isDark ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-50'}`}><Settings className="h-4 w-4 flex-shrink-0" /> Settings</motion.button><motion.button onClick={handleLogout} whileHover={{ x: 2 }} transition={springSnap} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${isDark ? 'text-red-400 hover:bg-red-900/30' : 'text-red-600 hover:bg-red-50'}`}><LogOut className="h-4 w-4 flex-shrink-0" /> Sign out</motion.button></div></motion.div>}</AnimatePresence></div></div></div>
     </header>
     <div id="top-module-switcher-bar" className="fixed left-0 right-0 z-[44] flex items-center px-3 sm:px-6 overflow-x-auto slim-scroll" style={{ top: HEADER_H, height: SECTION_BAR_H, background: isDark ? '#0f172a' : '#ffffff', borderBottom: isDark ? '1px solid #1e293b' : '1px solid #e2e8f0' }}>
-      <div className="flex items-center h-full gap-0.5 sm:gap-1">{renderSectionTabs(LEFT_SECTIONS)}</div><div className="flex-1 min-w-[12px]" />{RIGHT_SECTIONS.length > 0 && <div className="flex items-center h-full gap-0.5 sm:gap-1 flex-shrink-0">{renderSectionTabs(RIGHT_SECTIONS)}</div>}
+      <div className="flex items-center h-full gap-0.5 sm:gap-1">{renderSectionTabs(LEFT_SECTIONS)}</div><div className="flex-1 min-w-[12px]" />{RIGHT_SECTIONS.length > 0 && <div className="flex items-center h-full gap-0.5 sm:gap-1 flex-shrink-0">{renderSectionTabs(RIGHT_SECTIONS)}</div>
     </div>
     <div className="transition-all duration-300 ease-in-out" style={{ marginLeft: offsetPx, paddingTop: TOTAL_HEADER_H, minWidth: 0, maxWidth: '100%', overflowX: 'hidden' }}><main ref={mainRef} style={{ padding: 'clamp(0.875rem, 2vw, 1.75rem)', position: 'relative', height: `calc(100vh - ${TOTAL_HEADER_H}px)`, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch' }}><div className="mx-auto w-full min-w-0" style={{ maxWidth: 'var(--content-max, 1400px)' }}><div className="w-full min-w-0">{children}</div></div></main></div>
     <EnterpriseSearchModal isOpen={searchOpen} onClose={() => setSearchOpen(false)} isDark={isDark} /><AICopilotDrawer isOpen={copilotOpen} onClose={() => setCopilotOpen(false)} isDark={isDark} />
@@ -264,7 +264,7 @@ const DashboardLayout = ({ children }) => {
 function EnterpriseSearchModal({ isOpen, onClose, isDark }) {
   const [query, setQuery] = useState(''); const [category, setCategory] = useState('all'); const [data, setData] = useState(null); const [loading, setLoading] = useState(false); const [searched, setSearched] = useState(false); const [openClientId, setOpenClientId] = useState(null); const [profile, setProfile] = useState(null); const [profileLoading, setProfileLoading] = useState(false);
   const CATEGORIES = [{ key: 'all', label: 'All' }, { key: 'clients', label: 'Companies & People' }, { key: 'tasks', label: 'Tasks' }, { key: 'compliance', label: 'Compliance' }, { key: 'documents', label: 'Documents' }, { key: 'ledger', label: 'Ledger' }];
-  const runSearch = async (e, catOverride) => { if (e) e.preventDefault(); const q = query.trim(); if (!q) return; setLoading(true); setOpenClientId(null); setProfile(null); try { const { data: res } = await api.get('/v2/search', { params: { query: q, category: catOverride || category } }); setData(res || null); setSearched(true); } catch { toast.error('Failed to execute search query'); setData(null); } finally { setLoading(false); } };
+  const runSearch = async (e, catOverride) => { if (e) e.preventDefault(); const q = query.trim(); if (!q) return; setLoading(true); setOpenClientId(null); setProfile(null); setSearched(true); try { const { data: res } = await api.get('/v2/search', { params: { query: q, category: catOverride || category } }); setData(res || null); } catch { toast.error('Failed to execute search query'); setData(null); } finally { setLoading(false); } };
   const openClient = async (clientId) => { if (!clientId) return; if (openClientId === clientId) { setOpenClientId(null); setProfile(null); return; } setOpenClientId(clientId); setProfile(null); setProfileLoading(true); try { const { data: res } = await api.get(`/v2/search/client/${clientId}`); setProfile(res); } catch { toast.error("Could not load this client's details"); setOpenClientId(null); } finally { setProfileLoading(false); } };
   const goTo = (path, params) => { if (!path) return; const qs = params ? `?${new URLSearchParams(params).toString()}` : ''; onClose(); navigate(`${path}${qs}`); };
   useEffect(() => { if (isOpen) { setQuery(''); setData(null); setSearched(false); setOpenClientId(null); setProfile(null); } }, [isOpen]);
