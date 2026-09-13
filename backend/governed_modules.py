@@ -20,6 +20,11 @@ from backend.commercial_onboarding import router as commercial_onboarding_router
 from backend.backup_restore import router as backup_restore_router
 from backend.commercial_master_data import router as commercial_master_data_router
 
+# Install the commercial license cap into the existing authentication
+# normalization path before any governed routes are evaluated. This makes
+# /auth/me deterministic after both login and hard refresh.
+import backend.commercial_entitlement_runtime  # noqa: F401,E402
+
 # Keep the commercial-admin permission template aligned with the governance
 # rule that an admin has full access to every page inside a licensed module.
 # Older admin documents may not contain these newer People Matrix flags;
@@ -128,7 +133,7 @@ def _build_router(*, prefix: str, tag: str, module_key: str, view_flag: str, man
 
 leave_router = _build_router(prefix="/leave", tag="Leave", module_key="people_matrix", view_flag="can_view_leave", manage_flag="can_manage_leave", collection="leave_requests", resource_type="leave", audit_module="leave")
 payroll_router = _build_router(prefix="/payroll", tag="Payroll", module_key="people_matrix", view_flag="can_view_payroll", manage_flag="can_manage_payroll", collection="payroll_records", resource_type="payroll", audit_module="payroll")
-hr_router = _build_router(prefix="/hr", tag="HR", module_key="people_matrix", view_flag="can_view_hr", manage_flag="can_manage_hr", collection="hr_records", resource_type="hr", audit_module="hr")
+hr_router = _build_router(prefix="/hr", tag="HR", module_key="people_matrix", view_flag="can_view_hr", manage_flag="can_view_hr", collection="hr_records", resource_type="hr", audit_module="hr")
 performance_router = _build_router(prefix="/performance", tag="Performance", module_key="people_matrix", view_flag="can_view_performance", manage_flag="can_manage_performance", collection="performance_records", resource_type="performance", audit_module="performance")
 client_discussion_router = _build_router(prefix="/client-discussion", tag="Client Discussion", module_key="proposals", view_flag="can_view_client_discussion", manage_flag="can_manage_client_discussion", collection="client_discussions", resource_type="client_discussion", audit_module="client_discussion")
 master_data_router = _build_router(prefix="/master-data", tag="Master Data", module_key="admin", view_flag="can_view_master_data", manage_flag="can_manage_master_data", collection="master_data", resource_type="master_data", audit_module="master_data")
