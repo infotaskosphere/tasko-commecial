@@ -68,9 +68,10 @@ export function SectionCard({
   className = '',
 }) {
   const isDark = useDark();
+  const overflowClass = className.includes('overflow-') ? '' : 'overflow-hidden';
   return (
     <section
-      className={`rounded-2xl border overflow-hidden ${
+      className={`rounded-2xl border ${overflowClass} ${
         isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100 shadow-sm'
       } ${className}`}
     >
