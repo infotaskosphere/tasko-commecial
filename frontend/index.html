@@ -20,7 +20,10 @@
     <script>
       (() => {
         const id = 'taskosphere-backup-sidebar-link';
+        let scheduled = false;
+
         const sync = () => {
+          scheduled = false;
           let user = null;
           try {
             const raw = localStorage.getItem('user') || sessionStorage.getItem('user');
@@ -47,24 +50,31 @@
           link.setAttribute('aria-label', 'Backup & Restore');
           link.title = 'Backup & Restore';
           link.className = settingsItem.className;
-          link.innerHTML = '<span aria-hidden="true" class="flex-shrink-0 transition-colors h-4 w-4 text-slate-400">▣</span><span class="font-medium text-sm whitespace-nowrap tracking-tight truncate">Backup &amp; Restore</span>';
-
-          const isActive = location.pathname === '/settings/backup' || location.pathname.startsWith('/settings/backup/');
-          if (isActive) {
-            link.className += ' bg-white/[0.09] text-white';
+          if (!existing) {
+            link.innerHTML = '<span aria-hidden="true" class="flex-shrink-0 transition-colors h-4 w-4 text-slate-400">▣</span><span class="font-medium text-sm whitespace-nowrap tracking-tight truncate">Backup &amp; Restore</span>';
           }
 
-          if (!existing || existing.previousElementSibling !== settingsItem) {
+          const isActive = location.pathname === '/settings/backup' || location.pathname.startsWith('/settings/backup/');
+          const nextClass = settingsItem.className + (isActive ? ' bg-white/[0.09] text-white' : '');
+          if (link.className !== nextClass) link.className = nextClass;
+
+          if (!existing || link.previousElementSibling !== settingsItem) {
             settingsItem.parentNode.insertBefore(link, settingsItem.nextSibling);
           }
         };
 
-        sync();
-        const observer = new MutationObserver(sync);
-        observer.observe(document.getElementById('root'), { childList: true, subtree: true });
-        window.setInterval(sync, 500);
-        window.addEventListener('storage', sync);
-        window.addEventListener('popstate', sync);
+        const scheduleSync = () => {
+          if (scheduled) return;
+          scheduled = true;
+          window.setTimeout(sync, 0);
+        };
+
+        scheduleSync();
+        document.addEventListener('click', (event) => {
+          if (event.target?.closest?.('a[href^="/settings"], button[id^="nav-tab-settings"]')) scheduleSync();
+        }, true);
+        window.addEventListener('storage', scheduleSync);
+        window.addEventListener('popstate', scheduleSync);
       })();
     </script>
     <!-- Vite entry -->
