@@ -36,6 +36,25 @@ LICENSE_MODULE_ALIASES = {
     "client-proposals": "proposals",
 }
 
+# These legacy permissions are still consumed by older pages/components. They
+# must be reset together with the centralized page flags, otherwise an admin
+# permission such as can_manage_invoices can accidentally keep an unselected
+# commercial page visible. The commercial license is the cap; role=admin must
+# never restore one of these flags after the cap is applied.
+COMMERCIAL_LEGACY_PAGE_FLAGS = {
+    "can_manage_invoices",
+    "can_create_quotations",
+    "can_view_clients",
+    "can_view_all_clients",
+    "can_edit_clients",
+    "can_approve_clients",
+    "can_view_all_leads",
+    "can_view_passwords",
+    "can_edit_passwords",
+    "can_approve_whatsapp_wishes",
+    "can_approve_email_wishes",
+}
+
 
 def _raw_db():
     return getattr(_dependencies, "_raw_db", _dependencies.db)
@@ -57,6 +76,11 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
     A purchased module is only the parent entitlement. It does not grant every
     page. If selected_features is absent, no operational page is granted; the
     platform owner must explicitly select the pages that belong to the license.
+
+    The reset of legacy aliases below is intentional. Several existing UI/API
+    paths predate MODULE_HIERARCHY and still inspect flags such as
+    can_manage_invoices. Leaving the admin defaults intact would silently
+    re-open pages that were not selected in the commercial license.
     """
     if license_doc is None:
         admin_perms = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
@@ -68,6 +92,22 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
     selected_features = license_doc.get("selected_features")
     if not isinstance(selected_features, dict):
         selected_features = {}
+
+    # Start from the internal admin template, then hard-cap every commercial
+    # operational page. This preserves tenant-admin control-plane privileges
+    # while making the six licensed modules fail closed by default.
+    for flag in COMMERCIAL_LEGACY_PAGE_FLAGS:
+        permissions[flag] = False
+    for module_id, module_def in MODULE_HIERARCHY.items():
+        if module_id == "admin":
+            continue
+        module_flag = module_def.get("flag")
+        if module_flag:
+            permissions[module_flag] = False
+        for page in module_def.get("pages", []) or []:
+            flag = page.get("flag")
+            if flag:
+                permissions[flag] = False
 
     for module_id, module_def in MODULE_HIERARCHY.items():
         if module_id == "admin":
@@ -89,9 +129,23 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
             if flag:
-                # Explicit feature selection is authoritative. A module with
-                # no selected pages has module access but zero page access.
                 permissions[flag] = bool(module_allowed and flag in selected)
+
+        # Compatibility mappings for legacy screens. These are derived from
+        # the same selected page flags; they are not independent entitlements.
+        if module_id == "finix":
+            permissions["can_manage_invoices"] = bool(module_allowed and "can_view_sale" in selected)
+        elif module_id == "records":
+            permissions["can_view_clients"] = bool(module_allowed and "can_view_all_clients" in selected)
+            permissions["can_edit_clients"] = bool(module_allowed and "can_edit_clients" in selected)
+            permissions["can_approve_clients"] = bool(module_allowed and "can_approve_clients" in selected)
+            permissions["can_view_passwords"] = bool(module_allowed and "can_view_passwords" in selected)
+            permissions["can_edit_passwords"] = bool(module_allowed and "can_edit_passwords" in selected)
+            permissions["can_approve_whatsapp_wishes"] = bool(module_allowed and "can_approve_whatsapp_wishes" in selected)
+            permissions["can_approve_email_wishes"] = bool(module_allowed and "can_approve_email_wishes" in selected)
+        elif module_id == "proposals":
+            permissions["can_view_all_leads"] = bool(module_allowed and "can_view_all_leads" in selected)
+            permissions["can_create_quotations"] = bool(module_allowed and "can_create_quotations" in selected)
 
     return permissions
 
