@@ -598,6 +598,22 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
     if not license_doc:
         raise HTTPException(status_code=404, detail="License not found.")
     customer_id = str(license_doc.get("customer_id") or "")
+
+    # The Platform Owner is never a commercial tenant. Never let this cascade
+    # deactivate or rename the Platform Owner's own login, even if their
+    # account was ever linked to this customer/company id.
+    from backend.platform_owner import platform_owner_emails
+    owner_emails = list(platform_owner_emails())
+    if customer_id:
+        owner_linked = await db.users.find_one(
+            {"company_id": customer_id, "email": {"$in": owner_emails}}, {"_id": 0, "id": 1}
+        )
+        if owner_linked:
+            raise HTTPException(
+                status_code=400,
+                detail="This company/license is linked to a Platform Owner account and cannot be deleted.",
+            )
+
     customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
     await db.commercial_licenses.delete_one({"id": license_id})
     remaining = await db.commercial_licenses.count_documents({"customer_id": customer_id})
@@ -610,7 +626,9 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
         # re-registering a brand-new admin/license under the same email later
         # (the create-admin/create-staff conflict checks match on email).
         deleted_at = _now().isoformat()
-        stale_users = await db.users.find({"company_id": customer_id}, {"_id": 0, "id": 1, "email": 1}).to_list(1000)
+        stale_users = await db.users.find(
+            {"company_id": customer_id, "email": {"$nin": owner_emails}}, {"_id": 0, "id": 1, "email": 1}
+        ).to_list(1000)
         for stale_user in stale_users:
             original_email = stale_user.get("email")
             update_fields = {"is_active": False, "status": "deleted", "commercial_deleted_at": deleted_at}
