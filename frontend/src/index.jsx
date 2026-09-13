@@ -24,6 +24,22 @@ if (typeof window !== "undefined") {
     }
   });
 
+  // Chrome DevTools can inject a web-vitals observer whose reportAllChanges
+  // callback can receive a missing performance entry during SPA navigation.
+  // Suppress only that exact external instrumentation error; application
+  // errors continue through the normal error handling path below.
+  window.addEventListener("error", (event) => {
+    const msg = String(event?.message || "");
+    const stack = String(event?.error?.stack || "");
+    if (
+      msg === "Cannot read properties of undefined (reading 'startTime')" &&
+      stack.includes("reportAllChanges") &&
+      stack.includes("startTime")
+    ) {
+      event.preventDefault?.();
+    }
+  });
+
   window.addEventListener("error", (event) => {
     const msg = String(event?.message || "");
     if (
