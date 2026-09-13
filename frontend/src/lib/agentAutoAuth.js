@@ -111,14 +111,33 @@ export function isAgentAuthed() {
 export function resetAgentAuth() {
   isAuthed = false;
   lastAuthTime = 0;
+
+  // Intentional logout already marks the flow as in progress in
+  // DashboardLayout. Redirect on the next event-loop turn so the logout
+  // request can be started, while preventing the authenticated dashboard
+  // from remaining mounted during the server-side revoke.
+  if (
+    typeof window !== 'undefined' &&
+    window.__TASKO_LOGOUT_IN_PROGRESS__ &&
+    window.location.pathname !== '/login'
+  ) {
+    window.setTimeout(() => {
+      if (
+        window.__TASKO_LOGOUT_IN_PROGRESS__ &&
+        window.location.pathname !== '/login'
+      ) {
+        window.location.replace('/login');
+      }
+    }, 0);
+  }
 }
 
 /**
  * Auto-auth hook: Call this after successful login
  * Detects agent and pushes credentials automatically
  * 
- * @param {string} token - JWT token
- * @param {string} userId - User ID
+ * @param {string} token - JWT token from web app
+ * @param {string} userId - User ID from web app
  */
 export async function autoAuthenticateAgent(token, userId) {
   if (!token || !userId) {
@@ -129,12 +148,12 @@ export async function autoAuthenticateAgent(token, userId) {
   // In cloud/deployed environments (Vercel, Render) or normal web browsing,
   // do not probe localhost:7432 to avoid ERR_CONNECTION_REFUSED browser console errors.
   const isLocalHost =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
   const isExplicitlyEnabled =
     import.meta.env?.VITE_ENABLE_DESKTOP_AGENT === "true" ||
-    (typeof window !== "undefined" && window.__TASKOSPHERE_ENABLE_DESKTOP_AGENT__ === true);
+    (typeof window !== 'undefined' && window.__TASKOSPHERE_ENABLE_DESKTOP_AGENT__ === true);
 
   if (!isLocalHost || !isExplicitlyEnabled) {
     return false;
