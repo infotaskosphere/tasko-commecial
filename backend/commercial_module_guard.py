@@ -2,7 +2,9 @@
 
 A commercial licensee contact is a normal application administrator inside its
 own licensed customer tenant. The administrator bypasses per-user governance,
-but never bypasses the commercial license boundary itself.
+but never bypasses the commercial license boundary itself. Module access and
+page access are independent: a purchased module does not imply access to every
+page in that module.
 """
 from typing import Optional, Tuple
 
@@ -13,41 +15,86 @@ from backend.models import User
 from backend.platform_owner import is_platform_owner
 from backend.commercial_licensee_admin import resolve_license_modules, get_all_admin_permissions
 
-# Capture the authentication dependency that exists immediately before this
-# compatibility layer is installed. commercial_admin_permission_compat is
-# intentionally included here, so commercial admins are hydrated once from
-# their live license and the request wrapper can then add the tenant boundary.
 _BASE_GET_CURRENT_USER = _dependencies.get_current_user
 
 MODULE_PREFIXES = {
     "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
-    # NOTE: the actual backend report endpoints all live under "/reports/...".
-    # These finix-specific "/reports/<name>" entries must be listed (and
-    # matched) before the generic "/reports" catch-all further down, or every
-    # Finix accounting report (Trial Balance, P&L, Balance Sheet, Cash Flow,
-    # Day Book, etc.) gets mis-classified as a People Matrix feature and
-    # blocked for any customer who didn't buy People Matrix.
     "finix": ("/finix-dashboard", "/invoicing", "/purchase", "/bank-accounts", "/chart-of-accounts", "/journal-entries", "/accounting-reports", "/zero-touch-entry", "/gst-portal-sync", "/accounting-integrity", "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report", "/bank-reconciliation", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report", "/yearly-report", "/opening-balances", "/accounting-audit-trail", "/bulk-import", "/due-dates", "/import-invoices", "/reports/day-book", "/reports/journal-register", "/reports/cash-bank-book", "/reports/cash-flow", "/reports/outstanding", "/reports/financial-ratios", "/reports/comparative", "/reports/yearly", "/reports/trial-balance", "/reports/profit-loss", "/reports/balance-sheet", "/reports/mis-compliance", "/reports/parties", "/reports/party-ledger", "/reports/validation-engine", "/reports/ledger-by-code", "/reports/finix-dashboard"),
     "compliance": ("/compliance-dashboard", "/compliance", "/gst-reconciliation", "/trademark-sphere", "/mis-report", "/salary-slips", "/roc-sphere"),
     "records": ("/records-dashboard", "/client-approvals", "/dsc", "/documents", "/clients", "/passwords"),
     "proposals": ("/client-proposals-dashboard", "/leads", "/quotations", "/client-discussion"),
-    # "/staff-activity" and the generic "/reports" prefix were removed here.
-    # Team Activity (Activity Logs) and the workforce Reports page are
-    # role-gated admin features (see MODULE_HIERARCHY["admin"] and
-    # check_module_permission("reports", ...) in server.py) — they were never
-    # meant to require the separately-sold People Matrix module, and the
-    # broad "/reports" prefix was incorrectly swallowing every other module's
-    # report endpoints too (see the finix entries above).
     "people_matrix": ("/people-matrix", "/users", "/leave", "/payroll", "/hr", "/recruitment", "/performance"),
 }
 
 FEATURE_PREFIXES = {
-    "taskosphere": {"can_view_dashboard": ("/dashboard",), "can_view_tasks": ("/tasks",), "can_view_todo_dashboard": ("/todos", "/todo"), "can_view_attendance": ("/attendance",), "can_view_reminders": ("/reminders",), "can_view_action_center": ("/action-center",), "can_view_client_visits": ("/visits",), "can_view_ai_document_reader": ("/ai-reader",), "can_view_client_portal": ("/client-portal-manager",), "can_reset_client_passwords": ("/client-portal-manager/password", "/client-portal-manager/reset")},
-    "finix": {"can_view_accounting_reports": ("/finix-dashboard", "/accounting-reports"), "can_view_sale": ("/invoicing", "/sales", "/invoices"), "can_view_purchase": ("/purchase", "/purchase-invoices"), "can_view_bank": ("/bank-accounts", "/cash-bank-book", "/cash-flow"), "can_view_chart_of_accounts": ("/chart-of-accounts",), "can_manage_chart_of_accounts": ("/chart-of-accounts/manage",), "can_view_journal_entries": ("/journal-entries", "/day-book"), "can_post_journal_entries": ("/journal-entries/post", "/zero-touch-entry"), "can_match_bank": ("/bank-reconciliation",)},
-    "compliance": {"can_view_compliance": ("/compliance-dashboard", "/compliance"), "can_manage_compliance": ("/compliance/manage",), "can_view_gst_reconciliation": ("/gst-reconciliation",), "can_view_trademark_sphere": ("/trademark-sphere",), "can_view_mis_report": ("/mis-report",), "can_manage_mis_report": ("/mis-report/manage",), "can_view_salary_slips": ("/salary-slips",), "can_manage_salary_slips": ("/salary-slips/manage",), "can_view_roc_sphere": ("/roc-sphere",), "can_manage_roc_sphere": ("/roc-sphere/manage",)},
-    "records": {"can_view_all_dsc": ("/dsc",), "can_view_documents": ("/documents",), "can_view_passwords": ("/passwords",), "can_edit_passwords": ("/passwords/manage",), "can_view_clients": ("/client-approvals",), "can_edit_clients": ("/clients/manage",), "can_approve_clients": ("/clients/approve", "/client-approvals/approve"), "can_approve_whatsapp_wishes": ("/automation/whatsapp",), "can_approve_email_wishes": ("/automation/email",)},
-    "proposals": {"can_view_all_leads": ("/leads",), "can_create_quotations": ("/quotations",), "can_view_client_discussion": ("/client-discussion",), "can_manage_client_discussion": ("/client-discussion/manage",)},
-    "people_matrix": {"can_view_user_page": ("/users/manage",), "can_view_leave": ("/leave",), "can_manage_leave": ("/leave/manage",), "can_view_payroll": ("/payroll",), "can_manage_payroll": ("/payroll/manage",), "can_view_hr": ("/hr",), "can_manage_hr": ("/hr/manage",), "can_view_recruitment": ("/recruitment",), "can_manage_recruitment": ("/recruitment/manage",), "can_view_performance": ("/performance",), "can_manage_performance": ("/performance/manage",)},
+    "taskosphere": {
+        "can_view_dashboard": ("/dashboard",),
+        "can_view_tasks": ("/tasks",),
+        "can_view_todo_dashboard": ("/todos", "/todo"),
+        "can_view_attendance": ("/attendance",),
+        "can_view_reminders": ("/reminders",),
+        "can_view_action_center": ("/action-center",),
+        "can_view_client_visits": ("/visits",),
+        "can_view_ai_document_reader": ("/ai-reader",),
+        "can_view_client_portal": ("/client-portal-manager",),
+        "can_reset_client_passwords": ("/client-portal-manager/password", "/client-portal-manager/reset"),
+    },
+    "finix": {
+        # This feature represents the Finix Dashboard only. Accounting Reports
+        # is intentionally not bundled with it: if no separate page feature is
+        # selected, /accounting-reports fails closed below.
+        "can_view_accounting_reports": ("/finix-dashboard",),
+        "can_view_sale": ("/invoicing", "/sales", "/invoices"),
+        "can_view_purchase": ("/purchase", "/purchase-invoices"),
+        "can_view_bank": ("/bank-accounts", "/cash-bank-book", "/cash-flow"),
+        "can_view_chart_of_accounts": ("/chart-of-accounts",),
+        "can_manage_chart_of_accounts": ("/chart-of-accounts/manage",),
+        "can_view_journal_entries": ("/journal-entries", "/day-book"),
+        "can_post_journal_entries": ("/journal-entries/post", "/zero-touch-entry"),
+        "can_match_bank": ("/bank-reconciliation",),
+    },
+    "compliance": {
+        "can_view_compliance": ("/compliance-dashboard", "/compliance"),
+        "can_manage_compliance": ("/compliance/manage",),
+        "can_view_gst_reconciliation": ("/gst-reconciliation",),
+        "can_view_trademark_sphere": ("/trademark-sphere",),
+        "can_view_mis_report": ("/mis-report",),
+        "can_manage_mis_report": ("/mis-report/manage",),
+        "can_view_salary_slips": ("/salary-slips",),
+        "can_manage_salary_slips": ("/salary-slips/manage",),
+        "can_view_roc_sphere": ("/roc-sphere",),
+        "can_manage_roc_sphere": ("/roc-sphere/manage",),
+    },
+    "records": {
+        "can_view_all_dsc": ("/dsc",),
+        "can_view_documents": ("/documents",),
+        "can_view_passwords": ("/passwords",),
+        "can_edit_passwords": ("/passwords/manage",),
+        "can_view_clients": ("/client-approvals",),
+        "can_edit_clients": ("/clients/manage",),
+        "can_approve_clients": ("/clients/approve", "/client-approvals/approve"),
+        "can_approve_whatsapp_wishes": ("/automation/whatsapp",),
+        "can_approve_email_wishes": ("/automation/email",),
+    },
+    "proposals": {
+        "can_view_all_leads": ("/leads",),
+        "can_create_quotations": ("/quotations",),
+        "can_view_client_discussion": ("/client-discussion",),
+        "can_manage_client_discussion": ("/client-discussion/manage",),
+    },
+    "people_matrix": {
+        "can_view_user_page": ("/users/manage", "/people-matrix"),
+        "can_view_leave": ("/leave",),
+        "can_manage_leave": ("/leave/manage",),
+        "can_view_payroll": ("/payroll",),
+        "can_manage_payroll": ("/payroll/manage",),
+        "can_view_hr": ("/hr",),
+        "can_manage_hr": ("/hr/manage",),
+        "can_view_recruitment": ("/recruitment",),
+        "can_manage_recruitment": ("/recruitment/manage",),
+        "can_view_performance": ("/performance",),
+        "can_manage_performance": ("/performance/manage",),
+    },
 }
 
 
@@ -161,6 +208,11 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_module} module.")
         if not _permission_flag(user, feature_flag, commercial):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_flag} feature.")
+    elif module:
+        # The route belongs to a commercially licensed module but has no page
+        # entitlement mapping. Fail closed instead of treating module purchase
+        # as implicit access to every page.
+        raise HTTPException(status_code=403, detail=f"This company license does not include a selected page for {module}.")
 
     return user
 
@@ -168,3 +220,6 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
 def install() -> None:
     if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_commercial_guard":
         _dependencies.get_current_user = get_current_user_with_commercial_guard
+
+
+install()
