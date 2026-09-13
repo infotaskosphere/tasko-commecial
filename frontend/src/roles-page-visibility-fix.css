@@ -1,7 +1,7 @@
 /* Admin > Roles only. */
-/* Roles.jsx removes the three fixed 70vh tab containers. The shared
-   DashboardLayout still gives <main> a fixed viewport height, so this page
-   must opt out of that one layout constraint and grow with its content. */
+/* The shared DashboardLayout uses a viewport-sized <main>. Roles contains
+   variable-height cards/tables, so it must remain content-sized and let the
+   layout expose the complete tab content instead of clipping it. */
 
 body:has(.roles-page-shell) #root main {
   height: auto !important;
@@ -9,4 +9,32 @@ body:has(.roles-page-shell) #root main {
   max-height: none !important;
   overflow-y: visible !important;
   overflow-x: hidden !important;
+}
+
+/* Defensive structural reset for the Roles SectionCard. Some shared/global
+   styles can constrain <section> surfaces; Roles must always grow to its
+   actual content height. */
+body:has(.roles-page-shell) #root .roles-page-shell,
+body:has(.roles-page-shell) #root .roles-page-shell > section,
+body:has(.roles-page-shell) #root .roles-page-shell > section > div {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+body:has(.roles-page-shell) #root .roles-page-shell > section {
+  display: block !important;
+  width: 100% !important;
+  overflow: visible !important;
+}
+
+body:has(.roles-page-shell) #root .roles-page-shell > section > div {
+  overflow: visible !important;
+}
+
+body:has(.roles-page-shell) #root .roles-page-shell > section .grid {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
