@@ -28,12 +28,18 @@ def install():
         license_doc, company = await _master._company_context(current_user)
 
         if is_platform_owner(current_user):
-            # Leave the platform-owner projection exactly as the canonical
-            # endpoint defines it; this compatibility layer is for licensee
-            # operational users only.
             return await _master.list_company_users(current_user)
 
         query = await _master._license_user_query(license_doc, company)
+
+        # Preserve one more historical identity: users created before the
+        # commercial customer field was introduced may still carry exactly the
+        # company_id that was present on the authenticated account. Include it
+        # in the same customer-scoped OR rather than dropping those users.
+        legacy_company_id = str(getattr(current_user, "company_id", "") or "").strip()
+        if legacy_company_id:
+            query.setdefault("$or", []).append({"company_id": legacy_company_id})
+
         users = await db.users.find(
             query,
             {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
