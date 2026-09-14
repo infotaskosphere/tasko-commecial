@@ -20,6 +20,7 @@ import GifLoader from '@/components/ui/GifLoader.jsx';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '@/lib/api';
+import { canAccessPath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath } from '@/lib/commercialPermissionMatrix';
 
 const COLORS = {
   deepBlue: '#0D3B66', mediumBlue: '#1F6FB2', lightBlue: '#E0F2FE',
@@ -118,6 +119,56 @@ const SECTION_ORDER = ['core', 'accounts', 'compliance', 'records', 'proposals',
 const GROUP_MODULE_FLAG = { core: 'can_access_taskosphere', accounts: 'can_access_finix', compliance: 'can_access_compliance', records: 'can_access_records', proposals: 'can_access_proposals', 'people-matrix': 'can_access_people_matrix' };
 const ITEM_GROUP_ID = new Map();
 NAV_GROUPS.forEach((group) => group.items.forEach((item) => ITEM_GROUP_ID.set(item.path, group.id)));
+// Commercial licenses select pages independently. These mappings mirror the
+// catalog's page flags so a licensed module never makes unrelated legacy
+// screens visible merely because the parent module is enabled.
+const COMMERCIAL_PAGE_FLAGS_BY_PATH = {
+  '/dashboard': 'can_view_dashboard',
+  '/tasks': 'can_view_tasks',
+  '/todos': 'can_view_todo_dashboard',
+  '/attendance': 'can_view_attendance',
+  '/reminders': 'can_view_reminders',
+  '/action-center': 'can_view_action_center',
+  '/visits': 'can_view_client_visits',
+  '/ai-reader': 'can_view_ai_document_reader',
+  '/client-portal-manager': 'can_view_client_portal',
+  '/compliance-dashboard': 'can_view_compliance',
+  '/compliance': 'can_view_compliance',
+  '/gst-reconciliation': 'can_view_gst_reconciliation',
+  '/trademark-sphere': 'can_view_trademark_sphere',
+  '/roc-sphere': 'can_view_roc_sphere',
+  '/mis-report': 'can_view_mis_report',
+  '/salary-slips': 'can_view_salary_slips',
+  '/records-dashboard': 'can_view_documents',
+  '/dsc': 'can_view_all_dsc',
+  '/documents': 'can_view_documents',
+  '/clients': 'can_view_all_clients',
+  '/client-approvals': 'can_approve_clients',
+  '/client-proposals-dashboard': 'can_view_all_leads',
+  '/leads': 'can_view_all_leads',
+  '/quotations': 'can_create_quotations',
+  '/client-discussion': 'can_view_client_discussion',
+  '/finix-dashboard': 'can_view_accounting_reports',
+  '/invoicing': 'can_view_sale',
+  '/purchase': 'can_view_purchase',
+  '/bank-accounts': 'can_view_bank',
+  '/journal-entries': 'can_view_journal_entries',
+  '/chart-of-accounts': 'can_view_chart_of_accounts',
+  '/people-matrix': 'can_view_user_page',
+  '/users': 'can_view_user_page',
+  '/leave': 'can_view_leave',
+  '/payroll': 'can_view_payroll',
+  '/hr': 'can_view_hr',
+  '/recruitment': 'can_view_recruitment',
+};
+
+const COMMERCIAL_UNLICENSED_LEGACY_FINIX_PATHS = new Set([
+  '/accounting-reports', '/day-book', '/gst-portal-sync', '/accounting-integrity',
+  '/zero-touch-entry', '/cash-bank-book', '/cash-flow', '/outstanding-report',
+  '/bank-reconciliation', '/depreciation', '/tds-tcs', '/financial-ratios',
+  '/comparative-report', '/yearly-report', '/opening-balances',
+  '/accounting-audit-trail', '/bulk-import', '/due-dates', '/import-invoices',
+]);
 const RIGHT_ALIGNED_SECTIONS = ['admin', 'settings'];
 const LEFT_SECTIONS = SECTION_ORDER.filter((id) => !RIGHT_ALIGNED_SECTIONS.includes(id));
 const RIGHT_SECTIONS = SECTION_ORDER.filter((id) => RIGHT_ALIGNED_SECTIONS.includes(id));
@@ -193,12 +244,24 @@ const DashboardLayout = ({ children }) => {
   };
   const checkNavPermission = (item) => {
     if (item.adminOnly) return user?.role === 'admin';
+    if (matrixIsPlatformOwner(user)) return true;
+
     const groupId = ITEM_GROUP_ID.get(item.path);
     const moduleFlag = GROUP_MODULE_FLAG[groupId];
     if (moduleFlag && !hasPermission(moduleFlag)) return false;
+
+    // For commercial tenants the central matrix is authoritative. It maps the
+    // visible URL to the exact page flag selected in the Commercial Console.
+    const commercial = Boolean(
+      user?.license_id || user?.commercial_customer_id ||
+      (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0) ||
+      user?.company?.license_id || user?.company?.commercial_customer_id
+    );
+    if (commercial && moduleForPath(item.path)) return canAccessPath(user, item.path);
+
     const permission = item.permission;
     if (!permission) return true;
-    if (Array.isArray(permission)) return permission.some(p => hasPermission(p));
+    if (Array.isArray(permission)) return permission.some((p) => hasPermission(p));
     return hasPermission(permission);
   };
   const allNavItems = NAV_GROUPS.flatMap(g => g.items);
@@ -212,13 +275,25 @@ const DashboardLayout = ({ children }) => {
   useEffect(() => { document.title = `${activeLabel} · Task-O-Sphere`; }, [activeLabel]);
   const activeSectionId = useMemo(() => getSectionForPath(location.pathname), [location.pathname]);
   useEffect(() => {
-    const currentModuleFlag = GROUP_MODULE_FLAG[activeSectionId];
-    if (currentModuleFlag && !hasPermission(currentModuleFlag)) {
-      const permittedSection = LEFT_SECTIONS.find((id) => { const flag = GROUP_MODULE_FLAG[id]; return !flag || hasPermission(flag); });
-      const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
+    if (matrixIsPlatformOwner(user)) return;
+    const commercial = Boolean(
+      user?.license_id || user?.commercial_customer_id ||
+      (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0) ||
+      user?.company?.license_id || user?.company?.commercial_customer_id
+    );
+    if (commercial && moduleForPath(location.pathname) && !canAccessPath(user, location.pathname)) {
+      const moduleId = moduleForPath(location.pathname);
+      const target = moduleId ? (['/finix-dashboard','/dashboard','/compliance-dashboard','/records-dashboard','/client-proposals-dashboard','/people-matrix'].find((p) => canAccessPath(user, p)) || '/dashboard') : '/dashboard';
       if (location.pathname !== target) navigate(target, { replace: true });
+    } else {
+      const currentModuleFlag = GROUP_MODULE_FLAG[activeSectionId];
+      if (currentModuleFlag && !hasPermission(currentModuleFlag)) {
+        const permittedSection = LEFT_SECTIONS.find((id) => { const flag = GROUP_MODULE_FLAG[id]; return !flag || hasPermission(flag); });
+        const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
+        if (location.pathname !== target) navigate(target, { replace: true });
+      }
     }
-  }, [activeSectionId, hasPermission, navigate, location.pathname]);
+  }, [activeSectionId, hasPermission, navigate, location.pathname, user]);
   const sidebarPx = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED, offsetPx = isDesktop ? sidebarPx : 0;
   const NavItem = ({ item }) => {
     if (!checkNavPermission(item)) return null;
