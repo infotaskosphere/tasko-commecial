@@ -3,43 +3,40 @@
   "name": "Taskosphere Activity Tracker",
   "version": "1.0.0",
   "description": "Bridges the Taskosphere web app's login session to the browser and reports website visits for activity tracking.",
-
   "icons": {
     "16": "icon-16.png",
     "32": "icon-32.png",
     "128": "icon-128.png"
   },
-
   "action": {
     "default_icon": {
       "16": "icon-16.png",
       "32": "icon-32.png"
     }
   },
-
   "background": {
     "service_worker": "background.js"
   },
-
   "content_scripts": [
     {
       "matches": [
+        "https://tasko-commercial-frontend.vercel.app/*",
         "https://final-taskosphere-frontend.onrender.com/*",
         "http://localhost:3000/*",
         "http://localhost:5173/*",
         "http://127.0.0.1:3000/*",
         "http://127.0.0.1:5173/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
-
   "permissions": [
     "storage",
     "tabs"
   ],
-
   "host_permissions": [
     "<all_urls>"
   ]
