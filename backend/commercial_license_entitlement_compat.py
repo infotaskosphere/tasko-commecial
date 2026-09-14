@@ -73,10 +73,25 @@ async def _resolve_customer_id(user: Any) -> str | None:
     return None
 
 
-async def _active_license(customer_id: str) -> dict[str, Any] | None:
+async def _active_license(customer_id: str, license_id: str | None = None) -> dict[str, Any] | None:
+    """Resolve the authoritative active license using every persisted link.
+
+    Hard refreshes may reconstruct the User from a legacy record where the
+    customer link is present but the license link is the reliable identifier,
+    or vice versa. The active license must therefore be resolved by either
+    identifier rather than depending on one particular user/company shape.
+    """
     db = _raw_db()
+    clauses = []
+    if customer_id:
+        clauses.append({"customer_id": customer_id})
+    if license_id:
+        clauses.append({"id": license_id})
+    if not clauses:
+        return None
+
     docs = await db.commercial_licenses.find(
-        {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
+        {"$or": clauses, "status": {"$in": ["active", "trial"]}},
         {"_id": 0},
     ).sort("issued_at", -1).limit(20).to_list(20)
     now = datetime.now(timezone.utc)
@@ -91,15 +106,16 @@ async def _hydrate(user: Any):
     if is_platform_owner(user) or str(getattr(user, "role", "")).lower() != "admin":
         return user
     customer_id = await _resolve_customer_id(user)
-    if not customer_id:
+    license_id = str(getattr(user, "license_id", "") or "").strip() or None
+    if not customer_id and not license_id:
         return user
-    license_doc = await _active_license(customer_id)
+    license_doc = await _active_license(customer_id or "", license_id)
     if not license_doc:
         return user
 
     modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
     data = user.model_dump()
-    data["commercial_customer_id"] = customer_id
+    data["commercial_customer_id"] = customer_id or str(license_doc.get("customer_id") or "").strip() or None
     data["license_id"] = license_doc.get("id")
     data["license_key"] = license_doc.get("license_key")
     data["licensed_modules"] = modules
@@ -140,9 +156,10 @@ def install() -> None:
         try:
             return await _commercial_entitlement_hydrate(user)
         except Exception:
-            # Authentication must never become a 500 because a malformed or
-            # legacy license record could not be hydrated. The commercial route
-            # guard will still fail closed when entitlement data is unavailable.
+            # Do not let entitlement hydration turn /auth/me into a 500. The
+            # user still reaches the normal authentication path, while the
+            # commercial guard remains responsible for denying unlicensed API
+            # access.
             return user
 
     # Execute wrapper code in backend.dependencies globals so all references
