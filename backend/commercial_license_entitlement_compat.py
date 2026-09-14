@@ -74,31 +74,40 @@ async def _resolve_customer_id(user: Any) -> str | None:
 
 
 async def _active_license(customer_id: str, license_id: str | None = None) -> dict[str, Any] | None:
-    """Resolve the authoritative active license using every persisted link.
+    """Resolve the exact active license linked to the tenant.
 
-    Hard refreshes may reconstruct the User from a legacy record where the
-    customer link is present but the license link is the reliable identifier,
-    or vice versa. The active license must therefore be resolved by either
-    identifier rather than depending on one particular user/company shape.
+    Never combine ``license_id`` and ``customer_id`` in one sorted ``$or``
+    query: a customer can have multiple historical licenses, and that pattern
+    can hydrate a user from the wrong license and cause false 403s.
     """
     db = _raw_db()
-    clauses = []
-    if customer_id:
-        clauses.append({"customer_id": customer_id})
+    now = datetime.now(timezone.utc)
+
+    async def _valid(doc: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not doc or doc.get("status") not in {"active", "trial"}:
+            return None
+        expires = _aware(doc.get("expires_at"))
+        if expires and expires <= now:
+            return None
+        return doc
+
     if license_id:
-        clauses.append({"id": license_id})
-    if not clauses:
+        doc = await db.commercial_licenses.find_one({"id": license_id}, {"_id": 0})
+        valid = await _valid(doc)
+        if valid:
+            return valid
+
+    if not customer_id:
         return None
 
     docs = await db.commercial_licenses.find(
-        {"$or": clauses, "status": {"$in": ["active", "trial"]}},
+        {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
         {"_id": 0},
     ).sort("issued_at", -1).limit(20).to_list(20)
-    now = datetime.now(timezone.utc)
     for doc in docs:
-        expires = _aware(doc.get("expires_at"))
-        if not expires or expires > now:
-            return doc
+        valid = await _valid(doc)
+        if valid:
+            return valid
     return None
 
 
@@ -129,10 +138,6 @@ def install() -> None:
     if getattr(_dependencies, "_commercial_entitlement_patch_installed", False):
         return
 
-    # Clone the original function object so replacing its code does not make
-    # the wrapper recursively call itself. Existing Depends(get_current_user)
-    # references keep pointing to the same function object, now with the
-    # commercial hydration logic in its code.
     base = types.FunctionType(
         current.__code__,
         current.__globals__,
@@ -142,10 +147,6 @@ def install() -> None:
     )
     base.__kwdefaults__ = current.__kwdefaults__
 
-    # The code object below is transplanted onto the existing dependency
-    # function, so its global namespace is the namespace of that destination
-    # function. Publish the helpers directly into that namespace rather than
-    # relying on attribute lookup through the imported module object.
     target_globals = current.__globals__
     target_globals["_commercial_entitlement_base_get_current_user"] = base
     target_globals["_commercial_entitlement_hydrate"] = _hydrate
@@ -156,14 +157,8 @@ def install() -> None:
         try:
             return await _commercial_entitlement_hydrate(user)
         except Exception:
-            # Do not let entitlement hydration turn /auth/me into a 500. The
-            # user still reaches the normal authentication path, while the
-            # commercial guard remains responsible for denying unlicensed API
-            # access.
             return user
 
-    # Execute wrapper code in backend.dependencies globals so all references
-    # resolve from the same module namespace as the original auth function.
     current.__code__ = _patched_get_current_user.__code__
     current.__kwdefaults__ = _patched_get_current_user.__kwdefaults__
 
