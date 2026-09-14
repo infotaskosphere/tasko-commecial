@@ -40,6 +40,29 @@ export const PAGE_MATRIX = Object.freeze([
 
   // Finix
   ["finix", "can_view_accounting_reports", "/finix-dashboard"],
+
+  // Finix legacy screens are real routes, but they are not separate
+  // commercial catalog features. Keep them mapped to the Finix module with
+  // no page flag so a module purchase can never make them visible/accessible.
+  ["finix", null, "/accounting-reports"],
+  ["finix", null, "/zero-touch-entry"],
+  ["finix", null, "/gst-portal-sync"],
+  ["finix", null, "/accounting-integrity"],
+  ["finix", null, "/day-book"],
+  ["finix", null, "/cash-bank-book"],
+  ["finix", null, "/cash-flow"],
+  ["finix", null, "/outstanding-report"],
+  ["finix", null, "/bank-reconciliation"],
+  ["finix", null, "/depreciation"],
+  ["finix", null, "/tds-tcs"],
+  ["finix", null, "/financial-ratios"],
+  ["finix", null, "/comparative-report"],
+  ["finix", null, "/yearly-report"],
+  ["finix", null, "/opening-balances"],
+  ["finix", null, "/accounting-audit-trail"],
+  ["finix", null, "/bulk-import"],
+  ["finix", null, "/due-dates"],
+  ["finix", null, "/import-invoices"],
   ["finix", "can_view_sale", "/invoicing"],
   ["finix", "can_view_purchase", "/purchase"],
   ["finix", "can_view_bank", "/bank-accounts"],
@@ -125,7 +148,12 @@ export function normalizedSelectedFeatures(user) {
 }
 
 export function isCommercialTenant(user) {
+  // In the licensee login flow company_id is established before the optional
+  // license metadata is hydrated. Treat that tenant identity as commercial so
+  // the first render cannot fall back to role=admin permissions and briefly
+  // expose unlicensed pages. Platform Owner is explicitly excluded above.
   return Boolean(user) && !isPlatformOwner(user) && Boolean(
+    user.company_id ||
     user.license_id || user.commercial_customer_id ||
     (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) ||
     user.company?.commercial_customer_id || user.company?.license_id
