@@ -185,12 +185,50 @@ def _licensed_module(module: str, license_doc: dict) -> bool:
     return module in resolve_license_modules(license_doc)
 
 
-def _permission_flag(user: User, flag: str, license_doc: dict) -> bool:
+def _selected_license_features(license_doc: dict, module: str) -> set[str]:
+    """Return the exact page flags selected in the active commercial license.
+
+    The license document is the commercial source of truth. Accept canonical
+    module ids plus legacy aliases so a historical license cannot drift from the
+    permission matrix merely because its module key was stored differently.
+    """
+    raw = license_doc.get("selected_features")
+    if not isinstance(raw, dict):
+        return set()
+    values = raw.get(module)
+    if values is None:
+        aliases = {
+            "taskosphere": {"taskosphere", "tasks"},
+            "finix": {"finix", "invoicing", "accounting"},
+            "compliance": {"compliance"},
+            "records": {"records"},
+            "proposals": {"proposals", "client_proposals", "client-proposals"},
+            "people_matrix": {"people_matrix", "people-matrix", "hrms", "peoplematrix"},
+        }.get(module, {module})
+        for raw_key, candidate in raw.items():
+            key = str(raw_key).strip().lower().replace("-", "_")
+            if key in {str(alias).replace("-", "_") for alias in aliases}:
+                values = candidate
+                break
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    return {str(flag).strip() for flag in values}
+
+
+def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[str] = None) -> bool:
+    # The active commercial license is the hard ceiling for every role.
+    # Company admins receive all explicitly selected pages; regular licensee
+    # users must also retain their own internal page permission.
+    if module is not None:
+        if flag not in _selected_license_features(license_doc, module):
+            return False
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
     if not isinstance(permissions, dict):
         return False
+    if str(getattr(user, "role", "")).lower() == "admin":
+        return True
     return bool(permissions.get(flag, False))
 
 
@@ -214,7 +252,7 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
         feature_module, feature_flag = feature
         if not _licensed_module(feature_module, commercial):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_module} module.")
-        if not _permission_flag(user, feature_flag, commercial):
+        if not _permission_flag(user, feature_flag, commercial, feature_module):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_flag} feature.")
     elif module:
         # The route belongs to a commercially licensed module but has no page
