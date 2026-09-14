@@ -51,10 +51,31 @@ MAX_FILE_BYTES = 15 * 1024 * 1024  # 15 MB — statements can run to many pages
 
 
 def _perm_view_bank(user: User) -> bool:
-    if user.role == "admin":
+    if str(user.role or "").strip().lower() == "admin":
         return True
     perms = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
     return bool(perms.get("can_view_bank"))
+
+
+def _perm_use_bank_picker(user: User) -> bool:
+    """Allow the Master Data bank-account picker without granting Bank-page access.
+
+    The picker is embedded in Admin → Master Data → Company Profile. It only
+    reads bank-account metadata so a master-data operator can link a company
+    to an existing bank account. Full Bank Accounts page access remains
+    protected by _perm_view_bank().
+    """
+    if str(user.role or "").strip().lower() == "admin":
+        return True
+    perms = (
+        user.permissions
+        if isinstance(user.permissions, dict)
+        else (user.permissions.model_dump() if user.permissions else {})
+    )
+    return bool(
+        perms.get("can_view_bank")
+        or perms.get("can_view_master_data")
+    )
 
 
 def _perm_match_bank(user: User) -> bool:
@@ -189,8 +210,8 @@ async def create_bank_account(payload: BankAccountCreate, current_user: User = D
 
 @router.get("/bank-accounts/picker-list")
 async def get_bank_accounts_picker(company_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
-    if not _perm_view_bank(current_user):
-        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    if not _perm_use_bank_picker(current_user):
+        raise HTTPException(403, "Access denied to the bank-account picker.")
     q = {"company_id": company_id} if company_id else {}
     accounts = await db.bank_accounts.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
     return accounts
