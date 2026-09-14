@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -190,11 +191,21 @@ async def _guarded_get_current_user(request, credentials):
     from fastapi import HTTPException
 
     original = dependencies.__dict__["_single_session_original_get_current_user"]
-    # The final commercial compatibility wrapper has the FastAPI dependency
-    # signature `(request, credentials)`. Preserve that signature when its
-    # code object is replaced, otherwise FastAPI passes `request` into a
-    # one-argument function and every authenticated endpoint returns HTTP 500.
-    user = await original(request, credentials)
+    # Keep the public dependency signature `(request, credentials)` so
+    # FastAPI injects both values, but call the wrapped function with the
+    # signature it actually had when this guard was installed. The auth
+    # compatibility layers can leave either a one-argument function
+    # `(credentials)` or a two-argument function `(request, credentials)`.
+    # Passing two arguments to the former makes every protected endpoint
+    # fail with an unhandled TypeError/HTTP 500.
+    accepts_request = dependencies.__dict__.get(
+        "_single_session_original_accepts_request",
+        True,
+    )
+    if accepts_request:
+        user = await original(request, credentials)
+    else:
+        user = await original(credentials)
     if await _session_was_replaced(user, credentials.credentials):
         raise HTTPException(
             status_code=401,
@@ -364,8 +375,22 @@ def _install_global_single_session_guard():
             current.__defaults__,
             current.__closure__,
         )
+        try:
+            original_parameters = inspect.signature(original).parameters.values()
+            original_accepts_request = any(
+                parameter.kind
+                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+                and parameter.name == "request"
+                for parameter in original_parameters
+            )
+        except (TypeError, ValueError):
+            # Keep the existing two-argument behavior if a dynamically
+            # generated dependency cannot be inspected.
+            original_accepts_request = True
+
         target_globals = current.__globals__
         target_globals["_single_session_original_get_current_user"] = original
+        target_globals["_single_session_original_accepts_request"] = original_accepts_request
         target_globals["dependencies"] = dependencies
         target_globals["_session_was_replaced"] = _session_was_replaced
         target_globals["SESSION_REPLACED_DETAIL"] = SESSION_REPLACED_DETAIL
