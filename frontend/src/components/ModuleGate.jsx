@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import { canAccessPath, firstAccessiblePath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath } from '@/lib/commercialPermissionMatrix';
+import { canAccessPath, firstAccessiblePath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 
 const MODULE_FLAGS = {
   taskosphere: 'can_access_taskosphere',
@@ -138,17 +138,22 @@ function ModuleGate({ module, children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (matrixIsPlatformOwner(user) || isPlatformOwner) return children;
 
-  const commercial = Boolean(
-    user.license_id || user.commercial_customer_id ||
-    (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) ||
-    user.company?.license_id || user.company?.commercial_customer_id
-  );
+  const commercial = isCommercialTenant(user);
 
-  if (commercial && moduleForPath(location.pathname)) {
-    if (!canAccessPath(user, location.pathname)) {
-      return <Navigate to={firstAccessiblePath(user, module)} replace />;
+  if (commercial) {
+    // A commercial route must be explicitly represented by the central matrix.
+    // Known-but-unlicensed routes are mapped with a null page flag and therefore
+    // fail closed; they must never inherit access from the parent module.
+    const routeModule = moduleForPath(location.pathname);
+    if (routeModule) {
+      if (!canAccessPath(user, location.pathname)) {
+        return <Navigate to={firstAccessiblePath(user, module)} replace />;
+      }
+      return children;
     }
-    return children;
+    // This component was invoked for a commercial module route that the matrix
+    // does not know about. Do not grant it merely because the module is licensed.
+    return <Navigate to={firstAccessiblePath(user, module)} replace />;
   }
 
   if (flag && !hasPermission(flag)) {
