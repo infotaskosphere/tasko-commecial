@@ -40,10 +40,6 @@ FEATURE_PREFIXES = {
         "can_reset_client_passwords": ("/client-portal-manager/password", "/client-portal-manager/reset"),
     },
     "finix": {
-        # The Finix Dashboard is a licensed page, but it legitimately needs
-        # these internal report endpoints to render its own cards/charts and
-        # integrity checks. They are implementation endpoints, not additional
-        # sidebar pages, so they inherit the Dashboard feature entitlement.
         "can_view_accounting_reports": (
             "/finix-dashboard",
             "/reports/profit-loss",
@@ -142,29 +138,63 @@ def feature_for_path(path: str, method: str = "GET") -> Optional[Tuple[str, str]
 
 
 async def _commercial_license(user: User) -> Optional[dict]:
+    """Resolve the one license that owns this tenant, never an arbitrary newer license.
+
+    A customer may have historical/renewed licenses. Using one ``$or`` query and
+    sorting by ``issued_at`` can select a different license than the one linked
+    to the logged-in tenant, which makes valid selected features appear missing
+    and produces false 403 responses. An explicit license link is authoritative;
+    customer-id lookup is only the fallback for legacy records without one.
+    """
     db = getattr(_dependencies, "_raw_db", _dependencies.db)
-    customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
-    license_id = str(getattr(user, "license_id", "") or "").strip()
-    company_id = str(getattr(user, "company_id", "") or "").strip()
-    clauses = []
-    if customer_id:
-        clauses.append({"customer_id": customer_id})
-    if license_id:
-        clauses.append({"id": license_id})
-    if company_id:
-        company = await db.companies.find_one({"id": company_id}, {"_id": 0, "commercial_customer_id": 1, "license_id": 1, "source": 1})
-        if company:
-            if company.get("commercial_customer_id"):
-                clauses.append({"customer_id": str(company["commercial_customer_id"])})
-            if company.get("license_id"):
-                clauses.append({"id": str(company["license_id"])})
-    if not clauses:
-        return None
-    docs = await db.commercial_licenses.find({"$or": clauses, "status": {"$in": ["active", "trial"]}}, {"_id": 0}).sort("issued_at", -1).limit(10).to_list(10)
     from backend.licensing_api import _expiry_reason
+
+    async def _valid(doc: Optional[dict]) -> Optional[dict]:
+        if not doc or doc.get("status") not in {"active", "trial"}:
+            return None
+        if _expiry_reason(doc):
+            return None
+        return doc
+
+    user_license_id = str(getattr(user, "license_id", "") or "").strip()
+    if user_license_id:
+        doc = await db.commercial_licenses.find_one({"id": user_license_id}, {"_id": 0})
+        valid = await _valid(doc)
+        if valid:
+            return valid
+
+    company_id = str(getattr(user, "company_id", "") or "").strip()
+    company = None
+    if company_id:
+        company = await db.companies.find_one(
+            {"id": company_id},
+            {"_id": 0, "commercial_customer_id": 1, "license_id": 1, "source": 1},
+        )
+        company_license_id = str((company or {}).get("license_id") or "").strip()
+        if company_license_id:
+            doc = await db.commercial_licenses.find_one({"id": company_license_id}, {"_id": 0})
+            valid = await _valid(doc)
+            if valid:
+                return valid
+
+    customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
+    if not customer_id:
+        customer_id = str((company or {}).get("commercial_customer_id") or "").strip() if company_id else ""
+    if not customer_id and company_id:
+        # Legacy commercial company records may use company_id itself as the
+        # customer id. Only use this fallback when no explicit license link exists.
+        customer_id = company_id
+    if not customer_id:
+        return None
+
+    docs = await db.commercial_licenses.find(
+        {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
+        {"_id": 0},
+    ).sort("issued_at", -1).limit(20).to_list(20)
     for doc in docs:
-        if not _expiry_reason(doc):
-            return doc
+        valid = await _valid(doc)
+        if valid:
+            return valid
     return None
 
 
@@ -255,9 +285,6 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
         if not _permission_flag(user, feature_flag, commercial, feature_module):
             raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_flag} feature.")
     elif module:
-        # The route belongs to a commercially licensed module but has no page
-        # entitlement mapping. Fail closed instead of treating module purchase
-        # as implicit access to every page.
         raise HTTPException(status_code=403, detail=f"This company license does not include a selected page for {module}.")
 
     return user
