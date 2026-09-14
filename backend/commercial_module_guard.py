@@ -40,10 +40,18 @@ FEATURE_PREFIXES = {
         "can_reset_client_passwords": ("/client-portal-manager/password", "/client-portal-manager/reset"),
     },
     "finix": {
-        # This feature represents the Finix Dashboard only. Accounting Reports
-        # is intentionally not bundled with it: if no separate page feature is
-        # selected, /accounting-reports fails closed below.
-        "can_view_accounting_reports": ("/finix-dashboard",),
+        # The Finix Dashboard is a licensed page, but it legitimately needs
+        # these internal report endpoints to render its own cards/charts and
+        # integrity checks. They are implementation endpoints, not additional
+        # sidebar pages, so they inherit the Dashboard feature entitlement.
+        "can_view_accounting_reports": (
+            "/finix-dashboard",
+            "/reports/profit-loss",
+            "/reports/balance-sheet",
+            "/reports/trial-balance",
+            "/reports/validation-engine",
+            "/reports/finix-dashboard",
+        ),
         "can_view_sale": ("/invoicing", "/sales", "/invoices"),
         "can_view_purchase": ("/purchase", "/purchase-invoices"),
         "can_view_bank": ("/bank-accounts", "/cash-bank-book", "/cash-flow"),
