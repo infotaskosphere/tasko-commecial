@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import api from "../lib/api";
 import { autoAuthenticateAgent, resetAgentAuth } from "../lib/agentAutoAuth";
+import { isPlatformOwner as matrixIsPlatformOwner, hasEffectivePermission } from "../lib/commercialPermissionMatrix";
 
 const AuthContext = createContext(null);
 export const useAuth = () => { const context = useContext(AuthContext); if (!context) throw new Error("useAuth must be used within an AuthProvider"); return context; };
@@ -23,11 +24,14 @@ export const AuthProvider = ({ children }) => {
   const normalizePermissions = (permissions) => permissions && typeof permissions === "object" && !Array.isArray(permissions) ? permissions : {};
   const normalizeTenantContext = (userData) => {
     if (!userData || typeof userData !== "object") return userData;
-    const licensedModules = Array.isArray(userData.licensed_modules)
-      ? userData.licensed_modules
-      : (Array.isArray(userData.modules)
-          ? userData.modules
-          : (Array.isArray(userData.company?.licensed_modules) ? userData.company.licensed_modules : null));
+    const licensedModules = [
+      userData.licensed_modules,
+      userData.modules,
+      userData.company?.licensed_modules,
+      userData.company?.modules,
+      userData.subscription?.modules,
+      userData.license?.modules,
+    ].find((value) => Array.isArray(value) && value.length > 0) || null;
     return {
       ...userData,
       permissions: normalizePermissions(userData.permissions),
@@ -248,7 +252,14 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const getLicensedModules = useCallback((candidate = user) => {
-    const raw = candidate?.licensed_modules || candidate?.modules || candidate?.company?.licensed_modules || candidate?.company?.modules || candidate?.subscription?.modules || candidate?.license?.modules;
+    const raw = [
+      candidate?.licensed_modules,
+      candidate?.modules,
+      candidate?.company?.licensed_modules,
+      candidate?.company?.modules,
+      candidate?.subscription?.modules,
+      candidate?.license?.modules,
+    ].find((value) => Array.isArray(value) && value.length > 0);
     if (Array.isArray(raw) && raw.length > 0) {
       return raw.map((m) => String(m).trim().toLowerCase().replace(/-/g, "_"));
     }
@@ -296,40 +307,7 @@ export const AuthProvider = ({ children }) => {
   const isCommercialAdmin = (candidate = user) => String(candidate?.role || "").toLowerCase() === "admin" && !!candidate?.company_id && String(candidate?.email || "").trim().toLowerCase() !== PLATFORM_OWNER_EMAIL;
   const hasPermission = (permission) => {
     if (!user) return false;
-
-    // Commercial module access: strictly gated by license granted
-    const moduleAliases = MODULE_FLAG_TO_KEYS[permission];
-    if (moduleAliases) {
-      // 1. If explicit licensed_modules exist on the user or company, check membership
-      const licensedList = getLicensedModules(user);
-      if (Array.isArray(licensedList)) {
-        const isModuleLicensed = licensedList.some((mod) =>
-          moduleAliases.includes(mod) ||
-          moduleAliases.includes(mod.replace(/-/g, "_")) ||
-          (mod === "tasks" && permission === "can_access_taskosphere") ||
-          ((mod === "invoicing" || mod === "accounting") && permission === "can_access_finix") ||
-          (mod === "hrms" && permission === "can_access_people_matrix")
-        );
-        if (!isModuleLicensed) return false;
-      }
-
-      // 2. Check explicit permission boolean on user.permissions
-      if (user.permissions && typeof user.permissions[permission] === "boolean") {
-        return user.permissions[permission];
-      }
-
-      // 3. Platform owner without company context has full access
-      if (isPlatformOwner && !user?.company_id && !licensedList) return true;
-
-      // 4. Default to false if not granted
-      return false;
-    }
-
-    // Platform owner remains unrestricted for non-module platform operations
-    if (isPlatformOwner && !user?.company_id) return true;
-    if (isCommercialAdmin(user)) return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
-    if (user.role?.toLowerCase() === "admin") return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : true;
-    return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
+    return hasEffectivePermission(user, permission);
   };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
   const canAccessUser = (permissionKey, targetUserId) => {
