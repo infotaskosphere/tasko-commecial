@@ -12,7 +12,7 @@ import { toast } from "sonner";
 const spring = { type: "spring", stiffness: 280, damping: 26, mass: 0.9 };
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, refreshUser } = useAuth();
   const [config, setConfig] = useState(null);
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
@@ -65,6 +65,15 @@ export default function Login() {
       if (keepSignedIn) localStorage.setItem("taskosphere_keep_signed_in", "true"); else localStorage.removeItem("taskosphere_keep_signed_in");
       const authenticated = login(response.data, keepSignedIn);
       if (!authenticated) throw new Error("Invalid login response");
+
+      // A commercial licensee login response can contain the role's legacy
+      // admin permissions before the authoritative license entitlement
+      // hydration has run. Refresh /auth/me before allowing the authenticated
+      // layout to render so the sidebar and route guards never briefly expose
+      // unlicensed Finix/other module pages and trigger their 403 APIs.
+      const authoritativeUser = await refreshUser();
+      if (!authoritativeUser) throw new Error("Unable to load licensed access");
+
       try { window.postMessage({ type: "SET_TOKEN", token: response.data.access_token }, window.location.origin); } catch {}
       toast.success("Welcome back!");
       // Do not call navigate() here: setting the authenticated user above causes
