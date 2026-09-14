@@ -23,14 +23,11 @@ export const AuthProvider = ({ children }) => {
   const normalizePermissions = (permissions) => permissions && typeof permissions === "object" && !Array.isArray(permissions) ? permissions : {};
   const normalizeTenantContext = (userData) => {
     if (!userData || typeof userData !== "object") return userData;
-    const licensedModules = [
-      userData.licensed_modules,
-      userData.modules,
-      userData.company?.licensed_modules,
-      userData.company?.modules,
-      userData.subscription?.modules,
-      userData.license?.modules,
-    ].find((value) => Array.isArray(value) && value.length > 0) || null;
+    const licensedModules = Array.isArray(userData.licensed_modules)
+      ? userData.licensed_modules
+      : (Array.isArray(userData.modules)
+          ? userData.modules
+          : (Array.isArray(userData.company?.licensed_modules) ? userData.company.licensed_modules : null));
     return {
       ...userData,
       permissions: normalizePermissions(userData.permissions),
@@ -251,14 +248,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const getLicensedModules = useCallback((candidate = user) => {
-    const raw = [
-      candidate?.licensed_modules,
-      candidate?.modules,
-      candidate?.company?.licensed_modules,
-      candidate?.company?.modules,
-      candidate?.subscription?.modules,
-      candidate?.license?.modules,
-    ].find((value) => Array.isArray(value) && value.length > 0);
+    const raw = candidate?.licensed_modules || candidate?.modules || candidate?.company?.licensed_modules || candidate?.company?.modules || candidate?.subscription?.modules || candidate?.license?.modules;
     if (Array.isArray(raw) && raw.length > 0) {
       return raw.map((m) => String(m).trim().toLowerCase().replace(/-/g, "_"));
     }
@@ -307,47 +297,39 @@ export const AuthProvider = ({ children }) => {
   const hasPermission = (permission) => {
     if (!user) return false;
 
-    const selectedFeatures = user?.selected_features && typeof user.selected_features === "object"
-      ? user.selected_features
-      : null;
-    const licensedList = getLicensedModules(user);
-    const isCommercialTenant = !isPlatformOwner && !!user?.company_id;
-
-    // Commercial module switches are derived from the license itself. Do not
-    // let a stale/legacy permissions object hide a module that is explicitly
-    // licensed, especially after a hard refresh.
+    // Commercial module access: strictly gated by license granted
     const moduleAliases = MODULE_FLAG_TO_KEYS[permission];
     if (moduleAliases) {
+      // 1. If explicit licensed_modules exist on the user or company, check membership
+      const licensedList = getLicensedModules(user);
       if (Array.isArray(licensedList)) {
-        return licensedList.some((mod) => moduleAliases.includes(mod));
+        const isModuleLicensed = licensedList.some((mod) =>
+          moduleAliases.includes(mod) ||
+          moduleAliases.includes(mod.replace(/-/g, "_")) ||
+          (mod === "tasks" && permission === "can_access_taskosphere") ||
+          ((mod === "invoicing" || mod === "accounting") && permission === "can_access_finix") ||
+          (mod === "hrms" && permission === "can_access_people_matrix")
+        );
+        if (!isModuleLicensed) return false;
       }
-      if (selectedFeatures) {
-        return Object.entries(selectedFeatures).some(([rawKey, flags]) => {
-          const key = String(rawKey).trim().toLowerCase().replace(/-/g, "_");
-          const aliases = moduleAliases.map((alias) => String(alias).replace(/-/g, "_"));
-          return aliases.includes(key) && Array.isArray(flags) && flags.length > 0;
-        });
+
+      // 2. Check explicit permission boolean on user.permissions
+      if (user.permissions && typeof user.permissions[permission] === "boolean") {
+        return user.permissions[permission];
       }
-      if (typeof user.permissions?.[permission] === "boolean") return user.permissions[permission];
-      return isPlatformOwner && !user?.company_id;
+
+      // 3. Platform owner without company context has full access
+      if (isPlatformOwner && !user?.company_id && !licensedList) return true;
+
+      // 4. Default to false if not granted
+      return false;
     }
 
-    // For commercial tenants, selected_features is the page-level source of
-    // truth. This prevents role=admin defaults or stale cached permissions
-    // from reopening unselected pages, and prevents stale false booleans from
-    // hiding pages that the Platform Owner has selected in the active license.
-    if (isCommercialTenant && selectedFeatures) {
-      const pageModuleEntries = Object.entries(selectedFeatures);
-      const selectedPage = pageModuleEntries.some(([, flags]) =>
-        Array.isArray(flags) && flags.some((flag) => String(flag).trim() === permission)
-      );
-      return selectedPage;
-    }
-
+    // Platform owner remains unrestricted for non-module platform operations
     if (isPlatformOwner && !user?.company_id) return true;
-    if (isCommercialTenant) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : false;
-    if (user.role?.toLowerCase() === "admin") return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : true;
-    return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : false;
+    if (isCommercialAdmin(user)) return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
+    if (user.role?.toLowerCase() === "admin") return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : true;
+    return typeof (user.permissions || {})[permission] === "boolean" ? user.permissions[permission] : false;
   };
   const hasAnyPermission = (...permissionList) => permissionList.some((permission) => hasPermission(permission));
   const canAccessUser = (permissionKey, targetUserId) => {
