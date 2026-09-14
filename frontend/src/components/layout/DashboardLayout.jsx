@@ -118,6 +118,56 @@ const SECTION_ORDER = ['core', 'accounts', 'compliance', 'records', 'proposals',
 const GROUP_MODULE_FLAG = { core: 'can_access_taskosphere', accounts: 'can_access_finix', compliance: 'can_access_compliance', records: 'can_access_records', proposals: 'can_access_proposals', 'people-matrix': 'can_access_people_matrix' };
 const ITEM_GROUP_ID = new Map();
 NAV_GROUPS.forEach((group) => group.items.forEach((item) => ITEM_GROUP_ID.set(item.path, group.id)));
+// Commercial licenses select pages independently. These mappings mirror the
+// catalog's page flags so a licensed module never makes unrelated legacy
+// screens visible merely because the parent module is enabled.
+const COMMERCIAL_PAGE_FLAGS_BY_PATH = {
+  '/dashboard': 'can_view_dashboard',
+  '/tasks': 'can_view_tasks',
+  '/todos': 'can_view_todo_dashboard',
+  '/attendance': 'can_view_attendance',
+  '/reminders': 'can_view_reminders',
+  '/action-center': 'can_view_action_center',
+  '/visits': 'can_view_client_visits',
+  '/ai-reader': 'can_view_ai_document_reader',
+  '/client-portal-manager': 'can_view_client_portal',
+  '/compliance-dashboard': 'can_view_compliance',
+  '/compliance': 'can_view_compliance',
+  '/gst-reconciliation': 'can_view_gst_reconciliation',
+  '/trademark-sphere': 'can_view_trademark_sphere',
+  '/roc-sphere': 'can_view_roc_sphere',
+  '/mis-report': 'can_view_mis_report',
+  '/salary-slips': 'can_view_salary_slips',
+  '/records-dashboard': 'can_view_documents',
+  '/dsc': 'can_view_all_dsc',
+  '/documents': 'can_view_documents',
+  '/clients': 'can_view_all_clients',
+  '/client-approvals': 'can_approve_clients',
+  '/client-proposals-dashboard': 'can_view_all_leads',
+  '/leads': 'can_view_all_leads',
+  '/quotations': 'can_create_quotations',
+  '/client-discussion': 'can_view_client_discussion',
+  '/finix-dashboard': 'can_view_accounting_reports',
+  '/invoicing': 'can_view_sale',
+  '/purchase': 'can_view_purchase',
+  '/bank-accounts': 'can_view_bank',
+  '/journal-entries': 'can_view_journal_entries',
+  '/chart-of-accounts': 'can_view_chart_of_accounts',
+  '/people-matrix': 'can_view_user_page',
+  '/users': 'can_view_user_page',
+  '/leave': 'can_view_leave',
+  '/payroll': 'can_view_payroll',
+  '/hr': 'can_view_hr',
+  '/recruitment': 'can_view_recruitment',
+};
+
+const COMMERCIAL_UNLICENSED_LEGACY_FINIX_PATHS = new Set([
+  '/accounting-reports', '/day-book', '/gst-portal-sync', '/accounting-integrity',
+  '/zero-touch-entry', '/cash-bank-book', '/cash-flow', '/outstanding-report',
+  '/bank-reconciliation', '/depreciation', '/tds-tcs', '/financial-ratios',
+  '/comparative-report', '/yearly-report', '/opening-balances',
+  '/accounting-audit-trail', '/bulk-import', '/due-dates', '/import-invoices',
+]);
 const RIGHT_ALIGNED_SECTIONS = ['admin', 'settings'];
 const LEFT_SECTIONS = SECTION_ORDER.filter((id) => !RIGHT_ALIGNED_SECTIONS.includes(id));
 const RIGHT_SECTIONS = SECTION_ORDER.filter((id) => RIGHT_ALIGNED_SECTIONS.includes(id));
@@ -196,8 +246,21 @@ const DashboardLayout = ({ children }) => {
     const groupId = ITEM_GROUP_ID.get(item.path);
     const moduleFlag = GROUP_MODULE_FLAG[groupId];
     if (moduleFlag && !hasPermission(moduleFlag)) return false;
+
+    // Once a commercial tenant is authenticated, page visibility is driven by
+    // the exact licensed feature, not by role=admin or module purchase alone.
+    const isCommercialTenant = !isPlatformOwner && Boolean(
+      user?.license_id || user?.commercial_customer_id ||
+      (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0)
+    );
+    if (isCommercialTenant) {
+      const featureFlag = COMMERCIAL_PAGE_FLAGS_BY_PATH[item.path];
+      if (featureFlag && !hasPermission(featureFlag)) return false;
+      if (!featureFlag && groupId === 'accounts' && COMMERCIAL_UNLICENSED_LEGACY_FINIX_PATHS.has(item.path)) return false;
+    }
+
     const permission = item.permission;
-    if (!permission) return true;
+    if (!permission) return !isCommercialTenant || Boolean(COMMERCIAL_PAGE_FLAGS_BY_PATH[item.path]);
     if (Array.isArray(permission)) return permission.some(p => hasPermission(p));
     return hasPermission(permission);
   };
