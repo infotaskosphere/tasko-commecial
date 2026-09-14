@@ -1676,10 +1676,13 @@ async def get_companies(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Full company master records. Auth-only (org-wide master data) so every
-    module that renders company name/address/GST/bank/logo gets the same data.
+    Full company master records, scoped to companies created by the current user.
+    Company master records are private creator-owned data; cross-user visibility
+    is not permitted.
     """
-    companies = await db.companies.find({}, {"_id": 0}).sort("name", 1).to_list(500)
+    companies = await db.companies.find(
+        {"created_by": str(current_user.id)}, {"_id": 0}
+    ).sort("name", 1).to_list(500)
     for c in companies:
         await _hydrate_company_bank(c)
         _scrub_company(c, current_user)
@@ -1692,8 +1695,8 @@ async def list_companies(current_user: User = Depends(get_current_user)):
     Company list for cross-module dropdowns and document rendering (Users,
     Attendance, Reports, Invoicing, Trademark Sphere, Bank Accounts ...).
 
-    Requires authentication only and is NOT scoped by `created_by`, because
-    companies are organization-wide master data managed in Admin → Master Data.
+    Requires authentication only and is strictly scoped by `created_by` so each
+    user can access only companies they created.
 
     Returns the display fields pages actually need (previously only
     id/name/gstin/has_gst, which made some pages show blank
@@ -1728,7 +1731,9 @@ async def list_companies(current_user: User = Depends(get_current_user)):
         "tm_logo_base64": 1,
         "signature_base64": 1,
     }
-    companies = await db.companies.find({}, projection).sort("name", 1).to_list(500)
+    companies = await db.companies.find(
+        {"created_by": str(current_user.id)}, projection
+    ).sort("name", 1).to_list(500)
     for c in companies:
         await _hydrate_company_bank(c)
     return companies
@@ -1737,7 +1742,9 @@ async def list_companies(current_user: User = Depends(get_current_user)):
 @router.get("/companies/{company_id}")
 async def get_company(company_id: str, current_user: User = Depends(get_current_user)):
     """Single company record — used by pages that only know a company_id."""
-    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    company = await db.companies.find_one(
+        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
+    )
     if not company:
         raise HTTPException(404, "Company not found")
     await _hydrate_company_bank(company)
@@ -1750,7 +1757,9 @@ async def update_company(
     data: dict,
     current_user: User = Depends(require_company_manage),
 ):
-    existing = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    existing = await db.companies.find_one(
+        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
+    )
     if not existing:
         raise HTTPException(404, "Company not found")
     allowed = [
@@ -1799,8 +1808,12 @@ async def update_company(
         if resolved:
             update["state"] = resolved.get("state") or ""
             update["state_code"] = resolved.get("state_code") or ""
-    await db.companies.update_one({"id": company_id}, {"$set": update})
-    updated = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    await db.companies.update_one(
+        {"id": company_id, "created_by": str(current_user.id)}, {"$set": update}
+    )
+    updated = await db.companies.find_one(
+        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
+    )
     # Keep the Bank Accounts page in sync: mirror the company's primary
     # bank details into the bank_accounts collection whenever they change
     # here (Invoice/Quotation settings both save through this endpoint).
@@ -1817,10 +1830,12 @@ async def delete_company(
     company_id: str,
     current_user: User = Depends(require_company_manage),
 ):
-    existing = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    existing = await db.companies.find_one(
+        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
+    )
     if not existing:
         raise HTTPException(404, "Company not found")
-    await db.companies.delete_one({"id": company_id})
+    await db.companies.delete_one({"id": company_id, "created_by": str(current_user.id)})
     return {"message": "Company deleted"}
 
 
