@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.dependencies import db, get_current_user
 from backend.models import User, MODULE_HIERARCHY
 from backend.platform_owner import is_platform_owner
-from backend.commercial_onboarding import MODULE_IDS, normalize_dashboard_feature_selection
+from backend.commercial_onboarding import MODULE_IDS
+from backend.commercial_dashboard_permissions import normalize_dashboard_feature_selection
 
 router = APIRouter(prefix="/commercial-master-data", tags=["commercial-customer-directory"])
 
