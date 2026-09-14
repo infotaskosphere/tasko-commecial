@@ -33,7 +33,111 @@ function verifyPassword(password, record) {
   return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 }
 
-function publicUser(user, company, subscription) {
+const COMMERCIAL_MODULE_ALIASES = {
+  tasks: "taskosphere",
+  taskosphere: "taskosphere",
+  invoicing: "finix",
+  accounting: "finix",
+  finix: "finix",
+  hrms: "people_matrix",
+  people_matrix: "people_matrix",
+  "people-matrix": "people_matrix",
+  compliance: "compliance",
+  records: "records",
+  proposals: "proposals",
+  client_proposals: "proposals",
+  "client-proposals": "proposals"
+};
+
+const COMMERCIAL_MODULE_FLAGS = {
+  taskosphere: "can_access_taskosphere",
+  finix: "can_access_finix",
+  compliance: "can_access_compliance",
+  records: "can_access_records",
+  proposals: "can_access_proposals",
+  people_matrix: "can_access_people_matrix"
+};
+
+const COMMERCIAL_PAGE_FLAGS = {
+  taskosphere: [
+    "can_view_dashboard", "can_view_tasks", "can_view_todo_dashboard",
+    "can_view_attendance", "can_view_reminders", "can_view_action_center",
+    "can_view_client_visits", "can_view_ai_document_reader",
+    "can_view_client_portal", "can_reset_client_passwords"
+  ],
+  finix: [
+    "can_view_accounting_reports", "can_view_sale", "can_view_purchase",
+    "can_view_bank", "can_view_chart_of_accounts", "can_manage_chart_of_accounts",
+    "can_view_journal_entries", "can_post_journal_entries", "can_match_bank"
+  ],
+  compliance: [
+    "can_view_compliance", "can_manage_compliance", "can_view_gst_reconciliation",
+    "can_view_trademark_sphere", "can_view_mis_report", "can_manage_mis_report",
+    "can_view_salary_slips", "can_manage_salary_slips", "can_view_roc_sphere",
+    "can_manage_roc_sphere"
+  ],
+  records: [
+    "can_view_all_dsc", "can_view_documents", "can_view_passwords",
+    "can_edit_passwords", "can_view_all_clients", "can_edit_clients",
+    "can_approve_clients", "can_approve_whatsapp_wishes", "can_approve_email_wishes"
+  ],
+  proposals: [
+    "can_view_all_leads", "can_create_quotations", "can_view_client_discussion",
+    "can_manage_client_discussion"
+  ],
+  people_matrix: [
+    "can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll",
+    "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment",
+    "can_manage_recruitment", "can_view_performance", "can_manage_performance"
+  ]
+};
+
+function normalizeCommercialModules(values) {
+  const result = [];
+  for (const value of Array.isArray(values) ? values : []) {
+    const key = String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+    const moduleId = COMMERCIAL_MODULE_ALIASES[key];
+    if (moduleId && !result.includes(moduleId)) result.push(moduleId);
+  }
+  return result;
+}
+
+function commercialEntitlements(user, licenseDoc) {
+  if (!licenseDoc) return null;
+
+  const modules = normalizeCommercialModules(licenseDoc.modules || licenseDoc.licensed_modules);
+  const rawSelected = licenseDoc.selected_features;
+  const selectedFeatures = rawSelected && typeof rawSelected === "object" && !Array.isArray(rawSelected) ? rawSelected : {};
+  const permissions = { ...(user.permissions || {}) };
+
+  // The active commercial license is the hard ceiling for the tenant. A
+  // customer-admin role never restores an unselected module/page.
+  for (const [moduleId, moduleFlag] of Object.entries(COMMERCIAL_MODULE_FLAGS)) {
+    const moduleAllowed = modules.includes(moduleId);
+    permissions[moduleFlag] = moduleAllowed;
+    const selected = new Set(Array.isArray(selectedFeatures[moduleId]) ? selectedFeatures[moduleId].map((flag) => String(flag).trim()) : []);
+    for (const pageFlag of COMMERCIAL_PAGE_FLAGS[moduleId] || []) {
+      permissions[pageFlag] = Boolean(moduleAllowed && selected.has(pageFlag));
+    }
+  }
+
+  // Legacy screens still inspect these aliases. Keep them derived from the
+  // same commercial page selections so old admin checks cannot reopen pages.
+  permissions.can_manage_invoices = Boolean(modules.includes("finix") && Array.isArray(selectedFeatures.finix) && selectedFeatures.finix.includes("can_view_sale"));
+  permissions.can_create_quotations = Boolean(modules.includes("proposals") && Array.isArray(selectedFeatures.proposals) && selectedFeatures.proposals.includes("can_create_quotations"));
+  permissions.can_view_clients = Boolean(modules.includes("records") && Array.isArray(selectedFeatures.records) && selectedFeatures.records.includes("can_view_all_clients"));
+
+  return {
+    permissions,
+    licensed_modules: modules,
+    selected_features: selectedFeatures,
+    license_id: licenseDoc.id || user.license_id || null,
+    license_key: licenseDoc.license_key || user.license_key || null
+  };
+}
+
+function publicUser(user, company, subscription, licenseDoc = null) {
+  const commercial = commercialEntitlements(user, licenseDoc);
   return {
     id: String(user.id || user._id),
     email: user.email,
@@ -42,9 +146,20 @@ function publicUser(user, company, subscription) {
     phone: user.phone || null,
     birthday: user.birthday || null,
     profile_picture: user.profile_picture || null,
-    permissions: user.permissions || {},
+    permissions: commercial ? commercial.permissions : (user.permissions || {}),
     company_id: String(user.company_id),
-    company: company ? { id: String(company._id), name: company.name, slug: company.slug, status: company.status } : null,
+    company: company ? {
+      id: String(company._id),
+      name: company.name,
+      slug: company.slug,
+      status: company.status,
+      licensed_modules: commercial?.licensed_modules || company.licensed_modules || [],
+      selected_features: commercial?.selected_features || company.selected_features || {}
+    } : null,
+    licensed_modules: commercial?.licensed_modules || user.licensed_modules || subscription?.modules || [],
+    selected_features: commercial?.selected_features || user.selected_features || company?.selected_features || {},
+    license_id: commercial?.license_id || user.license_id || company?.license_id || null,
+    license_key: commercial?.license_key || user.license_key || company?.license_key || null,
     subscription: subscription ? {
       package_id: subscription.package_id,
       status: subscription.status,
@@ -55,6 +170,28 @@ function publicUser(user, company, subscription) {
       expires_at: subscription.expires_at
     } : null
   };
+}
+
+async function findActiveCommercialLicense(database, user, company) {
+  const clauses = [];
+  if (user?.license_id) clauses.push({ id: String(user.license_id) });
+  if (company?.license_id) clauses.push({ id: String(company.license_id) });
+  if (user?.commercial_customer_id) clauses.push({ customer_id: String(user.commercial_customer_id) });
+  if (company?.commercial_customer_id) clauses.push({ customer_id: String(company.commercial_customer_id) });
+  if (!clauses.length) return null;
+
+  const candidates = await database.collection("commercial_licenses")
+    .find({ $or: clauses, status: { $in: ["active", "trial"] } })
+    .sort({ issued_at: -1 })
+    .limit(10)
+    .toArray();
+
+  const now = Date.now();
+  return candidates.find((license) => {
+    if (!license.expires_at) return true;
+    const expiry = new Date(license.expires_at).getTime();
+    return Number.isNaN(expiry) || expiry >= now;
+  }) || null;
 }
 
 async function getDb() {
@@ -194,8 +331,9 @@ async function findSession(token) {
   const company = await database.collection("companies").findOne({ _id: user.company_id, status: "active" });
   if (!company) return null;
   const subscription = await database.collection("subscriptions").findOne({ company_id: user.company_id });
+  const commercialLicense = await findActiveCommercialLicense(database, user, company);
   await database.collection("sessions").updateOne({ _id: session._id }, { $set: { last_seen_at: new Date() } });
-  return { session, user, company, subscription };
+  return { session, user, company, subscription, commercialLicense };
 }
 
 async function login(email, password) {
@@ -206,6 +344,7 @@ async function login(email, password) {
   const company = await database.collection("companies").findOne({ _id: user.company_id, status: "active" });
   const subscription = await database.collection("subscriptions").findOne({ company_id: user.company_id });
   if (!company || !subscription || !["trial", "active"].includes(subscription.status) || new Date(subscription.expires_at) <= new Date()) return null;
+  const commercialLicense = await findActiveCommercialLicense(database, user, company);
 
   const token = crypto.randomBytes(32).toString("base64url");
   const now = new Date();
@@ -217,7 +356,7 @@ async function login(email, password) {
     created_at: now,
     last_seen_at: now
   });
-  return { access_token: token, user: publicUser(user, company, subscription) };
+  return { access_token: token, user: publicUser(user, company, subscription, commercialLicense) };
 }
 
 async function logout(token) {
@@ -264,7 +403,7 @@ function attach(app) {
         return sendJson(res, 200, result);
       }
       if (req.path === "/api/auth/me" && req.method === "GET") {
-        return sendJson(res, 200, publicUser(req.saas.user, req.saas.company, req.saas.subscription));
+        return sendJson(res, 200, publicUser(req.saas.user, req.saas.company, req.saas.subscription, req.saas.commercialLicense));
       }
       if (req.path === "/api/auth/logout" && req.method === "POST") {
         await logout(bearerToken(req));
