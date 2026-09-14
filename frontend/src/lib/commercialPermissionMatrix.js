@@ -21,11 +21,7 @@ export const MODULES = Object.freeze({
   people_matrix: { flag: "can_access_people_matrix", aliases: ["people_matrix", "hrms", "peoplematrix"], landing: "/people-matrix" },
 });
 
-// This table is deliberately path-based. It is the bridge between the
-// DashboardLayout/AppRoutes URLs and the exact feature flags stored by the
-// Commercial Console. Prefix matching is longest-match-first.
 export const PAGE_MATRIX = Object.freeze([
-  // Taskosphere
   ["taskosphere", "can_view_dashboard", "/dashboard"],
   ["taskosphere", "can_view_tasks", "/tasks"],
   ["taskosphere", "can_view_todo_dashboard", "/todos"],
@@ -37,13 +33,7 @@ export const PAGE_MATRIX = Object.freeze([
   ["taskosphere", "can_view_client_portal", "/client-portal-manager"],
   ["taskosphere", "can_reset_client_passwords", "/client-portal-manager/password"],
   ["taskosphere", "can_reset_client_passwords", "/client-portal-manager/reset"],
-
-  // Finix
   ["finix", "can_view_accounting_reports", "/finix-dashboard"],
-
-  // Finix legacy screens are real routes, but they are not separate
-  // commercial catalog features. Keep them mapped to the Finix module with
-  // no page flag so a module purchase can never make them visible/accessible.
   ["finix", null, "/accounting-reports"],
   ["finix", null, "/zero-touch-entry"],
   ["finix", null, "/gst-portal-sync"],
@@ -71,8 +61,6 @@ export const PAGE_MATRIX = Object.freeze([
   ["finix", "can_view_journal_entries", "/journal-entries"],
   ["finix", "can_post_journal_entries", "/zero-touch-entry"],
   ["finix", "can_match_bank", "/bank-reconciliation"],
-
-  // Compliance
   ["compliance", "can_view_compliance", "/compliance-dashboard"],
   ["compliance", "can_view_compliance", "/compliance"],
   ["compliance", "can_view_gst_reconciliation", "/gst-reconciliation"],
@@ -80,8 +68,6 @@ export const PAGE_MATRIX = Object.freeze([
   ["compliance", "can_view_mis_report", "/mis-report"],
   ["compliance", "can_view_salary_slips", "/salary-slips"],
   ["compliance", "can_view_roc_sphere", "/roc-sphere"],
-
-  // Records
   ["records", "can_view_documents", "/records-dashboard"],
   ["records", "can_view_all_dsc", "/dsc"],
   ["records", "can_view_documents", "/documents"],
@@ -89,14 +75,10 @@ export const PAGE_MATRIX = Object.freeze([
   ["records", "can_view_passwords", "/passwords"],
   ["records", "can_approve_clients", "/client-approvals"],
   ["records", "can_approve_whatsapp_wishes", "/automation/approvals"],
-
-  // Client Proposals
   ["proposals", "can_view_all_leads", "/client-proposals-dashboard"],
   ["proposals", "can_view_all_leads", "/leads"],
   ["proposals", "can_create_quotations", "/quotations"],
   ["proposals", "can_view_client_discussion", "/client-discussion"],
-
-  // People Matrix
   ["people_matrix", "can_view_user_page", "/people-matrix"],
   ["people_matrix", "can_view_user_page", "/users"],
   ["people_matrix", "can_view_leave", "/leave"],
@@ -116,14 +98,7 @@ export function isPlatformOwner(user) {
 }
 
 export function normalizeModules(user) {
-  const sources = [
-    user?.licensed_modules,
-    user?.company?.licensed_modules,
-    user?.modules,
-    user?.company?.modules,
-    user?.license?.modules,
-    user?.subscription?.modules,
-  ];
+  const sources = [user?.licensed_modules, user?.company?.licensed_modules, user?.modules, user?.company?.modules, user?.license?.modules, user?.subscription?.modules];
   const raw = sources.find((value) => Array.isArray(value) && value.length > 0) || [];
   const result = new Set();
   for (const value of raw) {
@@ -148,31 +123,18 @@ export function normalizedSelectedFeatures(user) {
 }
 
 export function isCommercialTenant(user) {
-  // In the licensee login flow company_id is established before the optional
-  // license metadata is hydrated. Treat that tenant identity as commercial so
-  // the first render cannot fall back to role=admin permissions and briefly
-  // expose unlicensed pages. Platform Owner is explicitly excluded above.
-  return Boolean(user) && !isPlatformOwner(user) && Boolean(
-    user.company_id ||
-    user.license_id || user.commercial_customer_id ||
-    (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) ||
-    user.company?.commercial_customer_id || user.company?.license_id
-  );
+  return Boolean(user) && !isPlatformOwner(user) && Boolean(user.company_id || user.license_id || user.commercial_customer_id || (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) || user.company?.commercial_customer_id || user.company?.license_id);
 }
 
 export function moduleForPath(pathname) {
   const path = String(pathname || "").split("?", 1)[0];
-  const match = PAGE_MATRIX
-    .filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`))
-    .sort((a, b) => b[2].length - a[2].length)[0];
+  const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0];
   return match?.[0] || null;
 }
 
 export function pageFlagForPath(pathname) {
   const path = String(pathname || "").split("?", 1)[0];
-  const match = PAGE_MATRIX
-    .filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`))
-    .sort((a, b) => b[2].length - a[2].length)[0];
+  const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0];
   return match?.[1] || null;
 }
 
@@ -183,10 +145,27 @@ export function hasModuleAccess(user, moduleId) {
   if (!def) return false;
   const modules = normalizeModules(user);
   if (modules.has(moduleId)) return true;
-  // A license document with selected pages is itself an authoritative module
-  // signal when a legacy response omitted licensed_modules.
   const selected = normalizedSelectedFeatures(user);
   return selected[moduleId]?.size > 0;
+}
+
+const DASHBOARD_FLAG_BY_MODULE = Object.freeze({
+  taskosphere: "can_view_dashboard",
+  finix: "can_view_accounting_reports",
+  compliance: "can_view_compliance",
+  records: "can_view_documents",
+  proposals: "can_view_all_leads",
+  people_matrix: "can_view_user_page",
+});
+
+function hasCompleteModulePageAccess(user, moduleId) {
+  const dashboardFlag = DASHBOARD_FLAG_BY_MODULE[moduleId];
+  if (!dashboardFlag) return false;
+  const selected = normalizedSelectedFeatures(user);
+  const selectedFlags = selected[moduleId];
+  if (!selectedFlags) return false;
+  const pageFlags = new Set(PAGE_MATRIX.filter(([id, flag]) => id === moduleId && flag && flag !== dashboardFlag).map(([, flag]) => flag));
+  return pageFlags.size > 0 && [...pageFlags].every((flag) => selectedFlags.has(flag));
 }
 
 export function hasPageLicense(user, pageFlag, moduleId = null) {
@@ -195,8 +174,7 @@ export function hasPageLicense(user, pageFlag, moduleId = null) {
   const selected = normalizedSelectedFeatures(user);
   const module = moduleId || Object.entries(MODULES).find(([id]) => selected[id]?.has(pageFlag))?.[0];
   if (!module || !hasModuleAccess(user, module)) return false;
-  // A commercial license must explicitly select the page. Do not fall back to
-  // role=admin here: role is the tenant role, not the product license.
+  if (DASHBOARD_FLAG_BY_MODULE[module] === pageFlag) return hasCompleteModulePageAccess(user, module);
   return Boolean(selected[module]?.has(pageFlag));
 }
 
@@ -204,36 +182,20 @@ export function hasEffectivePermission(user, permission) {
   if (!user || !permission) return false;
   if (isPlatformOwner(user)) return true;
   if (!isCommercialTenant(user)) {
-    return typeof user.permissions?.[permission] === "boolean"
-      ? user.permissions[permission]
-      : String(user.role || "").toLowerCase() === "admin";
+    return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
   }
-
-  // Module permission flags are controlled by the license module selection.
   const moduleEntry = Object.entries(MODULES).find(([, def]) => def.flag === permission);
   if (moduleEntry) return hasModuleAccess(user, moduleEntry[0]);
-
   const pageEntry = PAGE_MATRIX.find(([, flag]) => flag === permission);
   if (pageEntry) {
     const [moduleId] = pageEntry;
     if (!hasPageLicense(user, permission, moduleId)) return false;
-    // Licensee admins are hydrated from the license and may use every selected
-    // page. Regular licensee users remain capped by their internal permissions.
     if (String(user.role || "").toLowerCase() === "admin") return true;
     return user.permissions?.[permission] === true;
   }
-
-  // Legacy permission flags are only effective inside a commercial tenant when
-  // the corresponding license page has been selected. This prevents old admin
-  // defaults from reopening an unlicensed page.
-  const legacyToPage = {
-    can_manage_invoices: "can_view_sale",
-    can_create_quotations: "can_create_quotations",
-    can_view_clients: "can_view_all_clients",
-  };
+  const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" };
   const page = legacyToPage[permission];
   if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false;
-
   return user.permissions?.[permission] === true;
 }
 
@@ -250,9 +212,7 @@ export function canAccessPath(user, pathname) {
 export function firstAccessiblePath(user, preferredModule = null) {
   if (!user) return "/login";
   if (isPlatformOwner(user)) return "/dashboard";
-  const ordered = preferredModule
-    ? [preferredModule, ...Object.keys(MODULES).filter((id) => id !== preferredModule)]
-    : Object.keys(MODULES);
+  const ordered = preferredModule ? [preferredModule, ...Object.keys(MODULES).filter((id) => id !== preferredModule)] : Object.keys(MODULES);
   for (const moduleId of ordered) {
     if (!hasModuleAccess(user, moduleId)) continue;
     const page = PAGE_MATRIX.find(([id, flag, path]) => id === moduleId && hasEffectivePermission(user, flag));
