@@ -126,9 +126,14 @@ def install() -> None:
     )
     base.__kwdefaults__ = current.__kwdefaults__
 
-    _dependencies._commercial_entitlement_base_get_current_user = base
-    _dependencies._commercial_entitlement_hydrate = _hydrate
-    _dependencies._commercial_entitlement_patch_installed = True
+    # The code object below is transplanted onto the existing dependency
+    # function, so its global namespace is the namespace of that destination
+    # function. Publish the helpers directly into that namespace rather than
+    # relying on attribute lookup through the imported module object.
+    target_globals = current.__globals__
+    target_globals["_commercial_entitlement_base_get_current_user"] = base
+    target_globals["_commercial_entitlement_hydrate"] = _hydrate
+    target_globals["_commercial_entitlement_patch_installed"] = True
 
     async def _patched_get_current_user(credentials):
         user = await _commercial_entitlement_base_get_current_user(credentials)
