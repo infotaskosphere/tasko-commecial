@@ -20,7 +20,7 @@ import GifLoader from '@/components/ui/GifLoader.jsx';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '@/lib/api';
-import { canAccessPath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath } from '@/lib/commercialPermissionMatrix';
+import { canAccessPath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 
 const COLORS = {
   deepBlue: '#0D3B66', mediumBlue: '#1F6FB2', lightBlue: '#E0F2FE',
@@ -252,12 +252,14 @@ const DashboardLayout = ({ children }) => {
 
     // For commercial tenants the central matrix is authoritative. It maps the
     // visible URL to the exact page flag selected in the Commercial Console.
-    const commercial = Boolean(
-      user?.license_id || user?.commercial_customer_id ||
-      (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0) ||
-      user?.company?.license_id || user?.company?.commercial_customer_id
-    );
-    if (commercial && moduleForPath(item.path)) return canAccessPath(user, item.path);
+    const commercial = isCommercialTenant(user);
+    if (commercial) {
+      // Every commercial navigation item must resolve through the central
+      // route matrix. A known commercial route with no selected page flag
+      // fails closed; it must never fall back to legacy role permissions.
+      const routeModule = moduleForPath(item.path);
+      if (routeModule) return canAccessPath(user, item.path);
+    }
 
     const permission = item.permission;
     if (!permission) return true;
@@ -276,11 +278,7 @@ const DashboardLayout = ({ children }) => {
   const activeSectionId = useMemo(() => getSectionForPath(location.pathname), [location.pathname]);
   useEffect(() => {
     if (matrixIsPlatformOwner(user)) return;
-    const commercial = Boolean(
-      user?.license_id || user?.commercial_customer_id ||
-      (Array.isArray(user?.licensed_modules) && user.licensed_modules.length > 0) ||
-      user?.company?.license_id || user?.company?.commercial_customer_id
-    );
+    const commercial = isCommercialTenant(user);
     if (commercial && moduleForPath(location.pathname) && !canAccessPath(user, location.pathname)) {
       const moduleId = moduleForPath(location.pathname);
       const target = moduleId ? (['/finix-dashboard','/dashboard','/compliance-dashboard','/records-dashboard','/client-proposals-dashboard','/people-matrix'].find((p) => canAccessPath(user, p)) || '/dashboard') : '/dashboard';
