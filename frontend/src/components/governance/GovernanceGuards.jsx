@@ -5,6 +5,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useGovernance } from '@/hooks/useGovernance';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { hasEffectivePermission, isPlatformOwner as matrixIsPlatformOwner } from '@/lib/commercialPermissionMatrix';
 
 const MODULE_FALLBACKS = {
   taskosphere: ['can_access_taskosphere', '/dashboard'],
@@ -37,13 +38,12 @@ export function PageGuard({ module, page, children }) {
   if (module === 'admin' && isAdmin) return children;
 
   if (isCommercialAdmin) {
-    // Commercial admins are subject to the exact same page selection as every
-    // other commercial user. A purchased module is NOT a grant of every page
-    // inside that module. The module flag and the selected page flag are two
-    // independent checks.
+    // The central commercial matrix is the license ceiling. The backend has
+    // already hydrated the admin permissions from selected_features, so this
+    // check stays identical on login and hard refresh.
     const moduleFlag = MODULE_FLAGS[module];
-    if (!moduleFlag || !hasPermission(moduleFlag)) return <EntitledHome />;
-    if (!page || !hasPermission(page)) return <EntitledHome />;
+    if (!moduleFlag || !hasEffectivePermission(user, moduleFlag)) return <EntitledHome />;
+    if (!page || !hasEffectivePermission(user, page)) return <EntitledHome />;
     return children;
   }
 
