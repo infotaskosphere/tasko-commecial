@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.dependencies import db, get_current_user
 from backend.models import User, MODULE_HIERARCHY
 from backend.platform_owner import is_platform_owner
-from backend.commercial_onboarding import MODULE_IDS
+from backend.commercial_onboarding import MODULE_IDS, normalize_dashboard_feature_selection
 
 router = APIRouter(prefix="/commercial-master-data", tags=["commercial-customer-directory"])
 
@@ -29,69 +29,44 @@ def _feature_flags(module_id: str) -> List[str]:
 
 
 @router.put("/customers/{customer_id}")
-async def update_commercial_customer(
-    customer_id: str,
-    payload: Dict[str, Any],
-    current_user: User = Depends(get_current_user),
-):
+async def update_commercial_customer(customer_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     _require_platform_owner(current_user)
     customer = await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0})
     if not customer:
         raise HTTPException(status_code=404, detail="Commercial customer was not found.")
-
     company_name = str(payload.get("company_name") or "").strip()
     email = str(payload.get("email") or "").strip().lower()
     if not company_name:
         raise HTTPException(status_code=400, detail="Company name is required.")
     if not email:
         raise HTTPException(status_code=400, detail="Email is required.")
-
     update = {
-        "company_name": company_name,
-        "contact_name": str(payload.get("contact_name") or "").strip(),
-        "email": email,
-        "phone": str(payload.get("phone") or "").strip(),
-        "gstin": str(payload.get("gstin") or "").strip().upper(),
-        "address": str(payload.get("address") or "").strip(),
-        "gst_address": str(payload.get("gst_address") or "").strip(),
-        "city": str(payload.get("city") or "").strip(),
-        "state": str(payload.get("state") or "").strip(),
-        "pincode": str(payload.get("pincode") or "").strip(),
+        "company_name": company_name, "contact_name": str(payload.get("contact_name") or "").strip(),
+        "email": email, "phone": str(payload.get("phone") or "").strip(),
+        "gstin": str(payload.get("gstin") or "").strip().upper(), "address": str(payload.get("address") or "").strip(),
+        "gst_address": str(payload.get("gst_address") or "").strip(), "city": str(payload.get("city") or "").strip(),
+        "state": str(payload.get("state") or "").strip(), "pincode": str(payload.get("pincode") or "").strip(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.commercial_license_customers.update_one({"id": str(customer_id)}, {"$set": update})
-
-    # Keep any hidden license-created operational company synchronized without
-    # exposing that company in the platform owner's Company Master list.
     await db.companies.update_many(
         {"commercial_customer_id": str(customer_id), "source": "commercial-license"},
-        {"$set": {
-            "name": company_name, "company_name": company_name, "email": email,
-            "phone": update["phone"], "gstin": update["gstin"], "address": update["address"],
-            "gst_address": update["gst_address"], "city": update["city"], "state": update["state"],
-            "pincode": update["pincode"], "updated_at": update["updated_at"],
-        }},
+        {"$set": {"name": company_name, "company_name": company_name, "email": email, "phone": update["phone"], "gstin": update["gstin"], "address": update["address"], "gst_address": update["gst_address"], "city": update["city"], "state": update["state"], "pincode": update["pincode"], "updated_at": update["updated_at"]}},
     )
     updated = await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0})
     return _public(updated or {})
 
 
 @router.put("/licenses/{license_id}")
-async def update_commercial_license(
-    license_id: str,
-    payload: Dict[str, Any],
-    current_user: User = Depends(get_current_user),
-):
+async def update_commercial_license(license_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     _require_platform_owner(current_user)
     license_doc = await db.commercial_licenses.find_one({"id": str(license_id)}, {"_id": 0})
     if not license_doc:
         raise HTTPException(status_code=404, detail="License was not found.")
-
     customer_id = str(license_doc.get("customer_id") or "")
     customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
     if not customer:
         raise HTTPException(status_code=404, detail="Commercial customer was not found.")
-
     raw_modules = payload.get("modules", license_doc.get("modules") or [])
     modules = []
     for raw in raw_modules if isinstance(raw_modules, list) else []:
@@ -100,7 +75,6 @@ async def update_commercial_license(
             modules.append(module_id)
     if not modules:
         raise HTTPException(status_code=400, detail="Select at least one licensed module.")
-
     raw_features = payload.get("selected_features", license_doc.get("selected_features") or {})
     selected_features: Dict[str, List[str]] = {}
     if not isinstance(raw_features, dict):
@@ -121,62 +95,23 @@ async def update_commercial_license(
         if not selected:
             raise HTTPException(status_code=400, detail=f"Select at least one feature in {module_id}.")
         selected_features[module_id] = selected
-
-    updates = {
-        "modules": modules,
-        "selected_features": selected_features,
-        "licensed_modules": modules,
-        "last_event_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if "max_users" in payload:
-        updates["max_users"] = max(1, int(payload.get("max_users") or 1))
-    if "max_installations" in payload:
-        updates["max_installations"] = max(1, int(payload.get("max_installations") or 1))
+    selected_features = normalize_dashboard_feature_selection(selected_features)
+    updates = {"modules": modules, "selected_features": selected_features, "licensed_modules": modules, "last_event_at": datetime.now(timezone.utc).isoformat()}
+    if "max_users" in payload: updates["max_users"] = max(1, int(payload.get("max_users") or 1))
+    if "max_installations" in payload: updates["max_installations"] = max(1, int(payload.get("max_installations") or 1))
     await db.commercial_licenses.update_one({"id": str(license_id)}, {"$set": updates})
-    await db.commercial_license_customers.update_one(
-        {"id": customer_id},
-        {"$set": {"licensed_modules": modules, "selected_features": selected_features, "updated_at": updates["last_event_at"]}},
-    )
-    await db.companies.update_many(
-        {"commercial_customer_id": customer_id, "source": "commercial-license"},
-        {"$set": {"licensed_modules": modules, "selected_features": selected_features, "license_id": str(license_id)}},
-    )
+    await db.commercial_license_customers.update_one({"id": customer_id}, {"$set": {"licensed_modules": modules, "selected_features": selected_features, "updated_at": updates["last_event_at"]}})
+    await db.companies.update_many({"commercial_customer_id": customer_id, "source": "commercial-license"}, {"$set": {"licensed_modules": modules, "selected_features": selected_features, "license_id": str(license_id)}})
     updated = await db.commercial_licenses.find_one({"id": str(license_id)}, {"_id": 0})
-
-    # The licensee admin's own `permissions` document (what the frontend's
-    # hasPermission() actually reads) is a point-in-time snapshot taken when
-    # the admin was first provisioned. Saving new module/feature selections
-    # here only updated the license + company records above, so without this
-    # the admin kept seeing every tab until the backend happened to restart
-    # (sync_all_licensee_admins runs on startup). Re-provisioning immediately
-    # keeps the sidebar/section tabs in sync with what was just saved.
     try:
         from backend.commercial_licensee_admin import ensure_licensee_admin, get_all_admin_permissions
-        company = await db.companies.find_one(
-            {"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]},
-            {"_id": 0},
-        ) or {"id": customer_id, "name": customer.get("company_name") or "Licensed Company", "commercial_customer_id": customer_id}
+        company = await db.companies.find_one({"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]}, {"_id": 0}) or {"id": customer_id, "name": customer.get("company_name") or "Licensed Company", "commercial_customer_id": customer_id}
         await ensure_licensee_admin(customer, updated or {}, company)
         new_admin_perms = get_all_admin_permissions(updated)
-        await db.users.update_many(
-            {"$or": [
-                {"company_id": customer_id},
-                {"commercial_customer_id": customer_id},
-                {"email": str(customer.get("email", "")).lower().strip()},
-            ]},
-            {"$set": {
-                "licensed_modules": modules,
-                "selected_features": selected_features,
-                "license_id": str(license_id),
-                "permissions": new_admin_perms,
-            }}
-        )
+        await db.users.update_many({"$or": [{"company_id": customer_id}, {"commercial_customer_id": customer_id}, {"email": str(customer.get("email", "")).lower().strip()}]}, {"$set": {"licensed_modules": modules, "selected_features": selected_features, "license_id": str(license_id), "permissions": new_admin_perms}})
     except Exception as exc:
         import logging
-        logging.getLogger("commercial_customer_directory").warning(
-            "Failed to refresh licensee admin permissions after license update: %s", exc
-        )
-
+        logging.getLogger("commercial_customer_directory").warning("Failed to refresh licensee admin permissions after license update: %s", exc)
     return _public(updated or {})
 
 
