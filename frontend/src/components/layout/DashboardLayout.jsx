@@ -20,7 +20,6 @@ import GifLoader from '@/components/ui/GifLoader.jsx';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '@/lib/api';
-import { canAccessPath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 
 const COLORS = {
   deepBlue: '#0D3B66', mediumBlue: '#1F6FB2', lightBlue: '#E0F2FE',
@@ -244,26 +243,20 @@ const DashboardLayout = ({ children }) => {
   };
   const checkNavPermission = (item) => {
     if (item.adminOnly) return user?.role === 'admin';
-    if (matrixIsPlatformOwner(user)) return true;
+
+    // Commercial tenants use the same path-level entitlement authority as
+    // ModuleGate. A selected Commercial Console feature must not unlock
+    // unrelated legacy screens that reuse the same legacy permission flag.
+    if (isCommercialTenant(user)) {
+      return canAccessPath(user, item.path);
+    }
 
     const groupId = ITEM_GROUP_ID.get(item.path);
     const moduleFlag = GROUP_MODULE_FLAG[groupId];
     if (moduleFlag && !hasPermission(moduleFlag)) return false;
-
-    // For commercial tenants the central matrix is authoritative. It maps the
-    // visible URL to the exact page flag selected in the Commercial Console.
-    const commercial = isCommercialTenant(user);
-    if (commercial) {
-      // Every commercial navigation item must resolve through the central
-      // route matrix. A known commercial route with no selected page flag
-      // fails closed; it must never fall back to legacy role permissions.
-      const routeModule = moduleForPath(item.path);
-      if (routeModule) return canAccessPath(user, item.path);
-    }
-
     const permission = item.permission;
     if (!permission) return true;
-    if (Array.isArray(permission)) return permission.some((p) => hasPermission(p));
+    if (Array.isArray(permission)) return permission.some(p => hasPermission(p));
     return hasPermission(permission);
   };
   const allNavItems = NAV_GROUPS.flatMap(g => g.items);
@@ -277,21 +270,13 @@ const DashboardLayout = ({ children }) => {
   useEffect(() => { document.title = `${activeLabel} · Task-O-Sphere`; }, [activeLabel]);
   const activeSectionId = useMemo(() => getSectionForPath(location.pathname), [location.pathname]);
   useEffect(() => {
-    if (matrixIsPlatformOwner(user)) return;
-    const commercial = isCommercialTenant(user);
-    if (commercial && moduleForPath(location.pathname) && !canAccessPath(user, location.pathname)) {
-      const moduleId = moduleForPath(location.pathname);
-      const target = moduleId ? (['/finix-dashboard','/dashboard','/compliance-dashboard','/records-dashboard','/client-proposals-dashboard','/people-matrix'].find((p) => canAccessPath(user, p)) || '/dashboard') : '/dashboard';
+    const currentModuleFlag = GROUP_MODULE_FLAG[activeSectionId];
+    if (currentModuleFlag && !hasPermission(currentModuleFlag)) {
+      const permittedSection = LEFT_SECTIONS.find((id) => { const flag = GROUP_MODULE_FLAG[id]; return !flag || hasPermission(flag); });
+      const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
       if (location.pathname !== target) navigate(target, { replace: true });
-    } else {
-      const currentModuleFlag = GROUP_MODULE_FLAG[activeSectionId];
-      if (currentModuleFlag && !hasPermission(currentModuleFlag)) {
-        const permittedSection = LEFT_SECTIONS.find((id) => { const flag = GROUP_MODULE_FLAG[id]; return !flag || hasPermission(flag); });
-        const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
-        if (location.pathname !== target) navigate(target, { replace: true });
-      }
     }
-  }, [activeSectionId, hasPermission, navigate, location.pathname, user]);
+  }, [activeSectionId, hasPermission, navigate, location.pathname]);
   const sidebarPx = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED, offsetPx = isDesktop ? sidebarPx : 0;
   const NavItem = ({ item }) => {
     if (!checkNavPermission(item)) return null;
