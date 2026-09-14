@@ -15,6 +15,18 @@ const readStoredUser = () => {
 
 const isAdmin = (user) => String(user?.role || '').toLowerCase() === 'admin';
 
+const isPlatformOwner = (user) => {
+  const email = String(user?.email || '').trim().toLowerCase();
+  const id = String(user?.id || '').trim();
+  return email === 'info.taskosphere@gmail.com' || id === 'usr-admin-01' || id === 'saas-bootstrap-admin';
+};
+
+const isCommercialTenant = (user) => Boolean(user) && !isPlatformOwner(user) && Boolean(
+  user.company_id || user.license_id || user.commercial_customer_id ||
+  (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) ||
+  user.company?.commercial_customer_id || user.company?.license_id
+);
+
 const isDirectChartOfAccountsPage = () => {
   if (typeof window === 'undefined') return false;
   const pathname = String(window.location.pathname || '').replace(/\/+$/, '');
@@ -29,6 +41,20 @@ const optionalDashboardEndpoint = (path, user) => {
   if (path === '/users') return true;
   if (path.startsWith('/reports/performance-rankings')) return true;
   return false;
+};
+
+const userHasSelectedFeature = (user, moduleId, featureFlag) => {
+  if (!user) return false;
+  const raw = user?.selected_features || user?.company?.selected_features || user?.license?.selected_features;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  let selected = raw[moduleId];
+  if (selected == null) {
+    const aliases = { finix: ['finix', 'invoicing', 'accounting'] }[moduleId] || [moduleId];
+    const entry = Object.entries(raw).find(([key]) => aliases.includes(String(key).trim().toLowerCase().replace(/-/g, '_')));
+    selected = entry?.[1];
+  }
+  if (!Array.isArray(selected)) return false;
+  return selected.includes(featureFlag);
 };
 
 const syntheticEmptyResponse = (config) => ({
@@ -54,8 +80,19 @@ api.interceptors.request.use((config) => {
   if (
     path === '/chart-of-accounts' &&
     !isDirectChartOfAccountsPage() &&
-    !isAdmin(user)
+    (
+      (isCommercialTenant(user) && userHasSelectedFeature(user, 'finix', 'can_view_chart_of_accounts') === false) ||
+      (!isCommercialTenant(user) && !isAdmin(user))
+    )
   ) {
+    config.adapter = async () => syntheticEmptyResponse(config);
+    return config;
+  }
+
+  // Invoicing does not require the Proposals/Leads dataset to render. Never
+  // issue this cross-module request for a commercial license that did not buy
+  // the Leads feature.
+  if (path === '/leads' && isCommercialTenant(user) && userHasSelectedFeature(user, 'proposals', 'can_view_all_leads') === false) {
     config.adapter = async () => syntheticEmptyResponse(config);
     return config;
   }
