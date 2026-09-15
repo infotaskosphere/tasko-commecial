@@ -1,40 +1,55 @@
-/* Exact flat module design language for Taskosphere, Finix and People Matrix. */
+/* ========================================================================== 
+   TASKOSPHERE SUITE — REFERENCE DESIGN SYSTEM
+   Taskosphere / Finix / People Matrix share one sharp enterprise geometry.
+   Cards are rectangular. Rounded-full remains reserved for avatars/status dots.
+   ========================================================================== */
+
+:root{--suite-border:#D9E2EC;--suite-blue:#1F6FB2;--suite-deep:#0D3B66;--suite-green:#1FAF5A;--suite-bg:#F4F6FA}
 .module-brand-logo{display:block;width:100%;height:54px;object-fit:contain}
 header>div:first-child,header>div:first-child img{border-radius:0!important}
 header>div:first-child img:not([style*="display: none"]){object-fit:contain!important;object-position:center!important}
 
-/* Product wordmarks */
+/* Exact product marks already present in the repository. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/logo-lite.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/finix-logo.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
 body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:246px!important;max-width:calc(100% - 16px)!important;height:52px!important}
 
-/* Global module switcher is rectangular like the reference. */
+/* Suite module tabs match the reference: flat, thin, rectangular. */
 #top-module-switcher-bar button[id^="nav-tab-"]{border-radius:0!important;background:transparent!important}
-#top-module-switcher-bar #nav-tab-core.font-semibold,#top-module-switcher-bar #nav-tab-accounts.font-semibold,#top-module-switcher-bar #nav-tab-people-matrix.font-semibold{border-bottom:2px solid #1F6FB2!important;color:#0D3B66!important}
+#top-module-switcher-bar #nav-tab-core.font-semibold,#top-module-switcher-bar #nav-tab-accounts.font-semibold,#top-module-switcher-bar #nav-tab-people-matrix.font-semibold{border-bottom:2px solid var(--suite-blue)!important;color:var(--suite-deep)!important}
 
 /* --------------------------------------------------------------------------
-   NO-CURVE CARD SYSTEM
-   The reference uses sharp enterprise cards throughout all three products.
-   Do not flatten rounded-full: avatars/status dots intentionally remain round.
+   SHARED CARD GEOMETRY — ALL THREE MODULES
    -------------------------------------------------------------------------- */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-lg"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-lg"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-lg"][class*="shadow"]{
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-xl"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-xl"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-2xl"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-xl"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"]{
   border-radius:0!important;
 }
 
+/* Preserve circular people/status indicators; flatten only card-like surfaces. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-xl"][class*="shadow"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-xl"][class*="shadow"],
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"][class*="shadow"]{border:1px solid #DCE4EC!important}
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"][class*="shadow"]{
+  border:1px solid var(--suite-border)!important;
+  box-shadow:0 2px 9px rgba(15,23,42,.045)!important;
+}
 
-/* People Matrix */
-.people-matrix-dashboard{--pm-border:#DCE4EC;--pm-blue:#1F6FB2;--pm-deep:#0D3B66;--pm-green:#1FAF5A}
+/* Taskosphere / Finix content backgrounds follow the reference canvas. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold),
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold),
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold){background:var(--suite-bg)}
+
+/* --------------------------------------------------------------------------
+   PEOPLE MATRIX — reference dashboard geometry
+   -------------------------------------------------------------------------- */
+.people-matrix-dashboard{--pm-border:#D9E2EC;--pm-blue:#1F6FB2;--pm-deep:#0D3B66;--pm-green:#1FAF5A}
 .people-matrix-dashboard .pm-hero,.people-matrix-dashboard .pm-card,.people-matrix-dashboard .pm-action,.people-matrix-dashboard .pm-kpi{border-radius:0!important}
 .people-matrix-dashboard .pm-hero{position:relative;overflow:hidden;min-height:174px;border:1px solid var(--pm-border);background:linear-gradient(100deg,#fff 0%,#f8fbfe 58%,#eef7ff 100%);box-shadow:0 3px 12px rgba(15,23,42,.045)}
 .people-matrix-dashboard .pm-hero::after{content:'';position:absolute;right:0;bottom:0;width:360px;height:100%;background:linear-gradient(135deg,transparent 0 42%,rgba(31,111,178,.045) 42% 64%,transparent 64%),linear-gradient(45deg,transparent 0 58%,rgba(31,175,90,.035) 58% 74%,transparent 74%);pointer-events:none}
