@@ -1,148 +1,101 @@
-"""
-Financial Validator — Enforces deterministic bookkeeping policies, period lock states, mathematical balances,
-GST logic sanity, duplicate postings detection, and general ledger compatibility.
-"""
+"""Fail-closed deterministic validation for Finix accounting postings."""
 
+from __future__ import annotations
 from typing import Dict, Any, List, Tuple
 from datetime import datetime
 import logging
 from backend.dependencies import db
 from backend.accounting_ai.gst_engine import GSTEngine
+from backend.accounting_ai.accounting_controls import AccountingControlError, parse_accounting_date, validate_balanced_lines, money
 
 logger = logging.getLogger("financial_validator")
+
 
 class FinancialValidator:
     @classmethod
     async def check_period_lock(cls, company_id: str, posting_date_iso: str) -> Tuple[bool, str]:
-        """Checks if the books are locked for the specified period.
-        Integrates with the existing `accounting_lock` or standard calendar rules.
-        """
         try:
-            # Query the existing accounting lock config or active lockouts
-            lock_doc = await db.accounting_locks.find_one({"company_id": company_id, "is_active": True})
-            if lock_doc:
-                lock_limit_date = lock_doc.get("locked_until_date")  # e.g., "2026-06-30"
-                if lock_limit_date and posting_date_iso <= lock_limit_date:
-                    return False, f"Period is locked. The books are locked up to {lock_limit_date}."
-        except Exception as e:
-            logger.error(f"Error checking accounting period lock: {e}")
-            
-        # Standard safety: prevent posting way back in the past or far future
+            text = str(posting_date_iso or "").strip()
+            if len(text) != 10:
+                raise AccountingControlError("Accounting date is required in YYYY-MM-DD format.")
+            posting_date = parse_accounting_date(text)
+        except AccountingControlError as exc:
+            return False, str(exc)
         try:
-            p_date = datetime.strptime(posting_date_iso, "%Y-%m-%d")
-            now = datetime.now()
-            # If posting more than 2 years in past or 1 year in future
-            if abs((now - p_date).days) > 365 * 2:
-                return False, "Posting date is outside the acceptable operational range (too far in past/future)."
-        except Exception:
-            pass
-
+            lock_doc = await db.accounting_locks.find_one({"company_id": company_id, "is_active": True}, {"_id": 0})
+        except Exception as exc:
+            logger.exception("Unable to read accounting lock")
+            return False, f"Unable to verify accounting period lock: {type(exc).__name__}. Posting blocked."
+        if lock_doc and lock_doc.get("locked_until_date"):
+            try:
+                locked_until = parse_accounting_date(lock_doc["locked_until_date"])
+            except AccountingControlError as exc:
+                return False, f"Invalid accounting lock configuration: {exc}"
+            if posting_date <= locked_until:
+                return False, f"Period is locked through {locked_until.isoformat()}."
+        now = datetime.now().date()
+        if (now - posting_date).days > 730 or (posting_date - now).days > 365:
+            return False, "Posting date is outside the acceptable operational range."
         return True, "Period is open."
 
     @classmethod
-    async def detect_duplicate_invoice(
-        cls,
-        company_id: str,
-        vendor_name: str,
-        invoice_no: str,
-        total_value: float
-    ) -> Tuple[bool, str]:
-        """Verifies if the exact vendor + invoice combination already exists in the books to prevent duplicates."""
+    async def detect_duplicate_invoice(cls, company_id: str, vendor_name: str, invoice_no: str, total_value: float, extracted_data: Dict[str, Any] | None = None) -> Tuple[bool, str]:
+        extracted_data = extracted_data or {}
+        invoice_no, vendor_name = str(invoice_no or "").strip(), str(vendor_name or "").strip()
         if not invoice_no or not vendor_name:
-            return True, "No invoice number or vendor provided; skipping duplicate detection."
-
-        # Search in posted journal entries
-        query = {
-            "company_id": company_id,
-            "source": "ai_zero_touch",
-            "narration": {"$regex": invoice_no, "$options": "i"}
-        }
-        
+            return False, "Vendor/customer name and invoice number are required for safe duplicate detection."
         try:
-            dup = await db.journal_entries.find_one(query)
-            if dup:
-                return False, f"Potential duplicate detected: Journal entry ID {dup['id']} matches invoice {invoice_no}."
-                
-            # Also search in processed documents
-            dup_doc = await db.zte_processed_documents.find_one({
-                "company_id": company_id,
-                "status": "posted",
-                "extracted.invoice_number": invoice_no,
-                "extracted.vendor_or_customer_name": vendor_name
-            })
-            if dup_doc:
-                return False, f"Potential duplicate: Invoice {invoice_no} from {vendor_name} has already been posted."
-        except Exception as e:
-            logger.error(f"Error in duplicate invoice checking: {e}")
-
+            source_hash = str(extracted_data.get("source_document_hash") or "").strip()
+            irn = str(extracted_data.get("irn") or extracted_data.get("invoice_reference_number") or "").strip()
+            if source_hash and await db.zte_processed_documents.find_one({"company_id": company_id, "source_document_hash": source_hash, "status": "posted"}, {"_id": 0, "id": 1}):
+                return False, "Duplicate source document detected."
+            if irn and await db.zte_processed_documents.find_one({"company_id": company_id, "status": "posted", "$or": [{"extracted.irn": irn}, {"extracted.invoice_reference_number": irn}]}, {"_id": 0, "id": 1}):
+                return False, "Duplicate invoice IRN/reference detected."
+            if await db.journal_entries.find_one({"company_id": company_id, "source": "ai_zero_touch", "narration": {"$regex": invoice_no, "$options": "i"}}, {"_id": 0, "id": 1}):
+                return False, f"Potential duplicate journal entry for invoice {invoice_no}."
+            if await db.zte_processed_documents.find_one({"company_id": company_id, "status": "posted", "extracted.invoice_number": invoice_no, "extracted.vendor_or_customer_name": vendor_name}, {"_id": 0, "id": 1}):
+                return False, f"Invoice {invoice_no} from {vendor_name} has already been posted."
+        except Exception as exc:
+            logger.exception("Duplicate detection failed")
+            return False, f"Duplicate detection could not be completed ({type(exc).__name__}). Posting blocked."
         return True, "Invoice is unique."
 
     @classmethod
-    async def validate_posting(
-        cls,
-        company_id: str,
-        doc_type: str,
-        extracted_data: Dict[str, Any],
-        journal_lines: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Runs a complete suite of validation checks and generates a structured report."""
-        report = {
-            "passed": True,
-            "errors": [],
-            "warnings": [],
-            "details": {}
-        }
-
-        # 1. Period Lock Check
-        posting_date = extracted_data.get("invoice_date") or datetime.now().strftime("%Y-%m-%d")
-        period_ok, period_msg = await cls.check_period_lock(company_id, posting_date)
+    async def validate_posting(cls, company_id: str, doc_type: str, extracted_data: Dict[str, Any], journal_lines: List[Dict[str, Any]]) -> Dict[str, Any]:
+        report = {"passed": True, "errors": [], "warnings": [], "details": {}}
+        period_ok, period_msg = await cls.check_period_lock(company_id, extracted_data.get("invoice_date") or "")
         if not period_ok:
-            report["passed"] = False
-            report["errors"].append(period_msg)
-
-        # 2. Duplicate Detection
-        vendor_name = extracted_data.get("vendor_or_customer_name") or ""
-        invoice_no = extracted_data.get("invoice_number") or ""
-        total_val = float(extracted_data.get("total_invoice_value") or 0.0)
-        unique_ok, unique_msg = await cls.detect_duplicate_invoice(company_id, vendor_name, invoice_no, total_val)
+            report["passed"], report["errors"] = False, report["errors"] + [period_msg]
+        vendor_name, invoice_no = extracted_data.get("vendor_or_customer_name") or "", extracted_data.get("invoice_number") or ""
+        unique_ok, unique_msg = await cls.detect_duplicate_invoice(company_id, vendor_name, invoice_no, float(extracted_data.get("total_invoice_value") or 0), extracted_data)
         if not unique_ok:
-            report["passed"] = False
-            report["errors"].append(unique_msg)
-
-        # 3. Double-entry Balance Validation
-        total_debit = round(sum(float(l.get("debit") or 0.0) for l in journal_lines), 2)
-        total_credit = round(sum(float(l.get("credit") or 0.0) for l in journal_lines), 2)
-        if abs(total_debit - total_credit) > 0.02:
-            report["passed"] = False
-            report["errors"].append(f"Imbalanced Journal: Total Debit ({total_debit}) does not equal Total Credit ({total_credit})")
-
-        # 4. GST Accuracy Check
-        tax_breakup = extracted_data.get("tax_breakup") or {}
-        cgst = float(tax_breakup.get("cgst") or 0.0)
-        sgst = float(tax_breakup.get("sgst") or 0.0)
-        igst = float(tax_breakup.get("igst") or 0.0)
-        total_tax = float(extracted_data.get("total_tax") or 0.0)
-        
-        gst_ok, gst_msg = GSTEngine.validate_gst_calculations(
-            taxable_value=float(extracted_data.get("taxable_value") or 0.0),
-            cgst=cgst,
-            sgst=sgst,
-            igst=igst,
-            total_tax=total_tax
-        )
+            report["passed"], report["errors"] = False, report["errors"] + [unique_msg]
+        try:
+            total_debit, total_credit = validate_balanced_lines(journal_lines)
+        except AccountingControlError as exc:
+            report["passed"], report["errors"] = False, report["errors"] + [str(exc)]
+            total_debit = total_credit = money(0)
+        account_ids = list(dict.fromkeys(str(line.get("account_id") or "") for line in journal_lines))
+        if account_ids:
+            try:
+                accounts = await db.chart_of_accounts.find({"company_id": company_id, "id": {"$in": account_ids}}, {"_id": 0, "id": 1, "is_active": 1, "is_group": 1, "is_postable": 1}).to_list(len(account_ids))
+            except Exception as exc:
+                logger.exception("COA validation failed")
+                accounts = []
+                report["passed"], report["errors"] = False, report["errors"] + [f"Unable to verify ledgers ({type(exc).__name__}). Posting blocked."]
+            found = {a.get("id"): a for a in accounts}
+            for account_id in account_ids:
+                account = found.get(account_id)
+                if not account:
+                    report["passed"], report["errors"] = False, report["errors"] + [f"Account {account_id} does not belong to company {company_id}."]
+                elif account.get("is_active") is False or account.get("is_group") is True or account.get("is_postable") is False:
+                    report["passed"], report["errors"] = False, report["errors"] + [f"Account {account_id} is not an active postable ledger."]
+        tax = extracted_data.get("tax_breakup") or {}
+        try:
+            gst_ok, gst_msg = GSTEngine.validate_gst_calculations(float(extracted_data.get("taxable_value") or 0), float(tax.get("cgst") or 0), float(tax.get("sgst") or 0), float(tax.get("igst") or 0), float(extracted_data.get("total_tax") or 0), float(tax.get("cess") or 0))
+        except (TypeError, ValueError) as exc:
+            gst_ok, gst_msg = False, f"Invalid GST data: {exc}"
         if not gst_ok:
-            report["warnings"].append(gst_msg)
-
-        # 5. Ledger compatibility checks
-        for line in journal_lines:
-            if not line.get("account_id"):
-                report["passed"] = False
-                report["errors"].append("Missing Account ID on one or more journal lines.")
-
-        report["details"] = {
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-            "validation_timestamp": datetime.now().isoformat()
-        }
-
+            report["passed"], report["errors"] = False, report["errors"] + [gst_msg]
+        report["details"] = {"total_debit": float(total_debit), "total_credit": float(total_credit), "validation_timestamp": datetime.utcnow().isoformat() + "Z", "transaction_type": doc_type}
         return report
