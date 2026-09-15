@@ -14,6 +14,7 @@ import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
 import "./email-google-oauth.css";
+import "./module-branding.css";
 
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
@@ -88,85 +89,26 @@ function RoutePrefetcher() {
 }
 
 const BUSINESS_PAGE_TITLES = {
-  "/tasks": "Tasks",
-  "/todos": "To Do",
-  "/attendance": "Attendance",
-  "/reminders": "Reminders",
-  "/action-center": "Action Center",
-  "/visits": "Client Visits",
-  "/ai-reader": "AI Document Reader",
-  "/compliance": "Compliance Tracker",
-  "/gst-reconciliation": "GST Reconciliation",
-  "/trademark-sphere": "Trademark Sphere",
-  "/roc-sphere": "ROC Sphere",
-  "/mis-report": "MIS Report",
-  "/salary-slips": "Salary Slip Generator",
-  "/records-dashboard": "Records Dashboard",
-  "/client-approvals": "Client Approvals",
-  "/dsc": "DSC Register",
-  "/documents": "Document Register",
-  "/clients": "Clients",
-  "/passwords": "Password Vault",
-  "/client-proposals-dashboard": "Client Proposals",
-  "/leads": "Lead Management",
-  "/quotations": "Quotations",
-  "/finix-dashboard": "Finix",
-  "/invoicing": "Sales & Invoicing",
-  "/purchase": "Purchase",
-  "/bank-accounts": "Bank Accounts",
-  "/chart-of-accounts": "Chart of Accounts",
-  "/journal-entries": "Journal Entries",
-  "/accounting-reports": "Accounting Reports",
-  "/people-matrix": "People Matrix",
-  "/users": "Users",
-  "/leave": "Leave",
-  "/payroll": "Payroll",
-  "/hr": "Human Resources",
-  "/recruitment": "Recruitment",
-  "/reports": "Reports",
-  "/settings/general": "General Settings",
-  "/settings/email": "Email Accounts",
-  "/settings/whatsapp": "Message Automation",
-  "/admin-dashboard": "Admin Dashboard",
-  "/permission-matrix": "Permission Matrix",
-  "/master-data": "Master Data",
-  "/roles": "Roles & Access",
-  "/contact-details": "Contact Details",
-  "/master-console": "Commercial Console",
-  "/master-console/website": "Website Studio",
+  "/tasks": "Tasks", "/todos": "To Do", "/attendance": "Attendance", "/reminders": "Reminders", "/action-center": "Action Center", "/visits": "Client Visits", "/ai-reader": "AI Document Reader",
+  "/compliance": "Compliance Tracker", "/gst-reconciliation": "GST Reconciliation", "/trademark-sphere": "Trademark Sphere", "/roc-sphere": "ROC Sphere", "/mis-report": "MIS Report", "/salary-slips": "Salary Slip Generator",
+  "/records-dashboard": "Records Dashboard", "/client-approvals": "Client Approvals", "/dsc": "DSC Register", "/documents": "Document Register", "/clients": "Clients", "/passwords": "Password Vault",
+  "/client-proposals-dashboard": "Client Proposals", "/leads": "Lead Management", "/quotations": "Quotations", "/finix-dashboard": "Finix", "/invoicing": "Sales & Invoicing", "/purchase": "Purchase", "/bank-accounts": "Bank Accounts", "/chart-of-accounts": "Chart of Accounts", "/journal-entries": "Journal Entries", "/accounting-reports": "Accounting Reports",
+  "/people-matrix": "People Matrix", "/users": "Users", "/leave": "Leave", "/payroll": "Payroll", "/hr": "Human Resources", "/recruitment": "Recruitment", "/reports": "Reports", "/settings/general": "General Settings", "/settings/email": "Email Accounts", "/settings/whatsapp": "Message Automation", "/admin-dashboard": "Admin Dashboard", "/permission-matrix": "Permission Matrix", "/master-data": "Master Data", "/roles": "Roles & Access", "/contact-details": "Contact Details", "/master-console": "Commercial Console", "/master-console/website": "Website Studio",
 };
 
-const BUSINESS_LANDING_PATHS = new Set([
-  "/dashboard",
-  "/finix-dashboard",
-  "/compliance-dashboard",
-  "/records-dashboard",
-  "/client-proposals-dashboard",
-  "/people-matrix",
-  "/admin-dashboard",
-  "/master-console",
-]);
+const BUSINESS_LANDING_PATHS = new Set(["/dashboard", "/finix-dashboard", "/compliance-dashboard", "/records-dashboard", "/client-proposals-dashboard", "/people-matrix", "/admin-dashboard", "/master-console"]);
 
 function BusinessPageDesignScope() {
   const location = useLocation();
-
   useEffect(() => {
     const path = location.pathname;
-    const title = BUSINESS_PAGE_TITLES[path]
-      || Object.entries(BUSINESS_PAGE_TITLES).sort((a, b) => b[0].length - a[0].length).find(([prefix]) => path.startsWith(`${prefix}/`))?.[1]
-      || path.split("/").filter(Boolean).pop()?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-      || "Business Workspace";
-
+    const title = BUSINESS_PAGE_TITLES[path] || Object.entries(BUSINESS_PAGE_TITLES).sort((a, b) => b[0].length - a[0].length).find(([prefix]) => path.startsWith(`${prefix}/`))?.[1] || path.split("/").filter(Boolean).pop()?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Business Workspace";
     document.documentElement.style.setProperty("--business-page-title", JSON.stringify(title));
     document.body.classList.toggle("biz-dashboard-home", BUSINESS_LANDING_PATHS.has(path));
     document.body.classList.toggle("biz-section-landing", /^(\/finix-dashboard|\/compliance-dashboard|\/records-dashboard|\/client-proposals-dashboard|\/people-matrix)$/.test(path));
     document.body.classList.toggle("biz-master-console", path === "/master-console");
-
-    return () => {
-      document.body.classList.remove("biz-dashboard-home", "biz-section-landing", "biz-master-console");
-    };
+    return () => document.body.classList.remove("biz-dashboard-home", "biz-section-landing", "biz-master-console");
   }, [location.pathname]);
-
   return null;
 }
 
@@ -181,16 +123,6 @@ function WebsiteSurfaceScope() {
   }, [location.pathname]);
   return null;
 }
-
-// NOTE: the platform-owner-only "Commercial Console" / "Website Studio" links
-// used to be rendered here as a separate, CSS-positioned overlay
-// (data-commercial-console) fighting for placement against rules in
-// commercial-business-ui.css and enterprise-design.css -- which is why they
-// could appear misplaced. They now live inside DashboardLayout's own sidebar,
-// right above "Collapse Sidebar", rendered with the exact same markup so all
-// three are guaranteed to match in size/shape/animation, and gated on the
-// single isPlatformOwner flag from AuthContext so a licensee never sees or
-// can navigate to them (see AuthContext.jsx + DashboardLayout.jsx).
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
