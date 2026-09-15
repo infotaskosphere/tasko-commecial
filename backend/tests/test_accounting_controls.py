@@ -38,10 +38,18 @@ def test_balanced_lines_reject_invalid_shapes():
         validate_balanced_lines([{"account_id": "a", "debit": 10, "credit": 10}])
 
 
-def test_balanced_lines_use_paise_precision():
+def test_balanced_lines_require_exact_paise_balance():
+    with pytest.raises(AccountingControlError):
+        validate_balanced_lines([
+            {"account_id": "a", "debit": "100.005", "credit": 0},
+            {"account_id": "b", "debit": 0, "credit": "100.00"},
+        ])
+
+
+def test_balanced_lines_accept_exact_paise_balance():
     debit, credit = validate_balanced_lines([
         {"account_id": "a", "debit": "100.005", "credit": 0},
-        {"account_id": "b", "debit": 0, "credit": "100.00"},
+        {"account_id": "b", "debit": 0, "credit": "100.01"},
     ])
     assert debit == Decimal("100.01")
-    assert credit == Decimal("100.00")
+    assert credit == Decimal("100.01")
