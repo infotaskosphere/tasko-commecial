@@ -4,11 +4,19 @@ import hashlib, json, uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Optional
-from fastapi import Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from backend.dependencies import db, get_current_user
 from backend.models import User
+from backend import accounting_core as _accounting_core
+
+# This module owns the approval/audit router.  It must not import
+# accounting_lock: accounting_lock itself imports these deterministic helpers.
+# Keeping the dependency one-way prevents the Uvicorn startup cycle that used
+# to leave backend.accounting_lock partially initialized.
+_integrity = APIRouter(prefix="/api/accounting-integrity", tags=["Accounting Integrity"])
+
 SUPPORTED_DOCUMENT_TYPES = frozenset({"PURCHASE","SALE","EXPENSE","PAYMENT","RECEIPT","CONTRA","JOURNAL","PURCHASE_RETURN","SALE_RETURN","DEBIT_NOTE","CREDIT_NOTE","ADVANCE_PAYMENT","ADVANCE_RECEIPT","RCM_PURCHASE","FIXED_ASSET","PREPAID_EXPENSE","ACCRUAL","PROVISION","PAYROLL","DEPRECIATION","LOAN_RECEIPT","LOAN_REPAYMENT","INTEREST","GST_PAYMENT","TDS_PAYMENT","STOCK_JOURNAL","INVENTORY_ADJUSTMENT","BANK_CHARGE","BANK_TRANSFER"})
 class AccountingControlError(ValueError): pass
 
@@ -54,9 +62,6 @@ def ensure_source_key(source: Any, source_id: Any) -> tuple[str,str|None]:
     sid=str(source_id).strip() if source_id is not None else None
     return s,sid or None
 
-from backend import accounting_lock as _integrity
-from backend import accounting_core as _accounting_core
-
 def _perms(user: User)->dict:
     if user.role=="admin": return {"admin":True}
     return user.permissions if isinstance(user.permissions,dict) else (user.permissions.model_dump() if user.permissions else {})
@@ -75,8 +80,6 @@ def _event_hash(previous_hash:str,event:dict)->str: return hashlib.sha256(f"{pre
 
 async def _append_audit(company_id:str,event_type:str,actor_id:Optional[str],payload:dict,document_id:Optional[str]=None)->dict:
     company=str(company_id or "")
-    # Serialize writers per company through a database lock document. A stale
-    # lock is recoverable; the audit chain itself remains the source of truth.
     now=datetime.now(timezone.utc).isoformat(); lock_id=f"audit:{company}"; token=str(uuid.uuid4())
     await db.accounting_audit_locks.update_one({"id":lock_id},{"$setOnInsert":{"id":lock_id,"company_id":company,"locked":False}},upsert=True)
     acquired=False
@@ -97,25 +100,9 @@ async def _append_audit(company_id:str,event_type:str,actor_id:Optional[str],pay
     finally:
         await db.accounting_audit_locks.update_one({"id":lock_id,"token":token},{"$set":{"locked":False},"$unset":{"token":"","locked_at":""}})
 
-async def _install_failure_capture():
-    current=_accounting_core.try_auto_post
-    if getattr(current,"_finix_failure_capture",False): return
-    async def wrapped(company_id,entry_date,narration,lines,source,source_id,created_by):
-        result=await current(company_id,entry_date,narration,lines,source,source_id,created_by)
-        if result is None:
-            now=datetime.now(timezone.utc).isoformat()
-            await db.accounting_posting_failures.update_one({"company_id":str(company_id or ""),"source":str(source or ""),"source_id":source_id},{"$set":{"lines":lines,"entry_date":entry_date,"narration":narration,"status":"PENDING_APPROVAL","approval_required":True,"updated_at":now},"$setOnInsert":{"id":str(uuid.uuid4()),"created_at":now}},upsert=True)
-            try: await _append_audit(company_id,"POSTING_FAILURE_CREATED",created_by,{"source":source,"source_id":source_id,"status":"PENDING_APPROVAL"},source_id)
-            except Exception: pass
-        return result
-    wrapped._finix_failure_capture=True; _accounting_core.try_auto_post=wrapped
-
-@_integrity.router.on_event("startup")
-async def install_posting_failure_capture(): await _install_failure_capture()
-
 class ApprovalDecision(BaseModel): reason:str=Field(...,min_length=3,max_length=1000)
 
-@_integrity.router.get("/posting-failures")
+@_integrity.get("/posting-failures")
 async def list_posting_failures(company_id:str=Query(""),status:Optional[str]=Query(None),limit:int=Query(100,ge=1,le=500),current_user:User=Depends(get_current_user)):
     company_id=_authorized_company(company_id,current_user)
     if not _can_review(current_user): raise HTTPException(403,"Access denied.")
@@ -124,14 +111,14 @@ async def list_posting_failures(company_id:str=Query(""),status:Optional[str]=Qu
     rows=await db.accounting_posting_failures.find(q,{"_id":0}).sort("created_at",-1).limit(limit).to_list(limit)
     return {"items":rows,"count":len(rows)}
 
-@_integrity.router.get("/approval-summary")
+@_integrity.get("/approval-summary")
 async def approval_summary(company_id:str=Query(""),current_user:User=Depends(get_current_user)):
     company_id=_authorized_company(company_id,current_user)
     if not _can_review(current_user): raise HTTPException(403,"Access denied.")
     rows=await db.accounting_posting_failures.aggregate([{"$match":{"company_id":company_id}},{"$group":{"_id":"$status","count":{"$sum":1}}}]).to_list(50)
     return {"statuses":{str(r.get("_id")):r.get("count",0) for r in rows}}
 
-@_integrity.router.get("/audit-trail")
+@_integrity.get("/audit-trail")
 async def list_accounting_audit(company_id:str=Query(""),document_id:Optional[str]=Query(None),limit:int=Query(200,ge=1,le=1000),current_user:User=Depends(get_current_user)):
     company_id=_authorized_company(company_id,current_user)
     if not _can_audit(current_user): raise HTTPException(403,"Access denied.")
@@ -139,7 +126,7 @@ async def list_accounting_audit(company_id:str=Query(""),document_id:Optional[st
     if document_id:q["document_id"]=document_id
     return await db.accounting_audit.find(q,{"_id":0}).sort("sequence",-1).limit(limit).to_list(limit)
 
-@_integrity.router.get("/audit-trail/verify")
+@_integrity.get("/audit-trail/verify")
 async def verify_accounting_audit(company_id:str=Query(""),current_user:User=Depends(get_current_user)):
     company_id=_authorized_company(company_id,current_user)
     if not _can_audit(current_user): raise HTTPException(403,"Access denied.")
@@ -151,7 +138,7 @@ async def verify_accounting_audit(company_id:str=Query(""),current_user:User=Dep
         previous=stored
     return {"valid":True,"events_checked":len(events),"last_sequence":len(events)}
 
-@_integrity.router.post("/posting-failures/{failure_id}/reject")
+@_integrity.post("/posting-failures/{failure_id}/reject")
 async def reject_posting_failure(failure_id:str,body:ApprovalDecision,current_user:User=Depends(get_current_user)):
     if not _can_review(current_user):raise HTTPException(403,"Access denied.")
     failure=await db.accounting_posting_failures.find_one({"id":failure_id},{"_id":0})
@@ -161,7 +148,7 @@ async def reject_posting_failure(failure_id:str,body:ApprovalDecision,current_us
     if result.modified_count!=1:raise HTTPException(409,"Posting failure was already decided by another reviewer.")
     await _append_audit(company_id,"POSTING_FAILURE_REJECTED",current_user.id,{"failure_id":failure_id,"reason":body.reason.strip()},failure.get("source_id")); return {"success":True,"status":"REJECTED"}
 
-@_integrity.router.post("/posting-failures/{failure_id}/approve")
+@_integrity.post("/posting-failures/{failure_id}/approve")
 async def approve_posting_failure(failure_id:str,body:ApprovalDecision,current_user:User=Depends(get_current_user)):
     if not _can_review(current_user):raise HTTPException(403,"Access denied.")
     failure=await db.accounting_posting_failures.find_one({"id":failure_id},{"_id":0})
@@ -190,7 +177,12 @@ async def create_accounting_approval_indexes():
     await db.accounting_audit.create_index([("company_id",1),("document_id",1),("sequence",-1)])
     await db.accounting_audit_sequences.create_index("company_id",unique=True)
     await db.accounting_audit_locks.create_index("id",unique=True)
-_original_integrity_index_creator=_integrity.create_accounting_integrity_indexes
+
+# accounting_lock owns the core integrity router and index bootstrap.  Import
+# its objects only after this module has finished defining the controls above.
+from backend import accounting_lock as _lock
+_lock.router.include_router(_integrity)
+_original_integrity_index_creator=_lock.create_accounting_integrity_indexes
 async def _create_all_accounting_integrity_indexes():
     await _original_integrity_index_creator(); await create_accounting_approval_indexes()
-_integrity.create_accounting_integrity_indexes=_create_all_accounting_integrity_indexes
+_lock.create_accounting_integrity_indexes=_create_all_accounting_integrity_indexes
