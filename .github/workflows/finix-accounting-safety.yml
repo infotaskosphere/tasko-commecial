@@ -26,6 +26,7 @@ jobs:
         run: |
           python -m py_compile backend/accounting_ai/accounting_controls.py
           python -m py_compile backend/accounting_ai/accounting_engine.py
+          python -m py_compile backend/accounting_ai/accounting_completeness.py
           python -m py_compile backend/accounting_ai/financial_validator.py
           python -m py_compile backend/accounting_ai/gst_engine.py
           python -m py_compile backend/accounting_ai/tds_engine.py
@@ -45,4 +46,4 @@ jobs:
       - name: Run Finix accounting tests
         env:
           ENV_MODE: development
-        run: pytest -q backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py
+        run: pytest -q backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py backend/tests/test_accounting_completeness.py
