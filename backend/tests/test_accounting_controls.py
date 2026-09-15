@@ -5,7 +5,7 @@ from backend.accounting_ai.accounting_controls import AccountingControlError, no
 from backend.accounting_ai.gst_engine import GSTEngine
 from backend.accounting_ai.tds_engine import TDSEngine
 from backend.accounting_ai.accounting_policy import classify_transaction
-from backend.accounting_ai.ledger_learning import LedgerLearningEngine
+from backend.accounting_ai.ledger_learning import LedgerLearningEngine, MIN_RECOMMENDATION_FREQUENCY
 
 
 def test_unknown_document_type_fails_closed():
@@ -52,4 +52,4 @@ def test_accounting_substance_requires_confirmation():
     assert result["status"]=="REVIEW_REQUIRED"
 
 def test_ledger_learning_does_not_auto_recommend_one_off_history():
-    assert LedgerLearningEngine.MIN_RECOMMENDATION_FREQUENCY==3
+    assert MIN_RECOMMENDATION_FREQUENCY==3
