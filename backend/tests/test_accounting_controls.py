@@ -38,7 +38,7 @@ def test_balanced_lines_reject_invalid_shapes():
         validate_balanced_lines([{"account_id": "a", "debit": 10, "credit": 10}])
 
 
-def test_balanced_lines_require_exact_paise_balance():
+def test_balanced_lines_require_exact_paise_balance_by_default():
     with pytest.raises(AccountingControlError):
         validate_balanced_lines([
             {"account_id": "a", "debit": "100.005", "credit": 0},
@@ -46,10 +46,19 @@ def test_balanced_lines_require_exact_paise_balance():
         ])
 
 
-def test_balanced_lines_accept_exact_paise_balance():
+def test_balanced_lines_return_exact_paise_totals():
     debit, credit = validate_balanced_lines([
         {"account_id": "a", "debit": "100.005", "credit": 0},
         {"account_id": "b", "debit": 0, "credit": "100.01"},
     ])
     assert debit == Decimal("100.01")
     assert credit == Decimal("100.01")
+
+
+def test_explicit_tolerance_must_be_opted_in():
+    debit, credit = validate_balanced_lines([
+        {"account_id": "a", "debit": "100.01", "credit": 0},
+        {"account_id": "b", "debit": 0, "credit": "100.00"},
+    ], tolerance=Decimal("0.01"))
+    assert debit == Decimal("100.01")
+    assert credit == Decimal("100.00")
