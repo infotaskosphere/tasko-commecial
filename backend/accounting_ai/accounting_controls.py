@@ -11,10 +11,9 @@ from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend import accounting_core as _accounting_core
 
-# This module owns the approval/audit router.  It must not import
-# accounting_lock: accounting_lock itself imports these deterministic helpers.
-# Keeping the dependency one-way prevents the Uvicorn startup cycle that used
-# to leave backend.accounting_lock partially initialized.
+# This module owns the approval/audit router. It intentionally has no import
+# dependency on accounting_lock because accounting_lock imports these helpers.
+# The one-way dependency is required for clean Uvicorn startup.
 _integrity = APIRouter(prefix="/api/accounting-integrity", tags=["Accounting Integrity"])
 
 SUPPORTED_DOCUMENT_TYPES = frozenset({"PURCHASE","SALE","EXPENSE","PAYMENT","RECEIPT","CONTRA","JOURNAL","PURCHASE_RETURN","SALE_RETURN","DEBIT_NOTE","CREDIT_NOTE","ADVANCE_PAYMENT","ADVANCE_RECEIPT","RCM_PURCHASE","FIXED_ASSET","PREPAID_EXPENSE","ACCRUAL","PROVISION","PAYROLL","DEPRECIATION","LOAN_RECEIPT","LOAN_REPAYMENT","INTEREST","GST_PAYMENT","TDS_PAYMENT","STOCK_JOURNAL","INVENTORY_ADJUSTMENT","BANK_CHARGE","BANK_TRANSFER"})
@@ -177,12 +176,3 @@ async def create_accounting_approval_indexes():
     await db.accounting_audit.create_index([("company_id",1),("document_id",1),("sequence",-1)])
     await db.accounting_audit_sequences.create_index("company_id",unique=True)
     await db.accounting_audit_locks.create_index("id",unique=True)
-
-# accounting_lock owns the core integrity router and index bootstrap.  Import
-# its objects only after this module has finished defining the controls above.
-from backend import accounting_lock as _lock
-_lock.router.include_router(_integrity)
-_original_integrity_index_creator=_lock.create_accounting_integrity_indexes
-async def _create_all_accounting_integrity_indexes():
-    await _original_integrity_index_creator(); await create_accounting_approval_indexes()
-_lock.create_accounting_integrity_indexes=_create_all_accounting_integrity_indexes
