@@ -1,13 +1,52 @@
 """
-Journal Builder — Constructs fully balanced, double-entry journal entries (Debits/Credits) representing
-various transaction scenarios including GST, TDS, RCM, discounts, freight, and round-offs.
+Journal Builder — Constructs deterministic, double-entry journal entries.
+
+The builder is deliberately conservative: it never invents a ledger, party,
+transaction type, tax amount, or material round-off. Accounting values are
+validated in paise before journal lines are returned to the posting engine.
 """
 
-from typing import Dict, Any, List, Optional
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import Dict, Any, List
 import logging
+
+from backend.accounting_ai.accounting_controls import (
+    AccountingControlError,
+    normalize_document_type,
+    validate_balanced_lines,
+)
 from backend.accounting_ai.chart_of_accounts import ChartOfAccountsManager
 
 logger = logging.getLogger("journal_builder")
+
+PAISE = Decimal("0.01")
+MAX_AUTOMATIC_ROUNDOFF = Decimal("0.99")
+SUPPORTED_JOURNAL_TYPES = {"PURCHASE", "SALE"}
+
+
+def _money(value: Any, field: str) -> Decimal:
+    """Parse a monetary value using Decimal and quantize to Indian paise."""
+    try:
+        amount = Decimal(str(value if value is not None else "0")).quantize(
+            PAISE, rounding=ROUND_HALF_UP
+        )
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise AccountingControlError(f"{field} must be a valid monetary amount.") from exc
+    if not amount.is_finite():
+        raise AccountingControlError(f"{field} must be finite.")
+    if amount < 0:
+        raise AccountingControlError(f"{field} cannot be negative.")
+    return amount
+
+
+def _require_account(account: Any, category: str) -> Dict[str, Any]:
+    """Require a resolved, usable account; never substitute another ledger."""
+    if not isinstance(account, dict) or not account.get("id"):
+        raise AccountingControlError(
+            f"Required {category} account could not be resolved; journal requires review."
+        )
+    return account
+
 
 class JournalBuilder:
     @classmethod
@@ -19,191 +58,184 @@ class JournalBuilder:
         resolved_ledger_code: str,
         gst_split: Dict[str, float],
         tds_result: Dict[str, Any],
-        dimensions: Dict[str, str]
+        dimensions: Dict[str, str],
     ) -> List[Dict[str, Any]]:
-        """Assembles and matches balanced journal line debit/credit pairs."""
-        doc_type = str(doc_type).upper().strip()
-        
-        taxable_value = float(extracted_data.get("taxable_value") or 0.0)
-        total_invoice_value = float(extracted_data.get("total_invoice_value") or 0.0)
-        vendor_name = extracted_data.get("vendor_or_customer_name") or "Unknown Party"
-        invoice_no = extracted_data.get("invoice_number") or ""
+        """Build and validate deterministic journal lines for a supported event."""
+        if not company_id or not str(company_id).strip():
+            raise AccountingControlError("company_id is required to build a journal.")
+        if not isinstance(extracted_data, dict):
+            raise AccountingControlError("extracted_data must be an object.")
+        if not isinstance(gst_split, dict):
+            raise AccountingControlError("gst_split must be an object.")
+        if tds_result is not None and not isinstance(tds_result, dict):
+            raise AccountingControlError("tds_result must be an object or null.")
+        if dimensions is None:
+            dimensions = {}
+        if not isinstance(dimensions, dict):
+            raise AccountingControlError("dimensions must be an object.")
 
-        # Load appropriate standard system accounts
-        ar_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "receivable")
-        ap_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "payable")
-        gst_in_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "gst_input")
-        gst_out_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "gst_output")
-        tds_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "tds")
-        roundoff_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "roundoff")
-        
-        # Load core expense/income ledger
-        core_acct = await ChartOfAccountsManager.lookup_by_code(company_id, resolved_ledger_code)
-        if not core_acct:
-            core_acct = await ChartOfAccountsManager.get_default_account_for_category(company_id, "purchases")
+        event = normalize_document_type(doc_type)
+        if event == "UNCLASSIFIED" or event not in SUPPORTED_JOURNAL_TYPES:
+            raise AccountingControlError(
+                f"Journal construction is not supported for transaction type '{doc_type}'."
+            )
 
-        lines = []
+        if not resolved_ledger_code or not str(resolved_ledger_code).strip():
+            raise AccountingControlError(
+                f"No resolved ledger code supplied for {event}; refusing to guess an account."
+            )
+
+        taxable_value = _money(extracted_data.get("taxable_value"), "taxable_value")
+        total_invoice_value = _money(
+            extracted_data.get("total_invoice_value"), "total_invoice_value"
+        )
+        party_name = str(extracted_data.get("vendor_or_customer_name") or "").strip()
+        if not party_name:
+            raise AccountingControlError(
+                f"{event} journal requires a resolved vendor/customer; refusing 'Unknown Party'."
+            )
+        invoice_no = str(extracted_data.get("invoice_number") or "").strip()
+
+        # FX conversion is allowed only when a valid positive rate is explicitly
+        # supplied. The source values remain unchanged; only the accounting
+        # amounts returned by this builder are converted to INR.
+        fx = extracted_data.get("fx") or {}
+        if not isinstance(fx, dict):
+            raise AccountingControlError("fx metadata must be an object when supplied.")
+        fx_rate = _money(fx.get("rate_to_inr", 1), "fx.rate_to_inr")
+        if fx_rate <= 0:
+            raise AccountingControlError("fx.rate_to_inr must be greater than zero.")
+        if fx_rate != Decimal("1.00"):
+            taxable_value = (taxable_value * fx_rate).quantize(PAISE, rounding=ROUND_HALF_UP)
+            total_invoice_value = (total_invoice_value * fx_rate).quantize(PAISE, rounding=ROUND_HALF_UP)
+
+        cgst = _money(gst_split.get("cgst", 0), "gst_split.cgst")
+        sgst = _money(gst_split.get("sgst", 0), "gst_split.sgst")
+        igst = _money(gst_split.get("igst", 0), "gst_split.igst")
+        if fx_rate != Decimal("1.00"):
+            cgst = (cgst * fx_rate).quantize(PAISE, rounding=ROUND_HALF_UP)
+            sgst = (sgst * fx_rate).quantize(PAISE, rounding=ROUND_HALF_UP)
+            igst = (igst * fx_rate).quantize(PAISE, rounding=ROUND_HALF_UP)
+        total_tax = cgst + sgst + igst
+
+        # The tax engine's taxable amount plus tax must reconcile to the invoice
+        # total before any legitimate invoice-level round-off is considered.
+        expected_before_roundoff = taxable_value + total_tax
+        source_difference = total_invoice_value - expected_before_roundoff
+        if abs(source_difference) > MAX_AUTOMATIC_ROUNDOFF:
+            raise AccountingControlError(
+                f"Invoice total does not reconcile with taxable value plus GST: "
+                f"difference {source_difference}. Journal requires review."
+            )
+
+        ar_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "receivable"),
+            "receivable",
+        )
+        ap_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "payable"),
+            "payable",
+        )
+        gst_in_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "gst_input"),
+            "GST input",
+        )
+        gst_out_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "gst_output"),
+            "GST output",
+        )
+        tds_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "tds"),
+            "TDS payable",
+        )
+        roundoff_acct = _require_account(
+            await ChartOfAccountsManager.get_default_account_for_category(company_id, "roundoff"),
+            "round-off",
+        )
+        core_acct = _require_account(
+            await ChartOfAccountsManager.lookup_by_code(company_id, str(resolved_ledger_code).strip()),
+            f"resolved ledger {resolved_ledger_code}",
+        )
+
+        lines: List[Dict[str, Any]] = []
         memo_suffix = f" — Inv {invoice_no}" if invoice_no else ""
 
-        cgst = round(gst_split.get("cgst", 0.0), 2)
-        sgst = round(gst_split.get("sgst", 0.0), 2)
-        igst = round(gst_split.get("igst", 0.0), 2)
-        total_tax = round(cgst + sgst + igst, 2)
-
-        # Apply multi-currency scaling or historical FX conversions if present in metadata
-        fx = extracted_data.get("fx") or {}
-        fx_rate = float(fx.get("rate_to_inr") or 1.0)
-        if fx_rate != 1.0:
-            taxable_value = round(taxable_value * fx_rate, 2)
-            cgst = round(cgst * fx_rate, 2)
-            sgst = round(sgst * fx_rate, 2)
-            igst = round(igst * fx_rate, 2)
-            total_tax = round(total_tax * fx_rate, 2)
-            total_invoice_value = round(total_invoice_value * fx_rate, 2)
-
-        if doc_type == "PURCHASE":
-            # 1. Base expense line
+        def add_line(account: Dict[str, Any], name: str, debit: Decimal, credit: Decimal, memo: str):
             lines.append({
-                "account_id": core_acct["id"],
-                "account_name": core_acct["name"],
-                "debit": taxable_value,
-                "credit": 0.0,
-                "memo": f"{vendor_name}{memo_suffix}",
-                **dimensions
+                "account_id": account["id"],
+                "account_name": name,
+                "debit": float(debit),
+                "credit": float(credit),
+                "memo": memo,
+                **dimensions,
             })
 
-            # 2. GST Input Credits lines
-            if cgst > 0:
-                lines.append({
-                    "account_id": gst_in_acct["id"],
-                    "account_name": "GST Input Credit (CGST)",
-                    "debit": cgst,
-                    "credit": 0.0,
-                    "memo": f"CGST Input{memo_suffix}",
-                    **dimensions
-                })
-            if sgst > 0:
-                lines.append({
-                    "account_id": gst_in_acct["id"],
-                    "account_name": "GST Input Credit (SGST)",
-                    "debit": sgst,
-                    "credit": 0.0,
-                    "memo": f"SGST Input{memo_suffix}",
-                    **dimensions
-                })
-            if igst > 0:
-                lines.append({
-                    "account_id": gst_in_acct["id"],
-                    "account_name": "GST Input Credit (IGST)",
-                    "debit": igst,
-                    "credit": 0.0,
-                    "memo": f"IGST Input{memo_suffix}",
-                    **dimensions
-                })
+        if event == "PURCHASE":
+            add_line(core_acct, core_acct.get("name", "Purchases"), taxable_value, Decimal("0"), f"{party_name}{memo_suffix}")
 
-            # 3. TDS deduction line (reduces vendor payable)
-            net_vendor_payable = total_invoice_value
+            if cgst:
+                add_line(gst_in_acct, "GST Input Credit (CGST)", cgst, Decimal("0"), f"CGST Input{memo_suffix}")
+            if sgst:
+                add_line(gst_in_acct, "GST Input Credit (SGST)", sgst, Decimal("0"), f"SGST Input{memo_suffix}")
+            if igst:
+                add_line(gst_in_acct, "GST Input Credit (IGST)", igst, Decimal("0"), f"IGST Input{memo_suffix}")
+
+            deduction = Decimal("0")
             if tds_result and tds_result.get("applicable"):
-                ded_amt = round(tds_result["deduction_amount"], 2)
-                net_vendor_payable = round(net_vendor_payable - ded_amt, 2)
-                lines.append({
-                    "account_id": tds_acct["id"],
-                    "account_name": f"TDS Payable Sec {tds_result.get('section')}",
-                    "debit": 0.0,
-                    "credit": ded_amt,
-                    "memo": f"TDS deduction Sec {tds_result.get('section')}{memo_suffix}",
-                    **dimensions
-                })
+                deduction = _money(tds_result.get("deduction_amount"), "tds.deduction_amount")
+                if deduction > total_invoice_value:
+                    raise AccountingControlError("TDS deduction cannot exceed invoice value.")
+                section = str(tds_result.get("section") or "").strip()
+                if not section:
+                    raise AccountingControlError("Applicable TDS requires a section.")
+                add_line(
+                    tds_acct,
+                    f"TDS Payable Sec {section}",
+                    Decimal("0"),
+                    deduction,
+                    f"TDS deduction Sec {section}{memo_suffix}",
+                )
 
-            # 4. Net Vendor Payable line
-            lines.append({
-                "account_id": ap_acct["id"],
-                "account_name": "Accounts Payable",
-                "debit": 0.0,
-                "credit": net_vendor_payable,
-                "memo": f"Payable to {vendor_name}{memo_suffix}",
-                **dimensions
-            })
+            net_vendor_payable = total_invoice_value - deduction
+            add_line(ap_acct, "Accounts Payable", Decimal("0"), net_vendor_payable, f"Payable to {party_name}{memo_suffix}")
 
-        elif doc_type == "SALE":
-            # 1. Base Accounts Receivable line
-            lines.append({
-                "account_id": ar_acct["id"],
-                "account_name": "Accounts Receivable",
-                "debit": total_invoice_value,
-                "credit": 0.0,
-                "memo": f"Billed to {vendor_name}{memo_suffix}",
-                **dimensions
-            })
+        else:  # SALE
+            add_line(ar_acct, "Accounts Receivable", total_invoice_value, Decimal("0"), f"Billed to {party_name}{memo_suffix}")
+            add_line(core_acct, core_acct.get("name", "Sales / Fee Income"), Decimal("0"), taxable_value, f"Sales revenue{memo_suffix}")
 
-            # 2. Revenue sales line
-            lines.append({
-                "account_id": core_acct["id"],
-                "account_name": core_acct["name"],
-                "debit": 0.0,
-                "credit": taxable_value,
-                "memo": f"Sales revenue{memo_suffix}",
-                **dimensions
-            })
+            if cgst:
+                add_line(gst_out_acct, "GST Output Payable (CGST)", Decimal("0"), cgst, f"CGST Liability{memo_suffix}")
+            if sgst:
+                add_line(gst_out_acct, "GST Output Payable (SGST)", Decimal("0"), sgst, f"SGST Liability{memo_suffix}")
+            if igst:
+                add_line(gst_out_acct, "GST Output Payable (IGST)", Decimal("0"), igst, f"IGST Liability{memo_suffix}")
 
-            # 3. GST Output liability lines
-            if cgst > 0:
-                lines.append({
-                    "account_id": gst_out_acct["id"],
-                    "account_name": "GST Output Payable (CGST)",
-                    "debit": 0.0,
-                    "credit": cgst,
-                    "memo": f"CGST Liability{memo_suffix}",
-                    **dimensions
-                })
-            if sgst > 0:
-                lines.append({
-                    "account_id": gst_out_acct["id"],
-                    "account_name": "GST Output Payable (SGST)",
-                    "debit": 0.0,
-                    "credit": sgst,
-                    "memo": f"SGST Liability{memo_suffix}",
-                    **dimensions
-                })
-            if igst > 0:
-                lines.append({
-                    "account_id": gst_out_acct["id"],
-                    "account_name": "GST Output Payable (IGST)",
-                    "debit": 0.0,
-                    "credit": igst,
-                    "memo": f"IGST Liability{memo_suffix}",
-                    **dimensions
-                })
+        # Only an explicit invoice-level paise/rupee rounding difference can be
+        # auto-adjusted. A multi-rupee discrepancy is an accounting error, not
+        # a round-off opportunity.
+        total_debit = sum(_money(line["debit"], "journal debit") for line in lines)
+        total_credit = sum(_money(line["credit"], "journal credit") for line in lines)
+        diff = (total_debit - total_credit).quantize(PAISE, rounding=ROUND_HALF_UP)
 
-        # Calculate imbalance and apply smart Round-Off
-        total_debit = round(sum(l["debit"] for l in lines), 2)
-        total_credit = round(sum(l["credit"] for l in lines), 2)
-        diff = round(total_debit - total_credit, 2)
-
-        if abs(diff) > 0.0:
-            if abs(diff) <= 5.0:  # Allow up to 5 INR round-off variance
-                if diff > 0:
-                    # Debit is higher -> add Credit round-off
-                    lines.append({
-                        "account_id": roundoff_acct["id"],
-                        "account_name": "Round Off",
-                        "debit": 0.0,
-                        "credit": abs(diff),
-                        "memo": "Auto round-off adjustment",
-                        **dimensions
-                    })
-                else:
-                    # Credit is higher -> add Debit round-off
-                    lines.append({
-                        "account_id": roundoff_acct["id"],
-                        "account_name": "Round Off",
-                        "debit": abs(diff),
-                        "credit": 0.0,
-                        "memo": "Auto round-off adjustment",
-                        **dimensions
-                    })
+        if diff:
+            if abs(diff) > MAX_AUTOMATIC_ROUNDOFF:
+                logger.error(
+                    "Journal balance discrepancy: company=%s event=%s debit=%s credit=%s",
+                    company_id, event, total_debit, total_credit,
+                )
+                raise AccountingControlError(
+                    f"Journal balance mismatch of {diff}; transaction requires review."
+                )
+            if diff > 0:
+                add_line(roundoff_acct, "Round Off", Decimal("0"), diff, "Invoice round-off adjustment")
             else:
-                logger.error(f"High balance discrepancy: debits {total_debit} != credits {total_credit}")
-                raise ValueError(f"Journal balance mismatch of {diff} is too high to automatically round off.")
+                add_line(roundoff_acct, "Round Off", -diff, Decimal("0"), "Invoice round-off adjustment")
+
+        try:
+            validate_balanced_lines(lines)
+        except Exception as exc:
+            raise AccountingControlError(
+                f"Journal validation failed for {event}; transaction requires review: {exc}"
+            ) from exc
 
         return lines
