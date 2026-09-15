@@ -1,18 +1,39 @@
-/* Module branding: active workspace controls the header wordmark. */
+/* Exact flat module design language for Taskosphere, Finix and People Matrix. */
 .module-brand-logo{display:block;width:100%;height:54px;object-fit:contain}
 header>div:first-child,header>div:first-child img{border-radius:0!important}
 header>div:first-child img:not([style*="display: none"]){object-fit:contain!important;object-position:center!important}
 
-/* Use the real product wordmarks already stored in public/. */
+/* Product wordmarks */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/logo-lite.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/finix-logo.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:246px!important;max-width:calc(100% - 16px)!important;height:56px!important}
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:246px!important;max-width:calc(100% - 16px)!important;height:52px!important}
 
-/* Keep module tabs flat and rectangular. */
+/* Global module switcher is rectangular like the reference. */
 #top-module-switcher-bar button[id^="nav-tab-"]{border-radius:0!important;background:transparent!important}
 #top-module-switcher-bar #nav-tab-core.font-semibold,#top-module-switcher-bar #nav-tab-accounts.font-semibold,#top-module-switcher-bar #nav-tab-people-matrix.font-semibold{border-bottom:2px solid #1F6FB2!important;color:#0D3B66!important}
 
-/* People Matrix: square enterprise cards, not rounded/pill UI. */
+/* --------------------------------------------------------------------------
+   NO-CURVE CARD SYSTEM
+   The reference uses sharp enterprise cards throughout all three products.
+   Do not flatten rounded-full: avatars/status dots intentionally remain round.
+   -------------------------------------------------------------------------- */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-lg"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-lg"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-lg"][class*="shadow"]{
+  border-radius:0!important;
+}
+
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-2xl"][class*="shadow"]{border:1px solid #DCE4EC!important}
+
+/* People Matrix */
 .people-matrix-dashboard{--pm-border:#DCE4EC;--pm-blue:#1F6FB2;--pm-deep:#0D3B66;--pm-green:#1FAF5A}
 .people-matrix-dashboard .pm-hero,.people-matrix-dashboard .pm-card,.people-matrix-dashboard .pm-action,.people-matrix-dashboard .pm-kpi{border-radius:0!important}
 .people-matrix-dashboard .pm-hero{position:relative;overflow:hidden;min-height:174px;border:1px solid var(--pm-border);background:linear-gradient(100deg,#fff 0%,#f8fbfe 58%,#eef7ff 100%);box-shadow:0 3px 12px rgba(15,23,42,.045)}
@@ -25,4 +46,9 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>d
 .dark .people-matrix-dashboard .pm-hero{border-color:#334155;background:linear-gradient(100deg,#0F172A 0%,#13233C 100%)}
 .dark .people-matrix-dashboard .pm-card,.dark .people-matrix-dashboard .pm-kpi,.dark .people-matrix-dashboard .pm-action{border-color:#334155;background:#0F172A}
 .dark .people-matrix-dashboard .pm-list-row+.pm-list-row{border-color:#1E293B}
-@media(max-width:767px){body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:190px!important;height:48px!important}}
+
+@media(max-width:767px){
+ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),
+ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),
+ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:190px!important;height:48px!important}
+}
