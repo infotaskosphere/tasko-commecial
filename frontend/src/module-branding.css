@@ -9,10 +9,11 @@
 header>div:first-child,header>div:first-child img{border-radius:0!important}
 header>div:first-child img:not([style*="display: none"]){object-fit:contain!important;object-position:center!important}
 
-/* Exact product marks already present in the repository. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/logo-lite.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
-body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/finix-logo.png');width:240px!important;max-width:calc(100% - 20px)!important;height:52px!important}
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:246px!important;max-width:calc(100% - 16px)!important;height:52px!important}
+/* Module-specific product marks. Keep the source assets intact and scale
+   them proportionally; never stretch a brand mark into the header geometry. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/logo-lite.png');width:170px!important;max-width:calc(100% - 20px)!important;height:54px!important}
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/finix-logo.png');width:170px!important;max-width:calc(100% - 20px)!important;height:54px!important}
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:190px!important;max-width:calc(100% - 12px)!important;height:54px!important}
 
 /* Suite module tabs match the reference: flat, thin, rectangular. */
 #top-module-switcher-bar button[id^="nav-tab-"]{border-radius:0!important;background:transparent!important}
@@ -30,7 +31,22 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [cl
   border-radius:0!important;
 }
 
-/* Preserve circular people/status indicators; flatten only card-like surfaces. */
+/* Catch smaller rounded card variants used by legacy Taskosphere/Finix
+   surfaces. Only elements that are visibly card-like (shadow or border)
+   are flattened, so status dots and ordinary controls remain usable. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-"][class*="border"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-"][class*="border"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-"][class*="border"]{
+  border-radius:0!important;
+}
+
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-full"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-full"][class*="shadow"],
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [class*="rounded-full"][class*="shadow"]{border-radius:0!important}
+
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-xl"][class*="shadow"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main [class*="rounded-2xl"][class*="shadow"],
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main [class*="rounded-xl"][class*="shadow"],
@@ -41,7 +57,8 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) main [cl
   box-shadow:0 2px 9px rgba(15,23,42,.045)!important;
 }
 
-/* Taskosphere / Finix content backgrounds follow the reference canvas. */
+/* Taskosphere / Finix / People Matrix content backgrounds follow the
+   reference canvas. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold),
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold),
 body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold){background:var(--suite-bg)}
@@ -63,7 +80,7 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold){backgrou
 .dark .people-matrix-dashboard .pm-list-row+.pm-list-row{border-color:#1E293B}
 
 @media(max-width:767px){
- body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),
- body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]),
- body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:190px!important;height:48px!important}
+ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
+ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
+ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:165px!important;height:48px!important}
 }
