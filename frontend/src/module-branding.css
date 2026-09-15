@@ -1,0 +1,116 @@
+/* Module-aware workspace branding.
+   The global header keeps one stable layout; only the product mark changes
+   with the active top-level workspace. This is intentionally CSS-scoped so
+   module navigation remains controlled by DashboardLayout/React routing.
+*/
+
+.module-brand-logo {
+  display: block;
+  width: 100%;
+  height: 54px;
+  object-fit: contain;
+}
+
+/* DashboardLayout renders the Task-O-Sphere logo as the canonical fallback.
+   :has() lets the already-rendered active module tab drive the visual brand
+   without duplicating navigation state in a second React store. Safari and
+   current Chromium/Firefox all support :has(). */
+header:has(~ #top-module-switcher-bar #nav-tab-accounts.font-semibold)
+  > div:first-child > a > div > img:not([style*="display: none"]),
+header:has(~ #top-module-switcher-bar #nav-tab-people-matrix.font-semibold)
+  > div:first-child > a > div > img:not([style*="display: none"]) {
+  object-fit: contain !important;
+}
+
+header:has(~ #top-module-switcher-bar #nav-tab-accounts.font-semibold)
+  > div:first-child > a > div > img:not([style*="display: none"]) {
+  content: url('/finix-logo.png');
+}
+
+header:has(~ #top-module-switcher-bar #nav-tab-people-matrix.font-semibold)
+  > div:first-child > a > div > img:not([style*="display: none"]) {
+  content: url('/people-matrix-logo.svg');
+}
+
+/* People Matrix dashboard surface */
+.people-matrix-dashboard {
+  --pm-blue: #1f6fb2;
+  --pm-deep: #0d3b66;
+  --pm-green: #1faf5a;
+  --pm-bg: #f4f7fb;
+}
+
+.people-matrix-dashboard .pm-hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 174px;
+  border: 1px solid #dbeafe;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 70% 15%, rgba(31,111,178,.10), transparent 24%),
+    linear-gradient(110deg, #ffffff 0%, #f7fbff 47%, #e9f5ff 100%);
+  box-shadow: 0 8px 24px rgba(13,59,102,.07);
+}
+
+.people-matrix-dashboard .pm-hero::after {
+  content: '';
+  position: absolute;
+  right: -90px;
+  bottom: -120px;
+  width: 430px;
+  height: 250px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, rgba(31,111,178,.08), rgba(31,175,90,.08));
+  transform: rotate(-8deg);
+}
+
+.people-matrix-dashboard .pm-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(15,23,42,.045);
+}
+
+.people-matrix-dashboard .pm-card:hover {
+  box-shadow: 0 8px 22px rgba(15,23,42,.07);
+}
+
+.people-matrix-dashboard .pm-kpi {
+  min-height: 112px;
+}
+
+.people-matrix-dashboard .pm-action {
+  min-height: 86px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+
+.people-matrix-dashboard .pm-action:hover {
+  transform: translateY(-2px);
+  border-color: #bfdbfe;
+  box-shadow: 0 8px 18px rgba(31,111,178,.09);
+}
+
+.people-matrix-dashboard .pm-list-row + .pm-list-row {
+  border-top: 1px solid #eef2f7;
+}
+
+@media (max-width: 767px) {
+  .people-matrix-dashboard .pm-hero { min-height: 0; }
+  .people-matrix-dashboard .pm-kpi { min-height: 92px; }
+}
+
+.dark .people-matrix-dashboard .pm-hero {
+  border-color: #334155;
+  background: linear-gradient(110deg, #0f172a 0%, #172554 100%);
+}
+.dark .people-matrix-dashboard .pm-card,
+.dark .people-matrix-dashboard .pm-action {
+  border-color: #334155;
+  background: #0f172a;
+}
+.dark .people-matrix-dashboard .pm-list-row + .pm-list-row {
+  border-color: #1e293b;
+}
