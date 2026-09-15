@@ -48,3 +48,22 @@ body:not(.website-surface) #root:has([style*="max-width: 1400px"]) [style*="bord
 body:not(.website-surface) #root:has([style*="max-width: 1400px"]) .shadow-sm{
   box-shadow:0 1px 4px rgb(15 23 42 / 5%)!important;
 }
+
+/* --------------------------------------------------------------------------
+   FINIX DASHBOARD KPI CARDS
+   The four KPI cards contain a title, amount and supporting metric. The
+   previous fixed 104px height clipped the lower content at normal Safari
+   zoom. Let the card size to its content while retaining a consistent
+   minimum height and visible content.
+   -------------------------------------------------------------------------- */
+#root div[class*="xl:grid-cols-4"] > div[class*="h-[104px]"] {
+  height:auto!important;
+  min-height:9.5rem!important;
+  overflow:visible!important;
+}
+
+@media (max-width:1279px) {
+  #root div[class*="xl:grid-cols-4"] > div[class*="h-[104px]"] {
+    min-height:9rem!important;
+  }
+}
