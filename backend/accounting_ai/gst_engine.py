@@ -1,93 +1,124 @@
-"""
-GST Engine — Decides and calculates GST types (CGST, SGST, IGST, Cess), Reverse Charge (RCM), and ITC eligibility.
-Performs deterministic tax split validation relative to company state vs vendor state.
+"""Deterministic GST controls for Finix.
+
+The engine never invents an intra/inter-state treatment when the location
+identity required to determine it is missing. Tax arithmetic uses Decimal and
+all tax decisions carry an explicit review state where evidence is incomplete.
 """
 
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Dict, Any, Tuple, Optional
+import re
 import logging
 
 logger = logging.getLogger("gst_engine")
+PAISE = Decimal("0.01")
+GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z0-9]{13}$")
+
+
+def _money(value: Any) -> Decimal:
+    try:
+        amount = Decimal(str(value if value is not None else "0"))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError("Invalid GST monetary value.") from exc
+    if not amount.is_finite():
+        raise ValueError("GST monetary values must be finite.")
+    return amount.quantize(PAISE, rounding=ROUND_HALF_UP)
+
 
 class GSTEngine:
+    @staticmethod
+    def validate_gstin(gstin: Any) -> bool:
+        value = str(gstin or "").strip().upper()
+        return bool(GSTIN_RE.fullmatch(value))
+
     @staticmethod
     def determine_gst_split(
         company_gstin: str,
         vendor_gstin: str,
-        total_tax_amount: float
-    ) -> Dict[str, float]:
-        """Calculates CGST, SGST, and IGST splits based on Indian GST guidelines.
-        First 2 digits of GSTIN indicate state code.
-        Same State -> Intra-state (CGST + SGST split 50/50)
-        Different State -> Inter-state (IGST 100%)
-        """
-        cgst = 0.0
-        sgst = 0.0
-        igst = 0.0
+        total_tax_amount: float,
+        *,
+        place_of_supply_state: Optional[str] = None,
+        supplier_state: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Determine GST split only when the jurisdiction evidence is sufficient."""
+        total_tax = _money(total_tax_amount)
+        if total_tax < 0:
+            raise ValueError("GST cannot be negative.")
+        if total_tax == 0:
+            return {"cgst": 0.0, "sgst": 0.0, "igst": 0.0, "status": "NO_TAX"}
 
-        company_gstin = str(company_gstin or "").strip()
-        vendor_gstin = str(vendor_gstin or "").strip()
-        total_tax_amount = round(float(total_tax_amount or 0.0), 2)
+        company = str(company_gstin or "").strip().upper()
+        vendor = str(vendor_gstin or "").strip().upper()
+        company_state = company[:2] if GSTEngine.validate_gstin(company) else None
+        vendor_state = vendor[:2] if GSTEngine.validate_gstin(vendor) else None
+        pos = str(place_of_supply_state or "").strip().zfill(2) or None
+        supplier = str(supplier_state or vendor_state or "").strip().zfill(2) or None
 
-        if total_tax_amount <= 0:
-            return {"cgst": 0.0, "sgst": 0.0, "igst": 0.0}
-
-        # Safe defaults if either GSTIN is missing
-        if not company_gstin or not vendor_gstin or len(company_gstin) < 2 or len(vendor_gstin) < 2:
-            # Assume CGST/SGST split by default as fallback
-            cgst = round(total_tax_amount / 2, 2)
-            sgst = round(total_tax_amount - cgst, 2)
-            return {"cgst": cgst, "sgst": sgst, "igst": 0.0}
-
-        company_state = company_gstin[:2]
-        vendor_state = vendor_gstin[:2]
-
-        if company_state == vendor_state:
-            # Intra-state
-            cgst = round(total_tax_amount / 2, 2)
-            sgst = round(total_tax_amount - cgst, 2)
+        # For a normal registered supplier transaction, place of supply is the
+        # decisive jurisdiction. Do not assume CGST/SGST merely because a GSTIN
+        # is missing.
+        if pos and supplier:
+            interstate = pos != supplier
+        elif company_state and vendor_state:
+            interstate = company_state != vendor_state
         else:
-            # Inter-state
-            igst = total_tax_amount
+            return {
+                "cgst": 0.0, "sgst": 0.0, "igst": 0.0,
+                "status": "REVIEW_REQUIRED",
+                "reason": "Insufficient state/place-of-supply evidence to determine GST jurisdiction.",
+            }
 
-        return {"cgst": cgst, "sgst": sgst, "igst": igst}
-
-    @staticmethod
-    def evaluate_rcm(vendor_profile: Optional[Dict[str, Any]] = None, extracted_data: Optional[Dict[str, Any]] = None) -> bool:
-        """Determines if Reverse Charge Mechanism (RCM) is applicable.
-        E.g., unregistered GTA services, legal expenses from advocates, or explicit RCM flag.
-        """
-        if vendor_profile and vendor_profile.get("is_rcm_applicable"):
-            return True
-            
-        if extracted_data:
-            desc = str(extracted_data.get("notes") or "").lower() + " " + " ".join(
-                str(item.get("description") or "").lower() for item in extracted_data.get("line_items", [])
-            )
-            if "reverse charge" in desc or "rcm" in desc or "legal fees" in desc or "advocate" in desc:
-                return True
-
-        return False
+        if interstate:
+            return {"cgst": 0.0, "sgst": 0.0, "igst": float(total_tax), "status": "INTER_STATE"}
+        cgst = (total_tax / 2).quantize(PAISE, rounding=ROUND_HALF_UP)
+        sgst = total_tax - cgst
+        return {"cgst": float(cgst), "sgst": float(sgst), "igst": 0.0, "status": "INTRA_STATE"}
 
     @staticmethod
-    def check_itc_eligibility(account_code: str, vendor_profile: Optional[Dict[str, Any]] = None) -> str:
-        """Determines Input Tax Credit (ITC) eligibility status under CGST Sec 17(5).
-        Returns: "ELIGIBLE" | "BLOCKED" | "PARTIALLY_ELIGIBLE"
-        Blocked credits apply to: Food & beverages, motor vehicles, personal usage, etc.
-        """
-        # Blocked expense accounts by code
-        # E.g., 5600 (Travel & Conveyance - blocked for personal or unregistered travel),
-        # 5300 (Office & Admin Expenses if it relates to office pantry/catering)
-        code = str(account_code).strip()
-        if code in ("5600", "5300"):
-            # Check vendor profile flags too
-            if vendor_profile and vendor_profile.get("itc_status") == "blocked":
+    def evaluate_rcm(
+        vendor_profile: Optional[Dict[str, Any]] = None,
+        extracted_data: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Return an evidence-based RCM decision; keyword matches are never proof."""
+        vendor_profile = vendor_profile or {}
+        extracted_data = extracted_data or {}
+        if vendor_profile.get("is_rcm_applicable") is True:
+            return {"applicable": True, "confidence": 1.0, "evidence": "vendor_profile"}
+        explicit = extracted_data.get("rcm_applicable")
+        if explicit is True:
+            return {"applicable": True, "confidence": 1.0, "evidence": "document_explicit_flag"}
+        if explicit is False:
+            return {"applicable": False, "confidence": 1.0, "evidence": "document_explicit_flag"}
+        return {
+            "applicable": False,
+            "confidence": 0.0,
+            "requires_review": True,
+            "evidence": "RCM cannot be established deterministically from the available data.",
+        }
+
+    @staticmethod
+    def check_itc_eligibility(
+        account_code: str,
+        vendor_profile: Optional[Dict[str, Any]] = None,
+        *,
+        explicit_status: Optional[str] = None,
+        business_use_percent: Optional[float] = None,
+    ) -> str:
+        """Conservative ITC classification; unknown facts require review."""
+        profile = vendor_profile or {}
+        status = str(explicit_status or profile.get("itc_status") or "").strip().lower()
+        if status in {"blocked", "eligible"}:
+            return status.upper()
+        if business_use_percent is not None:
+            try:
+                pct = float(business_use_percent)
+            except (TypeError, ValueError):
+                return "REVIEW_REQUIRED"
+            if pct <= 0:
                 return "BLOCKED"
-            return "PARTIALLY_ELIGIBLE"
-            
-        if vendor_profile and vendor_profile.get("itc_status") == "eligible":
-            return "ELIGIBLE"
-
-        return "ELIGIBLE"
+            if pct < 100:
+                return "PARTIALLY_ELIGIBLE"
+        return "REVIEW_REQUIRED"
 
     @classmethod
     def validate_gst_calculations(
@@ -96,19 +127,20 @@ class GSTEngine:
         cgst: float,
         sgst: float,
         igst: float,
-        total_tax: float
+        total_tax: float,
+        cess: float = 0.0,
     ) -> Tuple[bool, str]:
-        """Validates that computed tax parameters reconcile mathematically.
-        Also guarantees CGST = SGST, and either IGST or CGST/SGST is populated, but not both.
-        """
-        total_calc = round(cgst + sgst + igst, 2)
-        if abs(total_calc - round(total_tax, 2)) > 0.05:
-            return False, f"Sum of CGST ({cgst}) + SGST ({sgst}) + IGST ({igst}) does not match total tax ({total_tax})"
-
-        if cgst > 0 or sgst > 0:
-            if abs(cgst - sgst) > 0.02:
-                return False, f"Asymmetrical GST: CGST ({cgst}) must equal SGST ({sgst})"
-            if igst > 0:
-                return False, "Invalid GST mix: CGST/SGST and IGST cannot both be non-zero"
-
+        """Validate GST arithmetic to exact paise, including cess."""
+        taxable = _money(taxable_value)
+        parts = [_money(cgst), _money(sgst), _money(igst), _money(cess)]
+        total = _money(total_tax)
+        if taxable < 0 or any(part < 0 for part in parts) or total < 0:
+            return False, "GST values cannot be negative."
+        calculated = sum(parts, Decimal("0.00"))
+        if calculated != total:
+            return False, f"GST components {calculated} do not equal total tax {total}."
+        if _money(cgst) and _money(sgst) and _money(cgst) != _money(sgst):
+            return False, "CGST and SGST must reconcile exactly for a standard intra-state split."
+        if _money(igst) and (_money(cgst) or _money(sgst)):
+            return False, "IGST cannot coexist with CGST/SGST in the same standard tax split."
         return True, "GST calculations are balanced and valid."
