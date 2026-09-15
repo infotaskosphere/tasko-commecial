@@ -15,6 +15,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Optional
 
 from fastapi import Depends, HTTPException, Query
+from pydantic import BaseModel
 from pymongo import ReturnDocument
 
 from backend.dependencies import db, get_current_user
