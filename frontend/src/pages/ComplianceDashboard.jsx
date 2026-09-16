@@ -8,7 +8,7 @@ import useDark from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { HubBanner, StatCard, LinkCard, HUB_COLORS } from '@/components/SectionHub.jsx';
 
-// Every module that lives inside the "Compliance" sidebar section. Each
+// Every module that lives inside the "CompliGenie" sidebar section. Each
 // entry is only shown to users who hold the matching permission (admins
 // always see everything) — same rule DashboardLayout's sidebar uses.
 const MODULES = [
@@ -39,7 +39,7 @@ const MODULES = [
   },
   {
     path: '/salary-slips', icon: Receipt, label: 'Salary Slip Generator',
-    description: 'Generate and manage payslips for client companies\u2019 employees, with a reusable employee master.',
+    description: 'Generate and manage payslips for client companies’ employees, with a reusable employee master.',
     color: '#F59E0B', permission: 'can_view_salary_slips',
   },
 ];
@@ -164,8 +164,8 @@ export default function ComplianceDashboard() {
     <div>
       <HubBanner
         icon={ShieldCheck}
-        eyebrow="Compliance"
-        title="Compliance Dashboard"
+        eyebrow="CompliGenie"
+        title="CompliGenie Dashboard"
         subtitle="A single hub for statutory tracking, GST reconciliation and trademark monitoring."
         isDark={isDark}
         stats={stats}
@@ -180,11 +180,11 @@ export default function ComplianceDashboard() {
       </div>
 
       <h2 className={`text-sm font-extrabold uppercase tracking-widest mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-        Compliance Modules
+        CompliGenie Modules
       </h2>
       {visibleModules.length === 0 ? (
         <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          You don't have access to any compliance modules yet. Contact your admin to request access.
+          You don't have access to any CompliGenie modules yet. Contact your admin to request access.
         </p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
