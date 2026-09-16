@@ -79,8 +79,43 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold){backgrou
 .dark .people-matrix-dashboard .pm-card,.dark .people-matrix-dashboard .pm-kpi,.dark .people-matrix-dashboard .pm-action{border-color:#334155;background:#0F172A}
 .dark .people-matrix-dashboard .pm-list-row+.pm-list-row{border-color:#1E293B}
 
+/* --------------------------------------------------------------------------
+   TOP HERO CARDS — only the top card changes; all dashboard content below
+   keeps its existing structure and data. This mirrors the supplied reference:
+   light enterprise canvas, subtle illustrated depth, rectangular geometry,
+   and a dedicated live-status panel on the right.
+   -------------------------------------------------------------------------- */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child{
+  position:relative!important;
+  overflow:hidden!important;
+  border-radius:0!important;
+  border:1px solid #D9E2EC!important;
+  box-shadow:0 3px 14px rgba(15,23,42,.055)!important;
+  background:linear-gradient(105deg,#ffffff 0%,#f7fbff 58%,#edf7ff 100%)!important;
+}
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child::after,
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child::after{
+  content:'';position:absolute;right:-30px;bottom:-90px;width:440px;height:260px;pointer-events:none;
+  background:radial-gradient(circle at 55% 50%,rgba(31,111,178,.13),transparent 56%),linear-gradient(145deg,transparent 48%,rgba(92,203,95,.055) 49%,transparent 67%);
+}
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > *,
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child > *{position:relative;z-index:1}
+
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child button,
+body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child button{border-radius:0!important}
+
+.people-matrix-dashboard .pm-hero{background:linear-gradient(105deg,#ffffff 0%,#f7fbff 55%,#edf7ff 100%)}
+.people-matrix-dashboard .pm-hero .rounded-2xl{border-radius:0!important}
+
+.dark body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
+.dark body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child,
+.dark .people-matrix-dashboard .pm-hero{background:linear-gradient(105deg,#0f172a 0%,#13233c 60%,#102744 100%)!important;border-color:#334155!important}
+
 @media(max-width:767px){
  body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
  body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
  body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:165px!important;height:48px!important}
+ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
+ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child{min-height:0!important}
 }
