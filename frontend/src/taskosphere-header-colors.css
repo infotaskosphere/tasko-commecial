@@ -2,14 +2,20 @@
    TASKOSPHERE — BLUE HERO / HEADER TYPOGRAPHY
    Applies only while the Taskosphere module is active.
 
-   Scope is intentionally limited to gradient-backed top header cards so
-   Finix, People Matrix, Compliance and ordinary dashboard cards are not
-   restyled by this file.
+   Scope is intentionally limited to the top header/hero surface. Finix,
+   People Matrix and Compliance surfaces are not restyled by this file.
    ========================================================================== */
 
+/* Keep the Taskosphere top header on the same blue gradient as the reference.
+   This final rule intentionally wins over the legacy light-theme branding
+   override in module-branding.css. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child {
+  background:linear-gradient(135deg,#0D3B66 0%,#1F6FB2 60%,#1A8FCC 100%)!important;
+  color:#FFFFFF!important;
+}
+
 /* Primary Taskosphere hero text: high-contrast white, matching the supplied
-   Compliance reference header. The selector also covers nested wrappers used
-   by legacy Taskosphere pages. */
+   Compliance reference header. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1,
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2,
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3,
@@ -30,16 +36,15 @@ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:
   color:#D9F7E3!important;
 }
 
-/* Explicitly neutralise legacy Tailwind blue text classes inside the blue
-   hero. This is important because utility classes can otherwise win over
-   the intended reference typography. */
+/* Neutralise legacy Tailwind blue/slate/gray text utilities inside the blue
+   hero. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-blue"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-slate"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-gray"] {
   color:rgba(255,255,255,.82)!important;
 }
 
-/* Headings must remain pure white even when a utility class is present. */
+/* Headings remain pure white even when a utility class is present. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1[class*="text-"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2[class*="text-"],
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3[class*="text-"] {
@@ -63,15 +68,14 @@ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:
   color:#5CCB5F!important;
 }
 
-/* Status figures/buttons inside the hero use white text; green status labels
-   are restored by the rule immediately above. */
+/* Status figures/buttons inside the hero use white text. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button,
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button span {
   color:#FFFFFF!important;
 }
 
-/* If a legacy hero does not expose the inline gradient at the exact level,
-   retain the known Dashboard selector as a safe fallback. */
+/* Safe fallback for legacy nested Taskosphere hero markup that does not expose
+   the inline gradient on the expected element. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1 {
   color:#FFFFFF!important;
   font-weight:700!important;
