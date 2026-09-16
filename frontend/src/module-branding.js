@@ -14,16 +14,35 @@ const FALLBACK = MODULE_BRANDING.core;
 let scheduled = false;
 let lastModuleId = '';
 
+const getRouteModuleId = () => {
+  const path = window.location.pathname || '';
+  if (path === '/client-proposals-dashboard' || path.startsWith('/leads/') || path === '/leads' || path.startsWith('/quotations/') || path === '/quotations' || path.startsWith('/client-discussion/') || path === '/client-discussion') return 'proposals';
+  if (path === '/finix-dashboard' || path.startsWith('/invoicing') || path.startsWith('/purchase') || path.startsWith('/bank-accounts') || path.startsWith('/journal-entries')) return 'accounts';
+  if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
+  return null;
+};
+
 const getActiveModuleId = () => {
   const activeTab = document.querySelector('#top-module-switcher-bar [id^="nav-tab-"].font-semibold');
   const moduleId = (activeTab?.id || '').replace(/^nav-tab-/, '');
-  return MODULE_BRANDING[moduleId] ? moduleId : 'core';
+  return MODULE_BRANDING[moduleId] ? moduleId : (getRouteModuleId() || 'core');
+};
+
+const renameLeadSenseNavigation = () => {
+  const proposalTab = document.querySelector('#nav-tab-proposals');
+  if (proposalTab) {
+    const label = proposalTab.querySelector('span');
+    if (label) label.textContent = 'LeadSense';
+    proposalTab.setAttribute('aria-label', 'LeadSense');
+    proposalTab.setAttribute('title', 'LeadSense');
+  }
 };
 
 const isDarkMode = () => document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
 
 const syncModuleBranding = () => {
   scheduled = false;
+  renameLeadSenseNavigation();
   const moduleId = getActiveModuleId();
   const branding = MODULE_BRANDING[moduleId] || FALLBACK;
   const header = document.querySelector('header.fixed');
@@ -56,7 +75,7 @@ const syncModuleBranding = () => {
     visibleLogo.style.padding = '';
   }
 
-  // Rename only visible proposal-module labels. Routes, APIs and permission
+  // Rename visible proposal-module labels. Routes, APIs and permission
   // identifiers remain unchanged for backward compatibility.
   if (moduleId === 'proposals') {
     const title = header.querySelector('h1');
