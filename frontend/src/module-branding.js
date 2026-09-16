@@ -91,12 +91,18 @@ const syncModuleBranding = () => {
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
   if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
   visibleLogo.setAttribute('aria-label', branding.alt);
+  visibleLogo.style.display = 'block';
   visibleLogo.style.objectFit = 'contain';
+  visibleLogo.style.objectPosition = 'center center';
+  visibleLogo.style.flexShrink = '0';
+  visibleLogo.style.maxWidth = '100%';
+  visibleLogo.style.margin = '0 auto';
+  visibleLogo.style.transform = 'translateY(0)';
 
   if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance') {
     visibleLogo.style.background = '#ffffff';
     visibleLogo.style.borderRadius = '8px';
-    visibleLogo.style.padding = '2px';
+    visibleLogo.style.padding = '0';
   } else {
     visibleLogo.style.background = '';
     visibleLogo.style.borderRadius = '';
@@ -109,8 +115,8 @@ const syncModuleBranding = () => {
       complianceTab.style.borderBottom = '2px solid #1F6FB2';
       complianceTab.style.color = '#0D3B66';
     }
-    visibleLogo.style.width = collapsed ? '54px' : '170px';
-    visibleLogo.style.height = '54px';
+    visibleLogo.style.width = collapsed ? '54px' : '185px';
+    visibleLogo.style.height = collapsed ? '54px' : '50px';
   }
 
   if (moduleId === 'proposals') {
