@@ -149,17 +149,29 @@ export default function PeopleMatrixDashboard() {
 
   return (
     <div className="people-matrix-dashboard space-y-5">
-      <section className="pm-hero px-5 py-5 sm:px-7 sm:py-6">
+      <section
+        className="relative overflow-hidden rounded-2xl px-5 py-5 sm:px-7 sm:py-6"
+        style={{
+          background: 'linear-gradient(135deg, #0D3B66 0%, #1F6FB2 60%, #1a8fcc 100%)',
+          boxShadow: '0 8px 32px rgba(13,59,102,0.28)',
+        }}
+      >
+        <div className="absolute right-0 top-0 w-72 h-72 rounded-full -mr-24 -mt-24 opacity-10"
+          style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
+        <div className="absolute right-28 bottom-0 w-40 h-40 rounded-full mb-[-40px] opacity-5"
+          style={{ background: 'white' }} />
+        <div className="absolute left-0 bottom-0 w-48 h-48 rounded-full -ml-20 -mb-20 opacity-5"
+          style={{ background: 'white' }} />
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6 h-full">
           <div className="min-w-0 max-w-2xl">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#1F6FB2] mb-2 flex items-center gap-2"><UserCog className="h-3.5 w-3.5" /> People Matrix</p>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0D3B66] dark:text-white">Good Evening, {user?.full_name?.split(' ')[0] || 'there'}! <span aria-hidden="true">👋</span></h1>
-            <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 mt-1">Great people build greater businesses.</p>
-            <p className="text-sm italic text-slate-500 dark:text-slate-400 mt-2">“Empower people today for a stronger tomorrow.”</p>
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-white/60 mb-2 flex items-center gap-2"><UserCog className="h-3.5 w-3.5" /> People Matrix</p>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Good Evening, {user?.full_name?.split(' ')[0] || 'there'}! <span aria-hidden="true">👋</span></h1>
+            <p className="text-sm font-semibold text-white/80 mt-1">Great people build greater businesses.</p>
+            <p className="text-sm italic text-white/60 mt-2">“Empower people today for a stronger tomorrow.”</p>
           </div>
-          <div className="relative z-10 shrink-0 rounded-2xl border border-white/70 dark:border-slate-700 bg-white/85 dark:bg-slate-900/80 backdrop-blur px-5 py-4 min-w-[250px]">
-            <div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-[#1F6FB2]" /><div><p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">Today</p><p className="text-sm font-extrabold text-slate-800 dark:text-white">{dateLabel}</p></div></div>
-            <div className="flex items-center gap-2 mt-3"><div className="h-2 w-2 rounded-full bg-[#1FAF5A]" /><span className="text-xs font-semibold text-slate-500 dark:text-slate-400">People Matrix workspace active</span></div>
+          <div className="relative z-10 shrink-0 rounded-xl border border-white/20 bg-white/12 backdrop-blur px-5 py-4 min-w-[250px]" style={{ backdropFilter: 'blur(8px)' }}>
+            <div className="flex items-center gap-3"><CalendarDays className="h-5 w-5 text-white/80" /><div><p className="text-[10px] uppercase tracking-wider font-bold text-white/50">Today</p><p className="text-sm font-extrabold text-white">{dateLabel}</p></div></div>
+            <div className="flex items-center gap-2 mt-3"><div className="h-2 w-2 rounded-full bg-[#5CCB5F]" /><span className="text-xs font-semibold text-white/70">People Matrix workspace active</span></div>
           </div>
         </div>
       </section>
