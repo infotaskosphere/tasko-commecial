@@ -115,8 +115,8 @@ const syncModuleBranding = () => {
       complianceTab.style.borderBottom = '2px solid #1F6FB2';
       complianceTab.style.color = '#0D3B66';
     }
-    visibleLogo.style.width = collapsed ? '54px' : '185px';
-    visibleLogo.style.height = collapsed ? '54px' : '50px';
+    visibleLogo.style.width = collapsed ? '58px' : '205px';
+    visibleLogo.style.height = collapsed ? '58px' : '55px';
   }
 
   if (moduleId === 'proposals') {
