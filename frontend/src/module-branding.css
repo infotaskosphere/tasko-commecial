@@ -13,7 +13,7 @@ header>div:first-child img:not([style*="display: none"]){object-fit:contain!impo
    them proportionally; never stretch a brand mark into the header geometry. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/logo-lite.png');width:170px!important;max-width:calc(100% - 20px)!important;height:54px!important}
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/finix-logo.png');width:170px!important;max-width:calc(100% - 20px)!important;height:54px!important}
-body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.svg');width:190px!important;max-width:calc(100% - 12px)!important;height:54px!important}
+body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){content:url('/people-matrix-logo.png');width:190px!important;max-width:calc(100% - 12px)!important;height:54px!important}
 
 /* Suite module tabs match the reference: flat, thin, rectangular. */
 #top-module-switcher-bar button[id^="nav-tab-"]{border-radius:0!important;background:transparent!important}
