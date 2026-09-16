@@ -32,8 +32,6 @@ def install() -> None:
         license_key = str(getattr(user, "license_key", "") or "").strip()
         email = str(getattr(user, "email", "") or "").strip().lower()
 
-        # First retain the existing deterministic resolver for backward
-        # compatibility.  It already requires exactly one company match.
         try:
             resolved = await original(user)
             if resolved:
@@ -53,7 +51,6 @@ def install() -> None:
                 except Exception:
                     pass
         except Exception:
-            # Continue to the explicit-link recovery paths below.
             pass
 
         clauses = []
@@ -64,21 +61,19 @@ def install() -> None:
         if license_key:
             clauses.append({"license_key": license_key})
 
-        # The commercial customer record is an explicit ownership link.  Use
-        # its id to locate the corresponding operational company when the
-        # legacy user has only email + license/customer metadata.
+        # Email is only an ownership link when it identifies exactly one
+        # commercial customer. Duplicate customer emails are legitimate in
+        # some organisations, so never let email alone select one tenant.
         if email:
-            customer = await raw_db.commercial_license_customers.find_one(
+            customers = await raw_db.commercial_license_customers.find(
                 {"email": email}, {"id": 1, "_id": 0}
-            )
-            if customer and customer.get("id"):
-                clauses.append({"commercial_customer_id": str(customer["id"])})
+            ).limit(2).to_list(2)
+            if len(customers) == 1 and customers[0].get("id"):
+                clauses.append({"commercial_customer_id": str(customers[0]["id"])})
 
         if not clauses:
             return None
 
-        # Query a maximum of two records: one is required; two means the link
-        # is ambiguous and must fail closed rather than selecting a tenant.
         rows = await raw_db.companies.find(
             {"$or": clauses, "status": {"$ne": "deleted"}},
             {"id": 1, "_id": 1, "status": 1},
@@ -91,8 +86,6 @@ def install() -> None:
         if not company_id:
             return None
 
-        # Persist the recovered tenant link so subsequent requests take the
-        # normal fast path. This is a self-healing migration, not a guess.
         user_id = str(getattr(user, "id", "") or "").strip()
         if user_id:
             try:
@@ -101,8 +94,6 @@ def install() -> None:
                     {"$set": {"company_id": company_id}},
                 )
             except Exception:
-                # Recovery remains valid for this request even if persistence
-                # is temporarily unavailable.
                 pass
 
         return company_id
