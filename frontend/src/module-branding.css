@@ -84,8 +84,22 @@ body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold){backgrou
    keeps its existing structure and data. This mirrors the supplied reference:
    light enterprise canvas, subtle illustrated depth, rectangular geometry,
    and a dedicated live-status panel on the right.
+
+   FIX (2026-09-16): this "light enterprise hero" reskin used to also match
+   #nav-tab-core (Taskosphere) with !important, directly competing with the
+   Taskosphere hero's own blue gradient + white text (set inline in
+   Dashboard.jsx / Tasks.jsx / etc., and reinforced by
+   taskosphere-header-colors.css). Two independent !important systems were
+   racing to paint the same hero element on every load — that race is what
+   caused the hero to paint blue first and then flash to white a moment
+   later, and it also pushed near-white/navy text onto elements it was
+   never meant to touch. Taskosphere (#nav-tab-core) has its own deliberate
+   blue-hero design, so this reskin now applies only to Finix
+   (#nav-tab-accounts) and People Matrix, which were never in conflict.
+   The former "TASKOSPHERE LIGHT HERO" block below (which forced a white
+   background + navy text specifically on the Taskosphere hero) has been
+   removed entirely for the same reason.
    -------------------------------------------------------------------------- */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child{
   position:relative!important;
   overflow:hidden!important;
@@ -94,56 +108,23 @@ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > 
   box-shadow:0 3px 14px rgba(15,23,42,.055)!important;
   background:linear-gradient(105deg,#ffffff 0%,#f7fbff 58%,#edf7ff 100%)!important;
 }
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child::after,
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child::after{
   content:'';position:absolute;right:-30px;bottom:-90px;width:440px;height:260px;pointer-events:none;
   background:radial-gradient(circle at 55% 50%,rgba(31,111,178,.13),transparent 56%),linear-gradient(145deg,transparent 48%,rgba(92,203,95,.055) 49%,transparent 67%);
 }
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > *,
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child > *{position:relative;z-index:1}
 
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child button,
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child button{border-radius:0!important}
 
 .people-matrix-dashboard .pm-hero{background:linear-gradient(105deg,#ffffff 0%,#f7fbff 55%,#edf7ff 100%)}
 .people-matrix-dashboard .pm-hero .rounded-2xl{border-radius:0!important}
 
-.dark body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
 .dark body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child,
 .dark .people-matrix-dashboard .pm-hero{background:linear-gradient(105deg,#0f172a 0%,#13233c 60%,#102744 100%)!important;border-color:#334155!important}
-
-/* --------------------------------------------------------------------------
-   TASKOSPHERE LIGHT HERO — explicit contrast layer
-   The dashboard hero currently contains legacy inline dark-blue styling.
-   Keep dark mode unchanged, but make the light Taskosphere hero genuinely
-   light and force a readable navy/blue text hierarchy over it.
-   -------------------------------------------------------------------------- */
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child{
-  background:linear-gradient(105deg,#ffffff 0%,#f8fbff 58%,#edf7ff 100%)!important;
-  border:1px solid #D9E2EC!important;
-  box-shadow:0 3px 14px rgba(15,23,42,.055)!important;
-  color:#0D3B66!important;
-}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1,
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p,
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span{
-  color:#0D3B66!important;
-}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1{font-weight:700!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p:first-child{color:#1F6FB2!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button{
-  background:rgba(31,111,178,.06)!important;
-  border:1px solid #C9D9E8!important;
-  color:#0D3B66!important;
-  backdrop-filter:none!important;
-}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span{color:#0D3B66!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span:last-child{color:#1FAF5A!important}
 
 @media(max-width:767px){
  body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
  body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
  body:has(#top-module-switcher-bar #nav-tab-people-matrix.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:165px!important;height:48px!important}
- body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child,
  body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child{min-height:0!important}
 }
