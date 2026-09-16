@@ -1,0 +1,50 @@
+/* Taskosphere dashboard top-header typography only.
+   The existing blue hero design remains unchanged.  Typography is kept on a
+   white/soft-white hierarchy so it stays readable on both light and dark
+   themes without changing the card layout, gradient, spacing or controls. */
+
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1{
+  color:#FFFFFF!important;
+  font-weight:700!important;
+}
+
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p{
+  color:rgba(255,255,255,.86)!important;
+}
+
+/* Date / eyebrow */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p:first-child{
+  color:#D9F7E3!important;
+}
+
+/* Live clock and its date line */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child span{
+  color:#FFFFFF!important;
+}
+
+/* Keep the completion/status accent green while the surrounding text stays white. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child span:last-child{
+  color:#5CCB5F!important;
+}
+
+/* Total Tasks / Pending / Completed panel */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button{
+  color:#FFFFFF!important;
+}
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button span{
+  color:#FFFFFF!important;
+}
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button span:last-child{
+  color:#5CCB5F!important;
+}
+
+/* The live clock/date component uses its own utility classes; force the
+   readable foreground without touching its sizing or positioning. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child .text-white{
+  color:#FFFFFF!important;
+}
+
+/* Never alter the existing card itself here. */
+@media(max-width:767px){
+  body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1{color:#FFFFFF!important}
+}
