@@ -44,6 +44,12 @@ _commercial_module_guard.install()
 import backend.commercial_guard_request_compat as _commercial_guard_request_compat
 _commercial_guard_request_compat.install()
 
+# Bank Accounts compatibility: older Finix frontend builds request up to 2000
+# purchase invoices. Keep that legacy read compatible with the canonical
+# purchase-invoice endpoint without weakening authentication or permissions.
+import backend.purchase_invoice_query_compat as _purchase_invoice_query_compat
+_purchase_invoice_query_compat.install()
+
 # Enforce the separate Commercial Control Plane boundary AFTER the Request
 # compatibility wrapper so this remains the final authentication dependency
 # captured by all subsequently imported route modules.
