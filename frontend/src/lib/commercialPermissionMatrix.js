@@ -55,9 +55,27 @@ const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
   people_matrix: ["can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll", "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment", "can_manage_recruitment", "can_view_performance", "can_manage_performance"],
 });
 
-function hasCompleteModulePageAccess(user, moduleId) { const dashboardFlag = DASHBOARD_FLAG_BY_MODULE[moduleId]; if (!dashboardFlag) return false; const selected = normalizedSelectedFeatures(user); const selectedFlags = selected[moduleId]; if (!selectedFlags) return false; const required = (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []).filter((flag) => flag !== dashboardFlag); return required.length > 0 && required.every((flag) => selectedFlags.has(flag)); }
+export function hasPageLicense(user, pageFlag, moduleId = null) {
+  if (!user || !pageFlag) return false;
+  if (isPlatformOwner(user)) return true;
 
-export function hasPageLicense(user, pageFlag, moduleId = null) { if (!user || !pageFlag) return false; if (isPlatformOwner(user)) return true; const selected = normalizedSelectedFeatures(user); const module = moduleId || Object.entries(MODULES).find(([id]) => selected[id]?.has(pageFlag))?.[0]; if (!module || !hasModuleAccess(user, module)) return false; if (DASHBOARD_FLAG_BY_MODULE[module] === pageFlag) return hasCompleteModulePageAccess(user, module); return Boolean(selected[module]?.has(pageFlag)); }
+  const selected = normalizedSelectedFeatures(user);
+  const module = moduleId || Object.entries(MODULES).find(([id]) => selected[id]?.has(pageFlag))?.[0];
+  if (!module || !hasModuleAccess(user, module)) return false;
+
+  // The dashboard is an independently selectable commercial feature. A
+  // customer who purchased only the dashboard must be able to enter it; it
+  // must not be treated as licensed only when every page in the module was
+  // purchased. Legacy module-only licenses are also allowed through their
+  // existing role permission when no feature selection exists.
+  if (DASHBOARD_FLAG_BY_MODULE[module] === pageFlag) {
+    if (selected[module]?.has(pageFlag)) return true;
+    if (!selected[module] && user.permissions?.[pageFlag] === true) return true;
+    return false;
+  }
+
+  return Boolean(selected[module]?.has(pageFlag));
+}
 
 export function hasEffectivePermission(user, permission) {
   if (!user || !permission) return false; if (isPlatformOwner(user)) return true;
