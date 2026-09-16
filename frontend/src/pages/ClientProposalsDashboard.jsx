@@ -94,13 +94,6 @@ export default function ClientProposalsDashboard() {
     return null;
   };
 
-  const stats = [
-    { label: 'Active Leads', value: loading ? '—' : activeLeads, loading },
-    { label: 'Won Value', value: loading ? '—' : fmtC(wonValue), loading },
-    { label: 'Pending Quotes', value: loading ? '—' : pendingQuotes, loading },
-    { label: 'Win Rate', value: loading ? '—' : (winRate === null ? '—' : `${winRate}%`), loading },
-  ];
-
   return (
     <div>
       <HubBanner
@@ -109,7 +102,6 @@ export default function ClientProposalsDashboard() {
         title="LeadSense Dashboard"
         subtitle="Everything between a first conversation and a signed quotation."
         isDark={isDark}
-        stats={stats}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-8">
