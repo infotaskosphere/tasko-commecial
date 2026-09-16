@@ -70,7 +70,28 @@ async def _hydrate(user: User) -> User:
         data["license_key"] = license_doc.get("license_key")
 
         if str(getattr(user, "role", "")).lower() == "admin":
-            data["permissions"] = get_all_admin_permissions(license_doc)
+            # Backward compatibility for older commercial licenses that were
+            # issued with module-level entitlements only. The commercial
+            # onboarding contract treats a license without page selections as
+            # granting the pages belonging to its licensed modules. An
+            # explicitly present selected_features mapping remains authoritative
+            # and is never broadened here.
+            selected_features = license_doc.get("selected_features")
+            if not isinstance(selected_features, dict) or not selected_features:
+                selected_features = {}
+                for module_id, module_def in MODULE_HIERARCHY.items():
+                    if module_id in licensed_modules:
+                        selected_features[module_id] = [
+                            page.get("flag")
+                            for page in (module_def.get("pages") or [])
+                            if page.get("flag")
+                        ]
+                admin_license = dict(license_doc)
+                admin_license["selected_features"] = selected_features
+            else:
+                admin_license = license_doc
+            data["selected_features"] = selected_features
+            data["permissions"] = get_all_admin_permissions(admin_license)
         else:
             perms = dict(data.get("permissions") or {})
             for mod_key, flags in MODULE_HIERARCHY.items():
@@ -92,3 +113,17 @@ async def get_current_user_with_commercial_admin_permissions(credentials=Depends
 def install() -> None:
     if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_commercial_admin_permissions":
         _dependencies.get_current_user = get_current_user_with_commercial_admin_permissions
+
+    # governed_modules builds its require_page()/require_action() dependencies
+    # after importing this compatibility module. governance_core previously
+    # held a direct reference to dependencies.get_current_user, so replacing
+    # only dependencies.get_current_user left governed routes using the stale
+    # pre-hydration dependency and commercial Admins could receive 403 even
+    # though their active license granted the page. Point governance_core at
+    # the hydrated dependency before those route guards are constructed.
+    try:
+        import backend.governance_core as _governance_core
+        _governance_core.get_current_user = get_current_user_with_commercial_admin_permissions
+    except Exception:
+        # Permission hydration must never prevent application startup.
+        pass
