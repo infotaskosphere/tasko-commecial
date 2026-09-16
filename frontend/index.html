@@ -176,13 +176,32 @@
     <script>
       (() => {
         /* The reference design changes only the top card. Mark the existing
-           first dashboard card rather than replacing any dashboard markup. */
+           first dashboard card rather than replacing any dashboard markup.
+
+           FIX (2026-09-16): '/dashboard' (Taskosphere) used to map to
+           'taskosphere' here, which asynchronously (via MutationObserver +
+           setTimeout) added the .suite-top-hero class and forced the hero
+           into suite-top-card.css's white-background/navy-text look — on
+           top of the hero's own inline blue gradient + white text. Because
+           this ran a tick after first paint, the hero visibly flashed from
+           blue to white on every load, and the forced navy text fought
+           with taskosphere-header-colors.css over the same element.
+           Taskosphere's hero keeps its own deliberate blue design, so it
+           is no longer included here.
+
+           FIX (2026-09-16, cont.): '/people-matrix' has been aligned to the
+           same blue-gradient hero design as the rest of the app
+           (PeopleMatrixDashboard.jsx now sets its own inline blue gradient
+           + white text, matching Dashboard.jsx / Tasks.jsx / etc.), so it
+           is removed here too — otherwise suite-top-card.css's `!important`
+           white background would win the cascade over the new inline style
+           and reproduce the same blue-then-white flash there. Finix keeps
+           the light-card treatment as before, since it was not part of
+           this alignment request. */
         let scheduled = false;
         const moduleForPath = () => {
           const path = location.pathname;
-          if (path === '/dashboard') return 'taskosphere';
           if (path === '/finix-dashboard') return 'finix';
-          if (path === '/people-matrix') return 'people-matrix';
           return null;
         };
         const syncSuiteHero = () => {
