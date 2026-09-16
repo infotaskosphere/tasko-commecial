@@ -23,6 +23,8 @@ from backend.commercial_master_data import router as commercial_master_data_rout
 import backend.commercial_entitlement_runtime  # noqa: F401,E402
 import backend.commercial_invoicing_permission_compat as _commercial_invoicing_permission_compat  # noqa: E402
 _commercial_invoicing_permission_compat.install()
+import backend.commercial_admin_permission_compat as _commercial_admin_permission_compat  # noqa: E402
+_commercial_admin_permission_compat.install()
 
 DEFAULT_ROLE_PERMISSIONS.setdefault("admin", {}).update({
     "can_view_leave": True,
