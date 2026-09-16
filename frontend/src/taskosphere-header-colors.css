@@ -89,61 +89,99 @@ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner b
 
 /* --------------------------------------------------------------------------
    PEOPLE MATRIX — COMPACT HERO / INLINE DATE
-   2026-09-16: reduce hero height and place Today/date on the same visual
-   line as the Good Morning heading. Content/data below the hero is untouched.
+   2026-09-16: compact the hero without changing the JSX/data layer. The
+   greeting and date occupy one desktop row; the date becomes a clean inline
+   meta block instead of a tall card. The workspace-status sub-row is hidden
+   only in this hero because the module identity is already explicit above.
+   All KPI/panel content below the hero is untouched.
    -------------------------------------------------------------------------- */
 .people-matrix-dashboard > section:first-child{
-  padding:16px 24px!important;
-  min-height:116px!important;
+  padding:12px 24px!important;
+  min-height:104px!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10{
   display:grid!important;
   grid-template-columns:minmax(0,1fr) auto!important;
   align-items:center!important;
-  gap:24px!important;
+  gap:20px!important;
+  min-height:80px!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child{
   max-width:none!important;
   min-width:0!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:first-child{
-  margin-bottom:3px!important;
+  margin:0 0 2px!important;
+  line-height:1.1!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > h1{
   margin:0!important;
-  line-height:1.15!important;
-  font-size:clamp(1.55rem,2.3vw,2rem)!important;
+  line-height:1.12!important;
+  font-size:clamp(1.45rem,2.15vw,1.9rem)!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:nth-of-type(2){
   margin-top:3px!important;
+  line-height:1.2!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:nth-of-type(3){
-  margin-top:3px!important;
+  margin-top:2px!important;
+  line-height:1.15!important;
 }
+
+/* Date block: visually aligned with the greeting rather than looking like a
+   separate dashboard card. */
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child{
-  min-width:240px!important;
-  padding:8px 0 8px 22px!important;
+  min-width:220px!important;
+  padding:6px 0 6px 20px!important;
   border-width:0 0 0 1px!important;
   border-radius:0!important;
   background:transparent!important;
   box-shadow:none!important;
 }
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child{
   justify-content:flex-end!important;
+  gap:10px!important;
 }
+
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child > svg{
+  width:18px!important;
+  height:18px!important;
+}
+
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child > div p:last-child{
+  white-space:nowrap!important;
+}
+
 .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:nth-child(2){
   display:none!important;
 }
+
 @media(max-width:767px){
-  .people-matrix-dashboard > section:first-child{padding:14px 16px!important}
+  .people-matrix-dashboard > section:first-child{
+    padding:14px 16px!important;
+    min-height:0!important;
+  }
+
   .people-matrix-dashboard > section:first-child > div.relative.z-10{
     grid-template-columns:minmax(0,1fr)!important;
-    gap:10px!important;
+    gap:8px!important;
+    min-height:0!important;
   }
+
   .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child{
     min-width:0!important;
     padding:8px 0 0!important;
     border-width:1px 0 0!important;
   }
-  .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child{justify-content:flex-start!important}
+
+  .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child{
+    justify-content:flex-start!important;
+  }
 }
