@@ -14,20 +14,82 @@
 .suite-top-hero>*{position:relative;z-index:1}
 .suite-top-hero button{border-radius:0!important}
 
-/* Taskosphere's existing hero text was white; the reference card is a light
-   enterprise banner, so only the hero's text is adapted. */
+/* Taskosphere uses the same light enterprise hero treatment as the other
+   suite modules. Keep the text dark on the light card so it remains readable
+   and visually consistent with Finix, Compliance, Records and People Matrix. */
+.suite-top-hero[data-suite-module="taskosphere"]{
+  background:linear-gradient(105deg,#ffffff 0%,#f7fbff 58%,#edf7ff 100%)!important;
+  color:#0D3B66!important;
+}
 .suite-top-hero[data-suite-module="taskosphere"] h1,
 .suite-top-hero[data-suite-module="taskosphere"] h2,
+.suite-top-hero[data-suite-module="taskosphere"] h3,
 .suite-top-hero[data-suite-module="taskosphere"] p,
-.suite-top-hero[data-suite-module="taskosphere"] span{color:#0D3B66!important}
-.suite-top-hero[data-suite-module="taskosphere"] svg{color:#1F6FB2}
+.suite-top-hero[data-suite-module="taskosphere"] span,
+.suite-top-hero[data-suite-module="taskosphere"] label{color:#0D3B66!important}
+.suite-top-hero[data-suite-module="taskosphere"] svg{color:#1F6FB2!important}
 .suite-top-hero[data-suite-module="taskosphere"] button{color:#fff!important}
+
+/* The Taskosphere sidebar is rendered on the same dark-blue navigation rail
+   as the other modules. A page-level Taskosphere style was overriding the
+   navigation text with dark colours, making the labels almost invisible.
+   Scope the fix to the Taskosphere navigation entries only. */
+body:not(.website-surface) aside a[href="/dashboard"],
+body:not(.website-surface) aside a[href="/tasks"],
+body:not(.website-surface) aside a[href="/todos"],
+body:not(.website-surface) aside a[href="/attendance"],
+body:not(.website-surface) aside a[href="/reminders"],
+body:not(.website-surface) aside a[href="/action-center"],
+body:not(.website-surface) aside a[href="/visits"],
+body:not(.website-surface) aside a[href="/ai-reader"],
+body:not(.website-surface) aside a[href="/client-portal-manager"]{
+  color:#cbd5e1!important;
+  font-family:inherit!important;
+  font-size:14px!important;
+  font-weight:500!important;
+  letter-spacing:-0.025em!important;
+}
+body:not(.website-surface) aside a[href="/dashboard"]:hover,
+body:not(.website-surface) aside a[href="/tasks"]:hover,
+body:not(.website-surface) aside a[href="/todos"]:hover,
+body:not(.website-surface) aside a[href="/attendance"]:hover,
+body:not(.website-surface) aside a[href="/reminders"]:hover,
+body:not(.website-surface) aside a[href="/action-center"]:hover,
+body:not(.website-surface) aside a[href="/visits"]:hover,
+body:not(.website-surface) aside a[href="/ai-reader"]:hover,
+body:not(.website-surface) aside a[href="/client-portal-manager"]:hover{
+  color:#ffffff!important;
+}
+body:not(.website-surface) aside a[href="/dashboard"] svg,
+body:not(.website-surface) aside a[href="/tasks"] svg,
+body:not(.website-surface) aside a[href="/todos"] svg,
+body:not(.website-surface) aside a[href="/attendance"] svg,
+body:not(.website-surface) aside a[href="/reminders"] svg,
+body:not(.website-surface) aside a[href="/action-center"] svg,
+body:not(.website-surface) aside a[href="/visits"] svg,
+body:not(.website-surface) aside a[href="/ai-reader"] svg,
+body:not(.website-surface) aside a[href="/client-portal-manager"] svg{
+  color:#94a3b8!important;
+}
+body:not(.website-surface) aside a[href="/dashboard"]:hover svg,
+body:not(.website-surface) aside a[href="/tasks"]:hover svg,
+body:not(.website-surface) aside a[href="/todos"]:hover svg,
+body:not(.website-surface) aside a[href="/attendance"]:hover svg,
+body:not(.website-surface) aside a[href="/reminders"]:hover svg,
+body:not(.website-surface) aside a[href="/action-center"]:hover svg,
+body:not(.website-surface) aside a[href="/visits"]:hover svg,
+body:not(.website-surface) aside a[href="/ai-reader"]:hover svg,
+body:not(.website-surface) aside a[href="/client-portal-manager"]:hover svg{
+  color:#f1f5f9!important;
+}
 
 .dark .suite-top-hero{background:linear-gradient(105deg,#0f172a 0%,#13233c 60%,#102744 100%)!important;border-color:#334155!important}
 .dark .suite-top-hero[data-suite-module="taskosphere"] h1,
 .dark .suite-top-hero[data-suite-module="taskosphere"] h2,
+.dark .suite-top-hero[data-suite-module="taskosphere"] h3,
 .dark .suite-top-hero[data-suite-module="taskosphere"] p,
-.dark .suite-top-hero[data-suite-module="taskosphere"] span{color:#f8fafc!important}
+.dark .suite-top-hero[data-suite-module="taskosphere"] span,
+.dark .suite-top-hero[data-suite-module="taskosphere"] label{color:#f8fafc!important}
 
 @media(max-width:767px){
   .suite-top-hero{min-height:0!important}
