@@ -10,7 +10,7 @@
 const MODULE_BRANDING = {
   core: { label: 'Taskosphere', landingPath: '/dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Task-O-Sphere' },
   accounts: { label: 'Finix', landingPath: '/finix-dashboard', lightLogo: '/finix-logo.png', darkLogo: '/finix-logo.png', collapsedLogo: '/finix-icon.png', alt: 'Finix AI Accounting' },
-  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/CompliGenie-Logo-PNG.png', darkLogo: '/CompliGenie-Logo-PNG.png', collapsedLogo: '/CompliGenie-Logo-PNG.png', alt: 'CompliGenie' },
+  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png.png', darkLogo: '/compligenie-logo.png.png', collapsedLogo: '/compligenie-logo.png.png', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
 };
