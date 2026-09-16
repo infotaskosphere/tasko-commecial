@@ -25,14 +25,31 @@ const BottomLoadingBar = memo(function BottomLoadingBar() {
 });
 
 const ROUTE_PREFETCHERS = {
-  "/dashboard": () => import("./pages/Dashboard.jsx"), "/tasks": () => import("./pages/Tasks.jsx"), "/todos": () => import("./pages/TodoDashboard.jsx"), "/attendance": () => import("./pages/Attendance.jsx"),
-  "/reminders": () => import("./pages/Reminders.jsx"), "/action-center": () => import("./pages/ActionCenter.jsx"), "/compliance-dashboard": () => import("./pages/ComplianceDashboard.jsx"),
-  "/compliance": () => import("./pages/CompliancePage.jsx"), "/gst-reconciliation": () => import("./pages/GSTReconciliation.jsx"), "/trademark-sphere": () => import("./pages/TrademarkSphere.jsx"),
-  "/roc-sphere": () => import("./pages/ROCSpherePage.jsx"), "/records-dashboard": () => import("./pages/RecordsDashboard.jsx"), "/clients": () => import("./pages/Clients.jsx"),
-  "/client-proposals-dashboard": () => import("./pages/ClientProposalsDashboard.jsx"), "/leads": () => import("./pages/Leads.jsx"), "/quotations": () => import("./pages/Quotations.jsx"),
-  "/finix-dashboard": () => import("./pages/FinixDashboard.jsx"), "/invoicing": () => import("./pages/Invoicing.jsx"), "/bank-accounts": () => import("./pages/BankAccounts.jsx"),
-  "/accounting-reports": () => import("./pages/AccountingReports.jsx"), "/people-matrix": () => import("./pages/PeopleMatrixDashboard.jsx"), "/reports": () => import("./pages/Reports.jsx"),
-  "/users": () => import("./pages/Users.jsx"), "/master-console": () => import("./pages/MasterConsole.jsx"), "/activate-license": () => import("./pages/LicenseActivation.jsx"),
+  "/dashboard": () => import("./pages/Dashboard.jsx"),
+  "/tasks": () => import("./pages/Tasks.jsx"),
+  "/todos": () => import("./pages/TodoDashboard.jsx"),
+  "/attendance": () => import("./pages/Attendance.jsx"),
+  "/reminders": () => import("./pages/Reminders.jsx"),
+  "/action-center": () => import("./pages/ActionCenter.jsx"),
+  "/compliance-dashboard": () => import("./pages/ComplianceDashboard.jsx"),
+  "/compliance": () => import("./pages/CompliancePage.jsx"),
+  "/gst-reconciliation": () => import("./pages/GSTReconciliation.jsx"),
+  "/trademark-sphere": () => import("./pages/TrademarkSphere.jsx"),
+  "/roc-sphere": () => import("./pages/ROCSpherePage.jsx"),
+  "/records-dashboard": () => import("./pages/RecordsDashboard.jsx"),
+  "/clients": () => import("./pages/Clients.jsx"),
+  "/client-proposals-dashboard": () => import("./pages/ClientProposalsDashboard.jsx"),
+  "/leads": () => import("./pages/Leads.jsx"),
+  "/quotations": () => import("./pages/Quotations.jsx"),
+  "/finix-dashboard": () => import("./pages/FinixDashboard.jsx"),
+  "/invoicing": () => import("./pages/Invoicing.jsx"),
+  "/bank-accounts": () => import("./pages/BankAccounts.jsx"),
+  "/accounting-reports": () => import("./pages/AccountingReports.jsx"),
+  "/people-matrix": () => import("./pages/PeopleMatrixDashboard.jsx"),
+  "/reports": () => import("./pages/Reports.jsx"),
+  "/users": () => import("./pages/Users.jsx"),
+  "/master-console": () => import("./pages/MasterConsole.jsx"),
+  "/activate-license": () => import("./pages/LicenseActivation.jsx"),
 };
 
 const prefetchedRoutes = new Set();
@@ -41,16 +58,31 @@ function prefetchRoute(path) {
   const loader = ROUTE_PREFETCHERS[path];
   if (!loader) return;
   prefetchedRoutes.add(path);
-  try { const promise = loader(); if (promise && typeof promise.catch === "function") promise.catch(() => { prefetchedRoutes.delete(path); }); }
-  catch (err) { prefetchedRoutes.delete(path); }
+  try {
+    const promise = loader();
+    if (promise && typeof promise.catch === "function") {
+      promise.catch(() => { prefetchedRoutes.delete(path); });
+    }
+  } catch (err) {
+    prefetchedRoutes.delete(path);
+  }
 }
 
 function RoutePrefetcher() {
   useEffect(() => {
-    const warm = (event) => { const target = event.target?.closest?.("a[href]"); if (!target) return; const href = target.getAttribute("href"); if (!href || !href.startsWith("/")) return; prefetchRoute(href.split("?")[0].split("#")[0]); };
+    const warm = (event) => {
+      const target = event.target?.closest?.("a[href]");
+      if (!target) return;
+      const href = target.getAttribute("href");
+      if (!href || !href.startsWith("/")) return;
+      prefetchRoute(href.split("?")[0].split("#")[0]);
+    };
     document.addEventListener("pointerover", warm, { passive: true });
     document.addEventListener("focusin", warm);
-    return () => { document.removeEventListener("pointerover", warm); document.removeEventListener("focusin", warm); };
+    return () => {
+      document.removeEventListener("pointerover", warm);
+      document.removeEventListener("focusin", warm);
+    };
   }, []);
   return null;
 }
