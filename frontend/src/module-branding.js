@@ -2,10 +2,15 @@
  * Shared module branding for the commercial shell.
  * Keeps module identity in one place without coupling dashboard pages to the
  * global header. Navigation remains the source of truth for active module.
+ *
+ * IMPORTANT: Product labels are intentionally kept here as a single runtime
+ * compatibility layer. Internal route names, permission identifiers and API
+ * names remain unchanged so existing integrations are not disturbed.
  */
 const MODULE_BRANDING = {
   core: { label: 'Taskosphere', landingPath: '/dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Task-O-Sphere' },
   accounts: { label: 'Finix', landingPath: '/finix-dashboard', lightLogo: '/finix-logo.png', darkLogo: '/finix-logo.png', collapsedLogo: '/finix-icon.png', alt: 'Finix AI Accounting' },
+  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.svg', darkLogo: '/compligenie-logo.svg', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
 };
@@ -16,6 +21,14 @@ let lastModuleId = '';
 
 const getRouteModuleId = () => {
   const path = window.location.pathname || '';
+  if (
+    path === '/compliance-dashboard' || path === '/compliance' || path.startsWith('/compliance/') ||
+    path === '/gst-reconciliation' || path.startsWith('/gst-reconciliation/') ||
+    path === '/trademark-sphere' || path.startsWith('/trademark-sphere/') ||
+    path === '/roc-sphere' || path.startsWith('/roc-sphere/') ||
+    path === '/mis-report' || path.startsWith('/mis-report/') ||
+    path === '/salary-slips' || path.startsWith('/salary-slips/')
+  ) return 'compliance';
   if (path === '/client-proposals-dashboard' || path.startsWith('/leads/') || path === '/leads' || path.startsWith('/quotations/') || path === '/quotations' || path.startsWith('/client-discussion/') || path === '/client-discussion') return 'proposals';
   if (path === '/finix-dashboard' || path.startsWith('/invoicing') || path.startsWith('/purchase') || path.startsWith('/bank-accounts') || path.startsWith('/journal-entries')) return 'accounts';
   if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
@@ -28,21 +41,38 @@ const getActiveModuleId = () => {
   return MODULE_BRANDING[moduleId] ? moduleId : (getRouteModuleId() || 'core');
 };
 
-const renameLeadSenseNavigation = () => {
-  const proposalTab = document.querySelector('#nav-tab-proposals');
-  if (proposalTab) {
-    const label = proposalTab.querySelector('span');
-    if (label) label.textContent = 'LeadSense';
-    proposalTab.setAttribute('aria-label', 'LeadSense');
-    proposalTab.setAttribute('title', 'LeadSense');
-  }
+const setTabLabel = (id, label) => {
+  const tab = document.querySelector(id);
+  if (!tab) return;
+  const labelNode = tab.querySelector('span');
+  if (labelNode && labelNode.textContent !== label) labelNode.textContent = label;
+  tab.setAttribute('aria-label', label);
+  tab.setAttribute('title', label);
+};
+
+const renameNavigation = () => {
+  setTabLabel('#nav-tab-proposals', 'LeadSense');
+  setTabLabel('#nav-tab-compliance', 'CompliGenie');
+};
+
+const renameSidebarText = (from, to) => {
+  document.querySelectorAll('aside a, aside button').forEach((node) => {
+    const text = node.querySelector('span:last-child') || node;
+    if (String(text.textContent || '').trim() === from) text.textContent = to;
+  });
+};
+
+const renameSidebarDivider = (from, to) => {
+  Array.from(document.querySelectorAll('aside')).flatMap((aside) => Array.from(aside.querySelectorAll('*'))).forEach((node) => {
+    if (String(node.textContent || '').trim() === from && node.children.length === 0) node.textContent = to;
+  });
 };
 
 const isDarkMode = () => document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
 
 const syncModuleBranding = () => {
   scheduled = false;
-  renameLeadSenseNavigation();
+  renameNavigation();
   const moduleId = getActiveModuleId();
   const branding = MODULE_BRANDING[moduleId] || FALLBACK;
   const header = document.querySelector('header.fixed');
@@ -53,8 +83,6 @@ const syncModuleBranding = () => {
   const visibleLogo = Array.from(logoImages).find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
   if (!logoLink || !visibleLogo) return;
 
-  // Read collapsed state from the shell column, not the current image source.
-  // This keeps the correct icon when switching between modules while collapsed.
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
   const logoSrc = collapsed ? branding.collapsedLogo : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
@@ -65,7 +93,7 @@ const syncModuleBranding = () => {
   visibleLogo.setAttribute('aria-label', branding.alt);
   visibleLogo.style.objectFit = 'contain';
 
-  if (moduleId === 'proposals' || moduleId === 'people-matrix') {
+  if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance') {
     visibleLogo.style.background = '#ffffff';
     visibleLogo.style.borderRadius = '8px';
     visibleLogo.style.padding = '2px';
@@ -75,24 +103,20 @@ const syncModuleBranding = () => {
     visibleLogo.style.padding = '';
   }
 
-  // Rename visible proposal-module labels. Routes, APIs and permission
-  // identifiers remain unchanged for backward compatibility.
   if (moduleId === 'proposals') {
     const title = header.querySelector('h1');
     if (title) title.textContent = 'LeadSense';
-    const proposalTab = document.querySelector('#nav-tab-proposals');
-    if (proposalTab) {
-      const label = proposalTab.querySelector('span');
-      if (label) label.textContent = 'LeadSense';
-      proposalTab.setAttribute('aria-label', 'LeadSense');
-    }
-    document.querySelectorAll('aside a, aside button').forEach((node) => {
-      const text = node.querySelector('span:last-child') || node;
-      if (String(text.textContent || '').trim() === 'Client Proposals Dashboard') text.textContent = 'LeadSense Dashboard';
-    });
-    const divider = Array.from(document.querySelectorAll('aside')).flatMap((aside) => Array.from(aside.querySelectorAll('*'))).find((node) => String(node.textContent || '').trim() === 'Client Proposals');
-    if (divider) divider.textContent = 'LeadSense';
+    renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard');
+    renameSidebarDivider('Client Proposals', 'LeadSense');
     document.title = 'LeadSense Dashboard · Task-O-Sphere';
+  }
+
+  if (moduleId === 'compliance') {
+    const title = header.querySelector('h1');
+    if (title) title.textContent = 'CompliGenie';
+    renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard');
+    renameSidebarDivider('Compliance', 'CompliGenie');
+    document.title = 'CompliGenie Dashboard · Task-O-Sphere';
   }
 
   lastModuleId = moduleId;
