@@ -250,8 +250,18 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
     # Company admins receive all explicitly selected pages; regular licensee
     # users must also retain their own internal page permission.
     if module is not None:
-        if flag not in _selected_license_features(license_doc, module):
-            return False
+        selected = _selected_license_features(license_doc, module)
+        if flag not in selected:
+            # Client Discussion was introduced after the first commercial
+            # proposals licenses were issued. Those licenses selected Lead
+            # Management, while the persisted admin permissions and frontend
+            # still expose the discussion page. Keep that legacy entitlement
+            # coherent without opening the route for another module.
+            if not (
+                flag == "can_view_client_discussion"
+                and "can_view_all_leads" in selected
+            ):
+                return False
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
