@@ -13639,6 +13639,52 @@ async def get_due_reminder_popups(current_user: User = Depends(get_current_user)
     return results
 
 
+@api_router.post("/reminders", response_model=Reminder)
+async def create_manual_reminder(
+    reminder_data: ReminderCreate,
+    current_user: User = Depends(get_current_user),
+):
+    """Create a reminder only after an explicit user approval click.
+
+    The client discussion assistant never calls this endpoint while it is
+    analysing a transcript. The UI sends a request only from its
+    "Approve & create reminder" action, keeping automation opt-in.
+    """
+    if current_user.role != "admin":
+        permissions = get_user_permissions(current_user)
+        if not permissions.get("can_view_reminders", False):
+            raise HTTPException(status_code=403, detail="Reminder permission required")
+
+    now = datetime.now(timezone.utc)
+    remind_at = reminder_data.remind_at
+    if isinstance(remind_at, (datetime, date)):
+        remind_at = remind_at.isoformat()
+    else:
+        remind_at = str(remind_at)
+
+    reminder = Reminder(
+        user_id=str(current_user.id),
+        title=reminder_data.title.strip(),
+        description=reminder_data.description,
+        remind_at=remind_at,
+        event_id=reminder_data.event_id or f"client-discussion-{uuid.uuid4()}",
+        source=reminder_data.source or "manual",
+        priority=reminder_data.priority or "medium",
+        reminder_type=reminder_data.reminder_type or "reminder",
+        related_task_id=reminder_data.related_task_id,
+        popup_interval_minutes=reminder_data.popup_interval_minutes,
+        created_at=now,
+        updated_at=now,
+    )
+    document = reminder.model_dump()
+    document["id"] = str(uuid.uuid4())
+    document["created_at"] = now.isoformat()
+    document["updated_at"] = now.isoformat()
+    await db.reminders.insert_one(document)
+    document.pop("_id", None)
+    return document
+
+
 @api_router.post("/send-pending-task-reminders")
 
 async def send_pending_task_reminders(current_user: User = Depends(get_current_user)):
