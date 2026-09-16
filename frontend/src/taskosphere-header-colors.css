@@ -86,3 +86,64 @@ body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner b
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner button span {
   color: #FFFFFF !important;
 }
+
+/* --------------------------------------------------------------------------
+   PEOPLE MATRIX — COMPACT HERO / INLINE DATE
+   2026-09-16: reduce hero height and place Today/date on the same visual
+   line as the Good Morning heading. Content/data below the hero is untouched.
+   -------------------------------------------------------------------------- */
+.people-matrix-dashboard > section:first-child{
+  padding:16px 24px!important;
+  min-height:116px!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10{
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) auto!important;
+  align-items:center!important;
+  gap:24px!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child{
+  max-width:none!important;
+  min-width:0!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:first-child{
+  margin-bottom:3px!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > h1{
+  margin:0!important;
+  line-height:1.15!important;
+  font-size:clamp(1.55rem,2.3vw,2rem)!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:nth-of-type(2){
+  margin-top:3px!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:first-child > p:nth-of-type(3){
+  margin-top:3px!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child{
+  min-width:240px!important;
+  padding:8px 0 8px 22px!important;
+  border-width:0 0 0 1px!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child{
+  justify-content:flex-end!important;
+}
+.people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:nth-child(2){
+  display:none!important;
+}
+@media(max-width:767px){
+  .people-matrix-dashboard > section:first-child{padding:14px 16px!important}
+  .people-matrix-dashboard > section:first-child > div.relative.z-10{
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:10px!important;
+  }
+  .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child{
+    min-width:0!important;
+    padding:8px 0 0!important;
+    border-width:1px 0 0!important;
+  }
+  .people-matrix-dashboard > section:first-child > div.relative.z-10 > div:last-child > div:first-child{justify-content:flex-start!important}
+}
