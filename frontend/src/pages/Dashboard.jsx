@@ -1834,7 +1834,7 @@ export default function Dashboard() {
 
           {/* Header banner — width reduced to make room for the Attendance card */}
           <div
-            className="relative overflow-hidden rounded-xl px-4 sm:px-6 pt-2 sm:pt-2.5 pb-2 sm:pb-2.5 flex-1 min-w-0"
+            className="th-hero-banner relative overflow-hidden rounded-xl px-4 sm:px-6 pt-2 sm:pt-2.5 pb-2 sm:pb-2.5 flex-1 min-w-0"
             style={{
               background: `linear-gradient(135deg, ${COLORS.deepBlue} 0%, ${COLORS.mediumBlue} 60%, #1a8fcc 100%)`,
               boxShadow: `0 1px 2px rgba(13,59,102,0.06), 0 6px 16px rgba(13,59,102,0.22)`,
