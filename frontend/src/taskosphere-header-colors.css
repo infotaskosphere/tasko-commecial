@@ -1,95 +1,88 @@
-/* ========================================================================== 
+/* ==========================================================================
    TASKOSPHERE — BLUE HERO / HEADER TYPOGRAPHY
-   Applies only while the Taskosphere module is active.
+   Applies only to the "Good Morning" welcome hero banner on the Taskosphere
+   Dashboard, while the Taskosphere module is active.
 
-   Scope is intentionally limited to the top header/hero surface. Finix,
-   People Matrix and Compliance surfaces are not restyled by this file.
+   FIX (2026-09-16): the previous version selected any descendant with
+   [style*="linear-gradient"] inside the page. That attribute selector has
+   no depth limit, so it also matched the metric cards further down the
+   dashboard (My Task / New Today / Todo / Overdue / Team Task), which use
+   their own inline linear-gradient backgrounds. Their p/span/label text
+   was being forced to near-white (rgba(255,255,255,.82/.86)) by the
+   !important rules below, making the labels and numbers invisible against
+   the cards' light backgrounds.
+
+   Fix: anchor every rule to the dedicated `.th-hero-banner` class placed
+   directly on the hero container in Dashboard.jsx, instead of matching by
+   inline style content. This restyles only the intended blue hero and
+   leaves every other Taskosphere surface (including the metric cards) on
+   its normal light/dark theme colors.
    ========================================================================== */
 
 /* Keep the Taskosphere top header on the same blue gradient as the reference.
    This final rule intentionally wins over the legacy light-theme branding
    override in module-branding.css. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child {
-  background:linear-gradient(135deg,#0D3B66 0%,#1F6FB2 60%,#1A8FCC 100%)!important;
-  color:#FFFFFF!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner {
+  background: linear-gradient(135deg, #0D3B66 0%, #1F6FB2 60%, #1A8FCC 100%) !important;
+  color: #FFFFFF !important;
 }
 
 /* Primary Taskosphere hero text: high-contrast white, matching the supplied
    Compliance reference header. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] strong {
-  color:#FFFFFF!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h1,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h2,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h3,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner strong {
+  color: #FFFFFF !important;
 }
 
 /* Supporting copy, labels and secondary text stay white/soft-white instead
    of reverting to Taskosphere navy/blue text on the blue surface. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] span,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] label {
-  color:rgba(255,255,255,.86)!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner p,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner span,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner label {
+  color: rgba(255,255,255,.86) !important;
 }
 
 /* Date / eyebrow — slightly softer white for hierarchy. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p:first-child {
-  color:#D9F7E3!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner p:first-child {
+  color: #D9F7E3 !important;
 }
 
 /* Neutralise legacy Tailwind blue/slate/gray text utilities inside the blue
    hero. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-blue"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-slate"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-gray"] {
-  color:rgba(255,255,255,.82)!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner [class*="text-blue"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner [class*="text-slate"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner [class*="text-gray"] {
+  color: rgba(255,255,255,.82) !important;
 }
 
 /* Headings remain pure white even when a utility class is present. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1[class*="text-"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2[class*="text-"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3[class*="text-"] {
-  color:#FFFFFF!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h1[class*="text-"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h2[class*="text-"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner h3[class*="text-"] {
+  color: #FFFFFF !important;
 }
 
 /* Live clock and AM/PM. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] .text-white,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] .text-blue-200 {
-  color:#FFFFFF!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner .text-white,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner .text-blue-200 {
+  color: #FFFFFF !important;
 }
 
 /* Secondary live-date text remains soft white. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p[class*="text-blue"] {
-  color:rgba(255,255,255,.75)!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner p[class*="text-blue"] {
+  color: rgba(255,255,255,.75) !important;
 }
 
 /* Preserve deliberate green completion / live-status accents. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-green"],
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-emerald"] {
-  color:#5CCB5F!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner [class*="text-green"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner [class*="text-emerald"] {
+  color: #5CCB5F !important;
 }
 
 /* Status figures/buttons inside the hero use white text. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button span {
-  color:#FFFFFF!important;
-}
-
-/* Safe fallback for legacy nested Taskosphere hero markup that does not expose
-   the inline gradient on the expected element. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1 {
-  color:#FFFFFF!important;
-  font-weight:700!important;
-}
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span {
-  color:rgba(255,255,255,.86)!important;
-}
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p:first-child {
-  color:#D9F7E3!important;
-}
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p[class*="text-blue"] {
-  color:rgba(255,255,255,.75)!important;
-}
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span:last-child {
-  color:#5CCB5F!important;
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner button,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) .th-hero-banner button span {
+  color: #FFFFFF !important;
 }
