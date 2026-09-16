@@ -31,7 +31,7 @@ _MODULE_ALIASES = {
 
 # The page flags mirror backend.models.MODULE_HIERARCHY. Keeping this small
 # explicit map here avoids importing commercial_onboarding_extensions from the
-# authentication dependency path and creating a circular import.
+authentication dependency path and creating a circular import.
 _MODULE_PAGES = {
     "taskosphere": (
         "can_view_dashboard",
@@ -136,6 +136,7 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
         raw_selected = {}
 
     permissions = dict(normalized.get("permissions") or {})
+    is_admin = str(normalized.get("role") or "").strip().lower() == "admin"
 
     for module_id, module_flag in _MODULE_FLAGS.items():
         module_allowed = module_id in modules
@@ -158,8 +159,14 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
                 permissions[page_flag] = False
             elif restriction_exists:
                 permissions[page_flag] = page_flag in selected
-            # Without an explicit restriction, preserve the role permission
-            # already normalized above for backward compatibility.
+            elif is_admin:
+                # Commercial Admins receive the pages contained in the
+                # licensed module when the license has no page restriction.
+                # This keeps Admin access governed by the commercial license
+                # while fixing older Admin records that predate these flags.
+                permissions[page_flag] = True
+            # Without an explicit restriction for non-admin roles, preserve
+            # the role permission already normalized above.
 
     normalized["permissions"] = permissions
     return normalized
