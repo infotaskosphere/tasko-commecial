@@ -118,8 +118,10 @@ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > 
 body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child button{border-radius:0!important}
 
 
-.dark body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child,
-
+.dark body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > div:first-child{
+  background:linear-gradient(105deg,#0F172A 0%,#142235 58%,#172C40 100%)!important;
+  border-color:#334155!important;
+}
 
 @media(max-width:767px){
  body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
