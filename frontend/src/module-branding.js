@@ -103,6 +103,16 @@ const syncModuleBranding = () => {
     visibleLogo.style.padding = '';
   }
 
+  if (moduleId === 'compliance') {
+    const complianceTab = document.querySelector('#nav-tab-compliance');
+    if (complianceTab) {
+      complianceTab.style.borderBottom = '2px solid #1F6FB2';
+      complianceTab.style.color = '#0D3B66';
+    }
+    visibleLogo.style.width = collapsed ? '54px' : '170px';
+    visibleLogo.style.height = '54px';
+  }
+
   if (moduleId === 'proposals') {
     const title = header.querySelector('h1');
     if (title) title.textContent = 'LeadSense';
