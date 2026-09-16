@@ -19,7 +19,6 @@ from pydantic import BaseModel, Field
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import get_learning_context, record_learning
-from backend.accounting_ai.finix_ai_router import _build_proposal, _can_post, _can_view, _date
 
 router = APIRouter(prefix="/finix/ai", tags=["Finix AI Agent"])
 
@@ -51,38 +50,36 @@ class InboxActionRequest(BaseModel):
 async def _party_history(company_id: str, party_name: str) -> dict:
     if not party_name:
         return {"transactions": [], "invoice_count": 0, "outstanding": 0.0}
-    q = {"company_id": company_id, "$or": [
-        {"client_name": {"$regex": re.escape(party_name), "$options": "i"}},
-        {"supplier_name": {"$regex": re.escape(party_name), "$options": "i"}},
-    ]}
-    docs = await db.invoices.find(q, {"_id": 0}).sort("invoice_date", -1).to_list(20)
-    purchases = await db.purchase_invoices.find(q, {"_id": 0}).sort("invoice_date", -1).to_list(20)
+    regex = re.escape(party_name)
+    docs = await db.invoices.find({"company_id": company_id, "client_name": {"$regex": regex, "$options": "i"}}, {"_id": 0}).sort("invoice_date", -1).to_list(20)
+    purchases = await db.purchase_invoices.find({"company_id": company_id, "supplier_name": {"$regex": regex, "$options": "i"}}, {"_id": 0}).sort("invoice_date", -1).to_list(20)
     all_docs = docs + purchases
-    return {
-        "transactions": all_docs[:20],
-        "invoice_count": len(all_docs),
-        "outstanding": round(sum(float(d.get("amount_due") or 0) for d in all_docs), 2),
-    }
+    return {"transactions": all_docs[:20], "invoice_count": len(all_docs), "outstanding": round(sum(float(d.get("amount_due") or 0) for d in all_docs), 2)}
+
+
+def _core():
+    from backend.accounting_ai.finix_ai_router import _build_proposal, _can_post, _can_view, _date
+    return _build_proposal, _can_post, _can_view, _date
 
 
 @router.post("/agent/propose")
 async def agent_propose(payload: AgentProposalRequest, current_user: User = Depends(get_current_user)):
+    _build_proposal, _, _can_view, _date = _core()
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     cid = _company(current_user, payload.company_id)
     result = await _build_proposal(payload.text.strip(), cid, _date(payload.accounting_date), current_user)
     if not result.get("success"):
         return result
-    learning = await get_learning_context(cid, result.get("event", ""), result.get("party_name", ""))
-    history = await _party_history(cid, result.get("party_name", ""))
-    result["learning"] = learning
-    result["party_history"] = history
+    result["learning"] = await get_learning_context(cid, result.get("event", ""), result.get("party_name", ""))
+    result["party_history"] = await _party_history(cid, result.get("party_name", ""))
     result["agent_stage"] = "PROPOSAL_READY"
     return result
 
 
 @router.post("/feedback")
 async def agent_feedback(payload: FeedbackRequest, current_user: User = Depends(get_current_user)):
+    _, _, _can_view, _ = _core()
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
@@ -90,16 +87,14 @@ async def agent_feedback(payload: FeedbackRequest, current_user: User = Depends(
         raise HTTPException(404, "Finix proposal not found.")
     if proposal.get("created_by") != current_user.id and str(current_user.role or "").lower() != "admin":
         raise HTTPException(403, "Only the proposal owner or an admin can provide feedback.")
-    await record_learning(
-        proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("context", {}).get("party", {}).get("name") or proposal.get("interpretation", {}).get("party_name", ""),
-        proposal, payload.outcome, current_user.id, payload.correction,
-    )
+    await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("context", {}).get("party", {}).get("name") or proposal.get("interpretation", {}).get("party_name", ""), proposal, payload.outcome, current_user.id, payload.correction)
     await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"feedback": payload.outcome, "correction": payload.correction, "feedback_by": current_user.id, "feedback_at": datetime.now(timezone.utc).isoformat()}})
     return {"success": True, "learned": True, "outcome": payload.outcome}
 
 
 @router.get("/inbox")
 async def agent_inbox(company_id: str = "", current_user: User = Depends(get_current_user)):
+    _, _, _can_view, _ = _core()
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     cid = _company(current_user, company_id)
@@ -109,6 +104,7 @@ async def agent_inbox(company_id: str = "", current_user: User = Depends(get_cur
 
 @router.post("/inbox/action")
 async def agent_inbox_action(payload: InboxActionRequest, current_user: User = Depends(get_current_user)):
+    _, _can_post, _, _ = _core()
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
@@ -160,9 +156,11 @@ async def _extract_upload(upload: UploadFile) -> dict:
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
             chunks = []
-            for ws in wb.worksheets[:5]:
+            for ws in wb.worksheets:
                 for row in ws.iter_rows(max_row=100, values_only=True):
                     chunks.append(" | ".join(str(v or "") for v in row))
+                if len(chunks) >= 500:
+                    break
             text = "\n".join(chunks)[:50000]
         except Exception:
             text = ""
@@ -173,6 +171,7 @@ async def _extract_upload(upload: UploadFile) -> dict:
 
 @router.post("/upload")
 async def agent_upload(file: UploadFile = File(...), company_id: str = "", accounting_date: Optional[str] = None, current_user: User = Depends(get_current_user)):
+    _build_proposal, _, _can_view, _date = _core()
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     cid = _company(current_user, company_id)
@@ -196,23 +195,18 @@ class AskRequest(BaseModel):
 
 @router.post("/ask")
 async def agent_ask(payload: AskRequest, current_user: User = Depends(get_current_user)):
+    _, _, _can_view, _ = _core()
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     cid = _company(current_user, payload.company_id)
     q = payload.question.lower()
     result: dict[str, Any] = {"question": payload.question, "company_id": cid, "source": "live accounting data"}
     if any(x in q for x in ("profit", "loss", "p&l", "p and l")):
-        entries = await db.journal_lines.find({"company_id": cid}, {"_id": 0}).to_list(100000)
-        income = expense = 0.0
-        ids = {e.get("entry_id") for e in entries if e.get("entry_id")}
-        journals = await db.journal_entries.find({"id": {"$in": list(ids)}}, {"_id": 0}).to_list(len(ids) or 1)
-        account_ids = {a.get("id"): a for a in await db.chart_of_accounts.find({"company_id": cid}, {"_id": 0}).to_list(5000)}
-        for line in entries:
-            acct = account_ids.get(line.get("account_id"), {})
-            typ = acct.get("type")
-            if typ == "income": income += float(line.get("credit") or 0) - float(line.get("debit") or 0)
-            elif typ == "expense": expense += float(line.get("debit") or 0) - float(line.get("credit") or 0)
-        result.update({"income": round(income, 2), "expenses": round(expense, 2), "profit": round(income-expense, 2), "journal_entries_considered": len(journals)})
+        lines = await db.journal_lines.find({"company_id": cid}, {"_id": 0}).to_list(100000)
+        accounts = {a.get("id"): a for a in await db.chart_of_accounts.find({"company_id": cid}, {"_id": 0}).to_list(5000)}
+        income = sum(float(l.get("credit") or 0) - float(l.get("debit") or 0) for l in lines if accounts.get(l.get("account_id"), {}).get("type") == "income")
+        expense = sum(float(l.get("debit") or 0) - float(l.get("credit") or 0) for l in lines if accounts.get(l.get("account_id"), {}).get("type") == "expense")
+        result.update({"income": round(income, 2), "expenses": round(expense, 2), "profit": round(income - expense, 2)})
     elif any(x in q for x in ("receivable", "customer outstanding", "debtors")):
         docs = await db.invoices.find({"company_id": cid}, {"_id": 0}).to_list(10000)
         result.update({"receivables": round(sum(float(d.get("amount_due") or 0) for d in docs), 2), "invoice_count": len(docs)})
@@ -222,12 +216,9 @@ async def agent_ask(payload: AskRequest, current_user: User = Depends(get_curren
     elif "gst" in q:
         lines = await db.journal_lines.find({"company_id": cid}, {"_id": 0}).to_list(100000)
         accounts = {a.get("id"): a for a in await db.chart_of_accounts.find({"company_id": cid, "code": {"$in": ["2100", "1200"]}}, {"_id": 0}).to_list(10)}
-        output = input_tax = 0.0
-        for l in lines:
-            a = accounts.get(l.get("account_id"), {})
-            if a.get("code") == "2100": output += float(l.get("credit") or 0) - float(l.get("debit") or 0)
-            if a.get("code") == "1200": input_tax += float(l.get("debit") or 0) - float(l.get("credit") or 0)
-        result.update({"output_gst": round(output, 2), "input_gst": round(input_tax, 2), "net_gst": round(output-input_tax, 2)})
+        output = sum(float(l.get("credit") or 0) - float(l.get("debit") or 0) for l in lines if accounts.get(l.get("account_id"), {}).get("code") == "2100")
+        input_tax = sum(float(l.get("debit") or 0) - float(l.get("credit") or 0) for l in lines if accounts.get(l.get("account_id"), {}).get("code") == "1200")
+        result.update({"output_gst": round(output, 2), "input_gst": round(input_tax, 2), "net_gst": round(output - input_tax, 2)})
     else:
-        result["message"] = "Finix can answer accounting questions from live books for profit/loss, receivables, payables and GST. For other questions it will ask for a specific report or transaction context."
+        result["message"] = "Finix can answer accounting questions from live books for profit/loss, receivables, payables and GST."
     return result
