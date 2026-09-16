@@ -114,28 +114,31 @@ body:has(#top-module-switcher-bar #nav-tab-accounts.font-semibold) main > div > 
 
 /* --------------------------------------------------------------------------
    TASKOSPHERE LIGHT HERO — explicit contrast layer
+   The dashboard hero currently contains legacy inline dark-blue styling.
+   Keep dark mode unchanged, but make the light Taskosphere hero genuinely
+   light and force a readable navy/blue text hierarchy over it.
    -------------------------------------------------------------------------- */
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child{
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child{
   background:linear-gradient(105deg,#ffffff 0%,#f8fbff 58%,#edf7ff 100%)!important;
   border:1px solid #D9E2EC!important;
   box-shadow:0 3px 14px rgba(15,23,42,.055)!important;
   color:#0D3B66!important;
 }
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1,
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p,
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child span{
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1,
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p,
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span{
   color:#0D3B66!important;
 }
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1{font-weight:700!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p:first-child{color:#1F6FB2!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button{
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1{font-weight:700!important}
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p:first-child{color:#1F6FB2!important}
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button{
   background:rgba(31,111,178,.06)!important;
   border:1px solid #C9D9E8!important;
   color:#0D3B66!important;
   backdrop-filter:none!important;
 }
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button span{color:#0D3B66!important}
-body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button span:last-child{color:#1FAF5A!important}
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span{color:#0D3B66!important}
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span:last-child{color:#1FAF5A!important}
 
 @media(max-width:767px){
  body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) header>div:first-child>a>div>img:not([style*="display: none"]){width:145px!important;height:48px!important}
