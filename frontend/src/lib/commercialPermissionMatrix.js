@@ -82,7 +82,7 @@ export function hasEffectivePermission(user, permission) {
   if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
   const moduleEntry = Object.entries(MODULES).find(([, def]) => def.flag === permission); if (moduleEntry) return hasModuleAccess(user, moduleEntry[0]);
   const pageEntry = PAGE_MATRIX.find(([, flag]) => flag === permission);
-  if (pageEntry) { const [moduleId] = pageEntry; if (!hasPageLicense(user, permission, moduleId)) return false; if (String(user.role || "").toLowerCase() === "admin") return true; return user.permissions?.[permission] === true; }
+  if (pageEntry) { const [moduleId] = pageEntry; if (!hasPageLicense(user, permission, moduleId)) return false; return user.permissions?.[permission] === true; }
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
 
