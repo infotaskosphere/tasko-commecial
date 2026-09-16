@@ -91,7 +91,8 @@ async def trigger_rule_optimization(current_user: User = Depends(get_current_use
         logger.error(f"Error running rule optimization: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# Mount Finix's integrated agent routes onto the already-registered learning router.
-# The complete agent keeps posting behind the existing accounting engine and permission checks.
+# Mount Finix integrated agent and reconciliation routes onto the already-registered learning router.
 from backend.accounting_ai.finix_agent_complete import router as finix_agent_router  # noqa: E402
+from backend.accounting_ai.finix_reconciliation_agent import router as finix_reconciliation_router  # noqa: E402
 router.routes.extend(finix_agent_router.routes)
+router.routes.extend(finix_reconciliation_router.routes)
