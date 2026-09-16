@@ -48,9 +48,8 @@ export default function ClientProposalsDashboard() {
       setLoading(true);
 
       // Only request datasets for pages the current user is actually licensed
-      // to access. This keeps the Client Proposals dashboard aligned with the
-      // same permission source used by routing and the backend entitlement
-      // guard, instead of firing guaranteed-403 requests for unselected pages.
+      // to access. This keeps the LeadSense dashboard aligned with the same
+      // permission source used by routing and the backend entitlement guard.
       const canReadLeads = hasEffectivePermission(user, 'can_view_all_leads');
       const canReadQuotes = hasEffectivePermission(user, 'can_create_quotations');
       const canReadDiscussions = hasEffectivePermission(user, 'can_view_client_discussion');
@@ -106,8 +105,8 @@ export default function ClientProposalsDashboard() {
     <div>
       <HubBanner
         icon={Target}
-        eyebrow="Client Proposals"
-        title="Client Proposals Dashboard"
+        eyebrow="LeadSense"
+        title="LeadSense Dashboard"
         subtitle="Everything between a first conversation and a signed quotation."
         isDark={isDark}
         stats={stats}
@@ -123,11 +122,11 @@ export default function ClientProposalsDashboard() {
       </div>
 
       <h2 className={`text-sm font-extrabold uppercase tracking-widest mb-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-        Proposal Modules
+        LeadSense Modules
       </h2>
       {visibleModules.length === 0 ? (
         <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          You don't have access to any proposal modules yet. Contact your admin to request access.
+          You don't have access to any LeadSense modules yet. Contact your admin to request access.
         </p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
