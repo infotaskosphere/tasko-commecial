@@ -1,52 +1,91 @@
-/* Taskosphere dashboard top-header typography only.
-   IMPORTANT: this file intentionally does NOT change the hero background,
-   geometry, spacing, shadows or layout. The existing blue Taskosphere hero
-   remains intact in both light and dark themes. */
+/* ========================================================================== 
+   TASKOSPHERE — BLUE HERO / HEADER TYPOGRAPHY
+   Applies only while the Taskosphere module is active.
 
-/* The legacy module-branding stylesheet uses a more specific selector for
-   the light-theme hero. Match that specificity here and load this stylesheet
-   after module-branding.css so the foreground colour cannot be inverted. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1,
+   Scope is intentionally limited to gradient-backed top header cards so
+   Finix, People Matrix, Compliance and ordinary dashboard cards are not
+   restyled by this file.
+   ========================================================================== */
+
+/* Primary Taskosphere hero text: high-contrast white, matching the supplied
+   Compliance reference header. The selector also covers nested wrappers used
+   by legacy Taskosphere pages. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] strong {
+  color:#FFFFFF!important;
+}
+
+/* Supporting copy, labels and secondary text stay white/soft-white instead
+   of reverting to Taskosphere navy/blue text on the blue surface. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] span,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] label {
+  color:rgba(255,255,255,.86)!important;
+}
+
+/* Date / eyebrow — slightly softer white for hierarchy. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p:first-child {
+  color:#D9F7E3!important;
+}
+
+/* Explicitly neutralise legacy Tailwind blue text classes inside the blue
+   hero. This is important because utility classes can otherwise win over
+   the intended reference typography. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-blue"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-slate"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-gray"] {
+  color:rgba(255,255,255,.82)!important;
+}
+
+/* Headings must remain pure white even when a utility class is present. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h1[class*="text-"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h2[class*="text-"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] h3[class*="text-"] {
+  color:#FFFFFF!important;
+}
+
+/* Live clock and AM/PM. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] .text-white,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] .text-blue-200 {
+  color:#FFFFFF!important;
+}
+
+/* Secondary live-date text remains soft white. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] p[class*="text-blue"] {
+  color:rgba(255,255,255,.75)!important;
+}
+
+/* Preserve deliberate green completion / live-status accents. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-green"],
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] [class*="text-emerald"] {
+  color:#5CCB5F!important;
+}
+
+/* Status figures/buttons inside the hero use white text; green status labels
+   are restored by the rule immediately above. */
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button,
+body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child [style*="linear-gradient"] button span {
+  color:#FFFFFF!important;
+}
+
+/* If a legacy hero does not expose the inline gradient at the exact level,
+   retain the known Dashboard selector as a safe fallback. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child h1 {
   color:#FFFFFF!important;
   font-weight:700!important;
 }
-
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p,
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span {
   color:rgba(255,255,255,.86)!important;
 }
-
-/* Date / eyebrow */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p:first-child {
   color:#D9F7E3!important;
 }
-
-/* Live clock and AM/PM */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child .text-white,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span {
-  color:#FFFFFF!important;
-}
-
-/* Live clock secondary date must also remain white rather than blue. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p.text-blue-200,
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child p[class*="text-blue"] {
   color:rgba(255,255,255,.75)!important;
 }
-
-/* Keep completion/status figures green as the deliberate accent. */
 body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child span:last-child {
   color:#5CCB5F!important;
 }
-
-/* Total Tasks / status controls: white foreground on the existing blue panel. */
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button,
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span {
-  color:#FFFFFF!important;
-}
-
-body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child > div:first-child button span:last-child {
-  color:#5CCB5F!important;
-}
-
-/* Do not define background/border/shadow rules here. */
