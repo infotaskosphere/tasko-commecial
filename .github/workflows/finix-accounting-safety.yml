@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - feature/finix-phase-1-accounting-safety
+      - feature/master-console
+      - feature/finix-complete-agent
   pull_request:
 
 jobs:
@@ -34,6 +36,11 @@ jobs:
           python -m py_compile backend/accounting_ai/posting_rules.py
           python -m py_compile backend/accounting_ai/posting_storage.py
           python -m py_compile backend/accounting_ai/voucher_builder.py
+          python -m py_compile backend/accounting_ai/finix_learning.py
+          python -m py_compile backend/accounting_ai/finix_ai_router.py
+          python -m py_compile backend/accounting_ai/finix_agent_complete.py
+          python -m py_compile backend/accounting_ai/finix_agent_mount.py
+          python -m py_compile backend/accounting_ai/finix_reconciliation_agent.py
           python -m py_compile backend/accounting_lock.py
       - name: Verify accounting controls import
         env:
@@ -46,4 +53,4 @@ jobs:
       - name: Run Finix accounting tests
         env:
           ENV_MODE: development
-        run: pytest -q backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py backend/tests/test_accounting_completeness.py
+        run: pytest -q backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py backend/tests/test_accounting_completeness.py backend/tests/test_finix_complete_agent.py

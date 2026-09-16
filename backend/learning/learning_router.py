@@ -91,8 +91,8 @@ async def trigger_rule_optimization(current_user: User = Depends(get_current_use
         logger.error(f"Error running rule optimization: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-# Mount Finix's integrated agent routes onto the same /api router without
-# creating a second accounting engine. Imports are safe because the Finix
-# extension resolves the core proposal builder lazily inside each request.
-from backend.accounting_ai.finix_agent_extensions import router as finix_agent_router  # noqa: E402
+# Mount Finix's startup-safe integrated agent facade.
+from backend.accounting_ai.finix_agent_mount import router as finix_agent_router  # noqa: E402
+from backend.accounting_ai.finix_reconciliation_agent import router as finix_reconciliation_router  # noqa: E402
 router.routes.extend(finix_agent_router.routes)
+router.routes.extend(finix_reconciliation_router.routes)
