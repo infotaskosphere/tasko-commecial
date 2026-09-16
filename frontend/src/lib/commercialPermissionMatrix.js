@@ -74,6 +74,14 @@ export function hasPageLicense(user, pageFlag, moduleId = null) {
     return false;
   }
 
+  // Client Discussion shipped after some proposals licenses were created.
+  // Lead Management was the original proposals workspace, so preserve that
+  // existing entitlement for the discussion page as a backwards-compatible
+  // page alias.
+  if (pageFlag === "can_view_client_discussion" && selected[module]?.has("can_view_all_leads")) {
+    return true;
+  }
+
   return Boolean(selected[module]?.has(pageFlag));
 }
 
@@ -82,7 +90,12 @@ export function hasEffectivePermission(user, permission) {
   if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
   const moduleEntry = Object.entries(MODULES).find(([, def]) => def.flag === permission); if (moduleEntry) return hasModuleAccess(user, moduleEntry[0]);
   const pageEntry = PAGE_MATRIX.find(([, flag]) => flag === permission);
-  if (pageEntry) { const [moduleId] = pageEntry; if (!hasPageLicense(user, permission, moduleId)) return false; return user.permissions?.[permission] === true; }
+  if (pageEntry) {
+    const [moduleId] = pageEntry;
+    if (!hasPageLicense(user, permission, moduleId)) return false;
+    return user.permissions?.[permission] === true ||
+      (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
+  }
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
 
