@@ -2,36 +2,29 @@
    Keep the existing card layout, gradients, spacing, shadows and controls.
    This mirrors the enterprise header color hierarchy used by the other
    suite dashboards without changing the Taskosphere card design. */
-@media (prefers-color-scheme: light) {
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1 {
-    color: #0D3B66 !important;
-  }
-
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p {
-    color: #64748B !important;
-  }
-
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p:first-child {
-    color: #1F6FB2 !important;
-  }
-
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button {
-    color: #0D3B66 !important;
-  }
-
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button > span:first-child {
-    color: #0D3B66 !important;
-  }
-
-  body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button > span:nth-last-child(1) {
-    color: #1F6FB2 !important;
-  }
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1 {
+  color: #0D3B66 !important;
 }
 
-/* The application uses .dark as its authoritative dark-mode marker. */
-.dark body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child h1,
-.dark body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p,
-.dark body:has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child span {
-  /* Preserve the existing dark-header typography. */
-  color: inherit;
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p {
+  color: #64748B !important;
 }
+
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child p:first-child {
+  color: #1F6FB2 !important;
+}
+
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button {
+  color: #0D3B66 !important;
+}
+
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button > span:first-child {
+  color: #0D3B66 !important;
+}
+
+body:not(.dark):has(#top-module-switcher-bar #nav-tab-core.font-semibold) main > div > div:first-child > div:first-child button > span:last-child {
+  color: #1F6FB2 !important;
+}
+
+/* The application uses .dark as its authoritative dark-mode marker;
+   do not alter the existing dark-header typography. */
