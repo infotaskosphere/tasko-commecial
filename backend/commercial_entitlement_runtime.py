@@ -31,7 +31,7 @@ _MODULE_ALIASES = {
 
 # The page flags mirror backend.models.MODULE_HIERARCHY. Keeping this small
 # explicit map here avoids importing commercial_onboarding_extensions from the
-authentication dependency path and creating a circular import.
+# authentication dependency path and creating a circular import.
 _MODULE_PAGES = {
     "taskosphere": (
         "can_view_dashboard",
