@@ -18,6 +18,14 @@ export const HUB_COLORS = {
  * matching the style of the main Dashboard's "Good Afternoon" banner.
  */
 export function HubBanner({ icon: Icon, eyebrow, title, subtitle, isDark, stats = [] }) {
+  const duplicateHeaderStats = {
+    LeadSense: new Set(['Active Leads', 'Pending Quotes', 'Win Rate']),
+    Records: new Set(['Clients', 'DSC Records', 'Documents', 'Pending Approval']),
+    CompliGenie: new Set(['Overdue']),
+  };
+  const hiddenStats = duplicateHeaderStats[eyebrow] || new Set();
+  const visibleStats = stats.filter((s) => !hiddenStats.has(s.label));
+
   return (
     <div
       className="relative overflow-hidden rounded-3xl p-6 sm:p-8 mb-6 shadow-lg"
@@ -36,9 +44,9 @@ export function HubBanner({ icon: Icon, eyebrow, title, subtitle, isDark, stats 
           {subtitle && <p className="text-blue-100/80 text-sm mt-1.5 max-w-xl">{subtitle}</p>}
         </div>
 
-        {stats.length > 0 && (
+        {visibleStats.length > 0 && (
           <div className="flex flex-wrap gap-3">
-            {stats.map((s, i) => (
+            {visibleStats.map((s, i) => (
               <div
                 key={i}
                 className="min-w-[110px] rounded-2xl px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/10"
