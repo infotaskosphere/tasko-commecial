@@ -3,6 +3,7 @@ import { Target, Receipt, Trophy, Send, Clock3, MessageSquare, Percent } from 'l
 import api from '@/lib/api';
 import useDark from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { hasEffectivePermission } from '@/lib/commercialPermissionMatrix';
 import { HubBanner, StatCard, LinkCard, HUB_COLORS } from '@/components/SectionHub.jsx';
 
 const fmtC = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -27,30 +28,39 @@ const MODULES = [
 
 export default function ClientProposalsDashboard() {
   const isDark = useDark();
-  const { user, hasPermission } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [leads, setLeads] = useState([]);
   const [quotations, setQuotations] = useState([]);
   const [discussions, setDiscussions] = useState([]);
 
-  const canSee = (m) => {
-    if (!m.permission) return true;
-    if (user?.role === 'admin') return true;
-    return hasPermission(m.permission);
-  };
+  // Commercial licensees are capped by the pages/features selected on their
+  // license. Do not use role=admin as an override here: the backend correctly
+  // rejects unlicensed endpoints, and the dashboard must not create those 403s
+  // in the first place. Platform owners remain fully entitled via the shared
+  // commercial permission matrix.
+  const canSee = (m) => !m.permission || hasEffectivePermission(user, m.permission);
   const visibleModules = MODULES.filter(canSee);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      // Fired together (not one-after-another) so total wait time is the
-      // slowest of the three calls instead of the sum of all three.
+
+      // Only request datasets for pages the current user is actually licensed
+      // to access. This keeps the Client Proposals dashboard aligned with the
+      // same permission source used by routing and the backend entitlement
+      // guard, instead of firing guaranteed-403 requests for unselected pages.
+      const canReadLeads = hasEffectivePermission(user, 'can_view_all_leads');
+      const canReadQuotes = hasEffectivePermission(user, 'can_create_quotations');
+      const canReadDiscussions = hasEffectivePermission(user, 'can_view_client_discussion');
+
       const [leadsRes, quotesRes, discussionsRes] = await Promise.allSettled([
-        api.get('/leads', { _silent: true }),
-        api.get('/quotations', { _silent: true }),
-        api.get('/client-discussion', { _silent: true }),
+        canReadLeads ? api.get('/leads', { _silent: true }) : Promise.resolve({ data: [] }),
+        canReadQuotes ? api.get('/quotations', { _silent: true }) : Promise.resolve({ data: [] }),
+        canReadDiscussions ? api.get('/client-discussion', { _silent: true }) : Promise.resolve({ data: [] }),
       ]);
+
       if (cancelled) return;
       if (leadsRes.status === 'fulfilled') setLeads(Array.isArray(leadsRes.value.data) ? leadsRes.value.data : []);
       if (quotesRes.status === 'fulfilled') setQuotations(Array.isArray(quotesRes.value.data) ? quotesRes.value.data : []);
@@ -61,7 +71,7 @@ export default function ClientProposalsDashboard() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [user]);
 
   const wonLeads = leads.filter((l) => l.status === 'won').length;
   const activeLeads = leads.filter((l) => l.status && !['won', 'lost'].includes(l.status)).length;
