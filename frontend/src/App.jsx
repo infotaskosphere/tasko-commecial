@@ -17,6 +17,7 @@ import "./email-google-oauth.css";
 import "./module-branding.css";
 import "./module-branding.js";
 import "./taskosphere-header-colors.css";
+import "./lib/universalBlueHeaderLayout.js";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
