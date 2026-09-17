@@ -1,0 +1,44 @@
+name: Fix Client Visits Header
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'fix: align client visits header actions') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Align Client Visits header controls
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('frontend/src/pages/VisitsPage.jsx')
+          s = p.read_text()
+
+          old = '''            <div className="flex items-center gap-2 flex-wrap">\n              {/* View toggle */}\n              <div className="flex rounded-xl p-0.5" style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)" }}>\n                {[["list", ClipboardList], ["calendar", CalendarDays]].map(([mode, Icon]) => (\n                  <button key={mode} onClick={() => setViewMode(mode)}\n                    className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all",\n                      viewMode === mode ? "bg-white shadow-sm" : "text-white/70 hover:text-white")}\n                    style={viewMode === mode ? { color: COLORS.deepBlue } : {}}>\n                    <Icon className="h-3.5 w-3.5" /><span className="capitalize hidden sm:inline">{mode}</span>\n                  </button>\n                ))}\n              </div>\n              <motion.button whileHover={{ scale: 1.03, y: -2, transition: springPhysics.card }} whileTap={{ scale: 0.97, transition: springPhysics.tap }}\n                onClick={() => setShowEmailImport(true)}\n                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm transition-all"\n                style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", color: "white" }}>\n                <Mail className="h-4 w-4" />From Email\n              </motion.button>\n              <motion.button whileHover={{ scale: 1.03, y: -2, transition: springPhysics.card }} whileTap={{ scale: 0.97, transition: springPhysics.tap }}\n                onClick={() => { setEditingVisit(null); setShowForm(true); }}\n                className="flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-sm bg-white/95 shadow-lg transition-all"\n                style={{ color: COLORS.deepBlue }}>\n                <Plus className="h-4 w-4" />Schedule\n              </motion.button>\n            </div>'''
+
+          new = '''            <div className="grid grid-cols-3 gap-2 w-full lg:w-[720px] lg:max-w-[720px] min-w-0 items-stretch">\n              {/* View toggle */}\n              <div className="flex min-w-0 rounded-xl p-0.5" style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)" }}>\n                {[["list", ClipboardList], ["calendar", CalendarDays]].map(([mode, Icon]) => (\n                  <button key={mode} onClick={() => setViewMode(mode)}\n                    className={cn("flex flex-1 min-w-0 items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all",\n                      viewMode === mode ? "bg-white shadow-sm" : "text-white/70 hover:text-white")}\n                    style={viewMode === mode ? { color: COLORS.deepBlue } : {}}>\n                    <Icon className="h-3.5 w-3.5 flex-shrink-0" /><span className="capitalize">{mode}</span>\n                  </button>\n                ))}\n              </div>\n              <motion.button whileHover={{ scale: 1.03, y: -2, transition: springPhysics.card }} whileTap={{ scale: 0.97, transition: springPhysics.tap }}\n                onClick={() => setShowEmailImport(true)}\n                className="w-full min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl font-semibold text-sm whitespace-nowrap transition-all"\n                style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.18)", color: "white" }}>\n                <Mail className="h-4 w-4 flex-shrink-0" />From Email\n              </motion.button>\n              <motion.button whileHover={{ scale: 1.03, y: -2, transition: springPhysics.card }} whileTap={{ scale: 0.97, transition: springPhysics.tap }}\n                onClick={() => { setEditingVisit(null); setShowForm(true); }}\n                className="w-full min-w-0 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl font-bold text-sm whitespace-nowrap bg-white/95 shadow-lg transition-all"\n                style={{ color: COLORS.deepBlue }}>\n                <Plus className="h-4 w-4 flex-shrink-0" />Schedule\n              </motion.button>\n            </div>'''
+
+          if old not in s:
+              raise SystemExit('Expected Client Visits header block was not found')
+          p.write_text(s.replace(old, new, 1))
+
+      - name: Commit and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/VisitsPage.jsx
+          git rm .github/workflows/fix-visits-header.yml
+          git commit -m "fix: align client visits header actions"
+          git push origin feature/master-console
