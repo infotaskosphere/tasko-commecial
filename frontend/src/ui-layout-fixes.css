@@ -1,0 +1,43 @@
+/* Small additive fixes for the canonical application shell. */
+
+/* Keep module tabs inside the header without clipping their labels. */
+#root #top-module-switcher-bar > div:first-child {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: none;
+}
+#root #top-module-switcher-bar > div:first-child::-webkit-scrollbar { display: none; }
+#root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
+  flex: 0 0 var(--ts-module-tab-w) !important;
+}
+
+/* Keep the right-aligned Admin/Settings tabs visible and independent. */
+#root #top-module-switcher-bar > div:last-child {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  overflow: visible !important;
+}
+
+/* Never let a header action push its containing form outside the card. */
+body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 > div {
+  min-width: 0 !important;
+}
+body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 input {
+  min-width: 0 !important;
+  max-width: none !important;
+}
+body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 button {
+  flex: 0 0 auto !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+}
+
+/* Lazy-route loading stays inside the already-rendered shell. */
+#root .taskosphere-route-loading {
+  width: 100%;
+  min-width: 0;
+}
