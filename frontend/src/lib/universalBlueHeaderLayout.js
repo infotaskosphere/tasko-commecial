@@ -48,6 +48,70 @@
     if (!actionGroup) return;
     const buttons = Array.from(actionGroup.children || []).filter((child) => child?.tagName === 'BUTTON' && isVisible(child));
     if (buttons.length < 2) return;
+
+    // Todo Management has only two compact tabs. Do not let the global
+    // blue-header normalizer stretch them into a large two-column grid.
+    const title = header.querySelector('h1');
+    const titleText = String(title?.textContent || '').replace(/\s+/g, ' ').trim();
+    if (/^todo management$/i.test(titleText)) {
+      const row = actionGroup.parentElement;
+      if (row && row !== header) {
+        row.style.display = 'flex';
+        row.style.gridTemplateColumns = '';
+        row.style.columnGap = '';
+        row.style.rowGap = '';
+        row.style.alignItems = 'center';
+        row.style.minWidth = '0';
+      }
+      actionGroup.style.display = 'inline-flex';
+      actionGroup.style.gridTemplateColumns = '';
+      actionGroup.style.gridTemplateRows = '';
+      actionGroup.style.gridAutoRows = '';
+      actionGroup.style.gap = '3px';
+      actionGroup.style.width = 'fit-content';
+      actionGroup.style.minWidth = '0';
+      actionGroup.style.alignItems = 'center';
+      actionGroup.style.justifyItems = '';
+      actionGroup.style.justifyContent = 'flex-start';
+      actionGroup.style.padding = '3px';
+      actionGroup.style.borderRadius = '10px';
+      buttons.forEach((button) => {
+        button.style.width = 'auto';
+        button.style.minWidth = '0';
+        button.style.maxWidth = 'none';
+        button.style.height = '32px';
+        button.style.minHeight = '32px';
+        button.style.maxHeight = '32px';
+        button.style.margin = '0';
+        button.style.padding = '4px 10px';
+        button.style.justifyContent = 'center';
+        button.style.alignItems = 'center';
+        button.style.gap = '4px';
+        button.style.fontSize = '11px';
+        button.style.lineHeight = '13px';
+        button.style.whiteSpace = 'nowrap';
+        button.style.wordBreak = 'normal';
+        button.style.overflowWrap = 'normal';
+        button.style.hyphens = 'none';
+        button.style.overflow = 'visible';
+        button.style.textOverflow = 'clip';
+        button.style.boxSizing = 'border-box';
+        Array.from(button.querySelectorAll('span')).forEach((span) => {
+          span.style.minWidth = '0';
+          span.style.maxWidth = 'none';
+          span.style.whiteSpace = 'nowrap';
+          span.style.wordBreak = 'normal';
+          span.style.overflowWrap = 'normal';
+          span.style.textOverflow = 'clip';
+          span.style.overflow = 'visible';
+          span.style.lineHeight = '13px';
+          span.style.textAlign = 'center';
+        });
+      });
+      actionGroup.setAttribute(HEADER_MARK, 'true');
+      return;
+    }
+
     const columns = Math.min(5, Math.max(2, Math.ceil(buttons.length / 2)));
     const row = actionGroup.parentElement;
     if (row && row !== header) {
