@@ -93,7 +93,7 @@ function GSTPortalSyncInner() {
                 <p className="text-sm text-blue-100 mt-1 max-w-2xl">Live Electronic Liability Register (PMT-01) &amp; Electronic Credit Ledger (PMT-02) balances, synced from the tax portal via your GSP connection.</p>
               </div>
             </div>
-            <Button onClick={fetchAll} variant="outline" className="bg-white/10 border-white/25 text-white hover:bg-white/20"><RefreshCw className="h-4 w-4 mr-2" /> Refresh</Button>
+            <Button onClick={fetchAll} variant="outline" className="bg-white/10 border-white/25 text-white hover:bg-white/20 whitespace-nowrap shrink-0"><RefreshCw className="h-4 w-4 mr-2 shrink-0" />Refresh</Button>
           </div>
         </div>
 
@@ -109,12 +109,16 @@ function GSTPortalSyncInner() {
           </div>
         )}
 
-        <div className={`rounded-2xl border p-4 flex flex-col md:flex-row md:items-center gap-3 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-          <Input placeholder="Enter GSTIN e.g. 24AAAAA0000A1Z5" value={gstin} onChange={(e) => setGstin(e.target.value)} className="max-w-xs" />
-          <Button onClick={registerAndSync} disabled={syncing}>
-            {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
-            {syncing ? 'Syncing…' : 'Register & Sync Now'}
-          </Button>
+        <div className={`rounded-2xl border p-4 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full min-w-0">
+            <div className="flex-1 min-w-0 w-full">
+              <Input placeholder="Enter GSTIN e.g. 24AAAAA0000A1Z5" value={gstin} onChange={(e) => setGstin(e.target.value)} className="w-full min-w-0" />
+            </div>
+            <Button onClick={registerAndSync} disabled={syncing} className="w-full sm:w-auto shrink-0 whitespace-nowrap inline-flex items-center justify-center">
+              {syncing ? <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" /> : <Plus className="h-4 w-4 mr-2 shrink-0" />}
+              <span>{syncing ? 'Syncing…' : 'Register & Sync Now'}</span>
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
