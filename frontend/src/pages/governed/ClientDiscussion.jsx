@@ -21,606 +21,89 @@ import {
   PageShell, PageBanner, StatRow, SectionCard, EmptyState, LoadingState, Toolbar, HUB_COLORS,
 } from '@/components/ui/PageKit';
 
-const EMPTY_DRAFT = {
-  title: '',
-  clientName: '',
-  details: '',
-  transcript: '',
-};
-
-const EMPTY_INSIGHTS = {
-  summary: '',
-  decisions: [],
-  followUps: [],
-  questions: [],
-  generatedAt: null,
-  approved: false,
-};
-
+const EMPTY_DRAFT = { title: '', clientName: '', details: '', transcript: '' };
+const EMPTY_INSIGHTS = { summary: '', decisions: [], followUps: [], questions: [], generatedAt: null, approved: false };
 const inputClass = 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700';
 const textareaClass = 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700';
-
-function asString(value) {
-  return typeof value === 'string' ? value : '';
-}
-
-function sentenceList(text) {
-  return asString(text)
-    .replace(/\s+/g, ' ')
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
+function asString(value) { return typeof value === 'string' ? value : ''; }
+function sentenceList(text) { return asString(text).replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean); }
 function prepareInsights(transcript, details = '') {
-  const source = [transcript, details].filter(Boolean).join(' ');
-  const sentences = sentenceList(source);
+  const source = [transcript, details].filter(Boolean).join(' '); const sentences = sentenceList(source);
   const actionPattern = /\b(action|follow[\s-]?up|send|share|prepare|provide|deliver|schedule|confirm|review|call|email|revert|complete|due)\b/i;
   const decisionPattern = /\b(agreed|decided|confirmed|approved|selected|will proceed|finalised|finalized)\b/i;
   const questionPattern = /\?|^\s*(how|when|what|can|could|would|is|are|do|does)\b/i;
-
   const unique = (values) => [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-  const followUps = unique(sentences.filter((sentence) => actionPattern.test(sentence))).slice(0, 8)
-    .map((text) => ({ text, approved: false, reminderCreated: false }));
+  const followUps = unique(sentences.filter((sentence) => actionPattern.test(sentence))).slice(0, 8).map((text) => ({ text, approved: false, reminderCreated: false }));
   const decisions = unique(sentences.filter((sentence) => decisionPattern.test(sentence))).slice(0, 6);
   const questions = unique(sentences.filter((sentence) => questionPattern.test(sentence))).slice(0, 6);
-  const summary = sentences.slice(0, 4).join(' ').slice(0, 900)
-    || 'Add a transcript or discussion notes to prepare a summary.';
-
-  return {
-    summary,
-    decisions,
-    followUps,
-    questions,
-    generatedAt: new Date().toISOString(),
-    approved: false,
-  };
+  const summary = sentences.slice(0, 4).join(' ').slice(0, 900) || 'Add a transcript or discussion notes to prepare a summary.';
+  return { summary, decisions, followUps, questions, generatedAt: new Date().toISOString(), approved: false };
 }
-
-function readExtra(item) {
-  return item?.extra && typeof item.extra === 'object' ? item.extra : {};
-}
-
+function readExtra(item) { return item?.extra && typeof item.extra === 'object' ? item.extra : {}; }
 function insightsFromItem(item) {
   const extra = readExtra(item);
-  return {
-    summary: asString(extra.summary),
-    decisions: Array.isArray(extra.decisions) ? extra.decisions : [],
-    followUps: Array.isArray(extra.followUps)
-      ? extra.followUps.map((item) => typeof item === 'string' ? ({ text: item, approved: true }) : item)
-      : [],
-    questions: Array.isArray(extra.questions) ? extra.questions : [],
-    generatedAt: extra.generatedAt || null,
-    approved: extra.approved === true,
-  };
+  return { summary: asString(extra.summary), decisions: Array.isArray(extra.decisions) ? extra.decisions : [], followUps: Array.isArray(extra.followUps) ? extra.followUps.map((item) => typeof item === 'string' ? ({ text: item, approved: true }) : item) : [], questions: Array.isArray(extra.questions) ? extra.questions : [], generatedAt: extra.generatedAt || null, approved: extra.approved === true };
 }
 
 export default function ClientDiscussion() {
-  const isDark = useDark();
-  const { hasActionAccess } = useGovernance();
-  const canCreate = hasActionAccess('proposals', 'can_view_client_discussion', 'create');
-  const canEdit = hasActionAccess('proposals', 'can_view_client_discussion', 'edit');
-  const canDelete = hasActionAccess('proposals', 'can_view_client_discussion', 'delete');
-
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
-  const [draft, setDraft] = useState(EMPTY_DRAFT);
-  const [insights, setInsights] = useState(EMPTY_INSIGHTS);
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('active');
-  const [recording, setRecording] = useState(false);
-  const [audioUrl, setAudioUrl] = useState('');
-  const [reminderAt, setReminderAt] = useState('');
-  const [reminderIndex, setReminderIndex] = useState(null);
-
-  const recorderRef = useRef(null);
-  const recognitionRef = useRef(null);
-  const streamRef = useRef(null);
-  const transcriptBaseRef = useRef('');
-  const transcriptFinalRef = useRef('');
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get('/client-discussion', { _silent: true });
-      setItems(Array.isArray(data) ? data : []);
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not load client discussions');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    load();
-    return () => {
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-      streamRef.current?.getTracks?.().forEach((track) => track.stop());
-    };
-  }, [load]); // audioUrl is intentionally not a dependency; cleanup happens on unmount.
-
-  const visible = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return items.filter((item) => {
-      const active = (item.status || 'open') !== 'archived';
-      const matchesStatus = status === 'all'
-        || (status === 'archived' ? !active : active);
-      const haystack = `${item.title || ''} ${item.details || ''} ${item.extra?.clientName || ''}`.toLowerCase();
-      return matchesStatus && (!query || haystack.includes(query));
-    });
-  }, [items, search, status]);
-
-  const activeCount = items.filter((item) => (item.status || 'open') !== 'archived').length;
-  const selectedItem = items.find((item) => item.id === selectedId);
-
-  const selectItem = (item) => {
-    const extra = readExtra(item);
-    setSelectedId(item.id);
-    setDraft({
-      title: item.title || '',
-      clientName: asString(extra.clientName),
-      details: item.details || '',
-      transcript: asString(extra.transcript),
-    });
-    setInsights(insightsFromItem(item));
-    setReminderAt(asString(extra.nextReminderAt));
-    setReminderIndex(null);
-  };
-
-  const startNew = () => {
-    setSelectedId(null);
-    setDraft(EMPTY_DRAFT);
-    setInsights(EMPTY_INSIGHTS);
-    setReminderAt('');
-    setReminderIndex(null);
-    setAudioUrl('');
-  };
-
-  const stopRecording = useCallback(() => {
-    setRecording(false);
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch {}
-      recognitionRef.current = null;
-    }
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-      recorderRef.current.stop();
-    }
-    streamRef.current?.getTracks?.().forEach((track) => track.stop());
-    streamRef.current = null;
-  }, []);
-
+  const isDark = useDark(); const { hasActionAccess } = useGovernance();
+  const canCreate = hasActionAccess('proposals', 'can_view_client_discussion', 'create'); const canEdit = hasActionAccess('proposals', 'can_view_client_discussion', 'edit'); const canDelete = hasActionAccess('proposals', 'can_view_client_discussion', 'delete');
+  const [items, setItems] = useState([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [selectedId, setSelectedId] = useState(null); const [draft, setDraft] = useState(EMPTY_DRAFT); const [insights, setInsights] = useState(EMPTY_INSIGHTS); const [search, setSearch] = useState(''); const [status, setStatus] = useState('active'); const [recording, setRecording] = useState(false); const [audioUrl, setAudioUrl] = useState(''); const [reminderAt, setReminderAt] = useState(''); const [reminderIndex, setReminderIndex] = useState(null);
+  const recorderRef = useRef(null); const recognitionRef = useRef(null); const streamRef = useRef(null); const transcriptBaseRef = useRef(''); const transcriptFinalRef = useRef('');
+  const load = useCallback(async () => { setLoading(true); try { const { data } = await api.get('/client-discussion', { _silent: true }); setItems(Array.isArray(data) ? data : []); } catch (error) { toast.error(error?.response?.data?.detail || 'Could not load client discussions'); } finally { setLoading(false); } }, []);
+  useEffect(() => { load(); return () => { if (audioUrl) URL.revokeObjectURL(audioUrl); streamRef.current?.getTracks?.().forEach((track) => track.stop()); }; }, [load]);
+  const visible = useMemo(() => { const query = search.trim().toLowerCase(); return items.filter((item) => { const active = (item.status || 'open') !== 'archived'; const matchesStatus = status === 'all' || (status === 'archived' ? !active : active); const haystack = `${item.title || ''} ${item.details || ''} ${item.extra?.clientName || ''}`.toLowerCase(); return matchesStatus && (!query || haystack.includes(query)); }); }, [items, search, status]);
+  const activeCount = items.filter((item) => (item.status || 'open') !== 'archived').length; const selectedItem = items.find((item) => item.id === selectedId);
+  const selectItem = (item) => { const extra = readExtra(item); setSelectedId(item.id); setDraft({ title: item.title || '', clientName: asString(extra.clientName), details: item.details || '', transcript: asString(extra.transcript) }); setInsights(insightsFromItem(item)); setReminderAt(asString(extra.nextReminderAt)); setReminderIndex(null); };
+  const startNew = () => { setSelectedId(null); setDraft(EMPTY_DRAFT); setInsights(EMPTY_INSIGHTS); setReminderAt(''); setReminderIndex(null); setAudioUrl(''); };
+  const stopRecording = useCallback(() => { setRecording(false); if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} recognitionRef.current = null; } if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop(); streamRef.current?.getTracks?.().forEach((track) => track.stop()); streamRef.current = null; }, []);
   const startRecording = async () => {
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      toast.error('This browser does not support microphone recording.');
-      return;
-    }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast.error('This browser does not support microphone recording.'); return; }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const chunks = [];
-      const recorder = new MediaRecorder(stream);
-      recorder.ondataavailable = (event) => {
-        if (event.data?.size) chunks.push(event.data);
-      };
-      recorder.onstop = () => {
-        if (chunks.length) {
-          if (audioUrl) URL.revokeObjectURL(audioUrl);
-          setAudioUrl(URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })));
-        }
-      };
-      recorderRef.current = recorder;
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      transcriptBaseRef.current = draft.transcript.trim();
-      transcriptFinalRef.current = '';
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-IN';
-        recognition.onresult = (event) => {
-          let interim = '';
-          let finalText = transcriptFinalRef.current;
-          for (let index = event.resultIndex; index < event.results.length; index += 1) {
-            const text = event.results[index][0]?.transcript || '';
-            if (event.results[index].isFinal) finalText += `${text.trim()} `;
-            else interim += text;
-          }
-          transcriptFinalRef.current = finalText;
-          const combined = [transcriptBaseRef.current, finalText.trim(), interim.trim()]
-            .filter(Boolean).join(' ');
-          setDraft((current) => ({ ...current, transcript: combined }));
-        };
-        recognition.onerror = () => toast.info('Recording continues. You can edit the transcript manually.');
-        recognitionRef.current = recognition;
-        recognition.start();
-      } else {
-        toast.info('Audio recording started. Speech-to-text is not available in this browser.');
-      }
-      recorder.start();
-      setRecording(true);
-    } catch (error) {
-      toast.error(error?.name === 'NotAllowedError'
-        ? 'Microphone access was blocked. Allow it in the browser to record.'
-        : 'Could not start the microphone.');
-    }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); streamRef.current = stream; const chunks = []; const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
+      recorder.onstop = () => { if (chunks.length) { if (audioUrl) URL.revokeObjectURL(audioUrl); setAudioUrl(URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || 'audio/webm' }))); } };
+      recorderRef.current = recorder; const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; transcriptBaseRef.current = draft.transcript.trim(); transcriptFinalRef.current = '';
+      if (SpeechRecognition) { const recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-IN'; recognition.onresult = (event) => { let interim = ''; let finalText = transcriptFinalRef.current; for (let index = event.resultIndex; index < event.results.length; index += 1) { const text = event.results[index][0]?.transcript || ''; if (event.results[index].isFinal) finalText += `${text.trim()} `; else interim += text; } transcriptFinalRef.current = finalText; const combined = [transcriptBaseRef.current, finalText.trim(), interim.trim()].filter(Boolean).join(' '); setDraft((current) => ({ ...current, transcript: combined })); }; recognition.onerror = () => toast.info('Recording continues. You can edit the transcript manually.'); recognitionRef.current = recognition; recognition.start(); } else toast.info('Audio recording started. Speech-to-text is not available in this browser.');
+      recorder.start(); setRecording(true);
+    } catch (error) { toast.error(error?.name === 'NotAllowedError' ? 'Microphone access was blocked. Allow it in the browser to record.' : 'Could not start the microphone.'); }
   };
-
-  const generateReview = () => {
-    if (!draft.transcript.trim() && !draft.details.trim()) {
-      toast.error('Add notes or record the discussion before preparing the review.');
-      return;
-    }
-    setInsights(prepareInsights(draft.transcript, draft.details));
-    toast.success('Summary and follow-up suggestions prepared for your approval.');
-  };
-
+  const generateReview = () => { if (!draft.transcript.trim() && !draft.details.trim()) { toast.error('Add notes or record the discussion before preparing the review.'); return; } setInsights(prepareInsights(draft.transcript, draft.details)); toast.success('Summary and follow-up suggestions prepared for your approval.'); };
   const saveDiscussion = async (nextInsights = insights) => {
-    if (!draft.title.trim()) {
-      toast.error('Add a meeting title first.');
-      return null;
-    }
-    setBusy(true);
-    try {
-      const existingExtra = readExtra(selectedItem);
-      const payload = {
-        title: draft.title.trim(),
-        details: draft.details.trim() || null,
-        extra: {
-          ...existingExtra,
-          clientName: draft.clientName.trim() || null,
-          transcript: draft.transcript.trim() || null,
-          summary: nextInsights.summary || null,
-          decisions: nextInsights.decisions || [],
-          followUps: nextInsights.followUps || [],
-          questions: nextInsights.questions || [],
-          generatedAt: nextInsights.generatedAt || null,
-          approved: nextInsights.approved === true,
-          nextReminderAt: reminderAt || null,
-        },
-      };
-      const response = selectedId
-        ? await api.put(`/client-discussion/${selectedId}`, payload)
-        : await api.post('/client-discussion', payload);
-      const saved = response.data;
-      setItems((current) => {
-        const next = current.filter((item) => item.id !== saved.id);
-        return [saved, ...next];
-      });
-      setSelectedId(saved.id);
-      toast.success(nextInsights.approved ? 'Discussion and approved follow-ups saved.' : 'Discussion draft saved.');
-      return saved;
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not save discussion');
-      return null;
-    } finally {
-      setBusy(false);
-    }
+    if (!draft.title.trim()) { toast.error('Add a meeting title first.'); return null; } setBusy(true);
+    try { const existingExtra = readExtra(selectedItem); const payload = { title: draft.title.trim(), details: draft.details.trim() || null, extra: { ...existingExtra, clientName: draft.clientName.trim() || null, transcript: draft.transcript.trim() || null, summary: nextInsights.summary || null, decisions: nextInsights.decisions || [], followUps: nextInsights.followUps || [], questions: nextInsights.questions || [], generatedAt: nextInsights.generatedAt || null, approved: nextInsights.approved === true, nextReminderAt: reminderAt || null } }; const response = selectedId ? await api.put(`/client-discussion/${selectedId}`, payload) : await api.post('/client-discussion', payload); const saved = response.data; setItems((current) => { const next = current.filter((item) => item.id !== saved.id); return [saved, ...next]; }); setSelectedId(saved.id); toast.success(nextInsights.approved ? 'Discussion and approved follow-ups saved.' : 'Discussion draft saved.'); return saved; } catch (error) { toast.error(error?.response?.data?.detail || 'Could not save discussion'); return null; } finally { setBusy(false); }
   };
-
-  const approveReview = async () => {
-    const approved = { ...insights, approved: true };
-    setInsights(approved);
-    await saveDiscussion(approved);
-  };
-
-  const updateFollowUp = (index, patch) => {
-    setInsights((current) => ({
-      ...current,
-      followUps: current.followUps.map((item, itemIndex) => (
-        itemIndex === index ? { ...item, ...patch } : item
-      )),
-      approved: false,
-    }));
-  };
-
-  const addFollowUp = () => {
-    setInsights((current) => ({
-      ...current,
-      approved: false,
-      followUps: [...current.followUps, { text: '', approved: false, reminderCreated: false }],
-    }));
-  };
-
+  const approveReview = async () => { const approved = { ...insights, approved: true }; setInsights(approved); await saveDiscussion(approved); };
+  const updateFollowUp = (index, patch) => { setInsights((current) => ({ ...current, followUps: current.followUps.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item), approved: false })); };
+  const addFollowUp = () => { setInsights((current) => ({ ...current, approved: false, followUps: [...current.followUps, { text: '', approved: false, reminderCreated: false }] })); };
   const approveReminder = async (followUp, index) => {
-    if (!selectedId) {
-      toast.error('Save the discussion before creating a reminder.');
-      return;
-    }
-    if (!reminderAt) {
-      setReminderIndex(index);
-      toast.error('Choose a reminder date and time first.');
-      return;
-    }
-    if (!followUp.text?.trim()) {
-      toast.error('Add a follow-up description first.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.post('/reminders', {
-        title: `Client follow-up: ${draft.clientName || draft.title}`,
-        description: followUp.text.trim(),
-        remind_at: new Date(reminderAt).toISOString(),
-        source: 'client-discussion',
-        priority: 'medium',
-        reminder_type: 'client_follow_up',
-        event_id: `client-discussion-${selectedId}-${index}`,
-      });
-      const nextInsights = {
-        ...insights,
-        approved: true,
-        followUps: insights.followUps.map((item, itemIndex) => (
-          itemIndex === index ? { ...item, approved: true, reminderCreated: true } : item
-        )),
-      };
-      setInsights(nextInsights);
-      await saveDiscussion(nextInsights);
-      setReminderIndex(null);
-      toast.success('Reminder created after your approval.');
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not create reminder');
-    } finally {
-      setBusy(false);
-    }
+    if (!selectedId) { toast.error('Save the discussion before creating a reminder.'); return; } if (!reminderAt) { setReminderIndex(index); toast.error('Choose a reminder date and time first.'); return; } if (!followUp.text?.trim()) { toast.error('Add a follow-up description first.'); return; } setBusy(true);
+    try { await api.post('/reminders', { title: `Client follow-up: ${draft.clientName || draft.title}`, description: followUp.text.trim(), remind_at: new Date(reminderAt).toISOString(), source: 'client-discussion', priority: 'medium', reminder_type: 'client_follow_up', event_id: `client-discussion-${selectedId}-${index}` }); const nextInsights = { ...insights, approved: true, followUps: insights.followUps.map((item, itemIndex) => itemIndex === index ? { ...item, approved: true, reminderCreated: true } : item) }; setInsights(nextInsights); await saveDiscussion(nextInsights); setReminderIndex(null); toast.success('Reminder created after your approval.'); } catch (error) { toast.error(error?.response?.data?.detail || 'Could not create reminder'); } finally { setBusy(false); }
   };
-
-  const archiveItem = async (item) => {
-    if (!canEdit) return;
-    try {
-      await api.put(`/client-discussion/${item.id}`, { status: item.status === 'archived' ? 'open' : 'archived' });
-      await load();
-      if (selectedId === item.id && item.status !== 'archived') startNew();
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not update discussion');
-    }
-  };
-
-  const removeItem = async (item) => {
-    if (!canDelete || !window.confirm(`Delete “${item.title}” permanently?`)) return;
-    try {
-      await api.delete(`/client-discussion/${item.id}`);
-      if (selectedId === item.id) startNew();
-      await load();
-      toast.success('Discussion deleted.');
-    } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not delete discussion');
-    }
-  };
-
-  const exportNotes = () => {
-    const content = [
-      `Client discussion: ${draft.title || 'Untitled meeting'}`,
-      draft.clientName ? `Client: ${draft.clientName}` : '',
-      '',
-      'SUMMARY',
-      insights.summary || 'No approved summary yet.',
-      '',
-      'DECISIONS',
-      ...(insights.decisions.length ? insights.decisions.map((item) => `- ${item}`) : ['- None captured']),
-      '',
-      'FOLLOW-UPS',
-      ...(insights.followUps.length ? insights.followUps.map((item) => `- ${item.text}${item.approved ? ' (approved)' : ''}`) : ['- None captured']),
-      '',
-      'TRANSCRIPT',
-      draft.transcript || 'No transcript captured.',
-    ].filter((line) => line !== undefined).join('\n');
-    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${(draft.title || 'client-discussion').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.txt`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
+  const archiveItem = async (item) => { if (!canEdit) return; try { await api.put(`/client-discussion/${item.id}`, { status: item.status === 'archived' ? 'open' : 'archived' }); await load(); if (selectedId === item.id && item.status !== 'archived') startNew(); } catch (error) { toast.error(error?.response?.data?.detail || 'Could not update discussion'); } };
+  const removeItem = async (item) => { if (!canDelete || !window.confirm(`Delete “${item.title}” permanently?`)) return; try { await api.delete(`/client-discussion/${item.id}`); if (selectedId === item.id) startNew(); await load(); toast.success('Discussion deleted.'); } catch (error) { toast.error(error?.response?.data?.detail || 'Could not delete discussion'); } };
+  const exportNotes = () => { const content = [`Client discussion: ${draft.title || 'Untitled meeting'}`, draft.clientName ? `Client: ${draft.clientName}` : '', '', 'SUMMARY', insights.summary || 'No approved summary yet.', '', 'DECISIONS', ...(insights.decisions.length ? insights.decisions.map((item) => `- ${item}`) : ['- None captured']), '', 'FOLLOW-UPS', ...(insights.followUps.length ? insights.followUps.map((item) => `- ${item.text}${item.approved ? ' (approved)' : ''}`) : ['- None captured']), '', 'TRANSCRIPT', draft.transcript || 'No transcript captured.'].filter((line) => line !== undefined).join('\n'); const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${(draft.title || 'client-discussion').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.txt`; anchor.click(); URL.revokeObjectURL(url); };
 
   return (
     <PageShell width="wide">
-      <PageBanner
-        icon={MessageSquareText}
-        eyebrow="Client Proposals"
-        title="Client Discussion"
-        subtitle="Capture the conversation, review AI suggestions, and approve every follow-up before it becomes an action."
-      />
-
-      <StatRow
-        columns={4}
-        items={[
-          { icon: FileText, label: 'Total meetings', value: items.length, color: HUB_COLORS.mediumBlue },
-          { icon: CheckCircle2, label: 'Active', value: activeCount, color: HUB_COLORS.emeraldGreen },
-          { icon: ListChecks, label: 'Pending approvals', value: items.filter((item) => !readExtra(item).approved && readExtra(item).summary).length, color: '#F59E0B' },
-          { icon: AudioLines, label: 'With transcript', value: items.filter((item) => readExtra(item).transcript).length, color: '#7C3AED' },
-        ]}
-      />
-
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
-        <SectionCard
-          icon={Sparkles}
-          color="#7C3AED"
-          title="Meeting assistant"
-          description="Recording and transcript analysis stay editable until you approve the result."
-          actions={
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={exportNotes} disabled={!draft.title}>
-                <Download className="w-3.5 h-3.5" /> Export notes
-              </Button>
-              {canCreate && (
-                <Button size="sm" onClick={startNew}>
-                  <Plus className="w-3.5 h-3.5" /> New discussion
-                </Button>
-              )}
-            </div>
-          }
-        >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-            <Input className={inputClass} placeholder="Meeting title *" aria-label="Meeting title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-            <Input className={inputClass} placeholder="Client or company" aria-label="Client or company" value={draft.clientName} onChange={(event) => setDraft({ ...draft, clientName: event.target.value })} />
-          </div>
-          <Textarea className={`${textareaClass} min-h-[75px] mb-3`} placeholder="Context or private notes" aria-label="Context or private notes" value={draft.details} onChange={(event) => setDraft({ ...draft, details: event.target.value })} />
-
-          <div className={`rounded-xl border p-3 mb-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2">
-                <Mic className={`w-4 h-4 ${recording ? 'text-red-500 animate-pulse' : 'text-indigo-500'}`} />
-                <span className={`text-sm font-semibold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
-                  {recording ? 'Recording discussion…' : 'Discussion recording'}
-                </span>
-                {recording && <span className="text-[11px] text-red-500">Audio + transcript</span>}
-              </div>
-              <div className="flex gap-2">
-                {!recording ? (
-                  <Button size="sm" variant="outline" onClick={startRecording}>
-                    <Mic className="w-3.5 h-3.5" /> Start recording
-                  </Button>
-                ) : (
-                  <Button size="sm" variant="destructive" onClick={stopRecording}>
-                    <Square className="w-3.5 h-3.5" /> Stop
-                  </Button>
-                )}
-              </div>
-            </div>
-            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              The browser asks for microphone permission. Audio is kept in this session for playback; the transcript is editable and only saves when you choose.
-            </p>
-            {audioUrl && (
-              <audio className="w-full mt-3 h-9" controls src={audioUrl}>
-                <track kind="captions" />
-              </audio>
-            )}
-          </div>
-
-          <Textarea className={`${textareaClass} min-h-[170px]`} placeholder="Transcript — it will appear here while you speak, or paste notes from the meeting." aria-label="Discussion transcript" value={draft.transcript} onChange={(event) => setDraft({ ...draft, transcript: event.target.value })} />
-          <div className="flex flex-wrap gap-2 mt-3">
-            <Button variant="secondary" onClick={generateReview} disabled={recording || (!draft.transcript.trim() && !draft.details.trim())}>
-              <Sparkles className="w-4 h-4" /> Prepare summary & minutes
-            </Button>
-            {canEdit && (
-              <Button variant="outline" onClick={() => saveDiscussion()} disabled={busy || !draft.title.trim()}>
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                Save draft
-              </Button>
-            )}
+      <PageBanner icon={MessageSquareText} eyebrow="Client Proposals" title="Client Discussion" subtitle="Capture the conversation, review AI suggestions, and approve every follow-up before it becomes an action." />
+      <StatRow columns={4} items={[{ icon: FileText, label: 'Total meetings', value: items.length, color: HUB_COLORS.mediumBlue }, { icon: CheckCircle2, label: 'Active', value: activeCount, color: HUB_COLORS.emeraldGreen }, { icon: ListChecks, label: 'Pending approvals', value: items.filter((item) => !readExtra(item).approved && readExtra(item).summary).length, color: '#F59E0B' }, { icon: AudioLines, label: 'With transcript', value: items.filter((item) => readExtra(item).transcript).length, color: '#7C3AED' }]} />
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-5 items-start">
+        <SectionCard icon={Sparkles} color="#7C3AED" title="Meeting assistant" description="Recording and transcript analysis stay editable until you approve the result." className="min-w-0 overflow-visible" actions={<div className="flex flex-wrap gap-2"> <Button size="sm" variant="outline" onClick={exportNotes} disabled={!draft.title}><Download className="w-3.5 h-3.5" /> Export notes</Button>{canCreate && <Button size="sm" onClick={startNew}><Plus className="w-3.5 h-3.5" /> New discussion</Button>}</div>}>
+          <div className="min-w-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4 min-w-0"><Input className={inputClass} placeholder="Meeting title *" aria-label="Meeting title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /><Input className={inputClass} placeholder="Client or company" aria-label="Client or company" value={draft.clientName} onChange={(event) => setDraft({ ...draft, clientName: event.target.value })} /></div>
+            <Textarea className={`${textareaClass} min-h-[75px] mb-3`} placeholder="Context or private notes" aria-label="Context or private notes" value={draft.details} onChange={(event) => setDraft({ ...draft, details: event.target.value })} />
+            <div className={`rounded-xl border p-3 mb-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}><div className="flex flex-wrap items-center justify-between gap-2 mb-2"><div className="flex items-center gap-2"><Mic className={`w-4 h-4 ${recording ? 'text-red-500 animate-pulse' : 'text-indigo-500'}`} /><span className={`text-sm font-semibold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{recording ? 'Recording discussion…' : 'Discussion recording'}</span>{recording && <span className="text-[11px] text-red-500">Audio + transcript</span>}</div><div className="flex gap-2">{!recording ? <Button size="sm" variant="outline" onClick={startRecording}><Mic className="w-3.5 h-3.5" /> Start recording</Button> : <Button size="sm" variant="destructive" onClick={stopRecording}><Square className="w-3.5 h-3.5" /> Stop</Button>}</div></div><p className={`text-xs leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>The browser asks for microphone permission. Audio is kept in this session for playback; the transcript is editable and only saves when you choose.</p>{audioUrl && <audio className="w-full mt-3 h-9" controls src={audioUrl}><track kind="captions" /></audio>}</div>
+            <Textarea className={`${textareaClass} min-h-[170px]`} placeholder="Transcript — it will appear here while you speak, or paste notes from the meeting." aria-label="Discussion transcript" value={draft.transcript} onChange={(event) => setDraft({ ...draft, transcript: event.target.value })} />
+            <div className="flex flex-wrap gap-2 mt-3"><Button variant="secondary" onClick={generateReview} disabled={recording || (!draft.transcript.trim() && !draft.details.trim())}><Sparkles className="w-4 h-4" /> Prepare summary & minutes</Button>{canEdit && <Button variant="outline" onClick={() => saveDiscussion()} disabled={busy || !draft.title.trim()}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} Save draft</Button>}</div>
           </div>
         </SectionCard>
-
-        <SectionCard
-          icon={ListChecks}
-          color="#1FAF5A"
-          title="AI review"
-          description="Suggestions are not actions. Approve the review or each reminder separately."
-          actions={insights.summary && !insights.approved ? (
-            <Button size="sm" onClick={approveReview} disabled={!canEdit || busy}>
-              <Check className="w-3.5 h-3.5" /> Approve review
-            </Button>
-          ) : null}
-        >
-          {!insights.summary ? (
-            <EmptyState icon={Sparkles} title="No review prepared" hint="Record or paste the discussion, then choose Prepare summary & minutes." />
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-1">Summary</p>
-                <Textarea className={`${textareaClass} min-h-[100px]`} value={insights.summary} onChange={(event) => setInsights({ ...insights, summary: event.target.value, approved: false })} />
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-2">Decisions</p>
-                {insights.decisions.length ? insights.decisions.map((item, index) => (
-                  <div key={`${item}-${index}`} className="flex gap-2 text-sm mb-1.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                    <span>{item}</span>
-                  </div>
-                )) : <p className="text-xs text-slate-400">No decisions detected.</p>}
-              </div>
-              <div>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <p className="text-[11px] uppercase tracking-wide font-bold text-slate-400">Follow-ups</p>
-                  <Button size="sm" variant="ghost" onClick={addFollowUp}><Plus className="w-3.5 h-3.5" /> Add</Button>
-                </div>
-                <div className="space-y-2">
-                  {insights.followUps.map((item, index) => (
-                    <div key={`${index}-${item.text}`} className={`rounded-lg border p-2 ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-                      <Textarea className={`${textareaClass} min-h-[58px] text-xs`} value={item.text} onChange={(event) => updateFollowUp(index, { text: event.target.value })} />
-                      <div className="flex flex-wrap items-center gap-2 mt-2">
-                        {item.approved && <span className="text-[11px] text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Approved</span>}
-                        {item.reminderCreated && <span className="text-[11px] text-indigo-600 flex items-center gap-1"><CalendarClock className="w-3 h-3" /> Reminder created</span>}
-                        <Button size="sm" variant="outline" onClick={() => { setReminderIndex(index); if (!reminderAt) document.getElementById('client-discussion-reminder')?.focus(); }} disabled={!canEdit || busy || item.reminderCreated}>
-                          <CalendarClock className="w-3.5 h-3.5" /> Approve reminder
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                  {!insights.followUps.length && <p className="text-xs text-slate-400">No follow-ups detected. Add one manually.</p>}
-                </div>
-              </div>
-              {insights.questions.length > 0 && (
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-1">Open questions</p>
-                  {insights.questions.map((item, index) => <p key={`${item}-${index}`} className="text-xs text-slate-500 mb-1">• {item}</p>)}
-                </div>
-              )}
-              <div className={`rounded-lg p-3 ${isDark ? 'bg-slate-900/50' : 'bg-amber-50'}`}>
-                <p className="text-xs font-semibold mb-2">Reminder approval</p>
-                <Input id="client-discussion-reminder" className={inputClass} type="datetime-local" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} />
-                {reminderIndex !== null && (
-                  <Button className="mt-2 w-full" size="sm" onClick={() => approveReminder(insights.followUps[reminderIndex], reminderIndex)} disabled={busy || !canEdit}>
-                    {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    Approve & create reminder
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
+        <SectionCard icon={ListChecks} color="#1FAF5A" title="AI review" description="Suggestions are not actions. Approve the review or each reminder separately." className="min-w-0 h-fit" actions={insights.summary && !insights.approved ? <Button size="sm" onClick={approveReview} disabled={!canEdit || busy}><Check className="w-3.5 h-3.5" /> Approve review</Button> : null}>
+          {!insights.summary ? <EmptyState icon={Sparkles} title="No review prepared" hint="Record or paste the discussion, then choose Prepare summary & minutes." /> : <div className="space-y-4 min-w-0 break-words"><div><p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-1">Summary</p><Textarea className={`${textareaClass} min-h-[100px] w-full`} value={insights.summary} onChange={(event) => setInsights({ ...insights, summary: event.target.value, approved: false })} /></div><div><p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-2">Decisions</p>{insights.decisions.length ? insights.decisions.map((item, index) => <div key={`${item}-${index}`} className="flex gap-2 text-sm mb-1.5 min-w-0"><CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" /><span className="min-w-0 break-words">{item}</span></div>) : <p className="text-xs text-slate-400">No decisions detected.</p>}</div><div><div className="flex items-center justify-between gap-2 mb-2"><p className="text-[11px] uppercase tracking-wide font-bold text-slate-400">Follow-ups</p><Button size="sm" variant="ghost" onClick={addFollowUp}><Plus className="w-3.5 h-3.5" /> Add</Button></div><div className="space-y-2">{insights.followUps.map((item, index) => <div key={`${index}-${item.text}`} className={`rounded-lg border p-2 min-w-0 ${isDark ? 'border-slate-700' : 'border-slate-200'}`}><Textarea className={`${textareaClass} min-h-[58px] text-xs w-full`} value={item.text} onChange={(event) => updateFollowUp(index, { text: event.target.value })} /><div className="flex flex-wrap items-center gap-2 mt-2">{item.approved && <span className="text-[11px] text-emerald-600 flex items-center gap-1">Approved</span>}{item.reminderCreated && <span className="text-[11px] text-indigo-600 flex items-center gap-1">Reminder created</span>}<Button size="sm" variant="outline" onClick={() => { setReminderIndex(index); if (!reminderAt) document.getElementById('client-discussion-reminder')?.focus(); }} disabled={!canEdit || busy || item.reminderCreated}><CalendarClock className="w-3.5 h-3.5" /> Approve reminder</Button></div></div>)}</div>{!insights.followUps.length && <p className="text-xs text-slate-400">No follow-ups detected. Add one manually.</p>}</div>{insights.questions.length > 0 && <div><p className="text-[11px] uppercase tracking-wide font-bold text-slate-400 mb-1">Open questions</p>{insights.questions.map((item, index) => <p key={`${item}-${index}`} className="text-xs text-slate-500 mb-1 break-words">• {item}</p>)}</div>}<div className={`rounded-lg p-3 ${isDark ? 'bg-slate-900/50' : 'bg-amber-50'}`}><p className="text-xs font-semibold mb-2">Reminder approval</p><Input id="client-discussion-reminder" className={`${inputClass} w-full`} type="datetime-local" value={reminderAt} onChange={(event) => setReminderAt(event.target.value)} />{reminderIndex !== null && <Button className="mt-2 w-full" size="sm" onClick={() => approveReminder(insights.followUps[reminderIndex], reminderIndex)} disabled={busy || !canEdit}>{busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Approve & create reminder</Button>}</div></div>}
         </SectionCard>
       </div>
-
-      <SectionCard
-        icon={Users}
-        color={HUB_COLORS.mediumBlue}
-        title="Saved discussions"
-        badge={visible.length}
-        actions={
-          <Toolbar>
-            <div className="relative w-52">
-              <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" />
-              <Input className={`pl-8 ${inputClass}`} placeholder="Search meetings…" aria-label="Search meetings" value={search} onChange={(event) => setSearch(event.target.value)} />
-            </div>
-            <select aria-label="Discussion status filter" className={`h-9 rounded-md border px-2 text-xs ${isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-200'}`} value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
-              <option value="all">All</option>
-            </select>
-          </Toolbar>
-        }
-      >
-        {loading ? <LoadingState /> : visible.length === 0 ? (
-          <EmptyState icon={MessageSquareText} title="No discussions yet" hint="Create a discussion, record the meeting, and review the suggested minutes." />
-        ) : (
-          <div className="space-y-2">
-            {visible.map((item) => {
-              const extra = readExtra(item);
-              const isSelected = selectedId === item.id;
-              return (
-                <div key={item.id} className={`rounded-xl px-4 py-3 flex items-start justify-between gap-4 border ${isSelected ? 'border-indigo-400 ring-1 ring-indigo-400/30' : isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-100 bg-slate-50'} ${item.status === 'archived' ? 'opacity-60' : ''}`}>
-                  <button className="text-left min-w-0 flex-1" onClick={() => selectItem(item)} type="button">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-sm font-semibold break-words ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{item.title}</span>
-                      {extra.clientName && <span className="text-[11px] text-slate-400">· {extra.clientName}</span>}
-                      {item.status === 'archived' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600">Archived</span>}
-                    </div>
-                    {item.details && <p className={`text-xs mt-1 leading-relaxed break-words ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{item.details}</p>}
-                    <p className="text-[11px] text-slate-400 mt-1">{extra.summary ? 'Summary ready' : 'Draft'} · {item.created_by_name || 'Unknown'}{item.created_at ? ` · ${new Date(item.created_at).toLocaleDateString()}` : ''}</p>
-                  </button>
-                  <div className="flex gap-1 shrink-0">
-                    {canEdit && <Button variant="ghost" size="icon" title="Edit discussion" aria-label="Edit discussion" onClick={() => selectItem(item)}><Pencil className="w-4 h-4" /></Button>}
-                    {canEdit && <Button variant="ghost" size="icon" title={item.status === 'archived' ? 'Restore discussion' : 'Archive discussion'} aria-label={item.status === 'archived' ? 'Restore discussion' : 'Archive discussion'} onClick={() => archiveItem(item)}>{item.status === 'archived' ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}</Button>}
-                    {canDelete && <Button variant="ghost" size="icon" title="Delete discussion" aria-label="Delete discussion" onClick={() => removeItem(item)}><Trash2 className="w-4 h-4 text-red-500" /></Button>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <SectionCard icon={Users} color={HUB_COLORS.mediumBlue} title="Saved discussions" badge={visible.length} actions={<Toolbar><div className="relative w-52"><Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" aria-hidden="true" /><Input className={`pl-8 ${inputClass}`} placeholder="Search meetings…" aria-label="Search meetings" value={search} onChange={(event) => setSearch(event.target.value)} /></div><select aria-label="Discussion status filter" className={`h-9 rounded-md border px-2 text-xs ${isDark ? 'bg-slate-800 border-slate-700 text-slate-100' : 'bg-white border-slate-200'}`} value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Active</option><option value="archived">Archived</option><option value="all">All</option></select></Toolbar>}>
+        {loading ? <LoadingState /> : visible.length === 0 ? <EmptyState icon={MessageSquareText} title="No discussions yet" hint="Create a discussion, record the meeting, and review the suggested minutes." /> : <div className="space-y-2">{visible.map((item) => { const extra = readExtra(item); const isSelected = selectedId === item.id; return <div key={item.id} className={`rounded-xl px-4 py-3 flex items-start justify-between gap-4 border ${isSelected ? 'border-indigo-400 ring-1 ring-indigo-400/30' : isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-100 bg-slate-50'} ${item.status === 'archived' ? 'opacity-60' : ''}`}><button className="text-left min-w-0 flex-1" onClick={() => selectItem(item)} type="button"><div className="flex items-center gap-2 flex-wrap"><span className={`text-sm font-semibold break-words ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>{item.title}</span>{extra.clientName && <span className="text-[11px] text-slate-400">· {extra.clientName}</span>}{item.status === 'archived' && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600">Archived</span>}</div>{item.details && <p className={`text-xs mt-1 leading-relaxed break-words ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{item.details}</p>}<p className="text-[11px] text-slate-400 mt-1">{extra.summary ? 'Summary ready' : 'Draft'} · {item.created_by_name || 'Unknown'}{item.created_at ? ` · ${new Date(item.created_at).toLocaleDateString()}` : ''}</p></button><div className="flex gap-1 shrink-0">{canEdit && <Button variant="ghost" size="icon" title="Edit discussion" aria-label="Edit discussion" onClick={() => selectItem(item)}><Pencil className="w-4 h-4" /></Button>}{canEdit && <Button variant="ghost" size="icon" title={item.status === 'archived' ? 'Restore discussion' : 'Archive discussion'} aria-label={item.status === 'archived' ? 'Restore discussion' : 'Archive discussion'} onClick={() => archiveItem(item)}>{item.status === 'archived' ? <RotateCcw className="w-4 h-4" /> : <Archive className="w-4 h-4" />}</Button>}{canDelete && <Button variant="ghost" size="icon" title="Delete discussion" aria-label="Delete discussion" onClick={() => removeItem(item)}><Trash2 className="w-4 h-4 text-red-500" /></Button>}</div></div>; })}</div>}
       </SectionCard>
     </PageShell>
   );
