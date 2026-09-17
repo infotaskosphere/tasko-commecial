@@ -20,14 +20,16 @@ export default function GifLoader() {
 }
 
 /**
- * ContentLoader — in-layout page loader.
- * Used as the <Suspense> fallback INSIDE DashboardLayout so the
- * sidebar and header stay visible while a lazy page is loading.
- * Renders inline (no overlay, no backdrop) — just centered in content area.
+ * ContentLoader — FULL-SCREEN route/page loader.
+ * Used as the <Suspense> fallback during route transitions so the loader
+ * is never trapped inside a page/card/container and shown as a half-page box.
+ * The fullscreen class intentionally covers the entire viewport.
  */
 export function ContentLoader() {
+  const isDark = useDark();
+
   return (
-    <div className="taskosphere-loader taskosphere-loader--content">
+    <div className={`taskosphere-loader taskosphere-loader--fullscreen ${isDark ? "is-dark" : ""}`}>
       <div className="taskosphere-loader__orb" aria-hidden="true" />
       <img className="taskosphere-loader__gif" src="/loader.gif" alt="Loading…" />
       <span className="taskosphere-loader__label">Loading page</span>
