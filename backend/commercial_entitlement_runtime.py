@@ -89,10 +89,9 @@ _MODULE_PAGES = {
         "can_view_user_page",
         "can_view_leave",
         "can_manage_leave",
+        "can_view_hr",
         "can_view_payroll",
         "can_manage_payroll",
-        "can_view_hr",
-        "can_manage_hr",
         "can_view_recruitment",
         "can_manage_recruitment",
         "can_view_performance",
@@ -154,6 +153,15 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
 
         restriction_exists = selected_value is not None
         selected = {str(flag).strip() for flag in (selected_value or [])} if isinstance(selected_value, list) else set()
+
+        # Backward compatibility: Client Discussion was introduced after the
+        # original Proposals/Lead Management entitlement. The frontend already
+        # treats can_view_all_leads as a view entitlement for Client Discussion;
+        # keep the backend entitlement cap in sync so the page does not produce
+        # a 403 after the frontend has decided it is accessible.
+        if module_id == "proposals" and "can_view_all_leads" in selected:
+            selected.add("can_view_client_discussion")
+
         for page_flag in _MODULE_PAGES[module_id]:
             if not module_allowed:
                 permissions[page_flag] = False
