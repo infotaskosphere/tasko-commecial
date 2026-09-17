@@ -34,7 +34,7 @@ export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, clas
         style={{ background: 'white' }}
       />
 
-      <div className="relative flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 min-w-0">
+      <div className="relative flex flex-col lg:flex-row items-start lg:items-center gap-4 min-w-0">
         {/* Left — title */}
         <div className="flex-1 min-w-0">
           {(Icon || date) && (
@@ -53,7 +53,7 @@ export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, clas
 
         {/* Right — actions slot */}
         {actions && (
-          <div className={`flex flex-1 min-w-0 justify-end items-center gap-2 ${actionsClassName}`}>
+          <div className={`flex-shrink-0 ml-auto min-w-0 ${actionsClassName}`}>
             {actions}
           </div>
         )}
