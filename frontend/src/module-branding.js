@@ -10,7 +10,7 @@
 const MODULE_BRANDING = {
   core: { label: 'Taskosphere', landingPath: '/dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Task-O-Sphere' },
   accounts: { label: 'Finix', landingPath: '/finix-dashboard', lightLogo: '/finix-logo.png', darkLogo: '/finix-logo.png', collapsedLogo: '/finix-icon.png', alt: 'Finix AI Accounting' },
-  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-logo.png', alt: 'CompliGenie' },
+  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
 };
@@ -36,9 +36,13 @@ const getRouteModuleId = () => {
 };
 
 const getActiveModuleId = () => {
+  // Route identity is authoritative. This prevents a stale tab class from
+  // leaving the previous module logo visible during client-side navigation.
+  const routeModuleId = getRouteModuleId();
+  if (routeModuleId) return routeModuleId;
   const activeTab = document.querySelector('#top-module-switcher-bar [id^="nav-tab-"].font-semibold');
   const moduleId = (activeTab?.id || '').replace(/^nav-tab-/, '');
-  return MODULE_BRANDING[moduleId] ? moduleId : (getRouteModuleId() || 'core');
+  return MODULE_BRANDING[moduleId] ? moduleId : 'core';
 };
 
 const setTabLabel = (id, label) => {
