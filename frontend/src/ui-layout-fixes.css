@@ -119,3 +119,117 @@ body[data-business-route="/client-discussion"] #root main button {
   width: 100%;
   min-width: 0;
 }
+
+/* FINAL LAYOUT GUARDS ---------------------------------------------------- */
+/* Client Discussion: target the actual first assistant card instead of
+   relying on generic flex wrapping. Header actions get a dedicated column,
+   while the content starts below the header and can never slide underneath it. */
+body[data-business-route="/client-discussion"] #root main section:first-of-type {
+  overflow: visible !important;
+  min-width: 0 !important;
+}
+body[data-business-route="/client-discussion"] #root main section:first-of-type > header {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) minmax(230px,auto) !important;
+  align-items: center !important;
+  gap: 16px !important;
+  min-height: 92px !important;
+  height: auto !important;
+  padding-top: 16px !important;
+  padding-bottom: 16px !important;
+}
+body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+  width: auto !important;
+}
+body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child > button {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  white-space: nowrap !important;
+}
+body[data-business-route="/client-discussion"] #root main section:first-of-type > div {
+  clear: both !important;
+  position: relative !important;
+  z-index: 1 !important;
+  min-width: 0 !important;
+}
+
+/* Leave page: its dropdown and Apply Leave control are two equal cells in
+   the blue page header. Both controls use the same height, border, fill,
+   typography and icon treatment so the header is visually one system. */
+body[data-business-route="/leave"] #root main > div > div:first-child {
+  background: linear-gradient(135deg,#0D3B66 0%,#1F6FB2 100%) !important;
+  color: #fff !important;
+  padding: 18px 20px !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 5px 20px rgba(13,59,102,.18) !important;
+}
+body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child {
+  display: grid !important;
+  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  width: min(420px,100%) !important;
+  min-width: 0 !important;
+}
+body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child > * {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  max-height: 40px !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+}
+body[data-business-route="/leave"] #root main > div > div:first-child [role="combobox"],
+body[data-business-route="/leave"] #root main > div > div:first-child [data-radix-select-trigger],
+body[data-business-route="/leave"] #root main > div > div:first-child button {
+  border: 1px solid rgba(255,255,255,.28) !important;
+  background: rgba(255,255,255,.10) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+body[data-business-route="/leave"] #root main > div > div:first-child [role="combobox"] svg,
+body[data-business-route="/leave"] #root main > div > div:first-child button svg {
+  color: #fff !important;
+}
+body[data-business-route="/leave"] #root main [role="tablist"] {
+  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  width: 100% !important;
+}
+body[data-business-route="/leave"] #root main [role="tablist"] > [role="tab"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+@media (max-width: 1100px) {
+  body[data-business-route="/client-discussion"] #root main section:first-of-type > header {
+    grid-template-columns: minmax(0,1fr) !important;
+  }
+  body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child {
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+}
+@media (max-width: 640px) {
+  body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child {
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+  }
+  body[data-business-route="/leave"] #root main [role="tablist"] {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+}
