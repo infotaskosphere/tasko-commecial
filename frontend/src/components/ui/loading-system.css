@@ -1,31 +1,24 @@
-/* Task-O-Sphere canonical loading system. Applies to auth, Suspense and MiniLoader. */
+/* Canonical Task-O-Sphere loading system. Keep this stylesheet as the single loader visual source. */
 :root{--loader-bg:#F4F6FA;--loader-blue:#0D3B66;--loader-mid:#1F6FB2;--loader-green:#1FAF5A;--loader-muted:#64748B;--loader-font:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.taskosphere-loading-bar{display:none!important;animation:none!important}
-.taskosphere-loader{position:relative;display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;font-family:var(--loader-font)!important;color:var(--loader-blue);background:transparent;overflow:hidden}
-.taskosphere-loader--fullscreen{position:fixed!important;inset:0!important;z-index:9999!important;min-height:100vh!important;padding:24px!important;background:var(--loader-bg)!important;opacity:1!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;animation:loaderFadeIn .18s ease-out both!important}
+.taskosphere-loading-bar{position:fixed;left:0;right:0;bottom:0;height:3px;z-index:9999;pointer-events:none;overflow:hidden;background:transparent!important;display:block!important}
+.taskosphere-loading-bar::after{content:"";position:absolute;left:-35%;top:0;width:35%;height:100%;background:linear-gradient(90deg,var(--loader-green),var(--loader-mid));animation:loaderBar 1.15s ease-in-out infinite}
+.taskosphere-loader{position:relative;display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;font-family:var(--loader-font)!important;color:var(--loader-blue);background:transparent;overflow:visible}
+.taskosphere-loader--fullscreen{position:relative!important;inset:auto!important;z-index:auto!important;min-height:clamp(240px,42vh,420px)!important;width:100%!important;padding:24px!important;background:var(--loader-bg)!important;opacity:1!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;animation:loaderFadeIn .18s ease-out both!important}
 .taskosphere-loader--fullscreen.is-dark{background:#0F172A!important;color:#E2E8F0!important}
 .taskosphere-loader--mini{min-height:76px;background:transparent!important;gap:6px}
 .taskosphere-loader__body{display:flex;flex-direction:column;align-items:center;justify-content:center;max-width:min(920px,92vw);width:100%;padding:16px}
 .taskosphere-loader__body--compact{padding:8px}
-.taskosphere-loader__wordmark{display:flex;align-items:baseline;justify-content:center;white-space:nowrap;font-family:var(--loader-font)!important;font-size:clamp(27px,3.2vw,38px);font-weight:800;letter-spacing:.09em;line-height:1;color:var(--loader-blue);text-transform:uppercase;animation:loaderWordmark 1.65s cubic-bezier(.22,1,.36,1) infinite}
+.taskosphere-loader__wordmark{display:flex;align-items:baseline;justify-content:center;white-space:nowrap;font-size:clamp(18px,2.2vw,28px);font-weight:800;letter-spacing:.09em;line-height:1;color:var(--loader-blue);text-transform:uppercase}
 .taskosphere-loader--fullscreen.is-dark .taskosphere-loader__wordmark{color:#F8FAFC}
-.taskosphere-loader__wordmark b{font-weight:800;color:var(--loader-green);animation:loaderAccent 1.65s ease-in-out infinite}
-.taskosphere-loader__insight{display:flex;align-items:baseline;justify-content:center;gap:9px;max-width:min(820px,92vw);margin-top:18px;text-align:center;color:#475569;font-size:13px;line-height:1.55;font-weight:500}
+.taskosphere-loader__wordmark b{font-weight:800;color:var(--loader-green)}
+.taskosphere-loader__insight{display:flex;align-items:baseline;justify-content:center;gap:9px;max-width:min(820px,92vw);margin-top:14px;text-align:center;color:#475569;font-size:13px;line-height:1.55;font-weight:500}
 .taskosphere-loader--fullscreen.is-dark .taskosphere-loader__insight{color:#CBD5E1}
 .taskosphere-loader__kind,.taskosphere-loader__mini>span{flex:0 0 auto;font-size:10px;letter-spacing:.12em;font-weight:800;color:var(--loader-mid);white-space:nowrap}
 .taskosphere-loader--fullscreen.is-dark .taskosphere-loader__kind,.taskosphere-loader--fullscreen.is-dark .taskosphere-loader__mini>span{color:#5CCB5F}
-.taskosphere-loader__text{min-width:0}
-.taskosphere-loader__dots{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;vertical-align:middle}
-.taskosphere-loader__dots i{display:block;width:5px;height:5px;border-radius:50%;background:var(--loader-green);animation:loaderDot 1.05s ease-in-out infinite}
-.taskosphere-loader__dots i:nth-child(2){animation-delay:.15s}.taskosphere-loader__dots i:nth-child(3){animation-delay:.30s}
+.taskosphere-loader__text{min-width:0}.taskosphere-loader__dots{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;margin-left:2px;vertical-align:middle}.taskosphere-loader__dots i{display:block;width:5px;height:5px;border-radius:50%;background:var(--loader-green);animation:loaderDot 1.05s ease-in-out infinite}.taskosphere-loader__dots i:nth-child(2){animation-delay:.15s}.taskosphere-loader__dots i:nth-child(3){animation-delay:.3s}
 .taskosphere-loader__mini{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:8px;font-size:10px;color:var(--loader-muted)}
 .taskosphere-loader--mini .taskosphere-loader__wordmark{font-size:15px;letter-spacing:.075em}
-.taskosphere-loader--dots-only{min-height:0!important;background:transparent!important;color:var(--loader-mid)!important;gap:0!important;vertical-align:middle}
-.taskosphere-loader--dots-only .taskosphere-loader__dots{margin:0!important;gap:3px!important}
-.taskosphere-loader--dots-only .taskosphere-loader__dots i{width:4px!important;height:4px!important}
-@keyframes loaderFadeIn{from{opacity:0}to{opacity:1}}
-@keyframes loaderWordmark{0%,100%{opacity:.72;transform:translateY(1px);letter-spacing:.085em}45%{opacity:1;transform:translateY(-2px);letter-spacing:.105em}70%{opacity:.9;transform:translateY(0);letter-spacing:.09em}}
-@keyframes loaderAccent{0%,100%{opacity:.7}50%{opacity:1;transform:translateY(-1px)}}
-@keyframes loaderDot{0%,100%{opacity:.25;transform:translateY(0) scale(.75)}50%{opacity:1;transform:translateY(-3px) scale(1)}}
-@media(max-width:640px){.taskosphere-loader__body{padding:12px}.taskosphere-loader__wordmark{font-size:24px}.taskosphere-loader__insight{gap:7px;font-size:12px;flex-wrap:wrap;max-width:94vw}.taskosphere-loader__kind{width:100%}.taskosphere-loader__text{max-width:90vw}.taskosphere-loader--mini .taskosphere-loader__wordmark{font-size:14px}}
-@media(prefers-reduced-motion:reduce){.taskosphere-loader,.taskosphere-loader__wordmark,.taskosphere-loader__wordmark b,.taskosphere-loader__dots i{animation:none!important}}
+.taskosphere-loader--dots-only{min-height:0!important;background:transparent!important;color:var(--loader-mid)!important;gap:0!important;vertical-align:middle}.taskosphere-loader--dots-only .taskosphere-loader__dots{margin:0!important;gap:3px!important}.taskosphere-loader--dots-only .taskosphere-loader__dots i{width:4px!important;height:4px!important}
+@keyframes loaderFadeIn{from{opacity:0}to{opacity:1}}@keyframes loaderBar{0%{left:-35%;width:28%}50%{left:35%;width:42%}100%{left:110%;width:28%}}@keyframes loaderDot{0%,100%{opacity:.25;transform:translateY(0) scale(.75)}50%{opacity:1;transform:translateY(-3px) scale(1)}}
+@media(max-width:640px){.taskosphere-loader__body{padding:12px}.taskosphere-loader__wordmark{font-size:20px}.taskosphere-loader__insight{gap:7px;font-size:12px;flex-wrap:wrap;max-width:94vw}.taskosphere-loader__kind{width:100%}.taskosphere-loader__text{max-width:90vw}.taskosphere-loader--mini .taskosphere-loader__wordmark{font-size:14px}}
+@media(prefers-reduced-motion:reduce){.taskosphere-loading-bar::after,.taskosphere-loader,.taskosphere-loader__dots i{animation:none!important}}
