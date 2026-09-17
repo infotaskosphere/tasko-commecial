@@ -1,51 +1,95 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useDark } from "@/hooks/useDark";
+import "./loading-system.css";
 
-/**
- * GifLoader — FULL-SCREEN loader.
- * Used ONLY for auth loading (before DashboardLayout mounts).
- * Do NOT use this as a Suspense fallback inside DashboardLayout —
- * use ContentLoader instead so the sidebar stays visible.
- */
-export default function GifLoader() {
-  const isDark = useDark();
-
-  return (
-    <div className={`taskosphere-loader taskosphere-loader--fullscreen ${isDark ? "is-dark" : ""}`}>
-      <div className="taskosphere-loader__orb" aria-hidden="true" />
-      <img className="taskosphere-loader__gif" src="/loader.gif" alt="Loading…" />
-      <span className="taskosphere-loader__label">Preparing your workspace</span>
-    </div>
-  );
+// Canonical application loading experience. Kept under the legacy export
+// names so existing auth/Suspense/MiniLoader callers need no page rewrites.
+const PAGE_INSIGHTS = {
+  "/dashboard": ["TIP", "Use the dashboard as your daily control centre and drill into the work behind each card."],
+  "/tasks": ["TIP", "A clear owner and due date make task follow-up much easier."],
+  "/todos": ["TIP", "Keep quick personal follow-ups in To Do and promote them to Tasks when ownership is needed."],
+  "/attendance": ["FUN FACT", "Attendance data can support both punctuality tracking and working-hours insights."],
+  "/reminders": ["TIP", "Use the calendar to spot busy days before adding another reminder or meeting."],
+  "/action-center": ["TIP", "Review email-linked events once and save them into the right workspace for a clean audit trail."],
+  "/visits": ["TIP", "Give every client visit a clear purpose so follow-up remains traceable."],
+  "/ai-reader": ["FUN FACT", "Document readers can turn repetitive manual data entry into a review-first workflow."],
+  "/compliance-dashboard": ["TIP", "Review approaching due dates with the responsible owner before a deadline becomes urgent."],
+  "/compliance": ["TIP", "Use status and due-date filters to focus on filings that need action now."],
+  "/gst-reconciliation": ["TIP", "Work from matched items first, then investigate the exception queue."],
+  "/trademark-sphere": ["TIP", "Search by mark name and class to narrow large trademark result sets."],
+  "/roc-sphere": ["TIP", "Keep company identity details consistent across every filing and compliance record."],
+  "/mis-report": ["TIP", "Choose the reporting period first, then review report-specific filters."],
+  "/salary-slips": ["TIP", "Verify employee and payroll inputs before generating a salary slip."],
+  "/records-dashboard": ["TIP", "A consistent document naming pattern makes future retrieval much faster."],
+  "/dsc": ["TIP", "Check certificate validity before assigning or renewing a signer certificate."],
+  "/documents": ["TIP", "Search by client, document type or period before browsing the full register."],
+  "/clients": ["TIP", "Complete client master data once so connected workflows need fewer corrections."],
+  "/passwords": ["TIP", "Use descriptive credential labels so similar services are easier to identify."],
+  "/client-proposals-dashboard": ["TIP", "Capture the next action so every opportunity has a clear follow-up."],
+  "/leads": ["TIP", "Keep the lead stage current so your pipeline reflects reality."],
+  "/quotations": ["TIP", "Verify client, scope, pricing and validity before sharing a quotation."],
+  "/finix-dashboard": ["FUN FACT", "Finix brings sales, receivables, cash and payables into one accounting workspace."],
+  "/invoicing": ["TIP", "Keep customer and tax details consistent across recurring invoices."],
+  "/purchase": ["TIP", "Match purchases to the correct vendor and document before posting."],
+  "/bank-accounts": ["TIP", "Review unmatched transactions first when investigating a reconciliation gap."],
+  "/journal-entries": ["TIP", "Review debit and credit totals before posting a journal entry."],
+  "/zero-touch-entry": ["TIP", "Leave company selection blank when you want the document workflow to auto-detect context."],
+  "/accounting-reports": ["TIP", "Select the financial year and reporting period before comparing reports."],
+  "/day-book": ["TIP", "Use the day book to trace posting activity in date order."],
+  "/cash-bank-book": ["TIP", "Review the transaction date range before exporting a cash or bank book."],
+  "/cash-flow": ["FUN FACT", "Cash movement and accounting profit answer different business questions, so both views matter."],
+  "/outstanding-report": ["TIP", "Sort outstanding balances by age to focus collection work."],
+  "/bank-reconciliation": ["TIP", "Match the statement period with the book period before investigating exceptions."],
+  "/depreciation": ["TIP", "Verify asset dates and useful-life assumptions before calculating depreciation."],
+  "/tds-tcs": ["TIP", "Confirm the applicable tax category before finalising a withholding entry."],
+  "/financial-ratios": ["FUN FACT", "A ratio is most useful when viewed as a trend across comparable periods."],
+  "/comparative-report": ["TIP", "Keep comparison periods aligned so changes are easier to interpret."],
+  "/yearly-report": ["TIP", "Review major year-on-year movements before looking at smaller variances."],
+  "/opening-balances": ["TIP", "Validate opening balances before relying on later period reports."],
+  "/accounting-audit-trail": ["TIP", "Use the audit trail to trace when and where an accounting change occurred."],
+  "/bulk-import": ["TIP", "Validate column mapping and sample rows before importing a large file."],
+  "/due-dates": ["TIP", "Sort upcoming due dates by urgency and owner before starting the day's work."],
+  "/people-matrix": ["FUN FACT", "One people workspace can connect users, leave, payroll, HR and recruitment workflows."],
+  "/users": ["TIP", "Assign access deliberately so each person sees the work they need."],
+  "/leave": ["TIP", "Keep leave approvals current so team availability remains accurate."],
+  "/payroll": ["TIP", "Review employee and attendance inputs before finalising payroll."],
+  "/hr": ["TIP", "Centralised employee data reduces repeated updates across HR workflows."],
+  "/recruitment": ["TIP", "Record the next recruitment action while the candidate interaction is fresh."],
+  "/admin-dashboard": ["TIP", "Use the admin workspace for configuration and oversight rather than daily transactions."],
+  "/permission-matrix": ["TIP", "Review permissions by role before making broad access changes."],
+  "/master-data": ["TIP", "Master data is the foundation for consistent downstream records."],
+  "/roles": ["TIP", "Keep role definitions simple enough for an administrator to understand quickly."],
+  "/contact-details": ["TIP", "Keep official contact details current so communications reach the right destination."],
+  "/master-console": ["TIP", "Use the commercial console to manage platform-wide configuration from one place."],
+  "/settings": ["TIP", "Review settings after major workflow or integration changes."],
+};
+const FALLBACK = ["TIP", "Use search, filters and clear labels to reduce repetitive navigation."];
+const MODULE_INSIGHTS = {
+  "/compliance/": ["TIP", "Keep compliance work grouped by client and period for faster follow-up."],
+  "/leads/": ["TIP", "Record the next follow-up date while a client conversation is active."],
+  "/settings/": ["TIP", "Keep global settings intentional because they can affect multiple modules."],
+};
+function getInsight(pathname) {
+  if (PAGE_INSIGHTS[pathname]) return PAGE_INSIGHTS[pathname];
+  const prefix = Object.keys(MODULE_INSIGHTS).find((key) => pathname.startsWith(key));
+  return prefix ? MODULE_INSIGHTS[prefix] : FALLBACK;
 }
-
-/**
- * ContentLoader — FULL-SCREEN route/page loader.
- * Used as the <Suspense> fallback during route transitions so the loader
- * is never trapped inside a page/card/container and shown as a half-page box.
- * The fullscreen class intentionally covers the entire viewport.
- */
-export function ContentLoader() {
-  const isDark = useDark();
-
-  return (
-    <div className={`taskosphere-loader taskosphere-loader--fullscreen ${isDark ? "is-dark" : ""}`}>
-      <div className="taskosphere-loader__orb" aria-hidden="true" />
-      <img className="taskosphere-loader__gif" src="/loader.gif" alt="Loading…" />
-      <span className="taskosphere-loader__label">Loading page</span>
-    </div>
-  );
+function Dots() { return <span className="taskosphere-loader__dots" aria-hidden="true"><i /><i /><i /></span>; }
+function Body({ compact }) {
+  const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
+  const [kind, text] = useMemo(() => getInsight(pathname), [pathname]);
+  return <div className={`taskosphere-loader__body${compact ? " taskosphere-loader__body--compact" : ""}`}>
+    <div className="taskosphere-loader__wordmark" aria-label="TASK-O-SPHERE"><span>TASK</span><b>-</b><span>O</span><b>-</b><span>SPHERE</span></div>
+    {!compact ? <div className="taskosphere-loader__insight" role="status" aria-live="polite"><span className="taskosphere-loader__kind">{kind}</span><span className="taskosphere-loader__text">{text}</span><Dots /></div> : <div className="taskosphere-loader__mini"><span>{kind}</span><Dots /></div>}
+  </div>;
 }
-
-/**
- * MiniLoader — inline section loader.
- * Drop-in for small loading states inside a page section.
- */
+function Loader({ compact = false, height = null }) {
+  const isDark = useDark();
+  return <div className={`taskosphere-loader ${compact ? "taskosphere-loader--mini" : "taskosphere-loader--fullscreen"} ${isDark ? "is-dark" : ""}`} style={compact && height != null ? { height } : undefined} role="status"><Body compact={compact} /></div>;
+}
+export default function GifLoader() { return <Loader />; }
+export function ContentLoader() { return <Loader />; }
 export function MiniLoader({ height = 200 }) {
-  return (
-    <div className="taskosphere-loader taskosphere-loader--mini" style={{ height }}>
-      <div className="taskosphere-loader__orb" aria-hidden="true" />
-      <img className="taskosphere-loader__gif" src="/loader.gif" alt="" />
-    </div>
-  );
+  if (height < 90) return <span className="taskosphere-loader taskosphere-loader--dots-only" style={{ height, display: "inline-flex", width: "auto" }} role="status" aria-label="Loading"><Dots /></span>;
+  return <Loader compact height={height} />;
 }
