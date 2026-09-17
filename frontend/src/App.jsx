@@ -15,6 +15,7 @@ import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
 import "./email-google-oauth.css";
 import "./module-branding.css";
+import "./module-branding.js";
 import "./header-tabs-canonical.css";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
@@ -87,10 +88,10 @@ function RoutePrefetcher() {
 }
 
 const BUSINESS_PAGE_TITLES = {
-  "/tasks": "Tasks", "/todos": "To Do", "/attendance": "Attendance", "/reminders": "Reminders", "/action-center": "Action Center", "/visits": "Client Visits", "/ai-reader": "AI Document Reader",
+  "/compliance-dashboard": "CompliGenie Dashboard", "/tasks": "Tasks", "/todos": "To Do", "/attendance": "Attendance", "/reminders": "Reminders", "/action-center": "Action Center", "/visits": "Client Visits", "/ai-reader": "AI Document Reader",
   "/compliance": "Compliance Tracker", "/gst-reconciliation": "GST Reconciliation", "/trademark-sphere": "Trademark Sphere", "/roc-sphere": "ROC Sphere", "/mis-report": "MIS Report", "/salary-slips": "Salary Slip Generator",
   "/records-dashboard": "Records Dashboard", "/client-approvals": "Client Approvals", "/dsc": "DSC Register", "/documents": "Document Register", "/clients": "Clients", "/passwords": "Password Vault",
-  "/client-proposals-dashboard": "LeadSense", "/leads": "Lead Management", "/quotations": "Quotations", "/finix-dashboard": "Finix", "/invoicing": "Sales & Invoicing", "/purchase": "Purchase", "/bank-accounts": "Bank Accounts", "/chart-of-accounts": "Chart of Accounts", "/journal-entries": "Journal Entries", "/accounting-reports": "Accounting Reports",
+  "/client-proposals-dashboard": "LeadSense Dashboard", "/leads": "Lead Management", "/quotations": "Quotations", "/finix-dashboard": "Finix", "/invoicing": "Sales & Invoicing", "/purchase": "Purchase", "/bank-accounts": "Bank Accounts", "/chart-of-accounts": "Chart of Accounts", "/journal-entries": "Journal Entries", "/accounting-reports": "Accounting Reports",
   "/people-matrix": "People Matrix", "/users": "Users", "/leave": "Leave", "/payroll": "Payroll", "/hr": "Human Resources", "/recruitment": "Recruitment", "/reports": "Reports", "/settings/general": "General Settings", "/settings/email": "Email Accounts", "/settings/whatsapp": "Message Automation", "/admin-dashboard": "Admin Dashboard", "/permission-matrix": "Permission Matrix", "/master-data": "Master Data", "/roles": "Roles & Access", "/contact-details": "Contact Details", "/master-console": "Commercial Console", "/master-console/website": "Website Studio",
 };
 
