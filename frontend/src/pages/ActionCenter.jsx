@@ -1062,23 +1062,23 @@ export default function ActionCenter() {
                 All email-linked due dates, hearings &amp; events — review and save in one place
               </p>
             </div>
-            <div className="flex gap-2 flex-wrap items-center">
+            <div className="grid grid-cols-3 gap-2 w-[520px] max-w-full flex-shrink-0 min-w-0">
               <button onClick={() => { window.location.href = "/settings/email"; }}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"
                 style={{ backgroundColor: "rgba(255,255,255,0.10)", borderColor: "rgba(255,255,255,0.22)", color: "#ffffff" }}>
                 <Mail className="w-3.5 h-3.5" /> Email Settings
               </button>
               <button onClick={handleScanFresh} disabled={scanning || loading}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"
                 style={{ backgroundColor: "rgba(255,255,255,0.15)", borderColor: "rgba(255,255,255,0.25)", color: "#ffffff" }}>
                 {scanning
                   ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Scanning…</>
                   : <><RefreshCw className="w-3.5 h-3.5" /> Scan Fresh</>}
               </button>
-              <div className="relative">
+              <div className="relative w-full min-w-0">
                 <button ref={retroBtnRef} onClick={toggleRetroMenu} disabled={retroSyncing}
                   title="Re-scan older mail across all connected accounts — already-imported emails are skipped automatically"
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95"
+                  className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"
                   style={{ backgroundColor: "rgba(255,255,255,0.15)", borderColor: "rgba(255,255,255,0.25)", color: "#ffffff" }}>
                   {retroSyncing
                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Syncing…</>

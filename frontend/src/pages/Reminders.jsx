@@ -1554,10 +1554,10 @@ export default function Reminders() {
             }
             icon={BellRing}
             actions={
-              <div className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 ml-auto">
+              <div className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 min-w-0 ml-auto">
       {isAdmin && (
         <Select value={selectedUserId || "all"} onValueChange={(v) => setSelectedUserId(v === "all" ? "" : v)}>
-          <SelectTrigger className="w-full h-9 text-sm rounded-none bg-white/15 border-white/20 text-white placeholder:text-white/50">
+          <SelectTrigger className="w-full min-w-0 h-9 text-sm whitespace-nowrap rounded-none bg-white/15 border-white/20 text-white placeholder:text-white/50">
             <SelectValue placeholder="All Users" />
           </SelectTrigger>
           <SelectContent>
@@ -1568,7 +1568,7 @@ export default function Reminders() {
           </SelectContent>
         </Select>
       )}
-      <Button onClick={() => { resetForm(); setShowForm(true); }} className="w-full h-9 rounded-none text-sm font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/20">
+      <Button onClick={() => { resetForm(); setShowForm(true); }} className="w-full min-w-0 h-9 whitespace-nowrap rounded-none text-sm font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/20">
         <Plus className="h-4 w-4 mr-1" /> New Reminder
       </Button>
       <button onClick={() => setShowListView((v) => !v)} title={showListView ? "Show Calendar Only" : "Show List View"} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
