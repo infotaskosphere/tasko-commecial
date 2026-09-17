@@ -53,7 +53,7 @@ export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, clas
 
         {/* Right — actions slot */}
         {actions && (
-          <div className={`flex-shrink-0 ml-auto min-w-0 ${actionsClassName}`}>
+          <div className={`commercial-header-actions flex-shrink-0 ml-auto min-w-0 ${actionsClassName}`}>
             {actions}
           </div>
         )}
