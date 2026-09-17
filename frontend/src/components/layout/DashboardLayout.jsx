@@ -102,6 +102,7 @@ const NAV_GROUPS = [
     { path: '/settings/email', icon: Mail, label: 'Email Accounts' },
     { path: '/settings/general', icon: Settings, label: 'General Settings' },
     { path: '/settings/whatsapp', icon: MessageCircle, label: 'Message Automation' },
+    { path: '/settings/backup', icon: Database, label: 'Backup & Restore', permission: 'can_view_backup_restore' },
   ]},
 ];
 
@@ -162,7 +163,7 @@ const EXTRA_PAGE_TITLES = {
   '/users': 'Users', '/people-matrix': 'People Matrix Dashboard', '/team-activity': 'Team Activity', '/reports': 'Reports',
   '/leave': 'Leave', '/payroll': 'Payroll', '/hr': 'HR', '/recruitment': 'Recruitment', '/admin-dashboard': 'Admin Dashboard',
   '/contact-details': 'Contact Details', '/task-audit': 'Task Audit', '/client-portal-manager': 'Client Portal Manager',
-  '/settings': 'Settings', '/records-dashboard': 'Records Dashboard', '/client-approvals': 'Client Approvals',
+  '/settings': 'Settings', '/settings/backup': 'Backup & Restore', '/records-dashboard': 'Records Dashboard', '/client-approvals': 'Client Approvals',
   '/master-console': 'Commercial Console', '/master-console/website': 'Website Studio',
 };
 const PLATFORM_OWNER_TOOLS = [
