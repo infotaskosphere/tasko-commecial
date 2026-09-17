@@ -14,7 +14,7 @@
 import React from 'react';
 import { format } from 'date-fns';
 
-export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, className = '' }) {
+export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, className = '', actionsClassName = '' }) {
   return (
     <div
       className={`banner-animated relative overflow-hidden rounded-2xl px-4 sm:px-6 pt-4 sm:pt-5 pb-4 ${className}`}
@@ -53,7 +53,7 @@ export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, clas
 
         {/* Right — actions slot */}
         {actions && (
-          <div className="flex flex-1 min-w-0 justify-end items-center gap-2">
+          <div className={`flex flex-1 min-w-0 justify-end items-center gap-2 ${actionsClassName}`}>
             {actions}
           </div>
         )}
