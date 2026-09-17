@@ -62,6 +62,19 @@ def has_page_access(user: User, module_key: str, page_flag: str) -> bool:
         return False
 
     perms = get_user_permissions(user)
+
+    # Backward compatibility: Client Discussion was introduced after the
+    # original Lead Management entitlement. The frontend already exposes the
+    # discussion page to users who have can_view_all_leads, so the backend page
+    # guard must honor the same legacy view entitlement. This grants VIEW only;
+    # create/edit/delete remain governed by can_manage_client_discussion.
+    if (
+        module_key == "proposals"
+        and page_flag == "can_view_client_discussion"
+        and perms.get("can_view_all_leads") is True
+    ):
+        return True
+
     return bool(perms.get(page_flag, False))
 
 
