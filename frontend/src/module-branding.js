@@ -138,10 +138,63 @@ const syncModuleBranding = () => {
   lastModuleId = moduleId;
 };
 
+/*
+ * Client Visits header fix.
+ * This is intentionally runtime-scoped because the production bundle is built
+ * from this file and the VisitsPage component itself is very large. It avoids
+ * touching any visit data, API calls, permissions, or modal logic.
+ */
+const syncVisitsHeader = () => {
+  const isVisits = window.location.pathname === '/visits';
+  document.documentElement.classList.toggle('visits-route', isVisits);
+  if (!isVisits) return;
+
+  const root = document.getElementById('root');
+  if (!root) return;
+
+  const candidates = Array.from(root.querySelectorAll('h1')).filter((el) => el.textContent.includes('Client Visits'));
+  const title = candidates[0];
+  if (!title) return;
+
+  const titleWrap = title.parentElement;
+  const row = titleWrap?.parentElement;
+  if (!row) return;
+
+  const actions = Array.from(row.children).find((el) => {
+    if (el === titleWrap) return false;
+    return !!el.querySelector?.('button');
+  });
+  if (!actions) return;
+
+  actions.setAttribute('data-visits-header-actions', 'true');
+  actions.style.display = 'grid';
+  actions.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+  actions.style.gap = '8px';
+  actions.style.width = 'min(720px, 100%)';
+  actions.style.maxWidth = '720px';
+  actions.style.minWidth = '0';
+  actions.style.alignItems = 'stretch';
+
+  Array.from(actions.children).forEach((child) => {
+    child.style.width = '100%';
+    child.style.minWidth = '0';
+    child.style.justifyContent = 'center';
+    child.style.whiteSpace = 'nowrap';
+    child.style.boxSizing = 'border-box';
+  });
+};
+
+const scheduleVisitsHeader = () => {
+  window.setTimeout(syncVisitsHeader, 0);
+};
+
 const scheduleSync = () => {
   if (scheduled) return;
   scheduled = true;
-  window.setTimeout(syncModuleBranding, 0);
+  window.setTimeout(() => {
+    syncModuleBranding();
+    syncVisitsHeader();
+  }, 0);
 };
 
 const observer = new MutationObserver(scheduleSync);
@@ -158,5 +211,5 @@ document.addEventListener('click', (event) => {
   if (event.target?.closest?.('#top-module-switcher-bar button, header a[href], aside a, aside button')) scheduleSync();
 }, true);
 window.setInterval(() => {
-  if (lastModuleId !== getActiveModuleId()) scheduleSync();
+  if (lastModuleId !== getActiveModuleId() || window.location.pathname === '/visits') scheduleSync();
 }, 500);
