@@ -24,6 +24,13 @@
     return titleColor === 'rgb(255, 255, 255)' || titleColor === 'white';
   };
 
+  const isControl = (el) => {
+    if (!el || !isVisible(el)) return false;
+    const tag = String(el.tagName || '').toLowerCase();
+    return tag === 'button' || tag === 'select' || tag === 'input' || tag === 'a' ||
+      el.getAttribute?.('role') === 'button' || el.getAttribute?.('role') === 'combobox';
+  };
+
   const findActionGroup = (header) => {
     const title = header.querySelector('h1');
     if (!title) return null;
@@ -31,14 +38,14 @@
     while (row && row !== header) {
       const action = Array.from(row.children || []).find((child) => {
         if (!child || child === title.parentElement) return false;
-        return Array.from(child.children || []).filter((node) => node?.tagName === 'BUTTON').length >= 2;
+        return Array.from(child.children || []).filter(isControl).length >= 2;
       });
       if (action) return action;
       row = row.parentElement;
     }
     return Array.from(header.querySelectorAll('div, nav, section')).find((candidate) => {
-      const buttons = Array.from(candidate.children || []).filter((node) => node?.tagName === 'BUTTON');
-      return buttons.length >= 2 && candidate !== header;
+      const controls = Array.from(candidate.children || []).filter(isControl);
+      return controls.length >= 2 && candidate !== header;
     }) || null;
   };
 
@@ -46,73 +53,17 @@
     if (!hasBlueGradient(header)) return;
     const actionGroup = findActionGroup(header);
     if (!actionGroup) return;
-    const buttons = Array.from(actionGroup.children || []).filter((child) => child?.tagName === 'BUTTON' && isVisible(child));
-    if (buttons.length < 2) return;
+    const controls = Array.from(actionGroup.children || []).filter(isControl);
+    if (controls.length < 2) return;
 
-    // Todo Management has only two compact tabs. Do not let the global
-    // blue-header normalizer stretch them into a large two-column grid.
-    const title = header.querySelector('h1');
-    const titleText = String(title?.textContent || '').replace(/\s+/g, ' ').trim();
-    if (/^todo management$/i.test(titleText)) {
-      const row = actionGroup.parentElement;
-      if (row && row !== header) {
-        row.style.display = 'flex';
-        row.style.gridTemplateColumns = '';
-        row.style.columnGap = '';
-        row.style.rowGap = '';
-        row.style.alignItems = 'center';
-        row.style.minWidth = '0';
-      }
-      actionGroup.style.display = 'inline-flex';
-      actionGroup.style.gridTemplateColumns = '';
-      actionGroup.style.gridTemplateRows = '';
-      actionGroup.style.gridAutoRows = '';
-      actionGroup.style.gap = '3px';
-      actionGroup.style.width = 'fit-content';
-      actionGroup.style.minWidth = '0';
-      actionGroup.style.alignItems = 'center';
-      actionGroup.style.justifyItems = '';
-      actionGroup.style.justifyContent = 'flex-start';
-      actionGroup.style.padding = '3px';
-      actionGroup.style.borderRadius = '10px';
-      buttons.forEach((button) => {
-        button.style.width = 'auto';
-        button.style.minWidth = '0';
-        button.style.maxWidth = 'none';
-        button.style.height = '32px';
-        button.style.minHeight = '32px';
-        button.style.maxHeight = '32px';
-        button.style.margin = '0';
-        button.style.padding = '4px 10px';
-        button.style.justifyContent = 'center';
-        button.style.alignItems = 'center';
-        button.style.gap = '4px';
-        button.style.fontSize = '11px';
-        button.style.lineHeight = '13px';
-        button.style.whiteSpace = 'nowrap';
-        button.style.wordBreak = 'normal';
-        button.style.overflowWrap = 'normal';
-        button.style.hyphens = 'none';
-        button.style.overflow = 'visible';
-        button.style.textOverflow = 'clip';
-        button.style.boxSizing = 'border-box';
-        Array.from(button.querySelectorAll('span')).forEach((span) => {
-          span.style.minWidth = '0';
-          span.style.maxWidth = 'none';
-          span.style.whiteSpace = 'nowrap';
-          span.style.wordBreak = 'normal';
-          span.style.overflowWrap = 'normal';
-          span.style.textOverflow = 'clip';
-          span.style.overflow = 'visible';
-          span.style.lineHeight = '13px';
-          span.style.textAlign = 'center';
-        });
-      });
-      actionGroup.setAttribute(HEADER_MARK, 'true');
-      return;
-    }
-
-    const columns = Math.min(5, Math.max(2, Math.ceil(buttons.length / 2)));
+    // Keep three or fewer controls on one row. Larger groups use balanced
+    // rows, so six controls become 3×2, four become 2×2, and ten become 5×2.
+    // For larger-than-usual groups, the same five-column grid continues onto
+    // additional balanced rows instead of clipping or shrinking labels.
+    const columns = controls.length <= 3
+      ? controls.length
+      : Math.min(5, Math.ceil(controls.length / 2));
+    const rows = Math.ceil(controls.length / columns);
     const row = actionGroup.parentElement;
     if (row && row !== header) {
       row.style.display = 'grid';
@@ -124,7 +75,7 @@
     }
     actionGroup.style.display = 'grid';
     actionGroup.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
-    actionGroup.style.gridTemplateRows = 'repeat(2, 36px)';
+    actionGroup.style.gridTemplateRows = `repeat(${rows}, 36px)`;
     actionGroup.style.gridAutoRows = '36px';
     actionGroup.style.gap = '8px';
     actionGroup.style.width = '100%';
@@ -132,30 +83,30 @@
     actionGroup.style.alignItems = 'stretch';
     actionGroup.style.justifyItems = 'stretch';
     actionGroup.setAttribute(HEADER_MARK, 'true');
-    buttons.forEach((button) => {
-      const labelLength = String(button.textContent || '').replace(/\s+/g, ' ').trim().length;
+    controls.forEach((control) => {
+      const labelLength = String(control.textContent || '').replace(/\s+/g, ' ').trim().length;
       const fontSize = labelLength > 18 ? '10px' : labelLength > 13 ? '10.5px' : '11px';
-      button.style.width = '100%';
-      button.style.minWidth = '0';
-      button.style.maxWidth = '100%';
-      button.style.height = '36px';
-      button.style.minHeight = '36px';
-      button.style.maxHeight = '36px';
-      button.style.margin = '0';
-      button.style.padding = '3px 6px';
-      button.style.justifyContent = 'center';
-      button.style.alignItems = 'center';
-      button.style.gap = '4px';
-      button.style.fontSize = fontSize;
-      button.style.lineHeight = '13px';
-      button.style.whiteSpace = 'normal';
-      button.style.wordBreak = 'normal';
-      button.style.overflowWrap = 'normal';
-      button.style.hyphens = 'none';
-      button.style.overflow = 'hidden';
-      button.style.textOverflow = 'clip';
-      button.style.boxSizing = 'border-box';
-      Array.from(button.querySelectorAll('span')).forEach((span) => {
+      control.style.width = '100%';
+      control.style.minWidth = '0';
+      control.style.maxWidth = '100%';
+      control.style.height = '36px';
+      control.style.minHeight = '36px';
+      control.style.maxHeight = '36px';
+      control.style.margin = '0';
+      control.style.padding = '3px 6px';
+      control.style.justifyContent = 'center';
+      control.style.alignItems = 'center';
+      control.style.gap = '4px';
+      control.style.fontSize = fontSize;
+      control.style.lineHeight = '13px';
+      control.style.whiteSpace = 'normal';
+      control.style.wordBreak = 'normal';
+      control.style.overflowWrap = 'normal';
+      control.style.hyphens = 'none';
+      control.style.overflow = 'visible';
+      control.style.textOverflow = 'clip';
+      control.style.boxSizing = 'border-box';
+      Array.from(control.querySelectorAll('span')).forEach((span) => {
         span.style.minWidth = '0';
         span.style.maxWidth = '100%';
         span.style.whiteSpace = 'normal';
