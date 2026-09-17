@@ -1,43 +1,24 @@
 import React, { Suspense } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Outlet, useLocation } from "react-router-dom";
-import { pageTransition } from "@/lib/animations.js";
+import { Outlet } from "react-router-dom";
 import { ContentLoader } from "@/components/ui/GifLoader.jsx";
 
 /**
- * Route-level motion only.
+ * Shared route boundary for the commercial application.
  *
- * This component owns navigation motion for the whole application. Feature
- * components should keep their own hover, tap, modal, progress, and status
- * animations; those are interaction feedback, not page transitions.
+ * Page navigation must never depend on a motion wrapper reaching an animated
+ * opacity state. The old Framer Motion route transition could leave lazy
+ * pages visually transparent while their data requests were still in flight
+ * or failed. Keep routing synchronous and let Suspense own the single
+ * application loading experience.
  */
 export function PageTransition({ children, standalone = false }) {
-  const location = useLocation();
-
-  return (
-    <motion.div
-      key={location.pathname}
-      className={`taskosphere-page-transition${standalone ? " taskosphere-page-transition--standalone" : ""}`}
-      {...pageTransition}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className={`taskosphere-page-transition${standalone ? " taskosphere-page-transition--standalone" : ""}`}>{children}</div>;
 }
 
 export function AnimatedOutlet() {
-  const location = useLocation();
-
-  // Wait guarantees that only one routed page is mounted at a time. This
-  // prevents duplicate-looking dashboard/card layers while keeping each
-  // page's own interaction animations untouched.
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      <PageTransition key={location.pathname}>
-        <Suspense fallback={<ContentLoader />}>
-          <Outlet />
-        </Suspense>
-      </PageTransition>
-    </AnimatePresence>
+    <Suspense fallback={<ContentLoader />}>
+      <Outlet />
+    </Suspense>
   );
 }
