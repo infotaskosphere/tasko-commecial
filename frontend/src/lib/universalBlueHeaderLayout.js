@@ -105,21 +105,64 @@
     });
   };
 
+  const firstLicensedPath = (user) => {
+    if (!user || /info\.taskosphere@gmail\.com/i.test(String(user.email || ''))) return null;
+    const selected = user.selected_features || user.company?.selected_features || user.license?.selected_features || {};
+    const routes = {
+      taskosphere: [['can_view_dashboard', '/dashboard'], ['can_view_tasks', '/tasks'], ['can_view_todo_dashboard', '/todos'], ['can_view_attendance', '/attendance'], ['can_view_reminders', '/reminders']],
+      finix: [['can_view_accounting_reports', '/finix-dashboard'], ['can_view_sale', '/invoicing'], ['can_view_purchase', '/purchase'], ['can_view_bank', '/bank-accounts'], ['can_view_chart_of_accounts', '/chart-of-accounts'], ['can_view_journal_entries', '/journal-entries']],
+      compliance: [['can_view_compliance', '/compliance-dashboard'], ['can_view_gst_reconciliation', '/gst-reconciliation'], ['can_view_trademark_sphere', '/trademark-sphere'], ['can_view_mis_report', '/mis-report'], ['can_view_roc_sphere', '/roc-sphere']],
+      records: [['can_view_documents', '/records-dashboard'], ['can_view_all_dsc', '/dsc'], ['can_view_all_clients', '/clients'], ['can_view_passwords', '/passwords']],
+      proposals: [['can_view_all_leads', '/client-proposals-dashboard'], ['can_create_quotations', '/quotations'], ['can_view_client_discussion', '/client-discussion']],
+      people_matrix: [['can_view_user_page', '/people-matrix'], ['can_view_leave', '/leave'], ['can_view_payroll', '/payroll'], ['can_view_hr', '/hr'], ['can_view_recruitment', '/recruitment'], ['can_view_performance', '/performance']],
+    };
+    const moduleOrder = ['taskosphere', 'finix', 'compliance', 'records', 'proposals', 'people_matrix'];
+    const normalizeKey = (value) => String(value || '').trim().toLowerCase().replace(/-/g, '_').replace(/\s+/g, '_');
+    for (const moduleId of moduleOrder) {
+      const flags = selected?.[moduleId];
+      if (!Array.isArray(flags)) continue;
+      const normalized = flags.map(normalizeKey);
+      if (normalized.some((flag) => ['all', '*', 'all_features', 'full', 'complete'].includes(flag))) return routes[moduleId][0][1];
+      const hit = routes[moduleId].find(([flag]) => normalized.includes(flag));
+      if (hit) return hit[1];
+    }
+    const licensed = [user.licensed_modules, user.company?.licensed_modules, user.modules, user.company?.modules, user.license?.modules].find((value) => Array.isArray(value) && value.length > 0) || [];
+    for (const value of licensed) {
+      const key = normalizeKey(value);
+      if (key === 'taskosphere' || key === 'tasks') return '/dashboard';
+      if (key === 'finix' || key === 'invoicing' || key === 'accounting') return '/finix-dashboard';
+      if (key === 'compliance') return '/compliance-dashboard';
+      if (key === 'records') return '/records-dashboard';
+      if (key === 'proposals' || key === 'client_proposals') return '/client-proposals-dashboard';
+      if (key === 'people_matrix' || key === 'hrms' || key === 'peoplematrix') return '/people-matrix';
+    }
+    return null;
+  };
+
+  const enforceLicensedLanding = () => {
+    const root = document.getElementById('root');
+    if (!root) return;
+    let user = null;
+    try { user = JSON.parse(localStorage.getItem('user') || sessionStorage.getItem('user') || 'null'); } catch {}
+    const destination = firstLicensedPath(user);
+    if (!destination || destination === window.location.pathname) return;
+    if (window.location.pathname === '/login' || window.location.pathname === '/dashboard') {
+      window.history.replaceState({}, '', destination);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  };
+
   const normalizeOneNexaLogin = () => {
     const root = document.getElementById('root');
     if (!root || !root.querySelector('input[autocomplete="email"]')) return;
-
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const textNodes = [];
     let current;
     while ((current = walker.nextNode())) textNodes.push(current);
     textNodes.forEach((node) => {
       if (node.parentElement?.closest('script,style')) return;
-      if (node.nodeValue && /taskosphere/i.test(node.nodeValue)) {
-        node.nodeValue = node.nodeValue.replace(/taskosphere/gi, 'OneNexa');
-      }
+      if (node.nodeValue && /taskosphere/i.test(node.nodeValue)) node.nodeValue = node.nodeValue.replace(/taskosphere/gi, 'OneNexa');
     });
-
     root.querySelectorAll('img').forEach((img) => {
       const alt = String(img.getAttribute('alt') || '').toLowerCase();
       const src = String(img.getAttribute('src') || '').toLowerCase();
@@ -138,6 +181,7 @@
     if (!root) return;
     Array.from(root.querySelectorAll('main div, main section, main header')).forEach(normalize);
     normalizeOneNexaLogin();
+    enforceLicensedLanding();
   };
 
   const schedule = () => {
@@ -153,6 +197,7 @@
     observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true });
     window.addEventListener('resize', schedule, { passive: true });
     window.addEventListener('popstate', schedule);
+    window.addEventListener('storage', schedule);
     schedule();
   };
 
