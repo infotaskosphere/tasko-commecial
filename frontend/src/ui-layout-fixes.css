@@ -11,7 +11,21 @@
 }
 #root #top-module-switcher-bar > div:first-child::-webkit-scrollbar { display: none; }
 #root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
-  flex: 0 0 var(--ts-module-tab-w) !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 110px !important;
+  max-width: none !important;
+  padding-left: 12px !important;
+  padding-right: 12px !important;
+}
+
+/* The canonical stylesheet intentionally hides the spacer. Restore it so
+   Admin + Settings can remain pinned to the right edge of the bar. */
+#root #top-module-switcher-bar > div:nth-child(2) {
+  display: block !important;
+  flex: 1 1 auto !important;
+  min-width: 12px !important;
+  height: 100% !important;
 }
 
 /* Keep the right-aligned Admin/Settings tabs visible and independent. */
@@ -20,6 +34,50 @@
   flex: 0 0 auto !important;
   min-width: max-content !important;
   overflow: visible !important;
+}
+#root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 110px !important;
+  max-width: none !important;
+}
+#root #top-module-switcher-bar button[id^="nav-tab-"] span {
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+/* On narrow screens the full tab set remains scrollable rather than being
+   squeezed into unreadable/cut-off labels. */
+@media (max-width: 900px) {
+  #root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
+    flex: 0 0 112px !important;
+    width: 112px !important;
+    min-width: 112px !important;
+    max-width: 112px !important;
+    padding-left: 9px !important;
+    padding-right: 9px !important;
+  }
+  #root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
+    flex: 0 0 112px !important;
+    width: 112px !important;
+    min-width: 112px !important;
+    max-width: 112px !important;
+  }
+}
+@media (max-width: 640px) {
+  #root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
+    flex-basis: 104px !important;
+    width: 104px !important;
+    min-width: 104px !important;
+    max-width: 104px !important;
+  }
+  #root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
+    flex-basis: 104px !important;
+    width: 104px !important;
+    min-width: 104px !important;
+    max-width: 104px !important;
+  }
 }
 
 /* Never let a header action push its containing form outside the card. */
@@ -34,6 +92,26 @@ body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 
   flex: 0 0 auto !important;
   max-width: 100% !important;
   white-space: nowrap !important;
+}
+
+/* The Meeting Assistant uses a dense two-column layout. Give both cards and
+   their descendants a real shrink boundary so long text cannot clip the card. */
+body[data-business-route="/client-discussion"] #root main .grid {
+  min-width: 0 !important;
+}
+body[data-business-route="/client-discussion"] #root main .grid > section {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+body[data-business-route="/client-discussion"] #root main .grid > section > div {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+body[data-business-route="/client-discussion"] #root main textarea,
+body[data-business-route="/client-discussion"] #root main input,
+body[data-business-route="/client-discussion"] #root main button {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 /* Lazy-route loading stays inside the already-rendered shell. */
