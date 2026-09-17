@@ -44,6 +44,12 @@ _commercial_module_guard.install()
 import backend.commercial_guard_request_compat as _commercial_guard_request_compat
 _commercial_guard_request_compat.install()
 
+# Production hardening boundary: fail closed on missing commercial licenses,
+# enforce active users and company scope, expand tenant-aware collections, and
+# protect historically dependency-free AI/Finix/v2 routes before route modules
+# capture get_current_user. This is additive and preserves existing handlers.
+import backend.production_hardening as _production_hardening  # noqa: F401
+
 # Bank Accounts compatibility: older Finix frontend builds request up to 2000
 # purchase invoices. Keep that legacy read compatible with the canonical
 # purchase-invoice endpoint without weakening authentication or permissions.
@@ -140,7 +146,7 @@ import backend.email_google_oauth  # noqa: F401
 import backend.email_google_oauth_context_compat  # noqa: F401
 
 # MongoDB ObjectId values can still exist in legacy user/company documents.
-# FastAPI's default encoder raises a 500 when such a value reaches a response.
+# FastAPI's default encoder raises a 500 when such an ObjectId reaches a response.
 # Treat ObjectId as its canonical string representation globally so legacy
 # Master Data records remain readable without changing stored data.
 from bson import ObjectId
