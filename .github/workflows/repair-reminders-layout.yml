@@ -1,0 +1,153 @@
+name: Repair reminders layout
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: startsWith(github.event.head_commit.message, 'fix: align reminder header actions in equal 3x2 grid')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/master-console
+
+      - name: Restore previous Reminders.jsx and apply layout patch
+        shell: bash
+        run: |
+          set -e
+          git checkout 2887d51723d3982bf92bea686719d4767be9103b -- frontend/src/pages/Reminders.jsx
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/Reminders.jsx')
+          s = p.read_text()
+          old = '''              <div className="flex items-center gap-2 flex-wrap">
+                {isAdmin && (
+                  <Select
+                    value={selectedUserId || "all"}
+                    onValueChange={(v) =>
+                      setSelectedUserId(v === "all" ? "" : v)
+                    }
+                  >
+                    <SelectTrigger className="w-full sm:w-[180px] h-9 text-sm rounded-xl bg-white/15 border-white/20 text-white placeholder:text-white/50">
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">My Reminders</SelectItem>
+                      {allUsers.map((u) => (
+                        <SelectItem
+                          key={u.id || u._id}
+                          value={String(u.id || u._id)}
+                        >
+                          {u.full_name || u.name || u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  onClick={() => {
+                    resetForm();
+                    setShowForm(true);
+                  }}
+                  className="h-9 rounded-xl text-sm font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/20"
+                >
+                  <Plus className="h-4 w-4 mr-1" /> New Reminder
+                </Button>
+                <button
+                  onClick={() => setShowListView((v) => !v)}
+                  title={showListView ? "Show Calendar Only" : "Show List View"}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all"
+                >
+                  {showListView ? (
+                    <CalendarIcon size={13} />
+                  ) : (
+                    <List size={13} />
+                  )}
+                  {showListView ? "Calendar" : "List View"}
+                </button>
+                <button
+                  onClick={() => setShowCustomize(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all"
+                >
+                  <Settings2 size={13} /> Customize
+                </button>
+                <button
+                  onClick={() => setShowPopupSettings(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all"
+                  data-testid="popup-settings-btn"
+                >
+                  <Bell size={13} /> Popup Settings
+                </button>
+                <button
+                  onClick={() => setShowDuplicates(true)}
+                  className="relative flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all"
+                  data-testid="duplicates-btn"
+                  title="Find and remove duplicate reminders"
+                >
+                  <RefreshCw size={13} /> Duplicates
+                  {duplicateCount > 0 && (
+                    <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full bg-coral text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: COLORS.coral }}>
+                      {duplicateCount}
+                    </span>
+                  )}
+                </button>
+              </div>'''
+          new = '''              <div className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 ml-auto">
+                {isAdmin && (
+                  <Select
+                    value={selectedUserId || "all"}
+                    onValueChange={(v) => setSelectedUserId(v === "all" ? "" : v)}
+                  >
+                    <SelectTrigger className="w-full h-9 text-sm rounded-none bg-white/15 border-white/20 text-white placeholder:text-white/50">
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">My Reminders</SelectItem>
+                      {allUsers.map((u) => (
+                        <SelectItem key={u.id || u._id} value={String(u.id || u._id)}>
+                          {u.full_name || u.name || u.email}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button onClick={() => { resetForm(); setShowForm(true); }} className="w-full h-9 rounded-none text-sm font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/20">
+                  <Plus className="h-4 w-4 mr-1" /> New Reminder
+                </Button>
+                <button onClick={() => setShowListView((v) => !v)} title={showListView ? "Show Calendar Only" : "Show List View"} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
+                  {showListView ? <CalendarIcon size={13} /> : <List size={13} />}
+                  {showListView ? "Calendar" : "List View"}
+                </button>
+                <button onClick={() => setShowCustomize(true)} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
+                  <Settings2 size={13} /> Customize
+                </button>
+                <button onClick={() => setShowPopupSettings(true)} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="popup-settings-btn">
+                  <Bell size={13} /> Popup Settings
+                </button>
+                <button onClick={() => setShowDuplicates(true)} className="relative w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="duplicates-btn" title="Find and remove duplicate reminders">
+                  <RefreshCw size={13} /> Duplicates
+                  {duplicateCount > 0 && (
+                    <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full bg-coral text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: COLORS.coral }}>
+                      {duplicateCount}
+                    </span>
+                  )}
+                </button>
+              </div>'''
+          if old not in s:
+              raise SystemExit('Target Reminders header block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          rm .github/workflows/repair-reminders-layout.yml
+          git config user.name "infotaskosphere"
+          git config user.email "info.taskosphere@gmail.com"
+          git add frontend/src/pages/Reminders.jsx .github/workflows/repair-reminders-layout.yml
+          git commit -m "fix: restore reminders and apply equal 3x2 header tabs"
+          git push origin feature/master-console
