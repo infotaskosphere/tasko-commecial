@@ -1,10 +1,7 @@
 /*
  * Global blue-header layout normalizer.
- *
- * Different commercial pages historically built their blue action headers
- * independently. This keeps the existing page markup/actions intact while
- * normalizing the action area into two balanced rows with equal button sizes
- * and consistent gaps across every module.
+ * Keeps existing page markup/actions intact and standardizes the action area
+ * into two balanced rows with equal button sizes and consistent gaps.
  */
 (() => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -21,21 +18,13 @@
 
   const hasBlueGradient = (el) => {
     if (!el || !isVisible(el)) return false;
-    const style = window.getComputedStyle(el);
-    const image = String(style.backgroundImage || '').toLowerCase();
+    const image = String(window.getComputedStyle(el).backgroundImage || '').toLowerCase();
     if (!image.includes('gradient')) return false;
-
-    // Require a substantial page-level card/header so ordinary gradient
-    // buttons, avatars and small decorative elements are never normalized.
     const rect = el.getBoundingClientRect();
-    if (rect.width < Math.min(window.innerWidth * 0.55, 700)) return false;
-    if (rect.height > 260) return false;
-
+    if (rect.width < Math.min(window.innerWidth * 0.55, 700) || rect.height > 260) return false;
     const title = el.querySelector('h1');
     if (!title || !isVisible(title)) return false;
-
-    const titleStyle = window.getComputedStyle(title);
-    const titleColor = String(titleStyle.color || '').toLowerCase();
+    const titleColor = String(window.getComputedStyle(title).color || '').toLowerCase();
     return titleColor === 'rgb(255, 255, 255)' || titleColor === 'white';
   };
 
@@ -43,25 +32,18 @@
     const title = header.querySelector('h1');
     if (!title) return null;
 
-    // Walk upward from the title until the sibling action group is found.
-    // This matches the shared pattern used by Tasks, Finix, Records,
-    // People Matrix and the accounting/compliance pages without requiring
-    // every page to use one exact Tailwind class list.
     let row = title.parentElement;
     while (row && row !== header) {
-      const children = Array.from(row.children || []);
-      const action = children.find((child) => {
+      const action = Array.from(row.children || []).find((child) => {
         if (!child || child === title.parentElement) return false;
-        return child.querySelectorAll?.(':scope > button').length >= 2;
+        return Array.from(child.children || []).filter((node) => node?.tagName === 'BUTTON').length >= 2;
       });
       if (action) return action;
       row = row.parentElement;
     }
 
-    // Fallback for pages where the buttons are nested one level deeper.
-    const candidates = Array.from(header.querySelectorAll('div, nav, section'));
-    return candidates.find((candidate) => {
-      const buttons = candidate.querySelectorAll?.(':scope > button') || [];
+    return Array.from(header.querySelectorAll('div, nav, section')).find((candidate) => {
+      const buttons = Array.from(candidate.children || []).filter((node) => node?.tagName === 'BUTTON');
       return buttons.length >= 2 && candidate !== header;
     }) || null;
   };
@@ -72,16 +54,14 @@
     const actionGroup = findActionGroup(header);
     if (!actionGroup) return;
 
-    const buttons = Array.from(actionGroup.children || []).filter((child) => {
-      return child?.matches?.(':scope > button') && isVisible(child);
-    });
+    const buttons = Array.from(actionGroup.children || []).filter((child) => child?.tagName === 'BUTTON' && isVisible(child));
     if (buttons.length < 2) return;
 
+    // Four columns gives the same visual rhythm as the reference screenshot.
+    // Any number of actions automatically wraps into exactly two balanced rows.
     const columns = Math.max(2, Math.ceil(buttons.length / 2));
-
-    // Keep the title and actions in a predictable desktop two-column header.
-    // On narrow screens the title stacks above the action grid.
     const row = actionGroup.parentElement;
+
     if (row && row !== header) {
       row.style.display = 'grid';
       row.style.gridTemplateColumns = 'minmax(280px, 0.78fr) minmax(0, 1.22fr)';
@@ -93,7 +73,7 @@
 
     actionGroup.style.display = 'grid';
     actionGroup.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
-    actionGroup.style.gridTemplateRows = 'repeat(2, minmax(36px, auto))';
+    actionGroup.style.gridTemplateRows = 'repeat(2, 36px)';
     actionGroup.style.gridAutoRows = '36px';
     actionGroup.style.gap = '8px';
     actionGroup.style.width = '100%';
@@ -101,7 +81,6 @@
     actionGroup.style.alignItems = 'stretch';
     actionGroup.style.flexWrap = 'nowrap';
     actionGroup.setAttribute(HEADER_MARK, 'true');
-    actionGroup.dataset.buttonCount = String(buttons.length);
 
     buttons.forEach((button) => {
       button.style.width = '100%';
@@ -121,33 +100,25 @@
     scheduled = false;
     const root = document.getElementById('root');
     if (!root) return;
-
-    // Only inspect reasonably small gradient cards that contain a page title.
-    const candidates = Array.from(root.querySelectorAll('main div, main section, main header'));
-    candidates.forEach(normalize);
+    Array.from(root.querySelectorAll('main div, main section, main header')).forEach(normalize);
   };
 
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
-    window.requestAnimationFrame ? window.requestAnimationFrame(sync) : window.setTimeout(sync, 0);
+    if (window.requestAnimationFrame) window.requestAnimationFrame(sync);
+    else window.setTimeout(sync, 0);
   };
 
   const start = () => {
     if (observer) observer.disconnect();
     observer = new MutationObserver(schedule);
-    observer.observe(document.getElementById('root') || document.body, {
-      childList: true,
-      subtree: true,
-    });
+    observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true });
     window.addEventListener('resize', schedule, { passive: true });
     window.addEventListener('popstate', schedule);
     schedule();
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', start, { once: true });
-  } else {
-    start();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
+  else start();
 })();
