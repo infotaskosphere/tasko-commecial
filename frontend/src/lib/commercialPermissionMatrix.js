@@ -27,23 +27,11 @@ const normalize = (value) => String(value || "").trim().toLowerCase().replace(/-
 export function isPlatformOwner(user) { if (!user) return false; const email = String(user.email || "").trim().toLowerCase(); const id = String(user.id || "").trim(); return email === PLATFORM_OWNER_EMAIL || id === "usr-admin-01" || id === "saas-bootstrap-admin"; }
 
 export function normalizeModules(user) {
-  const sources = [user?.licensed_modules, user?.company?.licensed_modules, user?.modules, user?.company?.modules, user?.license?.modules, user?.subscription?.modules];
+  const sources = [user?.licensed_modules, user?.modules, user?.company?.licensed_modules, user?.company?.modules, user?.license?.modules, user?.subscription?.modules];
   const raw = sources.find((value) => Array.isArray(value) && value.length > 0) || []; const result = new Set();
   for (const value of raw) { const key = normalize(value); for (const [moduleId, def] of Object.entries(MODULES)) if (def.aliases.includes(key) || key === moduleId) result.add(moduleId); }
   return result;
 }
-
-export function normalizedSelectedFeatures(user) {
-  const raw = user?.selected_features || user?.company?.selected_features || user?.license?.selected_features; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const result = {}; for (const [moduleKey, flags] of Object.entries(raw)) { const normalizedModule = normalize(moduleKey); const moduleId = Object.entries(MODULES).find(([id, def]) => id === normalizedModule || def.aliases.includes(normalizedModule))?.[0] || normalizedModule; result[moduleId] = Array.isArray(flags) ? new Set(flags.map((flag) => String(flag).trim())) : new Set(); } return result;
-}
-
-export function isCommercialTenant(user) { return Boolean(user) && !isPlatformOwner(user) && Boolean(user.company_id || user.license_id || user.commercial_customer_id || (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) || user.company?.commercial_customer_id || user.company?.license_id); }
-
-export function moduleForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[0] || null; }
-export function pageFlagForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[1] || null; }
-
-export function hasModuleAccess(user, moduleId) { if (!user) return false; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.has(moduleId)) return true; const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
 
 const DASHBOARD_FLAG_BY_MODULE = Object.freeze({ taskosphere: "can_view_dashboard", finix: "can_view_accounting_reports", compliance: "can_view_compliance", records: "can_view_documents", proposals: "can_view_all_leads", people_matrix: "can_view_user_page" });
 const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
@@ -55,33 +43,38 @@ const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
   people_matrix: ["can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll", "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment", "can_manage_recruitment", "can_view_performance", "can_manage_performance"],
 });
 
+export function normalizedSelectedFeatures(user) {
+  const raw = user?.selected_features || user?.company?.selected_features || user?.license?.selected_features; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const result = {};
+  for (const [moduleKey, flags] of Object.entries(raw)) {
+    const normalizedModule = normalize(moduleKey);
+    const moduleId = Object.entries(MODULES).find(([id, def]) => id === normalizedModule || def.aliases.includes(normalizedModule))?.[0] || normalizedModule;
+    const list = Array.isArray(flags) ? flags.map((flag) => normalize(flag)) : [];
+    const hasAll = list.some((flag) => ["all", "*", "all_features", "full", "complete"].includes(flag));
+    result[moduleId] = new Set(hasAll ? (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []) : list.map((flag) => String(flag).trim()));
+  }
+  return result;
+}
+
+export function isCommercialTenant(user) { return Boolean(user) && !isPlatformOwner(user) && Boolean(user.company_id || user.license_id || user.commercial_customer_id || (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) || user.company?.commercial_customer_id || user.company?.license_id); }
+
+export function moduleForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[0] || null; }
+export function pageFlagForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[1] || null; }
+
+export function hasModuleAccess(user, moduleId) { if (!user) return false; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.has(moduleId)) return true; const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
+
 export function hasPageLicense(user, pageFlag, moduleId = null) {
   if (!user || !pageFlag) return false;
   if (isPlatformOwner(user)) return true;
-
   const selected = normalizedSelectedFeatures(user);
   const module = moduleId || Object.entries(MODULES).find(([id]) => selected[id]?.has(pageFlag))?.[0];
   if (!module || !hasModuleAccess(user, module)) return false;
-
-  // The dashboard is an independently selectable commercial feature. A
-  // customer who purchased only the dashboard must be able to enter it; it
-  // must not be treated as licensed only when every page in the module was
-  // purchased. Legacy module-only licenses are also allowed through their
-  // existing role permission when no feature selection exists.
   if (DASHBOARD_FLAG_BY_MODULE[module] === pageFlag) {
     if (selected[module]?.has(pageFlag)) return true;
     if (!selected[module] && user.permissions?.[pageFlag] === true) return true;
     return false;
   }
-
-  // Client Discussion shipped after some proposals licenses were created.
-  // Lead Management was the original proposals workspace, so preserve that
-  // existing entitlement for the discussion page as a backwards-compatible
-  // page alias.
-  if (pageFlag === "can_view_client_discussion" && selected[module]?.has("can_view_all_leads")) {
-    return true;
-  }
-
+  if (pageFlag === "can_view_client_discussion" && selected[module]?.has("can_view_all_leads")) return true;
   return Boolean(selected[module]?.has(pageFlag));
 }
 
@@ -93,8 +86,7 @@ export function hasEffectivePermission(user, permission) {
   if (pageEntry) {
     const [moduleId] = pageEntry;
     if (!hasPageLicense(user, permission, moduleId)) return false;
-    return user.permissions?.[permission] === true ||
-      (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
+    return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
   }
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
