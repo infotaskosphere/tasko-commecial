@@ -17,9 +17,10 @@
 // DashboardLayout + SectionHub, so pages read as one design system.
 
 import React from 'react';
-import { Loader2, Inbox } from 'lucide-react';
+import { Inbox } from 'lucide-react';
 import useDark from '@/hooks/useDark';
 import { HubBanner, StatCard, HUB_COLORS } from '@/components/SectionHub.jsx';
+import { MiniLoader } from '@/components/ui/GifLoader.jsx';
 
 export { HUB_COLORS };
 
@@ -154,8 +155,9 @@ export function EmptyState({ icon: Icon = Inbox, title = 'Nothing here yet', hin
 /** Consistent loading state. */
 export function LoadingState({ label = 'Loading…' }) {
   return (
-    <div className="flex items-center justify-center gap-2 py-12 text-sm text-slate-400">
-      <Loader2 className="h-4 w-4 animate-spin" /> {label}
+    <div className="flex items-center justify-center min-h-[180px] py-8">
+      <MiniLoader height={180} />
+      <span className="sr-only">{label}</span>
     </div>
   );
 }
