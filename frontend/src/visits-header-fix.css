@@ -1,0 +1,25 @@
+/* Client Visits header alignment
+ * Scoped to /visits so other business-page headers are untouched.
+ */
+
+@media (min-width: 1024px) {
+  body.biz-visits-page .relative.flex.flex-col.lg\:flex-row.items-start.lg\:items-center.justify-between.gap-4 > div[class~="flex"][class~="items-center"][class~="gap-2"][class~="flex-wrap"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.5rem;
+    width: min(720px, 100%);
+    max-width: 720px;
+    min-width: 0;
+    align-items: stretch;
+  }
+
+  body.biz-visits-page .relative.flex.flex-col.lg\:flex-row.items-start.lg\:items-center.justify-between.gap-4 > div[class~="flex"][class~="items-center"][class~="gap-2"][class~="flex-wrap"] > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  body.biz-visits-page .relative.flex.flex-col.lg\:flex-row.items-start.lg\:items-center.justify-between.gap-4 > div[class~="flex"][class~="items-center"][class~="gap-2"][class~="flex-wrap"] button {
+    justify-content: center;
+    white-space: nowrap;
+  }
+}
