@@ -1,235 +1,48 @@
-/* Small additive fixes for the canonical application shell. */
+/* Additive fixes only. This file is imported after the canonical shell CSS. */
 
-/* Keep module tabs inside the header without clipping their labels. */
-#root #top-module-switcher-bar > div:first-child {
-  display: flex !important;
-  flex: 1 1 auto !important;
-  min-width: 0 !important;
-  overflow-x: auto !important;
-  overflow-y: hidden !important;
-  scrollbar-width: none;
-}
-#root #top-module-switcher-bar > div:first-child::-webkit-scrollbar { display: none; }
-#root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 110px !important;
-  max-width: none !important;
-  padding-left: 12px !important;
-  padding-right: 12px !important;
-}
+/* GLOBAL MODULE SWITCHER: override the canonical display:contents rules with
+   real flex boxes. This prevents the middle spacer from being treated as the
+   last child and gives every module tab the same geometry. */
+:root { --ts-module-tab-w: 124px !important; }
+#root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) { display:flex !important; flex:0 0 auto !important; width:auto !important; min-width:0 !important; max-width:none !important; overflow:visible !important; }
+#root #top-module-switcher-bar > div:nth-child(2):not(:has(> button[id^="nav-tab-"])) { display:none !important; }
+#root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) { display:flex !important; flex:0 0 auto !important; width:auto !important; min-width:max-content !important; max-width:none !important; margin-left:auto !important; overflow:visible !important; }
+#root #top-module-switcher-bar > div:nth-child(1) > button[id^="nav-tab-"],
+#root #top-module-switcher-bar > div:nth-child(3) > button[id^="nav-tab-"] { flex:0 0 var(--ts-module-tab-w) !important; width:var(--ts-module-tab-w) !important; min-width:var(--ts-module-tab-w) !important; max-width:var(--ts-module-tab-w) !important; overflow:visible !important; text-overflow:clip !important; }
+#root #top-module-switcher-bar button[id^="nav-tab-"] span { display:inline-block !important; max-width:none !important; overflow:visible !important; text-overflow:clip !important; white-space:nowrap !important; }
 
-/* The canonical stylesheet intentionally hides the spacer. Restore it so
-   Admin + Settings can remain pinned to the right edge of the bar. */
-#root #top-module-switcher-bar > div:nth-child(2) {
-  display: block !important;
-  flex: 1 1 auto !important;
-  min-width: 12px !important;
-  height: 100% !important;
-}
+/* CLIENT DISCUSSION: target the actual Meeting Assistant card by its grid
+   structure. The old section:first-of-type selector could select a different
+   section because PageKit emits other section elements around it. */
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] { min-width:0 !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section { min-width:0 !important; max-width:100% !important; width:100% !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child { overflow:visible !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header { display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; align-items:center !important; gap:16px !important; min-height:104px !important; height:auto !important; padding:16px 20px !important; box-sizing:border-box !important; overflow:visible !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:first-child { min-width:0 !important; max-width:100% !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child { display:flex !important; flex:0 0 auto !important; align-items:center !important; justify-content:flex-end !important; flex-wrap:nowrap !important; gap:8px !important; min-width:0 !important; max-width:100% !important; width:auto !important; margin:0 !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child > * { flex:0 0 auto !important; width:auto !important; min-width:0 !important; white-space:nowrap !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > div { position:relative !important; clear:both !important; min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; overflow:visible !important; padding-top:20px !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > div > * { min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; }
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child input,
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child textarea,
+body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child button { max-width:100% !important; box-sizing:border-box !important; }
 
-/* Keep the right-aligned Admin/Settings tabs visible and independent. */
-#root #top-module-switcher-bar > div:last-child {
-  display: flex !important;
-  flex: 0 0 auto !important;
-  min-width: max-content !important;
-  overflow: visible !important;
-}
-#root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 110px !important;
-  max-width: none !important;
-}
-#root #top-module-switcher-bar button[id^="nav-tab-"] span {
-  max-width: none !important;
-  overflow: visible !important;
-  text-overflow: clip !important;
-}
+/* ATTENDANCE: the screenshot shows five controls being forced into one row.
+   Use the actual blue header's h1 row and place controls in a compact 3-column
+   grid. The grid naturally creates a second row for the remaining controls. */
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,660px) !important; align-items:center !important; column-gap:20px !important; min-width:0 !important; box-sizing:border-box !important; }
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :first-child { min-width:0 !important; max-width:100% !important; }
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; grid-auto-rows:38px !important; align-items:stretch !important; gap:8px !important; width:100% !important; max-width:660px !important; min-width:0 !important; flex-wrap:nowrap !important; }
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child > * { width:100% !important; min-width:0 !important; max-width:100% !important; height:38px !important; min-height:38px !important; max-height:38px !important; box-sizing:border-box !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:6px !important; padding:0 10px !important; border-radius:7px !important; border:1px solid rgba(255,255,255,.26) !important; background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none !important; font-size:12px !important; font-weight:700 !important; line-height:1 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child > *:hover { background:rgba(255,255,255,.18) !important; border-color:rgba(255,255,255,.36) !important; }
+body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child svg { flex:0 0 14px !important; width:14px !important; height:14px !important; }
 
-/* On narrow screens the full tab set remains scrollable rather than being
-   squeezed into unreadable/cut-off labels. */
-@media (max-width: 900px) {
-  #root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
-    flex: 0 0 112px !important;
-    width: 112px !important;
-    min-width: 112px !important;
-    max-width: 112px !important;
-    padding-left: 9px !important;
-    padding-right: 9px !important;
-  }
-  #root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
-    flex: 0 0 112px !important;
-    width: 112px !important;
-    min-width: 112px !important;
-    max-width: 112px !important;
-  }
-}
-@media (max-width: 640px) {
-  #root #top-module-switcher-bar > div:first-child > button[id^="nav-tab-"] {
-    flex-basis: 104px !important;
-    width: 104px !important;
-    min-width: 104px !important;
-    max-width: 104px !important;
-  }
-  #root #top-module-switcher-bar > div:last-child > button[id^="nav-tab-"] {
-    flex-basis: 104px !important;
-    width: 104px !important;
-    min-width: 104px !important;
-    max-width: 104px !important;
-  }
-}
+/* ROUTE LOADING: never turn a route loader into a second fixed viewport that
+   covers the shell. */
+body:not(.website-surface) #root .taskosphere-loader--fullscreen { position:relative !important; inset:auto !important; z-index:1 !important; width:100% !important; min-width:0 !important; max-width:100% !important; min-height:clamp(240px,42vh,420px) !important; box-sizing:border-box !important; pointer-events:none !important; }
+body:not(.website-surface) #root .taskosphere-route-loading { width:100% !important; min-width:0 !important; max-width:100% !important; overflow:visible !important; }
 
-/* Never let a header action push its containing form outside the card. */
-body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 > div {
-  min-width: 0 !important;
-}
-body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 input {
-  min-width: 0 !important;
-  max-width: none !important;
-}
-body[data-business-route="/gst-portal-sync"] #root main .rounded-2xl.border.p-4 button {
-  flex: 0 0 auto !important;
-  max-width: 100% !important;
-  white-space: nowrap !important;
-}
-
-/* The Meeting Assistant uses a dense two-column layout. Give both cards and
-   their descendants a real shrink boundary so long text cannot clip the card. */
-body[data-business-route="/client-discussion"] #root main .grid {
-  min-width: 0 !important;
-}
-body[data-business-route="/client-discussion"] #root main .grid > section {
-  min-width: 0 !important;
-  max-width: 100% !important;
-}
-body[data-business-route="/client-discussion"] #root main .grid > section > div {
-  min-width: 0 !important;
-  max-width: 100% !important;
-}
-body[data-business-route="/client-discussion"] #root main textarea,
-body[data-business-route="/client-discussion"] #root main input,
-body[data-business-route="/client-discussion"] #root main button {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-/* Lazy-route loading stays inside the already-rendered shell. */
-#root .taskosphere-route-loading {
-  width: 100%;
-  min-width: 0;
-}
-
-/* FINAL LAYOUT GUARDS ---------------------------------------------------- */
-/* Client Discussion: target the actual first assistant card instead of
-   relying on generic flex wrapping. Header actions get a dedicated column,
-   while the content starts below the header and can never slide underneath it. */
-body[data-business-route="/client-discussion"] #root main section:first-of-type {
-  overflow: visible !important;
-  min-width: 0 !important;
-}
-body[data-business-route="/client-discussion"] #root main section:first-of-type > header {
-  display: grid !important;
-  grid-template-columns: minmax(0,1fr) minmax(230px,auto) !important;
-  align-items: center !important;
-  gap: 16px !important;
-  min-height: 92px !important;
-  height: auto !important;
-  padding-top: 16px !important;
-  padding-bottom: 16px !important;
-}
-body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: flex-end !important;
-  flex-wrap: nowrap !important;
-  gap: 8px !important;
-  min-width: 0 !important;
-  width: auto !important;
-}
-body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child > button {
-  flex: 0 0 auto !important;
-  min-width: 0 !important;
-  white-space: nowrap !important;
-}
-body[data-business-route="/client-discussion"] #root main section:first-of-type > div {
-  clear: both !important;
-  position: relative !important;
-  z-index: 1 !important;
-  min-width: 0 !important;
-}
-
-/* Leave page: its dropdown and Apply Leave control are two equal cells in
-   the blue page header. Both controls use the same height, border, fill,
-   typography and icon treatment so the header is visually one system. */
-body[data-business-route="/leave"] #root main > div > div:first-child {
-  background: linear-gradient(135deg,#0D3B66 0%,#1F6FB2 100%) !important;
-  color: #fff !important;
-  padding: 18px 20px !important;
-  min-width: 0 !important;
-  box-sizing: border-box !important;
-  box-shadow: 0 5px 20px rgba(13,59,102,.18) !important;
-}
-body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child {
-  display: grid !important;
-  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
-  align-items: stretch !important;
-  gap: 8px !important;
-  width: min(420px,100%) !important;
-  min-width: 0 !important;
-}
-body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child > * {
-  width: 100% !important;
-  min-width: 0 !important;
-  height: 40px !important;
-  min-height: 40px !important;
-  max-height: 40px !important;
-  box-sizing: border-box !important;
-  white-space: nowrap !important;
-}
-body[data-business-route="/leave"] #root main > div > div:first-child [role="combobox"],
-body[data-business-route="/leave"] #root main > div > div:first-child [data-radix-select-trigger],
-body[data-business-route="/leave"] #root main > div > div:first-child button {
-  border: 1px solid rgba(255,255,255,.28) !important;
-  background: rgba(255,255,255,.10) !important;
-  color: #fff !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-}
-body[data-business-route="/leave"] #root main > div > div:first-child [role="combobox"] svg,
-body[data-business-route="/leave"] #root main > div > div:first-child button svg {
-  color: #fff !important;
-}
-body[data-business-route="/leave"] #root main [role="tablist"] {
-  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
-  width: 100% !important;
-}
-body[data-business-route="/leave"] #root main [role="tablist"] > [role="tab"] {
-  width: 100% !important;
-  min-width: 0 !important;
-  height: 44px !important;
-  min-height: 44px !important;
-  justify-content: center !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: clip !important;
-}
-
-@media (max-width: 1100px) {
-  body[data-business-route="/client-discussion"] #root main section:first-of-type > header {
-    grid-template-columns: minmax(0,1fr) !important;
-  }
-  body[data-business-route="/client-discussion"] #root main section:first-of-type > header > div:last-child {
-    justify-content: flex-start !important;
-    flex-wrap: wrap !important;
-  }
-}
-@media (max-width: 640px) {
-  body[data-business-route="/leave"] #root main > div > div:first-child > div:last-child {
-    grid-template-columns: 1fr !important;
-    width: 100% !important;
-  }
-  body[data-business-route="/leave"] #root main [role="tablist"] {
-    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
-  }
-}
+@media (max-width:1180px) { body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { grid-template-columns:minmax(0,1fr) minmax(0,560px) !important; } body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { max-width:560px !important; } }
+@media (max-width:980px) { body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { grid-template-columns:1fr !important; row-gap:14px !important; } body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { width:100% !important; max-width:none !important; } }
+@media (max-width:900px) { #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:112px !important; width:112px !important; min-width:112px !important; max-width:112px !important; } #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:112px !important; width:112px !important; min-width:112px !important; max-width:112px !important; } body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header { grid-template-columns:1fr !important; gap:10px !important; min-height:0 !important; } body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child { justify-content:flex-start !important; flex-wrap:wrap !important; } }
+@media (max-width:640px) { #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; } #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; } }
