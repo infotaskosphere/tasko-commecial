@@ -10,14 +10,12 @@ import ReminderPopupManager from "@/components/layout/ReminderPopupManager.jsx";
 import { BulkWASenderProvider } from "@/contexts/BulkWASenderContext";
 import BulkWASenderWidget from "@/contexts/BulkWASenderWidget";
 import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
-import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock.jsx";
+import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
 import "./commercial-business-ui.css";
 import "./email-google-oauth.css";
 import "./module-branding.css";
-import "./module-branding.js";
-import "./taskosphere-header-colors.css";
-import "./lib/universalBlueHeaderLayout.js";
+import "./header-tabs-canonical.css";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
@@ -104,10 +102,14 @@ function BusinessPageDesignScope() {
     const path = location.pathname;
     const title = BUSINESS_PAGE_TITLES[path] || Object.entries(BUSINESS_PAGE_TITLES).sort((a, b) => b[0].length - a[0].length).find(([prefix]) => path.startsWith(`${prefix}/`))?.[1] || path.split("/").filter(Boolean).pop()?.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) || "Business Workspace";
     document.documentElement.style.setProperty("--business-page-title", JSON.stringify(title));
+    document.body.dataset.businessRoute = path;
     document.body.classList.toggle("biz-dashboard-home", BUSINESS_LANDING_PATHS.has(path));
     document.body.classList.toggle("biz-section-landing", /^(\/finix-dashboard|\/compliance-dashboard|\/records-dashboard|\/client-proposals-dashboard|\/people-matrix)$/.test(path));
     document.body.classList.toggle("biz-master-console", path === "/master-console");
-    return () => document.body.classList.remove("biz-dashboard-home", "biz-section-landing", "biz-master-console");
+    return () => {
+      document.body.classList.remove("biz-dashboard-home", "biz-section-landing", "biz-master-console");
+      delete document.body.dataset.businessRoute;
+    };
   }, [location.pathname]);
   return null;
 }
