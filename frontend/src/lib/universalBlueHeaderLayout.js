@@ -167,7 +167,7 @@
       const alt = String(img.getAttribute('alt') || '').toLowerCase();
       const src = String(img.getAttribute('src') || '').toLowerCase();
       if (alt.includes('taskosphere') || src.endsWith('/logo.png') || src.includes('taskosphere')) {
-        img.setAttribute('src', '/onenexa-logo.svg');
+        img.setAttribute('src', '/onenexa-logo.png');
         img.setAttribute('alt', 'OneNexa');
         img.style.objectFit = 'contain';
         img.style.background = 'transparent';
