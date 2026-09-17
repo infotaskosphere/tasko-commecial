@@ -15,60 +15,54 @@ jobs:
           ref: feature/master-console
           fetch-depth: 0
 
-      - name: Patch header controls without touching page functionality
+      - name: Apply explicit header layout
         shell: python
         run: |
           from pathlib import Path
 
-          # Action Center: three controls, one row, compact equal widths.
-          p = Path('frontend/src/pages/ActionCenter.jsx')
+          # Shared banner: allow pages to opt into an explicit action-slot width.
+          p = Path('frontend/src/components/ui/WelcomeBanner.jsx')
           s = p.read_text()
           s = s.replace(
-              'className="grid grid-cols-3 gap-2 w-[520px] max-w-full flex-shrink-0 min-w-0"',
-              'className="grid grid-cols-3 gap-2 w-[500px] max-w-full flex-shrink-0 min-w-0"',
+              "export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, className = '' }) {",
+              "export function WelcomeBanner({ title, subtitle, icon: Icon, date, actions, className = '', actionsClassName = '' }) {",
               1,
           )
           s = s.replace(
-              'className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"',
-              'className="w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-xs font-semibold border transition-all active:scale-95 whitespace-nowrap overflow-hidden"',
-              3,
+              '<div className="flex flex-1 min-w-0 justify-end items-center gap-2">',
+              '<div className={`flex flex-1 min-w-0 justify-end items-center gap-2 ${actionsClassName}`}>',
+              1,
           )
           p.write_text(s)
 
-          # Reminders: keep the requested 3 x 2 equal grid and prevent
-          # button labels from wrapping or being clipped.
+          # Reminders: explicit 570px action slot on desktop. This prevents
+          # the nested flex container from collapsing the 3x2 grid to its
+          # content width. Mobile remains full width through w-full.
           p = Path('frontend/src/pages/Reminders.jsx')
           s = p.read_text()
-          marker = '<div className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 min-w-0 ml-auto">'
-          start = s.index(marker)
-          end = s.index('\n    </div>', start)
-          block = s[start:end]
-          block = block.replace(
-              'className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold',
-              'className="w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden',
+          s = s.replace(
+              'actions={\n              <div className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 min-w-0 ml-auto">',
+              'actionsClassName="lg:flex-none lg:w-[570px] lg:max-w-[570px]"\n            actions={\n              <div className="grid grid-cols-3 gap-2 w-full min-w-0">',
+              1,
           )
-          block = block.replace(
-              'className="relative w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold',
-              'className="relative w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden',
-          )
-          s = s[:start] + block + s[end:]
+          if 'actionsClassName="lg:flex-none lg:w-[570px] lg:max-w-[570px]"' not in s:
+              raise SystemExit('Reminders actionsClassName patch did not apply')
           p.write_text(s)
 
       - name: Validate
         shell: bash
         run: |
-          grep -n 'grid-cols-3.*w-\[500px\]' frontend/src/pages/ActionCenter.jsx
-          grep -n 'grid-cols-3.*w-\[570px\]' frontend/src/pages/Reminders.jsx
-          grep -n 'flex flex-1 min-w-0 justify-end' frontend/src/components/ui/WelcomeBanner.jsx
-          echo "Precise header layout correction triggered."
+          grep -n 'actionsClassName' frontend/src/components/ui/WelcomeBanner.jsx
+          grep -n 'actionsClassName="lg:flex-none lg:w-\[570px\]' frontend/src/pages/Reminders.jsx
+          grep -n 'grid-cols-3.*w-full min-w-0' frontend/src/pages/Reminders.jsx
 
       - name: Commit and remove workflow
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add frontend/src/pages/ActionCenter.jsx frontend/src/pages/Reminders.jsx .github/workflows/precise-header-layout.yml
-          git commit -m "fix: align header controls precisely [skip ci]"
+          git add frontend/src/components/ui/WelcomeBanner.jsx frontend/src/pages/Reminders.jsx .github/workflows/precise-header-layout.yml
+          git commit -m "fix: make reminder header action slot explicit [skip ci]"
           git rm .github/workflows/precise-header-layout.yml
           git commit -m "chore: remove temporary header workflow [skip ci]"
           git push origin feature/master-console
