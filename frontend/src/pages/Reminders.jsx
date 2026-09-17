@@ -1571,17 +1571,17 @@ export default function Reminders() {
       <Button onClick={() => { resetForm(); setShowForm(true); }} className="w-full min-w-0 h-9 whitespace-nowrap rounded-none text-sm font-semibold bg-white/15 hover:bg-white/25 text-white border border-white/20">
         <Plus className="h-4 w-4 mr-1" /> New Reminder
       </Button>
-      <button onClick={() => setShowListView((v) => !v)} title={showListView ? "Show Calendar Only" : "Show List View"} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
+      <button onClick={() => setShowListView((v) => !v)} title={showListView ? "Show Calendar Only" : "Show List View"} className="w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
         {showListView ? <CalendarIcon size={13} /> : <List size={13} />}
         {showListView ? "Calendar" : "List View"}
       </button>
-      <button onClick={() => setShowCustomize(true)} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
+      <button onClick={() => setShowCustomize(true)} className="w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all">
         <Settings2 size={13} /> Customize
       </button>
-      <button onClick={() => setShowPopupSettings(true)} className="w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="popup-settings-btn">
+      <button onClick={() => setShowPopupSettings(true)} className="w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="popup-settings-btn">
         <Bell size={13} /> Popup Settings
       </button>
-      <button onClick={() => setShowDuplicates(true)} className="relative w-full h-9 flex items-center justify-center gap-1.5 px-3 rounded-none text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="duplicates-btn" title="Find and remove duplicate reminders">
+      <button onClick={() => setShowDuplicates(true)} className="relative w-full min-w-0 h-9 flex items-center justify-center gap-1 px-2 rounded-none text-[11px] font-semibold whitespace-nowrap overflow-hidden bg-white/10 hover:bg-white/20 text-white/70 border border-white/15 transition-all" data-testid="duplicates-btn" title="Find and remove duplicate reminders">
         <RefreshCw size={13} /> Duplicates
         {duplicateCount > 0 && <span className="ml-0.5 min-w-[16px] h-4 px-1 rounded-full bg-coral text-[10px] font-bold flex items-center justify-center text-white" style={{ backgroundColor: COLORS.coral }}>{duplicateCount}</span>}
       </button>
