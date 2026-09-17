@@ -1,0 +1,471 @@
+name: Reconcile global header system
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply consolidated header/tab cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          src = root / 'frontend' / 'src'
+          app_path = src / 'App.jsx'
+          layout_path = src / 'components' / 'layout' / 'DashboardLayout.jsx'
+          css_path = src / 'commercial-business-ui.css'
+          index_path = root / 'frontend' / 'index.html'
+
+          # -----------------------------------------------------------------
+          # App entry: remove all competing runtime/global header controllers.
+          # commercial-business-ui.css becomes the sole geometry stylesheet.
+          # -----------------------------------------------------------------
+          app = app_path.read_text(encoding='utf-8')
+          for line in [
+              'import "./module-branding.js";\n',
+              'import "./taskosphere-header-colors.css";\n',
+              'import "./lib/universalBlueHeaderLayout.js";\n',
+              'import "./global-header-tabs.css";\n',
+          ]:
+              app = app.replace(line, '')
+          app_path.write_text(app, encoding='utf-8')
+
+          # -----------------------------------------------------------------
+          # DashboardLayout: one contiguous module-tab rail.  No left/right
+          # tab groups and no flex spacer that can create a visual gap.
+          # -----------------------------------------------------------------
+          layout = layout_path.read_text(encoding='utf-8')
+          layout = layout.replace(
+              "compliance: { label: 'Compliance', icon: ShieldCheck, landingPath: '/compliance-dashboard' },",
+              "compliance: { label: 'CompliGenie', icon: ShieldCheck, landingPath: '/compliance-dashboard' },"
+          )
+          layout = layout.replace(
+              "proposals: { label: 'Client Proposals', icon: Target, landingPath: '/client-proposals-dashboard' },",
+              "proposals: { label: 'LeadSense', icon: Target, landingPath: '/client-proposals-dashboard' },"
+          )
+          old_tab = '''    return <button key={sectionId} id={`nav-tab-${sectionId}`} onClick={() => navigate(meta.landingPath)} className={`group flex items-center gap-1.5 sm:gap-2 px-3 sm:px-3.5 h-full text-[13px] whitespace-nowrap flex-shrink-0 cursor-pointer border-b-2 transition-colors ${isActive ? 'font-semibold text-slate-900 dark:text-white border-[#1F6FB2] dark:border-blue-500 bg-transparent' : 'font-medium text-slate-600 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-100 hover:bg-transparent'}`}>
+      <Icon className={`h-4 w-4 flex-shrink-0 transition-colors ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-800 dark:group-hover:text-slate-200'}`} /><span>{meta.label}</span>
+    </button>;'''
+          new_tab = '''    return <button key={sectionId} id={`nav-tab-${sectionId}`} aria-current={isActive ? 'page' : undefined} onClick={() => navigate(meta.landingPath)} className="ts-module-tab">
+      <Icon aria-hidden="true" /><span>{meta.label}</span>
+    </button>;'''
+          if old_tab not in layout:
+              raise SystemExit('Expected module tab renderer was not found')
+          layout = layout.replace(old_tab, new_tab)
+          old_bar = '''    <div id="top-module-switcher-bar" className="fixed left-0 right-0 z-[44] flex items-center px-3 sm:px-6 overflow-x-auto slim-scroll" style={{ top: HEADER_H, height: SECTION_BAR_H, background: isDark ? '#0f172a' : '#ffffff', borderBottom: isDark ? '1px solid #1e293b' : '1px solid #e2e8f0' }}>
+      <div className="flex items-center h-full gap-0.5 sm:gap-1">{renderSectionTabs(LEFT_SECTIONS)}</div><div className="flex-1 min-w-[12px]" />{RIGHT_SECTIONS.length > 0 && <div className="flex items-center h-full gap-0.5 sm:gap-1 flex-shrink-0">{renderSectionTabs(RIGHT_SECTIONS)}</div>}
+    </div>'''
+          new_bar = '''    <div id="top-module-switcher-bar" className="ts-module-switcher" style={{ top: HEADER_H, height: SECTION_BAR_H, background: isDark ? '#0f172a' : '#ffffff', borderBottom: isDark ? '1px solid #1e293b' : '1px solid #e2e8f0' }}>
+      <div className="ts-module-tabs">{renderSectionTabs(SECTION_ORDER)}</div>
+    </div>'''
+          if old_bar not in layout:
+              raise SystemExit('Expected module switcher markup was not found')
+          layout = layout.replace(old_bar, new_bar)
+          layout_path.write_text(layout, encoding='utf-8')
+
+          # -----------------------------------------------------------------
+          # Single source of truth for header/tab geometry.  Keep the rest of
+          # the commercial UI stylesheet intact and append stronger rules so
+          # legacy selectors cannot override the canonical system.
+          # -----------------------------------------------------------------
+          css = css_path.read_text(encoding='utf-8')
+          css = css.replace('Header and module-tab geometry are\n   intentionally owned by global-header-tabs.css.', 'Header and module-tab geometry are owned by this file.')
+          if '/* TASK-O-SPHERE CANONICAL GLOBAL HEADER / MODULE TABS */' not in css:
+              css += r'''
+
+/* ========================================================================== */
+/* TASK-O-SPHERE CANONICAL GLOBAL HEADER / MODULE TABS                       */
+/* SINGLE SOURCE OF TRUTH: this file only.                                  */
+/* ========================================================================== */
+:root {
+  --ts-header-height: 64px;
+  --ts-module-bar-height: 40px;
+  --ts-module-tab-min-width: 118px;
+  --ts-header-control-height: 36px;
+  --ts-blue: #1F6FB2;
+  --ts-blue-deep: #0D3B66;
+  --ts-header-border: #E2E8F0;
+}
+
+/* Fixed application header stays exactly one row high. */
+body:not(.website-surface) #root > header.fixed {
+  height: var(--ts-header-height) !important;
+  min-height: var(--ts-header-height) !important;
+  max-height: var(--ts-header-height) !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+  border-radius: 0 !important;
+}
+body:not(.website-surface) #root > header.fixed,
+body:not(.website-surface) #root > header.fixed > *,
+body:not(.website-surface) #root > header.fixed nav {
+  min-width: 0 !important;
+}
+
+/* One contiguous module rail. All visible modules share one flex row. */
+#root #top-module-switcher-bar {
+  position: fixed !important;
+  top: var(--ts-header-height) !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: var(--ts-module-bar-height) !important;
+  min-height: var(--ts-module-bar-height) !important;
+  max-height: var(--ts-module-bar-height) !important;
+  display: flex !important;
+  align-items: stretch !important;
+  padding: 0 12px !important;
+  margin: 0 !important;
+  gap: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  background: #fff !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--ts-header-border) !important;
+  box-shadow: none !important;
+  z-index: 44 !important;
+}
+#root #top-module-switcher-bar > .ts-module-tabs {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  min-width: max-content !important;
+  height: 100% !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+#root #top-module-switcher-bar .ts-module-tab,
+#root #top-module-switcher-bar button[id^="nav-tab-"] {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: var(--ts-module-tab-min-width) !important;
+  max-width: none !important;
+  height: var(--ts-module-bar-height) !important;
+  min-height: var(--ts-module-bar-height) !important;
+  max-height: var(--ts-module-bar-height) !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  box-sizing: border-box !important;
+  border: 0 !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #475569 !important;
+  font-family: inherit !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  letter-spacing: 0 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  transform: none !important;
+}
+#root #top-module-switcher-bar .ts-module-tab span,
+#root #top-module-switcher-bar button[id^="nav-tab-"] span {
+  display: inline-block !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  line-height: 1 !important;
+}
+#root #top-module-switcher-bar .ts-module-tab svg,
+#root #top-module-switcher-bar button[id^="nav-tab-"] svg {
+  flex: 0 0 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+  max-width: 16px !important;
+  color: #64748B !important;
+}
+#root #top-module-switcher-bar .ts-module-tab:hover,
+#root #top-module-switcher-bar button[id^="nav-tab-"]:hover {
+  color: #0F172A !important;
+  background: transparent !important;
+}
+#root #top-module-switcher-bar .ts-module-tab.font-semibold,
+#root #top-module-switcher-bar .ts-module-tab[aria-current="page"],
+#root #top-module-switcher-bar button[id^="nav-tab-"].font-semibold,
+#root #top-module-switcher-bar button[id^="nav-tab-"][aria-current="page"] {
+  color: #0F172A !important;
+  font-weight: 700 !important;
+  border-bottom-color: var(--ts-blue) !important;
+  background: transparent !important;
+}
+#root #top-module-switcher-bar .ts-module-tab.font-semibold svg,
+#root #top-module-switcher-bar .ts-module-tab[aria-current="page"] svg,
+#root #top-module-switcher-bar button[id^="nav-tab-"].font-semibold svg,
+#root #top-module-switcher-bar button[id^="nav-tab-"][aria-current="page"] svg {
+  color: #0F172A !important;
+}
+#root #top-module-switcher-bar * { text-wrap: nowrap !important; }
+
+/* -------------------------------------------------------------------------- */
+/* CANONICAL BLUE PAGE HEADER GEOMETRY                                       */
+/* Tagged headers and legacy gradient headers share the same safe rules.     */
+/* -------------------------------------------------------------------------- */
+.ts-blue-page-header,
+#root main [style*="linear-gradient"]:has(h1) {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+.ts-blue-page-header .ts-page-header-row,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+}
+.ts-blue-page-header .ts-page-header-row h1,
+.ts-blue-page-header .ts-page-header-row h2,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) h1,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) h2 {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+.ts-blue-page-header .ts-page-header-row > .ts-page-header-actions,
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> button),
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> a),
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> select),
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> button),
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> a),
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> select),
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> [role="button"]) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex: 0 1 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+}
+.ts-blue-page-header .ts-page-header-actions > *,
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> button) > button,
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> a) > a,
+.ts-blue-page-header .ts-page-header-row > :last-child:has(> select) > select,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> button) > button,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> a) > a,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> select) > select,
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :has(> [role="button"]) > [role="button"] {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 132px !important;
+  max-width: none !important;
+  height: var(--ts-header-control-height) !important;
+  min-height: var(--ts-header-control-height) !important;
+  max-height: var(--ts-header-control-height) !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  line-height: 1 !important;
+  font-size: 12px !important;
+}
+
+/* Existing WelcomeBanner uses this wrapper. Keep its actions intact. */
+#root .commercial-header-actions {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+#root .commercial-header-actions > * { min-width: 0 !important; box-sizing: border-box !important; }
+
+/* Segment controls that intentionally live inside a blue page header. */
+.ts-page-header-actions .ts-segmented-header-tabs {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+  overflow: visible !important;
+}
+.ts-page-header-actions .ts-segmented-header-tabs > button {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 132px !important;
+  max-width: none !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 36px !important;
+  padding: 0 10px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  box-sizing: border-box !important;
+}
+
+@media (max-width: 900px) {
+  #root #top-module-switcher-bar { padding: 0 6px !important; }
+  #root #top-module-switcher-bar .ts-module-tab,
+  #root #top-module-switcher-bar button[id^="nav-tab-"] {
+    min-width: 108px !important;
+    padding-left: 9px !important;
+    padding-right: 9px !important;
+  }
+  .ts-blue-page-header .ts-page-header-row { min-width: 0 !important; }
+}
+
+html.dark #root #top-module-switcher-bar { background: #0F172A !important; border-bottom-color: #1E293B !important; }
+html.dark #root #top-module-switcher-bar .ts-module-tab,
+html.dark #root #top-module-switcher-bar button[id^="nav-tab-"] { color: #94A3B8 !important; }
+html.dark #root #top-module-switcher-bar .ts-module-tab.font-semibold,
+html.dark #root #top-module-switcher-bar .ts-module-tab[aria-current="page"],
+html.dark #root #top-module-switcher-bar button[id^="nav-tab-"].font-semibold,
+html.dark #root #top-module-switcher-bar button[id^="nav-tab-"][aria-current="page"] { color: #fff !important; border-bottom-color: #3B82F6 !important; }
+
+/* Reset the old generic 5-column gradient header grid on legacy pages. */
+#root main [style*="linear-gradient"]:has(h1) > div[class*="flex-wrap"] {
+  display: flex !important;
+  grid-template-columns: none !important;
+  grid-template-rows: none !important;
+  grid-auto-rows: auto !important;
+  width: auto !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  gap: 8px !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+}
+#root main [style*="linear-gradient"]:has(h1) > div[class*="flex-wrap"] > button,
+#root main [style*="linear-gradient"]:has(h1) > div[class*="flex-wrap"] > [role="button"],
+#root main [style*="linear-gradient"]:has(h1) > div[class*="flex-wrap"] > a {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 132px !important;
+  max-width: none !important;
+  min-height: 36px !important;
+  height: 36px !important;
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+}
+'''
+          css_path.write_text(css, encoding='utf-8')
+
+          # -----------------------------------------------------------------
+          # Remove legacy header mutation scripts from the Vite HTML shell.
+          # Keep unrelated backup-sidebar and People Matrix greeting helpers.
+          # -----------------------------------------------------------------
+          html = index_path.read_text(encoding='utf-8')
+          html = re.sub(r'\s*<link rel="stylesheet" href="/src/module-switcher-commercial\.css" />', '', html)
+          html = re.sub(r'\s*<link rel="stylesheet" href="/suite-top-card\.css" />', '', html)
+          html = re.sub(r'\s*<style id="task-management-header-ui">.*?</style>', '', html, flags=re.S)
+          html = re.sub(r'\s*<script>\s*\(\(\) => \{\s*const syncTaskRouteClass[\s\S]*?</script>', '', html, count=1)
+          html = re.sub(r'\s*<script>\s*\(\(\) => \{\s*const HEADER_TITLE = \'Task Management\';[\s\S]*?</script>', '', html, count=1)
+          html = re.sub(r'\s*<script>\s*\(\(\) => \{\s*/\* The reference design changes only the top card\.[\s\S]*?</script>', '', html, count=1)
+          html = html.replace("taskosphere-header-colors.css", "the canonical commercial header stylesheet")
+          html = html.replace("suite-top-card.css", "the canonical commercial header stylesheet")
+          index_path.write_text(html, encoding='utf-8')
+
+          # -----------------------------------------------------------------
+          # Delete obsolete competing controllers/fixers.  They must not be
+          # present in the final tree, so future renders cannot be affected.
+          # -----------------------------------------------------------------
+          obsolete = [
+              'frontend/src/lib/universalBlueHeaderLayout.js',
+              'frontend/src/module-branding.js',
+              'frontend/src/module-switcher-commercial.css',
+              'frontend/src/taskosphere-header-colors.css',
+              'frontend/src/visits-header-fix.css',
+              'frontend/src/global-header-tabs.css',
+              'frontend/public/suite-top-card.css',
+              '.github/workflows/fix-visits-header.yml',
+              '.github/workflows/fix-reminders-header.yml',
+              'VISITS_HEADER_FIX_TRIGGER.txt',
+          ]
+          for rel in obsolete:
+              p = root / rel
+              if p.exists(): p.unlink()
+
+          # -----------------------------------------------------------------
+          # Static assertions before commit.
+          # -----------------------------------------------------------------
+          app_final = app_path.read_text(encoding='utf-8')
+          layout_final = layout_path.read_text(encoding='utf-8')
+          css_final = css_path.read_text(encoding='utf-8')
+          html_final = index_path.read_text(encoding='utf-8')
+          for bad in ['module-branding.js', 'taskosphere-header-colors.css', 'universalBlueHeaderLayout.js']:
+              assert bad not in app_final, f'stale import remains: {bad}'
+          assert 'renderSectionTabs(SECTION_ORDER)' in layout_final
+          assert 'ts-module-spacer' not in layout_final
+          assert 'return <button key={sectionId}' in layout_final and 'className="ts-module-tab"' in layout_final
+          assert 'TASK-O-SPHERE CANONICAL GLOBAL HEADER / MODULE TABS' in css_final
+          assert 'grid-template-columns: none !important' in css_final
+          assert '/src/module-switcher-commercial.css' not in html_final
+          assert '/suite-top-card.css' not in html_final
+          assert not (src / 'module-branding.js').exists()
+          assert not (src / 'lib' / 'universalBlueHeaderLayout.js').exists()
+          print('Header reconciliation static checks passed.')
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Commit and publish reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish."
+            exit 0
+          fi
+          git commit -m "fix: consolidate global header and module tab layout"
+          git push origin HEAD:feature/master-console
