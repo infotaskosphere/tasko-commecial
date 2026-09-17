@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { useDark } from "@/hooks/useDark";
 import "./loading-system.css";
 
@@ -79,7 +79,6 @@ function Body({ compact }) {
   const pathname = typeof window === "undefined" ? "/" : window.location.pathname;
   const [kind, text] = useMemo(() => getInsight(pathname), [pathname]);
   return <div className={`taskosphere-loader__body${compact ? " taskosphere-loader__body--compact" : ""}`}>
-    <div className="taskosphere-loader__wordmark" aria-label="TASK-O-SPHERE"><span>TASK</span><b>-</b><span>O</span><b>-</b><span>SPHERE</span></div>
     {!compact ? <div className="taskosphere-loader__insight" role="status" aria-live="polite"><span className="taskosphere-loader__kind">{kind}</span><span className="taskosphere-loader__text">{text}</span><Dots /></div> : <div className="taskosphere-loader__mini"><span>{kind}</span><Dots /></div>}
   </div>;
 }
