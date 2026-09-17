@@ -1,9 +1,10 @@
-/* Additive fixes only. This file is imported after the canonical shell CSS. */
+/* Additive fixes only. Loaded after header-tabs-canonical.css. */
 
-/* GLOBAL MODULE SWITCHER: override the canonical display:contents rules with
-   real flex boxes. This prevents the middle spacer from being treated as the
-   last child and gives every module tab the same geometry. */
 :root { --ts-module-tab-w: 124px !important; }
+
+/* Module switcher: undo the canonical display:contents wrapper behavior so
+   the left module group and the right Admin/Settings group have deterministic
+   flex geometry. */
 #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) { display:flex !important; flex:0 0 auto !important; width:auto !important; min-width:0 !important; max-width:none !important; overflow:visible !important; }
 #root #top-module-switcher-bar > div:nth-child(2):not(:has(> button[id^="nav-tab-"])) { display:none !important; }
 #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) { display:flex !important; flex:0 0 auto !important; width:auto !important; min-width:max-content !important; max-width:none !important; margin-left:auto !important; overflow:visible !important; }
@@ -11,38 +12,50 @@
 #root #top-module-switcher-bar > div:nth-child(3) > button[id^="nav-tab-"] { flex:0 0 var(--ts-module-tab-w) !important; width:var(--ts-module-tab-w) !important; min-width:var(--ts-module-tab-w) !important; max-width:var(--ts-module-tab-w) !important; overflow:visible !important; text-overflow:clip !important; }
 #root #top-module-switcher-bar button[id^="nav-tab-"] span { display:inline-block !important; max-width:none !important; overflow:visible !important; text-overflow:clip !important; white-space:nowrap !important; }
 
-/* CLIENT DISCUSSION: target the actual Meeting Assistant card by its grid
-   structure. The old section:first-of-type selector could select a different
-   section because PageKit emits other section elements around it. */
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] { min-width:0 !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section { min-width:0 !important; max-width:100% !important; width:100% !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child { overflow:visible !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header { display:grid !important; grid-template-columns:minmax(0,1fr) auto !important; align-items:center !important; gap:16px !important; min-height:104px !important; height:auto !important; padding:16px 20px !important; box-sizing:border-box !important; overflow:visible !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:first-child { min-width:0 !important; max-width:100% !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child { display:flex !important; flex:0 0 auto !important; align-items:center !important; justify-content:flex-end !important; flex-wrap:nowrap !important; gap:8px !important; min-width:0 !important; max-width:100% !important; width:auto !important; margin:0 !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child > * { flex:0 0 auto !important; width:auto !important; min-width:0 !important; white-space:nowrap !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > div { position:relative !important; clear:both !important; min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; overflow:visible !important; padding-top:20px !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > div > * { min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; }
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child input,
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child textarea,
-body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child button { max-width:100% !important; box-sizing:border-box !important; }
+/* Client Discussion — target the actual Meeting Assistant grid emitted by
+   ClientDiscussion.jsx, not a generic :first-of-type selector. This removes
+   the original source of the screenshot overlap: SectionCard's header was
+   flex-wrapping its actions into the same vertical space as the form. */
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child { min-width:0 !important; max-width:100% !important; width:100% !important; overflow:visible !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > header { display:grid !important; grid-template-columns:minmax(0,1fr) max-content !important; align-items:center !important; gap:16px !important; min-height:104px !important; height:auto !important; padding:16px 20px !important; box-sizing:border-box !important; overflow:visible !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > header > div:first-child { min-width:0 !important; max-width:100% !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > header > div:last-child { display:flex !important; align-items:center !important; justify-content:flex-end !important; flex-wrap:nowrap !important; gap:8px !important; min-width:max-content !important; width:auto !important; max-width:100% !important; margin:0 !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > header > div:last-child > * { flex:0 0 auto !important; min-width:0 !important; width:auto !important; white-space:nowrap !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > div { clear:both !important; position:relative !important; z-index:1 !important; min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; overflow:visible !important; padding-top:20px !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child > div > * { min-width:0 !important; max-width:100% !important; box-sizing:border-box !important; }
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child input,
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child textarea,
+#root main > div > div[class*="xl:grid-cols-"] > section:first-child button { max-width:100% !important; box-sizing:border-box !important; }
 
-/* ATTENDANCE: the screenshot shows five controls being forced into one row.
-   Use the actual blue header's h1 row and place controls in a compact 3-column
-   grid. The grid naturally creates a second row for the remaining controls. */
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,660px) !important; align-items:center !important; column-gap:20px !important; min-width:0 !important; box-sizing:border-box !important; }
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :first-child { min-width:0 !important; max-width:100% !important; }
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; grid-auto-rows:38px !important; align-items:stretch !important; gap:8px !important; width:100% !important; max-width:660px !important; min-width:0 !important; flex-wrap:nowrap !important; }
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child > * { width:100% !important; min-width:0 !important; max-width:100% !important; height:38px !important; min-height:38px !important; max-height:38px !important; box-sizing:border-box !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:6px !important; padding:0 10px !important; border-radius:7px !important; border:1px solid rgba(255,255,255,.26) !important; background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none !important; font-size:12px !important; font-weight:700 !important; line-height:1 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child > *:hover { background:rgba(255,255,255,.18) !important; border-color:rgba(255,255,255,.36) !important; }
-body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child svg { flex:0 0 14px !important; width:14px !important; height:14px !important; }
+/* Attendance — the blue header contains five controls. Keep the employee
+   selector + four actions in a predictable 3-column / 2-row arrangement. */
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) { min-width:0 !important; box-sizing:border-box !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) { display:grid !important; grid-template-columns:repeat(3,minmax(0,1fr)) !important; grid-auto-rows:38px !important; align-items:stretch !important; gap:8px !important; width:min(660px,100%) !important; min-width:0 !important; flex-wrap:nowrap !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) > * { width:100% !important; min-width:0 !important; max-width:100% !important; height:38px !important; min-height:38px !important; max-height:38px !important; box-sizing:border-box !important; display:inline-flex !important; align-items:center !important; justify-content:center !important; gap:6px !important; padding:0 10px !important; border-radius:7px !important; border:1px solid rgba(255,255,255,.26) !important; background:rgba(255,255,255,.10) !important; color:#fff !important; box-shadow:none !important; font-size:12px !important; font-weight:700 !important; line-height:1 !important; white-space:nowrap !important; overflow:hidden !important; text-overflow:ellipsis !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) > *:hover { background:rgba(255,255,255,.18) !important; border-color:rgba(255,255,255,.36) !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) svg { flex:0 0 14px !important; width:14px !important; height:14px !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) [role="combobox"] { justify-content:space-between !important; text-align:left !important; }
+#root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) [role="combobox"] span { overflow:hidden !important; text-overflow:ellipsis !important; }
 
-/* ROUTE LOADING: never turn a route loader into a second fixed viewport that
-   covers the shell. */
+/* Route loading is content-local. DashboardLayout stays mounted so its
+   sidebar/header remain visible while a lazy page resolves. */
 body:not(.website-surface) #root .taskosphere-loader--fullscreen { position:relative !important; inset:auto !important; z-index:1 !important; width:100% !important; min-width:0 !important; max-width:100% !important; min-height:clamp(240px,42vh,420px) !important; box-sizing:border-box !important; pointer-events:none !important; }
 body:not(.website-surface) #root .taskosphere-route-loading { width:100% !important; min-width:0 !important; max-width:100% !important; overflow:visible !important; }
 
-@media (max-width:1180px) { body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { grid-template-columns:minmax(0,1fr) minmax(0,560px) !important; } body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { max-width:560px !important; } }
-@media (max-width:980px) { body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { grid-template-columns:1fr !important; row-gap:14px !important; } body[data-business-route="/attendance"] #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child { width:100% !important; max-width:none !important; } }
-@media (max-width:900px) { #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:112px !important; width:112px !important; min-width:112px !important; max-width:112px !important; } #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:112px !important; width:112px !important; min-width:112px !important; max-width:112px !important; } body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header { grid-template-columns:1fr !important; gap:10px !important; min-height:0 !important; } body[data-business-route="/client-discussion"] #root main > div > div[class*="grid"][class*="xl:grid-cols"] > section:first-child > header > div:last-child { justify-content:flex-start !important; flex-wrap:wrap !important; } }
-@media (max-width:640px) { #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; } #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; } }
+@media (max-width:1180px) {
+  #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) { width:min(560px,100%) !important; }
+}
+@media (max-width:980px) {
+  #root main [style*="linear-gradient"]:has(h1) > div:has(h1) { grid-template-columns:1fr !important; row-gap:14px !important; }
+  #root main [style*="linear-gradient"]:has(h1) > div:has(h1) > :last-child:has(> button:nth-child(5)) { width:100% !important; }
+}
+@media (max-width:900px) {
+  #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"],
+  #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:112px !important; width:112px !important; min-width:112px !important; max-width:112px !important; }
+  #root main > div > div[class*="xl:grid-cols-"] > section:first-child > header { grid-template-columns:1fr !important; gap:10px !important; min-height:0 !important; }
+  #root main > div > div[class*="xl:grid-cols-"] > section:first-child > header > div:last-child { justify-content:flex-start !important; flex-wrap:wrap !important; min-width:0 !important; }
+}
+@media (max-width:640px) {
+  #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"],
+  #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; }
+}
