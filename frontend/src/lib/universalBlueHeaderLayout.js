@@ -1,8 +1,4 @@
-/*
- * Global blue-header layout normalizer.
- * Keeps existing page markup/actions intact and standardizes the action area
- * into two balanced rows with equal button sizes and readable labels.
- */
+/* OneNexa platform branding + global blue-header layout normalizer. */
 (() => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
@@ -31,7 +27,6 @@
   const findActionGroup = (header) => {
     const title = header.querySelector('h1');
     if (!title) return null;
-
     let row = title.parentElement;
     while (row && row !== header) {
       const action = Array.from(row.children || []).find((child) => {
@@ -41,7 +36,6 @@
       if (action) return action;
       row = row.parentElement;
     }
-
     return Array.from(header.querySelectorAll('div, nav, section')).find((candidate) => {
       const buttons = Array.from(candidate.children || []).filter((node) => node?.tagName === 'BUTTON');
       return buttons.length >= 2 && candidate !== header;
@@ -50,18 +44,12 @@
 
   const normalize = (header) => {
     if (!hasBlueGradient(header)) return;
-
     const actionGroup = findActionGroup(header);
     if (!actionGroup) return;
-
     const buttons = Array.from(actionGroup.children || []).filter((child) => child?.tagName === 'BUTTON' && isVisible(child));
     if (buttons.length < 2) return;
-
-    // Keep a maximum of five columns so long labels still have enough room.
-    // The same grid width is used for every button, including the second row.
     const columns = Math.min(5, Math.max(2, Math.ceil(buttons.length / 2)));
     const row = actionGroup.parentElement;
-
     if (row && row !== header) {
       row.style.display = 'grid';
       row.style.gridTemplateColumns = 'minmax(280px, 0.78fr) minmax(0, 1.22fr)';
@@ -69,9 +57,7 @@
       row.style.rowGap = '16px';
       row.style.alignItems = 'center';
       row.style.minWidth = '0';
-      row.dataset.taskosphereBlueHeaderRow = 'true';
     }
-
     actionGroup.style.display = 'grid';
     actionGroup.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
     actionGroup.style.gridTemplateRows = 'repeat(2, 36px)';
@@ -81,13 +67,10 @@
     actionGroup.style.minWidth = '0';
     actionGroup.style.alignItems = 'stretch';
     actionGroup.style.justifyItems = 'stretch';
-    actionGroup.style.flexWrap = 'nowrap';
     actionGroup.setAttribute(HEADER_MARK, 'true');
-
     buttons.forEach((button) => {
       const labelLength = String(button.textContent || '').replace(/\s+/g, ' ').trim().length;
       const fontSize = labelLength > 18 ? '10px' : labelLength > 13 ? '10.5px' : '11px';
-
       button.style.width = '100%';
       button.style.minWidth = '0';
       button.style.maxWidth = '100%';
@@ -108,9 +91,6 @@
       button.style.overflow = 'hidden';
       button.style.textOverflow = 'clip';
       button.style.boxSizing = 'border-box';
-
-      // Keep any existing label/icon spans shrinkable so the label wraps at
-      // spaces instead of being clipped from the side or through the middle.
       Array.from(button.querySelectorAll('span')).forEach((span) => {
         span.style.minWidth = '0';
         span.style.maxWidth = '100%';
@@ -125,11 +105,39 @@
     });
   };
 
+  const normalizeOneNexaLogin = () => {
+    const root = document.getElementById('root');
+    if (!root || !root.querySelector('input[autocomplete="email"]')) return;
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let current;
+    while ((current = walker.nextNode())) textNodes.push(current);
+    textNodes.forEach((node) => {
+      if (node.parentElement?.closest('script,style')) return;
+      if (node.nodeValue && /taskosphere/i.test(node.nodeValue)) {
+        node.nodeValue = node.nodeValue.replace(/taskosphere/gi, 'OneNexa');
+      }
+    });
+
+    root.querySelectorAll('img').forEach((img) => {
+      const alt = String(img.getAttribute('alt') || '').toLowerCase();
+      const src = String(img.getAttribute('src') || '').toLowerCase();
+      if (alt.includes('taskosphere') || src.endsWith('/logo.png') || src.includes('taskosphere')) {
+        img.setAttribute('src', '/onenexa-logo.svg');
+        img.setAttribute('alt', 'OneNexa');
+        img.style.objectFit = 'contain';
+        img.style.background = 'transparent';
+      }
+    });
+  };
+
   const sync = () => {
     scheduled = false;
     const root = document.getElementById('root');
     if (!root) return;
     Array.from(root.querySelectorAll('main div, main section, main header')).forEach(normalize);
+    normalizeOneNexaLogin();
   };
 
   const schedule = () => {
