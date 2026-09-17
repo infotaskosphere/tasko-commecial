@@ -1,0 +1,102 @@
+name: Precise Header Layout Fix
+on:
+  push:
+    branches: [feature/master-console]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: contains(github.event.head_commit.message, 'prepare precise header layout fix')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/master-console
+          fetch-depth: 0
+
+      - name: Apply precise header layout changes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # 1) Make the shared WelcomeBanner action slot consume available
+          #    header width and right-align its contents instead of shrinking
+          #    to the buttons' min-content width.
+          p = Path('frontend/src/components/ui/WelcomeBanner.jsx')
+          s = p.read_text()
+          old = 'className="flex flex-wrap items-center gap-2 flex-shrink-0 min-w-0"'
+          new = 'className="flex flex-1 min-w-0 justify-end items-center gap-2"'
+          if old not in s:
+              raise SystemExit('WelcomeBanner action wrapper pattern not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # 2) Action Center: exactly three equal-width controls in one row.
+          p = Path('frontend/src/pages/ActionCenter.jsx')
+          s = p.read_text()
+          old = '<div className="flex gap-2 flex-wrap items-center">'
+          new = '<div className="grid grid-cols-3 gap-2 w-[520px] max-w-full flex-shrink-0 min-w-0">'
+          if old not in s:
+              raise SystemExit('ActionCenter action wrapper pattern not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace(
+              'className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95"',
+              'className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"',
+              2,
+          )
+          old = '<div className="relative">\n                <button ref={retroBtnRef}'
+          new = '<div className="relative w-full min-w-0">\n                <button ref={retroBtnRef}'
+          if old not in s:
+              raise SystemExit('ActionCenter retro wrapper pattern not found')
+          s = s.replace(old, new, 1)
+          old = 'className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95"'
+          new = 'className="w-full min-w-0 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all active:scale-95 whitespace-nowrap"'
+          if old not in s:
+              raise SystemExit('ActionCenter retro button pattern not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          # 3) Reminders: preserve the requested 3 x 2 equal grid, force
+          #    every control to stay on one line, and keep the grid at the
+          #    far right of the shared banner.
+          p = Path('frontend/src/pages/Reminders.jsx')
+          s = p.read_text()
+          old = 'className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 ml-auto"'
+          new = 'className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 min-w-0 ml-auto"'
+          if old not in s:
+              raise SystemExit('Reminders grid pattern not found')
+          s = s.replace(old, new, 1)
+          # Only touch the six header controls by scoping replacement to the
+          # action block between its opening grid and closing grid.
+          start = s.index(old.replace('className="grid grid-cols-3 gap-2 w-[570px] max-w-full flex-shrink-0 ml-auto"', new))
+          end = s.index('</div>', start)
+          block = s[start:end]
+          block = block.replace('className="w-full h-9 text-sm rounded-none', 'className="w-full min-w-0 h-9 text-sm rounded-none')
+          block = block.replace('className="w-full h-9 rounded-none', 'className="w-full min-w-0 h-9 rounded-none')
+          block = block.replace('className="relative w-full h-9 rounded-none', 'className="relative w-full min-w-0 h-9 rounded-none')
+          # Prevent button labels from breaking across lines.
+          block = block.replace('text-sm rounded-none', 'text-sm whitespace-nowrap rounded-none')
+          block = block.replace('h-9 rounded-none', 'h-9 whitespace-nowrap rounded-none')
+          s = s[:start] + block + s[end:]
+          p.write_text(s)
+
+      - name: Validate targeted changes
+        shell: bash
+        run: |
+          grep -n "grid-cols-3.*w-\[520px\]" frontend/src/pages/ActionCenter.jsx
+          grep -n "grid-cols-3.*w-\[570px\]" frontend/src/pages/Reminders.jsx
+          grep -n "flex-1 min-w-0 justify-end" frontend/src/components/ui/WelcomeBanner.jsx
+
+      - name: Commit and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/components/ui/WelcomeBanner.jsx frontend/src/pages/ActionCenter.jsx frontend/src/pages/Reminders.jsx .github/workflows/pro-header-layout-fix.yml
+          git commit -m "fix: precisely align header action controls [skip ci]"
+          git rm .github/workflows/pro-header-layout-fix.yml
+          git commit -m "chore: remove temporary header fix workflow [skip ci]"
+          git push origin feature/master-console
