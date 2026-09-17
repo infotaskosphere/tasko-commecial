@@ -1,7 +1,7 @@
 /*
  * Global blue-header layout normalizer.
  * Keeps existing page markup/actions intact and standardizes the action area
- * into two balanced rows with equal button sizes and consistent gaps.
+ * into two balanced rows with equal button sizes and readable labels.
  */
 (() => {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
@@ -57,9 +57,9 @@
     const buttons = Array.from(actionGroup.children || []).filter((child) => child?.tagName === 'BUTTON' && isVisible(child));
     if (buttons.length < 2) return;
 
-    // Four columns gives the same visual rhythm as the reference screenshot.
-    // Any number of actions automatically wraps into exactly two balanced rows.
-    const columns = Math.max(2, Math.ceil(buttons.length / 2));
+    // Keep a maximum of five columns so long labels still have enough room.
+    // The same grid width is used for every button, including the second row.
+    const columns = Math.min(5, Math.max(2, Math.ceil(buttons.length / 2)));
     const row = actionGroup.parentElement;
 
     if (row && row !== header) {
@@ -68,6 +68,7 @@
       row.style.columnGap = '32px';
       row.style.rowGap = '16px';
       row.style.alignItems = 'center';
+      row.style.minWidth = '0';
       row.dataset.taskosphereBlueHeaderRow = 'true';
     }
 
@@ -79,20 +80,48 @@
     actionGroup.style.width = '100%';
     actionGroup.style.minWidth = '0';
     actionGroup.style.alignItems = 'stretch';
+    actionGroup.style.justifyItems = 'stretch';
     actionGroup.style.flexWrap = 'nowrap';
     actionGroup.setAttribute(HEADER_MARK, 'true');
 
     buttons.forEach((button) => {
+      const labelLength = String(button.textContent || '').replace(/\s+/g, ' ').trim().length;
+      const fontSize = labelLength > 18 ? '10px' : labelLength > 13 ? '10.5px' : '11px';
+
       button.style.width = '100%';
       button.style.minWidth = '0';
+      button.style.maxWidth = '100%';
       button.style.height = '36px';
       button.style.minHeight = '36px';
+      button.style.maxHeight = '36px';
       button.style.margin = '0';
+      button.style.padding = '3px 6px';
       button.style.justifyContent = 'center';
-      button.style.whiteSpace = 'nowrap';
+      button.style.alignItems = 'center';
+      button.style.gap = '4px';
+      button.style.fontSize = fontSize;
+      button.style.lineHeight = '13px';
+      button.style.whiteSpace = 'normal';
+      button.style.wordBreak = 'normal';
+      button.style.overflowWrap = 'normal';
+      button.style.hyphens = 'none';
       button.style.overflow = 'hidden';
-      button.style.textOverflow = 'ellipsis';
+      button.style.textOverflow = 'clip';
       button.style.boxSizing = 'border-box';
+
+      // Keep any existing label/icon spans shrinkable so the label wraps at
+      // spaces instead of being clipped from the side or through the middle.
+      Array.from(button.querySelectorAll('span')).forEach((span) => {
+        span.style.minWidth = '0';
+        span.style.maxWidth = '100%';
+        span.style.whiteSpace = 'normal';
+        span.style.wordBreak = 'normal';
+        span.style.overflowWrap = 'normal';
+        span.style.textOverflow = 'clip';
+        span.style.overflow = 'visible';
+        span.style.lineHeight = '13px';
+        span.style.textAlign = 'center';
+      });
     });
   };
 
