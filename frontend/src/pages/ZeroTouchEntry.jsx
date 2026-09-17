@@ -286,7 +286,7 @@ function ZeroTouchEntryInner() {
               </div>
             </div>
             <div className="flex flex-col gap-2 items-end">
-              <div className="flex gap-2">
+              <div className="flex gap-2" data-header-actions="true">
                 <select
                   className="text-sm rounded-md border border-white/25 bg-white/10 text-white px-2 py-2"
                   value={uploadCompanyId}
