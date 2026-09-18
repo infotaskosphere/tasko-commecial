@@ -6,7 +6,7 @@
 //   <PageShell>
 //     <PageBanner icon={Database} eyebrow="Admin" title="Master Data"
 //                 subtitle="…" stats={[{label:'Companies', value:3}]} />
-//     <StatRow items={[{icon: X, label:'…', value: 1, color:'#1F6FB2'}]} />
+//     <StatRow items={[{icon: X, label:'Companies', value: 1, color:'#1F6FB2'}]} />
 //     <SectionCard icon={Building2} title="Company Profiles" badge={3}
 //                  description="…" actions={<Button/>}>
 //        …content…
@@ -71,30 +71,26 @@ export function SectionCard({
   const isDark = useDark();
   return (
     <section
-      className={`rounded-2xl border overflow-hidden ${
-        isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100 shadow-sm'
-      } ${className}`}
+      className={`relative min-w-0 max-w-full rounded-2xl border overflow-visible ${isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100 shadow-sm'} ${className}`}
     >
       {(title || actions) && (
         <header
-          className={`flex flex-wrap items-start justify-between gap-3 px-5 py-4 border-b ${
-            isDark ? 'border-slate-700/80' : 'border-slate-100'
-          }`}
+          className={`grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-start gap-3 px-5 py-4 border-b min-w-0 ${isDark ? 'border-slate-700/80' : 'border-slate-100'}`}
         >
-          <div className="flex items-start gap-3 min-w-0">
+          <div className="flex items-start gap-3 min-w-0 max-w-full">
             {Icon && (
               <div className="p-2 rounded-xl shrink-0" style={{ background: `${color}18` }}>
                 <Icon className="h-5 w-5" style={{ color }} />
               </div>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 max-w-full">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className={`text-sm font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                <h2 className={`text-sm font-bold ${isDark ? 'text-slate-100' : 'text-slate-800'} break-words`}>
                   {title}
                 </h2>
                 {badge !== undefined && badge !== null && (
                   <span
-                    className="text-[10px] font-extrabold px-2 py-0.5 rounded-full"
+                    className="text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0"
                     style={{ background: `${color}18`, color }}
                   >
                     {badge}
@@ -102,16 +98,20 @@ export function SectionCard({
                 )}
               </div>
               {description && (
-                <p className={`text-xs mt-1 leading-relaxed max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-xs mt-1 leading-relaxed max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-500'} break-words`}>
                   {description}
                 </p>
               )}
             </div>
           </div>
-          {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+          {actions && (
+            <div className="flex items-center justify-end gap-2 flex-wrap min-w-0 max-w-full sm:justify-self-end">
+              {actions}
+            </div>
+          )}
         </header>
       )}
-      <div className={padded ? 'p-5' : ''}>{children}</div>
+      <div className={padded ? 'p-5 min-w-0 max-w-full' : 'min-w-0 max-w-full'}>{children}</div>
     </section>
   );
 }
