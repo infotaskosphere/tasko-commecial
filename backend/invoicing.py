@@ -5284,8 +5284,23 @@ async def _dedupe_journal_entries(company_id: str, source: str):
         es.sort(key=lambda x: x.get("created_at") or "", reverse=True)
         dup_ids.extend(e["id"] for e in es[1:])
     if dup_ids:
-        await db.journal_lines.delete_many({"entry_id": {"$in": dup_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": dup_ids}})
+        # Duplicate system postings are historical facts, not disposable rows.
+        # Reverse each duplicate and mark it superseded so reconciliation fixes
+        # the ledger without erasing the audit trail.
+        from backend.accounting_lock import reverse_journal_entry
+        for duplicate_id in dup_ids:
+            try:
+                await reverse_journal_entry(
+                    duplicate_id,
+                    f"Duplicate {source} posting removed by reconciliation",
+                    "system",
+                )
+                await db.journal_entries.update_one(
+                    {"id": duplicate_id},
+                    {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}},
+                )
+            except Exception:
+                logging.exception("Failed to reverse duplicate journal entry %s", duplicate_id)
 
 
 async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
