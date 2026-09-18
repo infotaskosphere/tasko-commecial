@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus, CheckSquare2, UsersRound, FileText, BarChart3, CalendarDays, FolderOpen, Settings2, Receipt, Bot, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus, CheckSquare2, UsersRound, FileText, BarChart3, CalendarDays, FolderOpen, Receipt, Bot, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,7 +20,6 @@ const MODULES = [
   { title: "Compliance", subtitle: "Never miss a due date.", icon: CalendarDays, tone: "pink" },
   { title: "Documents", subtitle: "Store. Organise. Access.", icon: FolderOpen, tone: "indigo" },
   { title: "Reports & Insights", subtitle: "Make smarter decisions.", icon: FileText, tone: "sky" },
-  { title: "Settings & Control", subtitle: "Customise for your business.", icon: Settings2, tone: "teal" },
   { title: "Intelligence", subtitle: "Work smarter with automation.", icon: Bot, tone: "violet" },
 ];
 
@@ -33,7 +32,6 @@ const TONES = {
   pink: "bg-pink-50 text-pink-600 border-pink-100",
   indigo: "bg-indigo-50 text-indigo-600 border-indigo-100",
   sky: "bg-sky-50 text-sky-600 border-sky-100",
-  teal: "bg-teal-50 text-teal-600 border-teal-100",
   violet: "bg-fuchsia-50 text-fuchsia-600 border-fuchsia-100",
 };
 
@@ -150,8 +148,8 @@ export default function Login() {
         <div className="absolute bottom-[-10rem] left-[18%] h-96 w-96 rounded-full bg-emerald-200/15 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen max-w-[1680px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_520px]">
-        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-6 pb-8 pt-6 sm:px-10 lg:px-14 lg:py-8 xl:px-20" style={{ background: "transparent" }}>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1800px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_500px]">
+        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-6 pt-5 sm:px-8 lg:px-10 lg:py-7 xl:px-12" style={{ background: "transparent" }}>
           <header className="flex items-center justify-between gap-4">
             <Link to="/" className="inline-flex items-center">
               <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
@@ -162,12 +160,12 @@ export default function Login() {
           </header>
 
           <div className="flex flex-1 flex-col justify-center py-10 lg:py-6">
-            <div className="login-hero-copy max-w-4xl bg-transparent">
+            <div className="login-hero-copy max-w-none bg-transparent">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/75 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
                 <Sparkles size={14} className="text-cyan-500" />
                 {config?.hero_badge || "The modern business operating system"}
               </div>
-              <h1 className="max-w-4xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[4.25rem]">
+              <h1 className="max-w-5xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[4.25rem]">
                 {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
               </h1>
               <p className="mt-5 max-w-3xl text-base leading-7 text-slate-600 sm:text-lg">
@@ -175,7 +173,7 @@ export default function Login() {
               </p>
             </div>
 
-            <section className="mt-9 min-w-0" aria-label="OneNexa modules">
+            <section className="mt-7 min-w-0" aria-label="OneNexa modules">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Everything connected</p>
@@ -186,7 +184,7 @@ export default function Login() {
                   <button type="button" onClick={() => scrollModules(1)} aria-label="Next modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/85 text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronRight size={17} /></button>
                 </div>
               </div>
-              <div ref={railRef} className="flex gap-3 overflow-x-auto pb-3 pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory">
+              <div ref={railRef} className="login-module-rail flex gap-3 overflow-x-auto pb-3 pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory">
                 {duplicatedModules.map((item, index) => {
                   const Icon = item.icon;
                   return (
@@ -209,7 +207,22 @@ export default function Login() {
               </div>
             </section>
 
-            <div className="mt-8 grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-3">
+            <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="OneNexa business capabilities">
+                {[
+                  { title: "Connected workflows", text: "Move work from request to completion without switching systems.", icon: Sparkles, tone: "text-cyan-600 bg-cyan-50" },
+                  { title: "Financial control", text: "Keep billing, accounting and operational numbers connected.", icon: Receipt, tone: "text-orange-600 bg-orange-50" },
+                  { title: "People & productivity", text: "Attendance, HRMS and team operations in one workspace.", icon: UsersRound, tone: "text-emerald-600 bg-emerald-50" },
+                  { title: "Compliance visibility", text: "Track obligations, documents and deadlines from one place.", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
+                ].map(({ title, text, icon: Icon, tone }) => (
+                  <div key={title} className="rounded-2xl border border-white/75 bg-white/55 px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,.04)] backdrop-blur">
+                    <div className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg ${tone}`}><Icon size={16} /></div>
+                    <p className="text-xs font-extrabold text-[#163b6e]">{title}</p>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">{text}</p>
+                  </div>
+                ))}
+              </section>
+
+              <div className="mt-6 grid max-w-none grid-cols-1 gap-3 sm:grid-cols-3">
               {[
                 { title: "Secure & Reliable", text: "Enterprise-grade access", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
                 { title: "Save Time", text: "Automate routine work", icon: Sparkles, tone: "text-emerald-600 bg-emerald-50" },
