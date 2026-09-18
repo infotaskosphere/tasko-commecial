@@ -2197,8 +2197,9 @@ export default function Tasks() {
               <p className="text-white/60 text-sm mt-1">Task Updates</p>
             </div>
 
-            {/* Right — action buttons */}
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
+            {/* Right — action buttons: fixed three-column layout prevents empty cells
+                and keeps New Task in the first row at desktop widths. */}
+            <div className="grid grid-cols-3 gap-2 w-full lg:w-[720px] max-w-full min-w-0">
             {/* Total Tasks — admin only */}
             {isAdmin && (
               <>
@@ -2208,9 +2209,25 @@ export default function Tasks() {
                   style={{ backgroundColor: 'rgba(31,175,90,0.22)', borderColor: 'rgba(31,175,90,0.55)', color: '#d1fae5' }}>
                   <Target className="h-3.5 w-3.5" /> Total: {stats.total}
                 </Button>
-                <div className="h-8 w-px bg-white/20 hidden md:block" />
               </>
             )}
+
+              {/* New Task — primary action, intentionally placed in the first row. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => { setEditingTask(null); setFormData({ ...EMPTY_FORM }); setDialogOpen(true); }}
+                className="h-8 w-full justify-center text-xs rounded-xl font-semibold gap-1.5"
+                style={{
+                  background: '#1FAF5A',
+                  border: '1px solid #5CCB5F',
+                  color: 'white',
+                  boxShadow: '0 2px 8px rgba(31,175,90,0.24)',
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" /> New Task
+              </Button>
 
               {/* Action buttons */}
               <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}
@@ -2301,14 +2318,6 @@ export default function Tasks() {
                       it must not be hidden behind the universal can_edit_tasks flag,
                       which an admin may have turned off for this user without
                       intending to block them from their own tasks. */}
-                  <DialogTrigger asChild>
-                    <Button size="sm" onClick={() => { setEditingTask(null); setFormData({ ...EMPTY_FORM }); }}
-                      className="h-8 px-4 text-xs rounded-xl font-semibold gap-1.5"
-                      style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.35)', color: 'white' }}>
-                      <Plus className="h-3.5 w-3.5" /> New Task
-                    </Button>
-                  </DialogTrigger>
-
                   {/* Dialog form — premium redesign */}
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden p-0 gap-0 flex flex-col rounded-2xl shadow-2xl">
                     {/* Fixed gradient header */}
