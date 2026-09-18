@@ -107,34 +107,50 @@ async def raise_adjustment_note(body: AdjustmentNoteOverride, current_user: User
         if account.get("is_group") is True or account.get("is_postable") is False:
             raise HTTPException(400, f"Account {account_id} is a non-postable/group account.")
 
-    # Replace the lines on the ORIGINAL entry itself — this is what makes the
-    # ledger/trial balance/reports correct immediately, instead of leaving a
-    # second, disconnected entry sitting next to the mistake.
-    await db.journal_lines.delete_many({"entry_id": body.original_entry_id})
-    line_docs = [
-        {
-            "id": str(uuid.uuid4()), "entry_id": body.original_entry_id, "company_id": company_id,
-            "entry_date": original["entry_date"], "account_id": l["account_id"],
-            "account_name": by_id[l["account_id"]].get("name", ""),
-            "debit": float(l.get("debit") or 0), "credit": float(l.get("credit") or 0),
-            "memo": l.get("memo", ""), "created_at": now,
-        }
-        for l in new_lines
-    ]
-    await db.journal_lines.insert_many(line_docs)
+    if original.get("reversed") or original.get("superseded_at"):
+        raise HTTPException(400, "This journal entry has already been corrected. Raise the adjustment against the latest active entry.")
+
+    # Adjustment is append-only: preserve the original lines, create one
+    # reversing entry, then create a fresh corrected entry. Nothing in the
+    # historical journal is deleted or rewritten.
+    note_id = str(uuid.uuid4())
+    reversal_entry = await reverse_journal_entry(
+        body.original_entry_id,
+        body.reason.strip(),
+        current_user.id,
+    )
+    from backend import accounting_core as _ac
+    try:
+        corrected_entry = await _ac.post_journal_entry(
+            company_id=company_id,
+            entry_date=original.get("entry_date") or body.entry_date,
+            narration=original.get("narration", "") + f" — Adjustment: {body.reason.strip()}",
+            lines=new_lines,
+            source="adjustment",
+            source_id=note_id,
+            created_by=current_user.id,
+        )
+    except Exception:
+        # The original remains intact and already has its auditable reversal.
+        # Do not delete either record to hide a failed correction attempt.
+        raise
 
     await db.journal_entries.update_one(
         {"id": body.original_entry_id},
         {"$set": {
-            "total_debit": float(total_debit), "total_credit": float(total_credit),
-            "has_adjustment_history": True, "last_corrected_at": now, "last_corrected_by": current_user.id,
+            "has_adjustment_history": True,
+            "last_corrected_at": now,
+            "last_corrected_by": current_user.id,
+            "adjustment_note_id": note_id,
+            "corrected_by_entry_id": corrected_entry.get("id"),
         }},
     )
-    updated_entry = await db.journal_entries.find_one({"id": body.original_entry_id}, {"_id": 0})
 
     note_doc = {
-        "id": str(uuid.uuid4()),
+        "id": note_id,
         "original_entry_id": body.original_entry_id,
+        "reversal_entry_id": reversal_entry.get("id"),
+        "corrected_entry_id": corrected_entry.get("id"),
         "company_id": company_id,
         "reason": body.reason.strip(),
         "previous_lines": [{k: v for k, v in pl.items() if k != "id"} for pl in previous_lines],
@@ -145,11 +161,12 @@ async def raise_adjustment_note(body: AdjustmentNoteOverride, current_user: User
         "new_total_credit": float(total_credit),
         "raised_by": current_user.id,
         "raised_at": now,
+        "status": "POSTED",
     }
     await db.adjustment_note_overrides.insert_one(dict(note_doc))
     note_doc.pop("_id", None)
 
-    return {"adjustment_note": note_doc, "updated_entry": updated_entry}
+    return {"adjustment_note": note_doc, "updated_entry": corrected_entry}
 
 
 @router.get("/adjustment-notes")
@@ -194,6 +211,64 @@ async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
             f"This entry was system-generated (source='{entry.get('source')}') and is locked. "
             "Use an Adjustment Note Override to correct it rather than deleting it.",
         )
+
+
+async def reverse_journal_entry(entry_id: str, reason: str, reversed_by: str) -> dict:
+    """Create one immutable reversing journal for an existing entry.
+    
+    The original entry and its lines are never deleted. Reversal is idempotent
+    on the original entry id and is itself posted through the same accounting
+    boundary, so financial-period locks and account validation remain enforced.
+    """
+    original = await db.journal_entries.find_one({"id": entry_id}, {"_id": 0})
+    if not original:
+        raise HTTPException(404, "Journal entry not found.")
+
+    existing_reversal = await db.journal_entries.find_one(
+        {"source": "reversal", "source_id": entry_id}, {"_id": 0}
+    )
+    if existing_reversal:
+        return existing_reversal
+
+    lines = await db.journal_lines.find(
+        {"entry_id": entry_id}, {"_id": 0}
+    ).to_list(1000)
+    if not lines:
+        raise HTTPException(400, "Journal entry has no lines and cannot be reversed.")
+
+    reversed_lines = [
+        {
+            "account_id": line["account_id"],
+            "account_name": line.get("account_name", ""),
+            "debit": float(line.get("credit") or 0),
+            "credit": float(line.get("debit") or 0),
+            "memo": f"Reversal: {reason.strip()}",
+        }
+        for line in lines
+    ]
+
+    from backend import accounting_core as ac
+    reversal = await ac.post_journal_entry(
+        company_id=original.get("company_id") or "",
+        entry_date=original.get("entry_date") or date.today().isoformat(),
+        narration=f"Reversal of {original.get('id')} — {reason.strip()}",
+        lines=reversed_lines,
+        source="reversal",
+        source_id=entry_id,
+        created_by=reversed_by,
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    await db.journal_entries.update_one(
+        {"id": entry_id},
+        {"$set": {
+            "reversed": True,
+            "reversal_entry_id": reversal.get("id"),
+            "reversed_at": now,
+            "reversed_by": reversed_by,
+            "reversal_reason": reason.strip(),
+        }},
+    )
+    return reversal
 
 
 async def create_accounting_integrity_indexes():
@@ -259,7 +334,13 @@ async def _safe_post_journal_entry(
     # complete entry instead of creating a second journal.
     if normalized_source_id:
         existing = await db.journal_entries.find_one(
-            {"company_id": company_id, "source": normalized_source, "source_id": normalized_source_id},
+            {
+                "company_id": company_id,
+                "source": normalized_source,
+                "source_id": normalized_source_id,
+                "reversed": {"$ne": True},
+                "superseded_at": {"$exists": False},
+            },
             {"_id": 0},
         )
         if existing:

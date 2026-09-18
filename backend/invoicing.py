@@ -3133,21 +3133,19 @@ async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(
     if not existing:
         raise HTTPException(404, "Purchase invoice not found")
 
-    # Clean up any payments recorded against this bill (and their journal entries)
-    # before deleting the bill's own journal entry, so nothing dangles in the ledger.
+    # Preserve the accounting trail when the source document is deleted:
+    # reverse each posted payment and the bill itself before removing the
+    # operational records.
+    from backend.accounting_lock import reverse_journal_entry
     payments = await db.purchase_payments.find({"purchase_invoice_id": invoice_id}, {"_id": 0, "id": 1}).to_list(500)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"]})
+        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"], "reversed": {"$ne": True}})
         if existing_pe:
-            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
-            await db.journal_entries.delete_one({"id": existing_pe["id"]})
+            await reverse_journal_entry(existing_pe["id"], "Purchase payment deleted", current_user.id)
+    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(50)
+    for entry in _old_entries:
+        await reverse_journal_entry(entry["id"], "Purchase invoice deleted", current_user.id)
     await db.purchase_payments.delete_many({"purchase_invoice_id": invoice_id})
-
-    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
 
     await db.purchase_invoices.delete_one({"id": invoice_id})
     client_id = existing.get("client_id")
@@ -3254,10 +3252,18 @@ async def delete_purchase_payment(payment_id: str, current_user: User = Depends(
         raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("purchase_invoice_id")
 
+    # Reverse the vendor-payment posting before deleting the operational record.
+    from backend.accounting_lock import reverse_journal_entry
+    existing_je = await db.journal_entries.find_one(
+        {"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    )
+    if existing_je:
+        await reverse_journal_entry(existing_je["id"], "Purchase payment deleted", current_user.id)
+
     result = await db.purchase_payments.delete_one({"id": payment_id})
     if result.deleted_count == 0:
         raise HTTPException(404, f"Payment {payment_id} not found")
-    await sync_purchase_payment_journal_entry(payment_id)  # cleans up its journal entry (payment doc is gone)
 
     if invoice_id:
         inv = await db.purchase_invoices.find_one({"id": invoice_id})
@@ -4216,18 +4222,25 @@ async def delete_invoice(inv_id: str, current_user: User = Depends(check_module_
     _existing = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1, "original_invoice_id": 1})
     _parent_id = _existing.get("original_invoice_id") if _existing and _existing.get("invoice_type") in ("credit_note", "debit_note") else None
 
-    # Delete journal entries for associated payments
+    # Preserve the accounting trail when deleting the operational invoice:
+    # reverse all posted receipts first; never erase their journal history.
+    from backend.accounting_lock import reverse_journal_entry
     payments = await db.payments.find({"invoice_id": inv_id}).to_list(1000)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"]})
+        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"], "reversed": {"$ne": True}})
         if existing_pe:
-            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
-            await db.journal_entries.delete_one({"id": existing_pe["id"]})
+            await reverse_journal_entry(existing_pe["id"], "Customer payment deleted with invoice", current_user.id)
     await db.payments.delete_many({"invoice_id": inv_id})
 
+    # Reverse the invoice posting before deleting the operational record.
+    _invoice_entries = await db.journal_entries.find(
+        {"source": "sale", "source_id": inv_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    ).to_list(50)
+    for entry in _invoice_entries:
+        await reverse_journal_entry(entry["id"], "Sales invoice deleted", current_user.id)
     result = await db.invoices.delete_one({"id": inv_id})
     if result.deleted_count == 0: raise HTTPException(404, "Invoice not found")
-    await sync_invoice_journal_entry(inv_id)
     if _parent_id:
         await recalculate_invoice_accounting(_parent_id)
     return {"message": f"Invoice {inv_id} deleted"}
@@ -4599,8 +4612,23 @@ async def generate_recurring(inv_id: str, current_user: User = Depends(check_mod
 @router.post("/payments")
 async def record_payment(data: PaymentCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
+    if float(data.amount or 0) <= 0:
+        raise HTTPException(400, "Payment amount must be greater than zero.")
     inv = await db.invoices.find_one({"id": data.invoice_id})
     if not inv: raise HTTPException(404, "Invoice not found")
+    if inv.get("status") == "cancelled":
+        raise HTTPException(400, "Cannot record a payment against a cancelled invoice.")
+    if inv.get("paid_bank_txn_id"):
+        raise HTTPException(409, "This invoice is already settled through bank reconciliation.")
+    current_payments = await db.payments.find({"invoice_id": data.invoice_id}, {"_id": 0, "amount": 1}).to_list(2000)
+    current_paid = round(sum(float(p.get("amount") or 0) for p in current_payments), 2)
+    credit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "credit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
+    debit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "debit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
+    outstanding = round(float(inv.get("grand_total") or 0) - current_paid
+                        - sum(float(n.get("grand_total") or 0) for n in credit_notes)
+                        + sum(float(n.get("grand_total") or 0) for n in debit_notes), 2)
+    if data.amount > max(outstanding, 0):
+        raise HTTPException(400, f"Payment exceeds outstanding amount of ₹{max(outstanding, 0):,.2f}.")
     payment_data = {**data.model_dump(), "id": str(uuid.uuid4()),
                     "company_id": inv.get("company_id") or "",
                     "client_name": inv.get("client_name") or "",
@@ -4629,12 +4657,17 @@ async def delete_payment(pid: str, current_user: User = Depends(check_module_per
     if not payment: raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("invoice_id")
 
-    # Delete from DB
+    # Reverse the posted receipt before deleting the operational payment.
+    from backend.accounting_lock import reverse_journal_entry
+    existing_je = await db.journal_entries.find_one(
+        {"source": "payment", "source_id": pid, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    )
+    if existing_je:
+        await reverse_journal_entry(existing_je["id"], "Customer payment deleted", current_user.id)
+
     result = await db.payments.delete_one({"id": pid})
     if result.deleted_count == 0: raise HTTPException(404, f"Payment {pid} not found")
-
-    # Sync payment to ledger (will delete its journal entry)
-    await sync_payment_journal_entry(pid)
 
     # Recalculate invoice payments & status — single source of truth.
     if invoice_id:
@@ -4789,6 +4822,10 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
     else:
         new_status = current_status
 
+    # Never allow accounting to produce a negative receivable. A credit/debit
+    # note may move the balance through zero, but the invoice's stored
+    # outstanding amount remains bounded at zero.
+    outstanding = round(max(outstanding, 0.0), 2)
     await db.invoices.update_one(
         {"id": invoice_id},
         {"$set": {
@@ -4809,13 +4846,8 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
 async def sync_invoice_journal_entry(invoice_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # 1. Clean up any existing journal entries for this invoice
-    _old_entries = await db.journal_entries.find({"source": "sale", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-        
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current invoice document
     inv = await db.invoices.find_one({"id": invoice_id})
     if not inv:
@@ -4827,7 +4859,19 @@ async def sync_invoice_journal_entry(invoice_id: str):
     # that Accounting Reports (Trial Balance / P&L / Balance Sheet) reflect
     # the same figure as the Sales/Invoicing page.
     status = inv.get("status", "draft")
-    if status == "cancelled":
+    invoice_type = inv.get("invoice_type") or "tax_invoice"
+    if status == "cancelled" or invoice_type in ("proforma", "estimate"):
+        _active = await db.journal_entries.find_one(
+            {"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}},
+            {"_id": 0, "id": 1},
+        )
+        if _active:
+            from backend.accounting_lock import reverse_journal_entry
+            await reverse_journal_entry(
+                _active["id"],
+                "Sales document cancelled or changed to non-posting type",
+                inv.get("updated_by") or inv.get("created_by") or "system",
+            )
         return
 
     # 3b. Proforma invoices / estimates are quotations, not real invoices —
@@ -4882,6 +4926,17 @@ async def sync_invoice_journal_entry(invoice_id: str):
             lines.append({"account_id": gst_pay_id, "account_name": "GST Output Payable", "debit": 0.0, "credit": total_gst, "memo": f"GST Output on Invoice {invoice_no}"})
         narration = f"Sales Invoice {invoice_no} to {client_name}"
         
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(float(inv.get("grand_total") or 0)), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -4899,13 +4954,8 @@ async def sync_invoice_journal_entry(invoice_id: str):
 async def sync_payment_journal_entry(payment_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # 1. Clean up any existing journal entries for this payment
-    _old_entries = await db.journal_entries.find({"source": "payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-        
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current payment document
     payment = await db.payments.find_one({"id": payment_id})
     if not payment:
@@ -4960,6 +5010,17 @@ async def sync_payment_journal_entry(payment_id: str):
         f"Receipt from {client_name} ({payment_mode.upper()})"
     )
     
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({"source": "payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(amount), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -4981,20 +5042,27 @@ async def sync_purchase_journal_entry(invoice_id: str):
     liability), and removed again if the bill is cancelled or deleted."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # 1. Clean up any existing journal entry for this purchase bill
-    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current purchase invoice document
     inv = await db.purchase_invoices.find_one({"id": invoice_id})
     if not inv:
         return
 
-    # 3. Cancelled bills don't sit in the ledger
+    # 3. Cancelled bills don't sit in the ledger. Preserve any existing
+    # posting by reversing it rather than deleting its history.
     if inv.get("status") == "cancelled":
+        _active = await db.journal_entries.find_one(
+            {"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}},
+            {"_id": 0, "id": 1},
+        )
+        if _active:
+            from backend.accounting_lock import reverse_journal_entry
+            await reverse_journal_entry(
+                _active["id"],
+                "Purchase bill cancelled",
+                inv.get("updated_by") or inv.get("created_by") or "system",
+            )
         return
 
     company_id = inv.get("company_id") or ""
@@ -5038,6 +5106,17 @@ async def sync_purchase_journal_entry(invoice_id: str):
         lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
     narration = f"Purchase Bill {invoice_no} from {supplier_name}"
 
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(grand_total), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5057,13 +5136,8 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
     Cr Cash/Bank — the entry for actually paying a vendor bill."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # 1. Clean up any existing journal entry for this payment
-    _old_entries = await db.journal_entries.find({"source": "purchase_payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current payment document
     payment = await db.purchase_payments.find_one({"id": payment_id})
     if not payment:
@@ -5097,6 +5171,17 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
         {"account_id": credit_acct_id, "account_name": credit_acct_name, "debit": 0.0, "credit": amount, "memo": f"Payment for Bill {invoice_no} via {payment_mode.upper()}"},
     ]
     narration = f"Payment to {supplier_name} for Bill {invoice_no} ({payment_mode.upper()})"
+
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(amount), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
     try:
         await post_journal_entry(
@@ -5241,8 +5326,23 @@ async def _dedupe_journal_entries(company_id: str, source: str):
         es.sort(key=lambda x: x.get("created_at") or "", reverse=True)
         dup_ids.extend(e["id"] for e in es[1:])
     if dup_ids:
-        await db.journal_lines.delete_many({"entry_id": {"$in": dup_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": dup_ids}})
+        # Duplicate system postings are historical facts, not disposable rows.
+        # Reverse each duplicate and mark it superseded so reconciliation fixes
+        # the ledger without erasing the audit trail.
+        from backend.accounting_lock import reverse_journal_entry
+        for duplicate_id in dup_ids:
+            try:
+                await reverse_journal_entry(
+                    duplicate_id,
+                    f"Duplicate {source} posting removed by reconciliation",
+                    "system",
+                )
+                await db.journal_entries.update_one(
+                    {"id": duplicate_id},
+                    {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}},
+                )
+            except Exception:
+                logging.exception("Failed to reverse duplicate journal entry %s", duplicate_id)
 
 
 async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
@@ -5283,8 +5383,10 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_sale_ids.append(se["id"])
                 
         if stale_sale_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_sale_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_sale_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_sale_ids:
+                await reverse_journal_entry(stale_id, "Stale sales posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
             
         # 4. Sync missing/outdated sale entries & auto-reconcile invoice payments with db.payments
         for inv in active_invoices:
@@ -5446,8 +5548,10 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_pay_ids.append(pe["id"])
                 
         if stale_pay_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_pay_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
             
         # 8. Sync missing/outdated payment entries. Also re-sync entries that
         # were posted before the client_name fallback fix, which show up as
@@ -5467,8 +5571,9 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 # Payment belongs to a bank-reconciled invoice — its journal
                 # entry (if any survived) must be removed, not re-posted.
                 if pe:
-                    await db.journal_lines.delete_many({"entry_id": pe["id"]})
-                    await db.journal_entries.delete_one({"id": pe["id"]})
+                    from backend.accounting_lock import reverse_journal_entry
+                    await reverse_journal_entry(pe["id"], "Payment journal superseded by bank reconciliation", "system")
+                    await db.journal_entries.update_one({"id": pe["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
                 continue
             stale_narration = pe and "for Invoice Unknown" in (pe.get("narration") or "") and (p.get("client_name") or "").strip()
             if not pe or stale_narration or abs(float(pe.get("total_debit", 0)) - float(p.get("amount", 0))) > 0.01:
@@ -5503,8 +5608,10 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_ids = [e["id"] for source_id, e in entry_by_source_id.items() if source_id not in active_invoice_ids]
         if stale_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
         for inv in active_invoices:
             inv_id = inv["id"]
@@ -5542,8 +5649,9 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
                 )
                 if not wrong_debit:
                     continue
-                await db.journal_lines.delete_many({"entry_id": bank_je["id"]})
-                await db.journal_entries.delete_one({"id": bank_je["id"]})
+                from backend.accounting_lock import reverse_journal_entry
+                await reverse_journal_entry(bank_je["id"], "Legacy bank reconciliation posting corrected", "system")
+                await db.journal_entries.update_one({"id": bank_je["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
                 amount = float(inv.get("grand_total") or 0) or float(bank_je.get("total_debit") or 0)
                 if amount > 0 and ap_id and bnk_id:
                     await _post_je(
@@ -5591,8 +5699,10 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_pay_ids = [pe["id"] for source_id, pe in pay_entry_by_source_id.items() if source_id not in payment_ids]
         if stale_pay_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_pay_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
         for p in payments:
             p_id = p["id"]
@@ -5618,13 +5728,8 @@ class UnpreparedIncomeCreate(BaseModel):
 
 async def sync_unprepared_income_journal_entry(income_id: str):
     from backend.accounting_core import post_journal_entry
-    # 1. Clean up existing journal entries
-    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
-    if old_entries:
-        old_ids = [e["id"] for e in old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
-        
+    # Existing unprepared-income postings are immutable. Changed records are
+    # corrected by reversal + fresh posting below.
     # 2. Fetch the current record
     inc = await db.unprepared_incomes.find_one({"id": income_id})
     if not inc:
@@ -5658,6 +5763,17 @@ async def sync_unprepared_income_journal_entry(income_id: str):
     if description:
         narration += f" - {description}"
         
+    _active = await db.journal_entries.find_one(
+        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}},
+        {"_id": 0},
+    )
+    if _active:
+        if abs(float(_active.get("total_debit") or 0) - round(float(amount), 2)) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Unprepared income changed; superseded by latest posting", inc.get("created_by") or "system")
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5738,12 +5854,14 @@ async def delete_unprepared_income(income_id: str, current_user: User = Depends(
     if not existing:
         raise HTTPException(404, "Income record not found")
     
-    # Delete journal entries
-    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
-    if old_entries:
-        old_ids = [e["id"] for e in old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
-        
+    # Preserve the accounting trail when deleting the operational record.
+    from backend.accounting_lock import reverse_journal_entry
+    old_entries = await db.journal_entries.find(
+        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    ).to_list(50)
+    for entry in old_entries:
+        await reverse_journal_entry(entry["id"], "Unprepared income deleted", current_user.id)
+
     await db.unprepared_incomes.delete_one({"id": income_id})
     return {"success": True}

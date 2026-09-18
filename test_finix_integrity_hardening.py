@@ -35,6 +35,32 @@ class IntegrityContractTests(unittest.TestCase):
         self.assertIn("Lead was already converted by another request.", text)
         self.assertIn('"company_id": lead.get("company_id") or getattr(current_user, "company_id", "")', text)
 
+    def test_phase3_payment_and_ai_contracts(self):
+        invoicing = source("invoicing.py")
+        self.assertIn("Payment amount must be greater than zero.", invoicing)
+        self.assertIn("Payment exceeds outstanding amount", invoicing)
+        self.assertIn("already settled through bank reconciliation", invoicing)
+        self.assertIn("outstanding = round(max(outstanding, 0.0), 2)", invoicing)
+
+    def test_phase3_ai_posting_is_audited(self):
+        ai = source("accounting_ai/finix_ai_router.py")
+        agent = source("accounting_ai/finix_agent_complete.py")
+        self.assertIn('"source": "finix_ai"', ai)
+        self.assertIn('"source": "finix_ai_agent"', agent)
+        self.assertIn('"approved_by"', ai)
+        self.assertIn('"approved_by"', agent)
+
+    def test_phase3_journal_lifecycle_is_append_only(self):
+        invoicing = source("invoicing.py")
+        bank = source("bank_accounts.py")
+        lock = source("accounting_lock.py")
+        self.assertIn("reverse_journal_entry", invoicing)
+        self.assertIn("reverse_journal_entry", bank)
+        self.assertIn("Historical journal entries are immutable", invoicing)
+        self.assertIn("append-only", lock.lower())
+        self.assertNotIn('journal_lines.delete_many({"entry_id": existing_pe["id"]})', invoicing)
+        self.assertNotIn('journal_entries.delete_one({"id": existing_pe["id"]})', invoicing)
+
     def test_changed_python_files_parse(self):
         for name in ("accounting_core.py", "governed_modules.py", "quotations.py", "compliance.py", "leads.py"):
             ast.parse(source(name), filename=name)

@@ -356,7 +356,21 @@ async def finix_ai_post(payload: FinixAIPostRequest, current_user: User = Depend
     now = datetime.now(timezone.utc).isoformat()
     await db.finix_ai_proposals.update_one(
         {"id": proposal["id"]},
-        {"$set": {"status": "POSTED", "journal_entry": entry, "posted_by": current_user.id, "posted_at": now, "updated_at": now}},
+        {"$set": {
+            "status": "POSTED",
+            "journal_entry": entry,
+            "posted_by": current_user.id,
+            "posted_at": now,
+            "updated_at": now,
+            "audit": {
+                "proposal_created_by": proposal.get("created_by"),
+                "approved_by": current_user.id,
+                "approved_at": now,
+                "accounting_date": proposal.get("accounting_date"),
+                "journal_entry_id": entry.get("id") if isinstance(entry, dict) else None,
+                "source": "finix_ai",
+            },
+        }},
     )
     return {"success": True, "status": "POSTED", "journal_entry": entry, "message": "Transaction posted through the governed accounting ledger."}
 
@@ -383,3 +397,4 @@ async def create_finix_ai_indexes():
     await db.finix_ai_proposals.create_index([("company_id", 1), ("created_at", -1)])
     await db.finix_ai_proposals.create_index([("company_id", 1), ("status", 1)])
     await db.finix_ai_proposals.create_index([("company_id", 1), ("source_id", 1)])
+    await db.finix_ai_proposals.create_index([("company_id", 1), ("status", 1), ("id", 1)])
