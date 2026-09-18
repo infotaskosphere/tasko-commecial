@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus } from "lucide-react";
+import { ArrowRight, BarChart3, Bot, CalendarDays, CheckCircle2, CheckSquare2, Eye, EyeOff, FileText, FolderOpen, Globe2, KeyRound, LockKeyhole, Receipt, ShieldCheck, Sparkles, Building2, UserPlus, UsersRound } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
