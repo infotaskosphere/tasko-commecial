@@ -652,3 +652,21 @@ svg {
   body { background: white !important; }
   .page-root { margin: 0 !important; padding: 0 !important; }
 }
+
+
+/* Client Discussion — keep the assistant/editor/list columns in a stable
+   independent layout. This is intentionally scoped to the page so other
+   modules retain their existing card geometry. */
+#root main .client-discussion-page{width:100%!important;max-width:1400px!important;min-width:0!important;overflow:visible!important}
+#root main .client-discussion-page section{min-width:0!important;max-width:100%!important;box-sizing:border-box!important}
+#root main .client-discussion-page section>header{min-width:0!important;max-width:100%!important;box-sizing:border-box!important}
+#root main .client-discussion-page section>header>div{min-width:0!important;max-width:100%!important}
+#root main .client-discussion-page section>header>div:first-child{flex:1 1 auto!important}
+#root main .client-discussion-page section>header>div:last-child{flex:0 0 auto!important;max-width:100%!important}
+#root main .client-discussion-page .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]{align-items:start!important}
+#root main .client-discussion-page .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]>section{height:auto!important;align-self:start!important;overflow:visible!important}
+#root main .client-discussion-page textarea{display:block!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}
+#root main .client-discussion-page section .flex-1{min-width:0!important}
+@media(max-width:1279px){
+  #root main .client-discussion-page .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]{grid-template-columns:minmax(0,1fr)!important}
+}
