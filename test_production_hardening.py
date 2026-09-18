@@ -28,3 +28,14 @@ class HardeningStaticContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_hardened_auth_passes_request_before_credentials(self):
+        source_text = source("production_hardening.py")
+        self.assertIn(
+            "user = await _PRE_HARDENED_GET_CURRENT_USER(request, credentials)",
+            source_text,
+        )
+        self.assertNotIn(
+            "user = await _PRE_HARDENED_GET_CURRENT_USER(credentials)",
+            source_text,
+        )
