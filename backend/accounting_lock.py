@@ -277,12 +277,17 @@ async def create_phase4_accounting_indexes():
     Index creation is intentionally idempotent and isolated from request paths.
     Existing records are preserved; duplicate historical rows are not deleted.
     """
-    await db.journal_entries.create_index(
-        [("company_id", 1), ("source", 1), ("source_id", 1)],
-        name="uq_journal_source_company",
-        unique=True,
-        partialFilterExpression={"source_id": {"$exists": True, "$ne": ""}},
-    )
+    try:
+        await db.journal_entries.create_index(
+            [("company_id", 1), ("source", 1), ("source_id", 1)],
+            name="uq_journal_source_company",
+            unique=True,
+            partialFilterExpression={"source_id": {"$exists": True, "$ne": ""}},
+        )
+    except Exception as exc:
+        # Do not destroy historical data to force an index. Surface the
+        # duplicate-data condition to startup/observability for remediation.
+        logger.exception("Phase 4 journal source index could not be created: %s", exc)
     await db.journal_entries.create_index(
         [("company_id", 1), ("entry_date", 1)],
         name="idx_journal_company_date",
