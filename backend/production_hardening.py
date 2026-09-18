@@ -174,7 +174,11 @@ async def get_current_user_hardened(
     credentials=Depends(_dependencies.security),
 ):
     """Resolve the existing commercial identity, then enforce request scope."""
-    user = await _PRE_HARDENED_GET_CURRENT_USER(credentials)
+    # The commercial compatibility dependency accepts Request first and
+    # credentials second. Pass both explicitly; omitting Request causes the
+    # dependency wrapper to receive HTTPBearer credentials as a Request and
+    # fail every protected dashboard request with HTTP 500.
+    user = await _PRE_HARDENED_GET_CURRENT_USER(request, credentials)
     if is_platform_owner(user):
         request.state.platform_owner = True
         request.state.company_id = None
