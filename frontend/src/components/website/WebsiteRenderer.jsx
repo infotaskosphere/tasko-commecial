@@ -56,28 +56,36 @@ function Header({ builder, identity }) {
 function Hero({ section, global }) { const d = section.data || {}, design = global.design || {}, dark = d.theme !== "light"; const bg = d.backgroundColor || (dark ? `linear-gradient(135deg, ${design.primary || "#0D3B66"} 0%, #102A43 58%, #061827 100%)` : "#f8fafc"); const align = d.contentAlign || "left"; return <section id={`section-${section.id}`} style={{ ...sectionStyle(section, design), background: bg, color: dark ? "#fff" : design.text }}><Container width={design.width || "wide"} className="grid min-h-[520px] items-center gap-12 py-16 lg:grid-cols-[1.05fr_.95fr] lg:py-24"><div className={`${align === "center" ? "text-center" : "text-left"} min-w-0`}>{d.badge && <div className={`mb-6 inline-flex max-w-full items-center rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[.14em] ${dark ? "border-white/15 bg-white/10 text-white/90" : "border-slate-200 bg-white text-slate-600"}`}>{d.badge}</div>}<h1 className="break-words text-4xl font-black leading-[1.03] tracking-[-.045em] sm:text-5xl lg:text-6xl xl:text-7xl">{d.title || ""}</h1>{d.subtitle && <p className={`mt-6 max-w-2xl text-base leading-7 sm:text-lg ${dark ? "text-white/75" : "text-slate-600"} ${align === "center" ? "mx-auto" : ""}`}>{d.subtitle}</p>}<div className={`mt-8 flex flex-wrap gap-3 ${align === "center" ? "justify-center" : "justify-start"}`}>{d.primaryText && <SmartLink href={d.primaryHref || "#"} className="rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-lg" style={{ background: design.accent || "#1FAF5A" }}>{d.primaryText}<ArrowRight size={16} className="ml-2 inline" /></SmartLink>}{d.secondaryText && <SmartLink href={d.secondaryHref || "/login"} className={`rounded-xl border px-6 py-3.5 text-sm font-bold ${dark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-800"}`}>{d.secondaryText}</SmartLink>}</div></div><div className={`relative flex min-h-[300px] items-center justify-center ${d.imagePosition === "left" ? "order-first lg:order-first" : ""}`}><div className={`flex w-full min-h-[300px] items-center justify-center overflow-hidden rounded-3xl border p-5 shadow-2xl ${dark ? "border-white/10 bg-white/10" : "border-slate-200 bg-white"}`}>{d.image ? <img src={d.image} alt="" className="max-h-[340px] max-w-full object-contain" /> : <div className="text-sm opacity-60">Add a hero image</div>}</div></div></Container></section>; }
 function ModuleLogoScroller() {
   const modules = [
-    { name: "ONENEXA", logo: "/onenexa-logo.png" },
-    { name: "CompliGenie", logo: "/compligenie-logo.png" },
-    { name: "Finix", logo: "/finix-logo.png" },
-    { name: "LeadSense", logo: "/leadsense-logo.png" },
-    { name: "People Matrix", logo: "/people-matrix-logo.png" },
-    { name: "Records", logo: "/logo-lite.png" },
+    { name: "Taskosphere", logo: "/logo-transparent.png", description: "Work & task management" },
+    { name: "Finix", logo: "/finix-logo.png", description: "Finance & accounting" },
+    { name: "People Matrix", logo: "/people-matrix-logo.png", description: "People & HRMS" },
+    { name: "CompliGenie", logo: "/compligenie-logo.png", description: "Compliance & GST" },
+    { name: "LeadSense", logo: "/leadsense-logo.png", description: "Leads & growth" },
+    { name: "ONENEXA", logo: "/onenexa-logo.png", description: "Connected business platform" },
   ];
-  return <section id="modules" className="border-y border-slate-200 bg-slate-50/80 py-8">
+  return <section id="modules" className="border-y border-slate-200 bg-white py-12">
     <Container width="wide">
-      <div className="mb-4 text-center">
-       <p className="text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">The ONENEXA ecosystem</p>
-       <p className="mt-1 text-sm text-slate-600">Connected capabilities. One business platform.</p>
+      <div className="mb-7 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[.18em] text-slate-400">OneNexa product ecosystem</p>
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">One platform. Purpose-built products.</h2>
+        </div>
+        <p className="max-w-md text-sm leading-6 text-slate-500 sm:text-right">Connected products for operations, finance, people, compliance and growth.</p>
       </div>
-      <div className="no-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
-        {modules.map((module) => <div key={module.name} className="flex min-w-[210px] snap-start items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-          <img src={module.logo} alt={module.name} className="max-h-12 max-w-[170px] object-contain" loading="lazy" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {modules.map((module) => <div key={module.name} className="group flex min-h-[96px] items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50/60 px-4 py-4 transition hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white hover:shadow-md">
+          <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white px-2">
+            <img src={module.logo} alt={module.name} className="max-h-12 max-w-[88px] object-contain" loading="lazy" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-extrabold text-slate-900">{module.name}</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">{module.description}</div>
+          </div>
         </div>)}
       </div>
     </Container>
   </section>;
 }
-
 function Features({ section, global }) { const d = section.data || {}, design = global.design || {}; return <section id={`section-${section.id}`} style={sectionStyle(section, design)} className="py-20"><Container width={design.width || "wide"}><div className="mx-auto mb-12 max-w-3xl text-center"><h2 className="text-3xl font-black tracking-tight sm:text-4xl">{d.heading}</h2>{d.subtitle && <p className="mt-4 text-base leading-7 text-slate-600">{d.subtitle}</p>}</div><ModuleLogoScroller /><div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{(d.items || []).map((item, i) => <SmartLink key={i} href={item.route || "#"} className="group rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl text-white" style={{ background: design.primary || "#0D3B66" }}><Check size={19} /></div><h3 className="text-lg font-extrabold text-slate-900">{item.title}</h3><p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>{item.route && <span className="mt-5 inline-flex items-center text-xs font-bold" style={{ color: design.primary || "#0D3B66" }}>Explore <ArrowRight size={14} className="ml-1" /></span>}</SmartLink>)}</div></Container></section>; }
 function TextSection({ section, global }) { const d = section.data || {}, design = global.design || {}; return <section id={`section-${section.id}`} style={sectionStyle(section, design)} className="py-20"><Container width="compact"><h2 className="text-3xl font-black tracking-tight sm:text-4xl">{d.heading}</h2><p className="mt-5 whitespace-pre-wrap text-base leading-8 text-slate-600">{d.body}</p></Container></section>; }
 function Pricing({ section, global }) { const d = section.data || {}, design = global.design || {}; return <section id={`section-${section.id}`} style={sectionStyle(section, design)} className="py-20"><Container width={design.width || "wide"}><div className="mx-auto mb-12 max-w-3xl text-center"><h2 className="text-3xl font-black sm:text-4xl">{d.heading}</h2><p className="mt-4 text-slate-600">{d.subtitle}</p></div><div className="grid gap-6 lg:grid-cols-3">{(d.items || []).map((item, i) => <div key={i} className={`rounded-3xl border p-7 ${item.featured ? "border-2 shadow-xl" : "border-slate-200 shadow-sm"}`} style={item.featured ? { borderColor: design.accent || "#1FAF5A" } : undefined}><h3 className="text-lg font-extrabold">{item.name}</h3><div className="mt-5 text-4xl font-black">{item.price}</div><div className="mt-1 text-sm text-slate-500">{item.period}</div><p className="mt-5 text-sm leading-6 text-slate-600">{item.description}</p><SmartLink href="/login" className="mt-7 block rounded-xl px-4 py-3 text-center text-sm font-bold text-white" style={{ background: design.primary || "#0D3B66" }}>Get started</SmartLink></div>)}</div></Container></section>; }
