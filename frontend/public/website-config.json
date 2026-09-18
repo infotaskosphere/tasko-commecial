@@ -1,8 +1,8 @@
 {
   "site_name": "OneNexa",
   "site_tagline": "One platform for every business function.",
-  "logo_url": "/onenexa-logo.png",
-  "favicon_url": "/onenexa-logo.png",
+  "logo_url": "/onenexa-logo.svg",
+  "favicon_url": "/onenexa-logo.svg",
   "primary_color": "#0D3B66",
   "accent_color": "#1FAF5A",
   "hero_badge": "THE MODERN BUSINESS OPERATING SYSTEM",
@@ -12,7 +12,7 @@
   "hero_cta_href": "#features",
   "hero_secondary_text": "Sign In",
   "hero_secondary_href": "/login",
-  "hero_image_url": "/onenexa-logo.png",
+  "hero_image_url": "/onenexa-logo.svg",
   "features_title": "Platform Modules",
   "features_subtitle": "Choose the exact software package your business needs and activate it through your OneNexa license.",
   "features": [
@@ -29,7 +29,7 @@
   "testimonials": [],
   "seo_title": "OneNexa — Business Operating Platform",
   "seo_description": "OneNexa connects Taskosphere, Finix, CompliGenie, Records, LeadSense and People Matrix in one licensed workspace.",
-  "seo_og_image": "/onenexa-logo.png",
+  "seo_og_image": "/onenexa-logo.svg",
   "footer_company": "OneNexa",
   "footer_text": "One platform connecting business operations through modular licensed products.",
   "footer_email": "support@taskosphere.com",
