@@ -5728,13 +5728,8 @@ class UnpreparedIncomeCreate(BaseModel):
 
 async def sync_unprepared_income_journal_entry(income_id: str):
     from backend.accounting_core import post_journal_entry
-    # 1. Clean up existing journal entries
-    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
-    if old_entries:
-        old_ids = [e["id"] for e in old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
-        
+    # Existing unprepared-income postings are immutable. Changed records are
+    # corrected by reversal + fresh posting below.
     # 2. Fetch the current record
     inc = await db.unprepared_incomes.find_one({"id": income_id})
     if not inc:
@@ -5768,6 +5763,17 @@ async def sync_unprepared_income_journal_entry(income_id: str):
     if description:
         narration += f" - {description}"
         
+    _active = await db.journal_entries.find_one(
+        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}},
+        {"_id": 0},
+    )
+    if _active:
+        if abs(float(_active.get("total_debit") or 0) - round(float(amount), 2)) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Unprepared income changed; superseded by latest posting", inc.get("created_by") or "system")
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5848,12 +5854,14 @@ async def delete_unprepared_income(income_id: str, current_user: User = Depends(
     if not existing:
         raise HTTPException(404, "Income record not found")
     
-    # Delete journal entries
-    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
-    if old_entries:
-        old_ids = [e["id"] for e in old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
-        
+    # Preserve the accounting trail when deleting the operational record.
+    from backend.accounting_lock import reverse_journal_entry
+    old_entries = await db.journal_entries.find(
+        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    ).to_list(50)
+    for entry in old_entries:
+        await reverse_journal_entry(entry["id"], "Unprepared income deleted", current_user.id)
+
     await db.unprepared_incomes.delete_one({"id": income_id})
     return {"success": True}
