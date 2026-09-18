@@ -670,3 +670,13 @@ svg {
 @media(max-width:1279px){
   #root main .client-discussion-page .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]{grid-template-columns:minmax(0,1fr)!important}
 }
+
+
+/* Client Discussion — harden the two assistant cards against legacy/global
+   card rules that can collapse a section around its header. */
+#root main .client-discussion-page> .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]{align-items:start!important}
+#root main .client-discussion-page> .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]>section{display:flex!important;flex-direction:column!important;height:auto!important;min-height:0!important;max-height:none!important;align-self:start!important;position:relative!important;overflow:visible!important}
+#root main .client-discussion-page> .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]>section>header{position:static!important;flex:0 0 auto!important;height:auto!important;min-height:0!important;overflow:visible!important}
+#root main .client-discussion-page> .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]>section>div:last-child{position:static!important;display:block!important;flex:0 0 auto!important;width:100%!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important;box-sizing:border-box!important}
+#root main .client-discussion-page> .grid.xl\:grid-cols-\[minmax\(0\,1fr\)_360px\]>section:first-child>div:last-child>div{min-width:0!important;max-width:100%!important}
+#root main .client-discussion-page>section:last-child{position:static!important;display:block!important;height:auto!important;min-height:0!important;max-height:none!important;overflow:visible!important}
