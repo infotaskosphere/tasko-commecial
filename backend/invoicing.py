@@ -3252,10 +3252,18 @@ async def delete_purchase_payment(payment_id: str, current_user: User = Depends(
         raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("purchase_invoice_id")
 
+    # Reverse the vendor-payment posting before deleting the operational record.
+    from backend.accounting_lock import reverse_journal_entry
+    existing_je = await db.journal_entries.find_one(
+        {"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    )
+    if existing_je:
+        await reverse_journal_entry(existing_je["id"], "Purchase payment deleted", current_user.id)
+
     result = await db.purchase_payments.delete_one({"id": payment_id})
     if result.deleted_count == 0:
         raise HTTPException(404, f"Payment {payment_id} not found")
-    await sync_purchase_payment_journal_entry(payment_id)  # cleans up its journal entry (payment doc is gone)
 
     if invoice_id:
         inv = await db.purchase_invoices.find_one({"id": invoice_id})
@@ -4649,12 +4657,17 @@ async def delete_payment(pid: str, current_user: User = Depends(check_module_per
     if not payment: raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("invoice_id")
 
-    # Delete from DB
+    # Reverse the posted receipt before deleting the operational payment.
+    from backend.accounting_lock import reverse_journal_entry
+    existing_je = await db.journal_entries.find_one(
+        {"source": "payment", "source_id": pid, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    )
+    if existing_je:
+        await reverse_journal_entry(existing_je["id"], "Customer payment deleted", current_user.id)
+
     result = await db.payments.delete_one({"id": pid})
     if result.deleted_count == 0: raise HTTPException(404, f"Payment {pid} not found")
-
-    # Sync payment to ledger (will delete its journal entry)
-    await sync_payment_journal_entry(pid)
 
     # Recalculate invoice payments & status — single source of truth.
     if invoice_id:
