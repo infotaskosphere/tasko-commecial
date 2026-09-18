@@ -285,9 +285,10 @@ async def create_phase4_accounting_indexes():
             partialFilterExpression={"source_id": {"$exists": True, "$ne": ""}},
         )
     except Exception as exc:
-        # Do not destroy historical data to force an index. Surface the
-        # duplicate-data condition to startup/observability for remediation.
-        logger.exception("Phase 4 journal source index could not be created: %s", exc)
+        # Existing deployments may contain historical duplicate source rows.
+        # Never delete those rows merely to create a new index; log the
+        # condition so it can be remediated through the append-only process.
+        logger.warning("Phase 4 journal source index not installed: %s", exc)
     await db.journal_entries.create_index(
         [("company_id", 1), ("entry_date", 1)],
         name="idx_journal_company_date",
