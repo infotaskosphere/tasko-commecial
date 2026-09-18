@@ -1,7 +1,7 @@
 {
-  "name": "Taskosphere",
-  "short_name": "Taskosphere",
-  "description": "Taskosphere - Modern Task Management",
+  "name": "ONENEXA",
+  "short_name": "ONENEXA",
+  "description": "ONENEXA - Connected business operations",
   "start_url": "/",
   "display": "standalone",
   "theme_color": "#0f172a",
