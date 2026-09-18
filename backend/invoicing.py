@@ -5383,8 +5383,10 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_sale_ids.append(se["id"])
                 
         if stale_sale_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_sale_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_sale_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_sale_ids:
+                await reverse_journal_entry(stale_id, "Stale sales posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
             
         # 4. Sync missing/outdated sale entries & auto-reconcile invoice payments with db.payments
         for inv in active_invoices:
@@ -5546,8 +5548,10 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_pay_ids.append(pe["id"])
                 
         if stale_pay_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_pay_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
             
         # 8. Sync missing/outdated payment entries. Also re-sync entries that
         # were posted before the client_name fallback fix, which show up as
