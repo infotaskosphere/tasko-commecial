@@ -65,7 +65,6 @@ export default function Login() {
 
   const siteName = "OneNexa";
   const logo = "/onenexa-logo.svg?v=20260918";
-    const backgroundImage = config?.login_background_image;
 
   const scrollModules = (direction) => {
     const rail = railRef.current;
@@ -134,9 +133,7 @@ export default function Login() {
     } finally { setLookupBusy(false); }
   };
 
-  const pageStyle = backgroundImage
-    ? { backgroundImage: `linear-gradient(120deg, rgba(255,255,255,.96), rgba(248,251,255,.96)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
-    : { background: "#ffffff" };
+  const pageStyle = { background: "linear-gradient(135deg, #ffffff 0%, #f8fbff 62%, #f4f8ff 100%)" };
 
   const duplicatedModules = useMemo(() => MODULES, []);
 
@@ -148,8 +145,8 @@ export default function Login() {
         <div className="absolute bottom-[-10rem] left-[18%] h-96 w-96 rounded-full bg-emerald-200/15 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1800px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_500px]">
-        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-6 pt-5 sm:px-8 lg:px-10 lg:py-7 xl:px-12" style={{ background: "transparent" }}>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1800px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_480px]">
+        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-5 pt-4 sm:px-8 lg:px-9 lg:py-5 xl:px-10" style={{ background: "transparent" }}>
           <header className="flex items-center justify-between gap-4">
             <Link to="/" className="inline-flex items-center">
               <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
@@ -159,21 +156,21 @@ export default function Login() {
             </Link>
           </header>
 
-          <div className="flex flex-1 flex-col justify-center py-10 lg:py-6">
+          <div className="flex flex-1 flex-col justify-center py-5 lg:py-3">
             <div className="login-hero-copy max-w-none bg-transparent">
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/75 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/75 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
                 <Sparkles size={14} className="text-cyan-500" />
                 {config?.hero_badge || "The modern business operating system"}
               </div>
-              <h1 className="max-w-5xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[4.25rem]">
+              <h1 className="max-w-5xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[3.85rem]">
                 {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
               </h1>
-              <p className="mt-5 max-w-3xl text-base leading-7 text-slate-600 sm:text-lg">
+              <p className="mt-4 max-w-3xl text-[15px] leading-6 text-slate-600 sm:text-base">
                 {config?.hero_subtitle || "Task management, invoicing, accounting, HRMS, records, compliance and intelligent automation — connected in one workspace."}
               </p>
             </div>
 
-            <section className="mt-7 min-w-0" aria-label="OneNexa modules">
+            <section className="mt-5 min-w-0" aria-label="OneNexa modules">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Everything connected</p>
@@ -207,58 +204,52 @@ export default function Login() {
               </div>
             </section>
 
-            <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="OneNexa business capabilities">
-                {[
-                  { title: "Connected workflows", text: "Move work from request to completion without switching systems.", icon: Sparkles, tone: "text-cyan-600 bg-cyan-50" },
-                  { title: "Financial control", text: "Keep billing, accounting and operational numbers connected.", icon: Receipt, tone: "text-orange-600 bg-orange-50" },
-                  { title: "People & productivity", text: "Attendance, HRMS and team operations in one workspace.", icon: UsersRound, tone: "text-emerald-600 bg-emerald-50" },
-                  { title: "Compliance visibility", text: "Track obligations, documents and deadlines from one place.", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
-                ].map(({ title, text, icon: Icon, tone }) => (
-                  <div key={title} className="rounded-2xl border border-white/75 bg-white/55 px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,.04)] backdrop-blur">
-                    <div className={`mb-2 flex h-8 w-8 items-center justify-center rounded-lg ${tone}`}><Icon size={16} /></div>
-                    <p className="text-xs font-extrabold text-[#163b6e]">{title}</p>
-                    <p className="mt-1 text-[10px] leading-4 text-slate-500">{text}</p>
-                  </div>
-                ))}
-              </section>
-
-              <div className="mt-6 grid max-w-none grid-cols-1 gap-3 sm:grid-cols-3">
+            <section className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3" aria-label="OneNexa business capabilities">
               {[
-                { title: "Secure & Reliable", text: "Enterprise-grade access", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
-                { title: "Save Time", text: "Automate routine work", icon: Sparkles, tone: "text-emerald-600 bg-emerald-50" },
-                { title: "Grow Faster", text: "All tools in one place", icon: BarChart3, tone: "text-violet-600 bg-violet-50" },
+                { title: "One connected workspace", text: "Tasks, customers, finance and operations stay connected.", icon: Sparkles, tone: "text-cyan-600 bg-cyan-50" },
+                { title: "Built for control", text: "Permissions, compliance and records stay organised.", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
+                { title: "Made to move faster", text: "Automate routine work and keep teams focused.", icon: BarChart3, tone: "text-violet-600 bg-violet-50" },
               ].map(({ title, text, icon: Icon, tone }) => (
-                <div key={title} className="flex items-center gap-3 rounded-2xl border border-white/80 bg-white/55 px-4 py-3 backdrop-blur">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${tone}`}><Icon size={18} /></div>
-                  <div><p className="text-xs font-extrabold text-[#163b6e]">{title}</p><p className="mt-0.5 text-[11px] text-slate-500">{text}</p></div>
+                <div key={title} className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-3 shadow-[0_5px_18px_rgba(15,23,42,.04)]">
+                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}><Icon size={16} /></div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold text-[#163b6e]">{title}</p>
+                    <p className="mt-0.5 text-[10px] leading-4 text-slate-500">{text}</p>
+                  </div>
                 </div>
               ))}
-            </div>
-          </div>
+            </section>
 
-          <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200/70 pt-5 text-xs text-slate-400">
+              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-200/70 pt-3 text-[10px] font-semibold text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><ShieldCheck size={14} className="text-blue-500" /> Enterprise-grade access</span>
+                <span className="inline-flex items-center gap-1.5"><Sparkles size={14} className="text-emerald-500" /> Automation built in</span>
+                <span className="inline-flex items-center gap-1.5"><BarChart3 size={14} className="text-violet-500" /> Business visibility</span>
+              </div>
+            </div>
+
+          <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200/70 pt-3 text-[10px] text-slate-400">
             <div className="flex items-center gap-5">
-              <span><strong className="text-lg text-[#163b6e]">500+</strong> businesses</span>
+              <span><strong className="text-base text-[#163b6e]">500+</strong> businesses</span>
               <span className="hidden h-5 w-px bg-slate-200 sm:block" />
-              <span><strong className="text-lg text-[#163b6e]">99.9%</strong> reliability</span>
+              <span><strong className="text-base text-[#163b6e]">99.9%</strong> reliability</span>
               <span className="hidden h-5 w-px bg-slate-200 sm:block" />
-              <span><strong className="text-lg text-[#163b6e]">24/7</strong> support</span>
+              <span><strong className="text-base text-[#163b6e]">24/7</strong> support</span>
             </div>
             <span>© 2026 OneNexa. All rights reserved.</span>
           </footer>
         </main>
 
-        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-slate-50/70 px-5 py-6 backdrop-blur-xl sm:px-10 lg:border-l lg:border-t-0 lg:px-10 lg:py-8 xl:px-14">
+        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-slate-50/70 px-5 py-5 backdrop-blur-xl sm:px-8 lg:border-l lg:border-t-0 lg:px-8 lg:py-5 xl:px-10">
           <div className="flex justify-end">
             <Link to="/" className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-bold text-blue-600 shadow-sm transition hover:bg-blue-50">Request a Demo</Link>
           </div>
 
           <div className="flex flex-1 items-center justify-center py-7">
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[470px] rounded-[28px] border border-slate-200/80 bg-white p-6 shadow-[0_30px_80px_rgba(15,23,42,.13)] sm:p-9">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[440px] rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,.11)] sm:p-7">
               <div className="mb-7 text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><LockKeyhole size={22} /></div>
-                <h2 className="text-3xl font-black tracking-[-0.03em] text-[#102f62]">{mode === "signin" ? (config?.login_title || "Welcome back") : "I Have a License"}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? (config?.login_subtitle || `Sign in to your ${siteName} account`) : "Verify your company license to create the first administrator account."}</p>
+                <h2 className="text-3xl font-black tracking-[-0.03em] text-[#102f62]">{mode === "signin" ? "Welcome Back" : "I Have a License"}</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? "Sign in to your OneNexa workspace" : "Verify your company license to create the first administrator account."}</p>
               </div>
 
               <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
