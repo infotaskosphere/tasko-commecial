@@ -504,6 +504,7 @@ async def convert_lead_to_client(
     client_id = str(uuid.uuid4())
     client_data = {
         "id": client_id,
+        "company_id": lead.get("company_id") or getattr(current_user, "company_id", ""),
         "company_name": lead["company_name"],
         "contact_name": lead.get("contact_name"),
         "email": lead.get("email"),
@@ -519,8 +520,12 @@ async def convert_lead_to_client(
 
     await db.clients.insert_one(client_data)
 
-    await db.leads.update_one(
-        {"_id": obj_id},
+    conversion_guard = {
+        "_id": obj_id,
+        "converted_client_id": {"$in": [None, ""]},
+    }
+    conversion_result = await db.leads.update_one(
+        conversion_guard,
         {
             "$set": {
                 "status": "won",
@@ -529,6 +534,12 @@ async def convert_lead_to_client(
             }
         }
     )
+    if conversion_result.matched_count == 0:
+        # Another request won the conversion race after the initial read.
+        # Do not leave an orphan client behind or continue creating onboarding
+        # tasks for a conversion that did not win the compare-and-set.
+        await db.clients.delete_one({"id": client_id})
+        raise HTTPException(status_code=409, detail="Lead was already converted by another request.")
 
     # ── Build onboarding task with user-provided details ──────────────────
     tr = task_request or OnboardingTaskRequest()

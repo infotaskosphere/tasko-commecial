@@ -601,8 +601,9 @@ def build_report_pdf(doc_record: dict) -> bytes:
                 "cb_res", parent=st["cell_bold"],
                 textColor=(EMERALD if blocking_n == 0 else RED), alignment=TA_CENTER,
             )
+            cb_class = cb.get("class", "—")
             cb_rows.append([
-                Paragraph(f"CL{cb.get('class', '\u2014')}", st["cell_center"]),
+                Paragraph(f"CL{cb_class}", st["cell_center"]),
                 Paragraph(str(cb.get("hint") or cb.get("sector") or "\u2014"), st["cell"]),
                 Paragraph(str(cb.get("total", 0)), st["cell_center"]),
                 Paragraph(str(blocking_n), blocking_style),

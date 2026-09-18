@@ -695,6 +695,14 @@ async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_c
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
+    # Ledger history is immutable once it is system-generated or has already
+    # been corrected through the Adjustment Note workflow. Admin access does
+    # not bypass this accounting control because deletion would erase the
+    # source-of-truth audit history.
+    if entry.get("source") != "manual":
+        raise HTTPException(400, "System-generated journal entries are locked and cannot be deleted. Use the source document or an Adjustment Note Override.")
+    if entry.get("has_adjustment_history"):
+        raise HTTPException(400, "Journal entries with adjustment history cannot be deleted. Raise a further Adjustment Note Override instead.")
     if entry.get("source") != "manual" and current_user.role != "admin":
         raise HTTPException(400, "Auto-posted entries can only be reversed by an admin.")
     # Module 4 integrity guard: entries with adjustment-note history, or
@@ -718,8 +726,22 @@ async def update_journal_entry(entry_id: str, payload: JournalEntryCreate, curre
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
-    # Note: editing auto-posted entries (Sale/Purchase/Bank) is allowed;
-    # the ledger is updated in place. Source document totals are not re-synced.
+    # All non-manual entries are system-generated and must remain immutable.
+    # Corrections go through the Adjustment Note Override flow so the original
+    # posting, reason, and before/after state stay auditable.
+    if entry.get("source") != "manual":
+        raise HTTPException(400, "System-generated journal entries are locked and cannot be edited. Correct the source document or raise an Adjustment Note Override.")
+    if entry.get("has_adjustment_history"):
+        raise HTTPException(400, "Journal entries with adjustment history cannot be edited. Raise a further Adjustment Note Override instead.")
+    entry_company_id = str(entry.get("company_id") or "").strip()
+    requested_company_id = str(payload.company_id or "").strip()
+    if entry_company_id and requested_company_id and requested_company_id != entry_company_id:
+        raise HTTPException(403, "Cross-company journal mutation is not permitted.")
+    if current_user.role == "admin" and entry_company_id and not requested_company_id:
+        raise HTTPException(400, "company_id is required when editing a company journal entry.")
+    # System-generated entries are intentionally blocked above; corrections
+    # use the Adjustment Note Override workflow so source documents and the
+    # audit trail cannot silently drift.
 
     lines = [l.model_dump() for l in payload.lines]
     total_debit = round(sum(float(l.get("debit") or 0) for l in lines), 2)

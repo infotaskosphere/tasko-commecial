@@ -2066,6 +2066,13 @@ async def link_invoice_to_quotation(
     if not inv:
         raise HTTPException(404, "Invoice not found")
 
+    # A quotation and its invoice are financial records in the same legal
+    # company. Never allow a cross-company link, even for an administrator.
+    quotation_company = str(qtn.get("company_id") or "").strip()
+    invoice_company = str(inv.get("company_id") or "").strip()
+    if quotation_company != invoice_company:
+        raise HTTPException(403, "Quotation and invoice must belong to the same company.")
+
     now = datetime.now(timezone.utc).isoformat()
 
     # If this invoice was previously linked to a different quotation, clear that link.
