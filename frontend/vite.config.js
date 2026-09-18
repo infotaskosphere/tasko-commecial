@@ -37,7 +37,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: path.resolve(__dirname, '../dist'),
+    outDir: process.env.VERCEL === '1' ? path.resolve(__dirname, './dist') : path.resolve(__dirname, '../dist'),
     sourcemap: false,
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 2000,
