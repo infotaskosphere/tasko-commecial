@@ -271,6 +271,28 @@ async def reverse_journal_entry(entry_id: str, reason: str, reversed_by: str) ->
     return reversal
 
 
+async def create_phase4_accounting_indexes():
+    """Create concurrency-safe source and company/date indexes.
+    
+    Index creation is intentionally idempotent and isolated from request paths.
+    Existing records are preserved; duplicate historical rows are not deleted.
+    """
+    await db.journal_entries.create_index(
+        [("company_id", 1), ("source", 1), ("source_id", 1)],
+        name="uq_journal_source_company",
+        unique=True,
+        partialFilterExpression={"source_id": {"$exists": True, "$ne": ""}},
+    )
+    await db.journal_entries.create_index(
+        [("company_id", 1), ("entry_date", 1)],
+        name="idx_journal_company_date",
+    )
+    await db.journal_lines.create_index(
+        [("company_id", 1), ("entry_id", 1)],
+        name="idx_journal_lines_company_entry",
+    )
+
+
 async def create_accounting_integrity_indexes():
     await db.adjustment_note_overrides.create_index("original_entry_id")
     await db.adjustment_note_overrides.create_index("company_id")
