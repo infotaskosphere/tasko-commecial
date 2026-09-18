@@ -333,6 +333,9 @@ async def _safe_post_journal_entry(
     # request, queue worker, or reconciliation job. Return the already-posted
     # complete entry instead of creating a second journal.
     if normalized_source_id:
+        # A second request must not create a duplicate source posting. The
+        # unique key is company + source + source_id; the existing record is
+        # returned only when its lines are complete.
         existing = await db.journal_entries.find_one(
             {
                 "company_id": company_id,
@@ -371,6 +374,15 @@ async def _safe_post_journal_entry(
 
     now = datetime.now(timezone.utc).isoformat()
     entry_id = str(uuid.uuid4())
+    # Re-check immediately before insertion to narrow the async check/insert
+    # race window. MongoDB unique indexes provide the final concurrency guard.
+    if normalized_source_id:
+        existing_race_guard = await db.journal_entries.find_one(
+            {"company_id": company_id, "source": normalized_source, "source_id": normalized_source_id},
+            {"_id": 0},
+        )
+        if existing_race_guard:
+            return existing_race_guard
     entry_doc = {
         "id": entry_id,
         "company_id": company_id,
