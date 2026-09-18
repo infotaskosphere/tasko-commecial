@@ -739,8 +739,9 @@ async def update_journal_entry(entry_id: str, payload: JournalEntryCreate, curre
         raise HTTPException(403, "Cross-company journal mutation is not permitted.")
     if current_user.role == "admin" and entry_company_id and not requested_company_id:
         raise HTTPException(400, "company_id is required when editing a company journal entry.")
-    # Note: editing auto-posted entries (Sale/Purchase/Bank) is allowed;
-    # the ledger is updated in place. Source document totals are not re-synced.
+    # System-generated entries are intentionally blocked above; corrections
+    # use the Adjustment Note Override workflow so source documents and the
+    # audit trail cannot silently drift.
 
     lines = [l.model_dump() for l in payload.lines]
     total_debit = round(sum(float(l.get("debit") or 0) for l in lines), 2)
