@@ -4599,8 +4599,23 @@ async def generate_recurring(inv_id: str, current_user: User = Depends(check_mod
 @router.post("/payments")
 async def record_payment(data: PaymentCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
+    if float(data.amount or 0) <= 0:
+        raise HTTPException(400, "Payment amount must be greater than zero.")
     inv = await db.invoices.find_one({"id": data.invoice_id})
     if not inv: raise HTTPException(404, "Invoice not found")
+    if inv.get("status") == "cancelled":
+        raise HTTPException(400, "Cannot record a payment against a cancelled invoice.")
+    if inv.get("paid_bank_txn_id"):
+        raise HTTPException(409, "This invoice is already settled through bank reconciliation.")
+    current_payments = await db.payments.find({"invoice_id": data.invoice_id}, {"_id": 0, "amount": 1}).to_list(2000)
+    current_paid = round(sum(float(p.get("amount") or 0) for p in current_payments), 2)
+    credit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "credit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
+    debit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "debit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
+    outstanding = round(float(inv.get("grand_total") or 0) - current_paid
+                        - sum(float(n.get("grand_total") or 0) for n in credit_notes)
+                        + sum(float(n.get("grand_total") or 0) for n in debit_notes), 2)
+    if data.amount > max(outstanding, 0):
+        raise HTTPException(400, f"Payment exceeds outstanding amount of ₹{max(outstanding, 0):,.2f}.")
     payment_data = {**data.model_dump(), "id": str(uuid.uuid4()),
                     "company_id": inv.get("company_id") or "",
                     "client_name": inv.get("client_name") or "",
