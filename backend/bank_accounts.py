@@ -863,8 +863,21 @@ async def _revert_match_effects(txn: dict):
     record stays fully intact and simply becomes available to match again.
     Shared by Unmatch and Edit Match so both behave identically."""
     if txn.get("journal_entry_id"):
-        await db.journal_lines.delete_many({"entry_id": txn["journal_entry_id"]})
-        await db.journal_entries.delete_one({"id": txn["journal_entry_id"]})
+        from backend.accounting_lock import reverse_journal_entry
+        try:
+            await reverse_journal_entry(
+                txn["journal_entry_id"],
+                "Bank reconciliation match removed or changed",
+                "system",
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            import logging
+            logging.getLogger("bank_accounts").exception(
+                "Unable to reverse bank reconciliation journal entry %s", txn["journal_entry_id"]
+            )
+            raise HTTPException(500, "Bank reconciliation could not be safely reversed.") from exc
 
     mtype, mid = txn.get("matched_type"), txn.get("matched_id")
     prev_status = txn.get("prev_match_status")
