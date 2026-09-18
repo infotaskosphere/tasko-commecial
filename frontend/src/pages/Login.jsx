@@ -60,7 +60,131 @@ export default function Login() {
   useEffect(() => {
     if (!serverWaking) return;
     const timer = setInterval(() => setWakingDots((value) => value.length >= 3 ? "" : `${value}.`), 450);
-    return (
+    return () => clearInterval(timer);
+  }, [serverWaking]);
+
+  const siteName = "ONENEXA";
+  const logo = "/onenexa-logo.png?v=20260918";
+
+  const scrollModules = (direction) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(300, rail.clientWidth * 0.65), behavior: "smooth" });
+  };
+
+  const loginWithRetry = async () => {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try { return await api.post("/auth/login", { email, password }); }
+      catch (error) { lastError = error; if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1200)); }
+    }
+    throw lastError;
+  };
+
+  const handleSubmit = async (event) => {
+    event?.preventDefault();
+    if (!email || !password) { toast.error("Please enter your email and password."); return; }
+    setLoading(true);
+    const wakingTimer = setTimeout(() => setServerWaking(true), 2500);
+    try {
+      const response = await loginWithRetry();
+      clearTimeout(wakingTimer);
+      setServerWaking(false);
+      if (keepSignedIn) localStorage.setItem("taskosphere_keep_signed_in", "true"); else localStorage.removeItem("taskosphere_keep_signed_in");
+      const authenticated = login(response.data, keepSignedIn);
+      if (!authenticated) throw new Error("Invalid login response");
+      const authoritativeUser = await refreshUser();
+      if (!authoritativeUser) throw new Error("Unable to load licensed access");
+      try { window.postMessage({ type: "SET_TOKEN", token: response.data.access_token }, window.location.origin); } catch {}
+      toast.success("Welcome back!");
+    } catch (error) {
+      clearTimeout(wakingTimer); setServerWaking(false);
+      toast.error(error?.response?.data?.detail || "Unable to sign in. Please check your credentials.");
+    } finally { setLoading(false); }
+  };
+
+  const handleLookup = async (event) => {
+    event?.preventDefault();
+    if (!companyName.trim() || !licenseKey.trim()) { toast.error("Enter your company name and license number."); return; }
+    setLookupBusy(true);
+    try {
+      const result = await lookupLicensedCompany(companyName.trim(), licenseKey.trim().toUpperCase());
+      setLicensedCustomer(result);
+      setCompanyName(result.customer?.company_name || companyName.trim());
+      setAdminEmail(result.customer?.email || "");
+      toast.success("License verified. Company details loaded.");
+    } catch (error) {
+      setLicensedCustomer(null);
+      toast.error(error?.response?.data?.detail || "We could not verify this company and license.");
+    } finally { setLookupBusy(false); }
+  };
+
+  const handleCreateAdmin = async (event) => {
+    event.preventDefault();
+    if (!licensedCustomer) { toast.error("Verify your license first."); return; }
+    setLookupBusy(true);
+    try {
+      const result = await createLicensedAdmin({ company_name: licensedCustomer.customer.company_name, license_key: licenseKey.trim().toUpperCase(), full_name: adminName, email: adminEmail, password: adminPassword });
+      login(result, true);
+      try { window.postMessage({ type: "SET_TOKEN", token: result.access_token }, window.location.origin); } catch {}
+      toast.success("Admin account created. Your workspace is ready.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Unable to create the admin account.");
+    } finally { setLookupBusy(false); }
+  };
+
+  const pageStyle = { background: "#f7f9fc" };
+
+  const duplicatedModules = useMemo(() => MODULES, []);
+
+  return (
+    <div className="login-shell min-h-screen overflow-x-hidden text-slate-900" style={pageStyle}>
+      <div className="pointer-events-none fixed inset-0 hidden overflow-hidden">
+        <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cyan-200/20 blur-3xl" />
+        <div className="absolute right-[28%] top-[-12rem] h-96 w-96 rounded-full bg-blue-200/20 blur-3xl" />
+        <div className="absolute bottom-[-10rem] left-[18%] h-96 w-96 rounded-full bg-emerald-200/15 blur-3xl" />
+      </div>
+
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1920px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_460px]">
+        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-5 pt-4 sm:px-8 lg:px-10 lg:py-5 xl:px-12" style={{ background: "transparent" }}>
+          <header className="flex items-center justify-between gap-4">
+            <Link to="/" className="inline-flex items-center">
+              <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
+            </Link>
+             <Link to="/" className="hidden items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#0B2B61] sm:inline-flex">
+               <Globe2 size={15} /> Explore ONENEXA
+            </Link>
+          </header>
+
+          <div className="flex flex-1 flex-col justify-center py-4 lg:py-2">
+            <div className="login-hero-copy max-w-none bg-transparent">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
+                <Sparkles size={14} className="text-cyan-500" />
+                {config?.hero_badge || "The modern business operating system"}
+              </div>
+              <h1 className="max-w-5xl text-4xl font-black leading-[1.01] tracking-[-0.045em] text-[#102f62] sm:text-5xl xl:text-[3.6rem]">
+                 {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
+              </h1>
+              <p className="mt-3 max-w-3xl text-[15px] leading-6 text-slate-600 sm:text-base">
+                 {config?.hero_subtitle || "Task management, invoicing, accounting, HRMS, records, compliance and intelligent automation — connected in one workspace."}
+              </p>
+            </div>
+
+             <section className="mt-4 min-w-0" aria-label="ONENEXA capabilities">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Everything connected</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-700">One platform. Every business function.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => scrollModules(-1)} aria-label="Previous modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronLeft size={17} /></button>
+                  <button type="button" onClick={() => scrollModules(1)} aria-label="Next modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/85 text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronRight size={17} /></button>
+                </div>
+              </div>
+              <div ref={railRef} className="login-module-rail flex gap-3 overflow-x-auto pb-3 pr-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden snap-x snap-mandatory">
+                {duplicatedModules.map((item, index) => {
+                  const Icon = item.icon;
+                  return (
     <div className="min-h-screen overflow-x-hidden bg-[#f5f8fc] text-slate-900">
       <div className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col">
         <header className="flex h-[78px] shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-6 sm:px-10 lg:px-12">
@@ -81,7 +205,6 @@ export default function Login() {
           <main className="relative overflow-hidden px-6 py-10 sm:px-10 lg:px-14 lg:py-14 xl:px-16">
             <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-cyan-200/30 blur-3xl" />
             <div className="pointer-events-none absolute right-10 top-0 h-80 w-80 rounded-full bg-blue-200/25 blur-3xl" />
-
             <div className="relative mx-auto flex h-full max-w-[940px] flex-col justify-center">
               <div className="max-w-3xl">
                 <div className="inline-flex items-center gap-2 border-l-2 border-cyan-500 pl-3 text-[11px] font-bold uppercase tracking-[.22em] text-[#174a91]">
@@ -97,12 +220,8 @@ export default function Login() {
               </div>
 
               <div className="mt-10 border-y border-slate-200/80 py-7">
-                <div className="flex items-end justify-between gap-6">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">The ONENEXA product suite</p>
-                    <p className="mt-1 text-sm font-semibold text-slate-700">Purpose-built products. One connected ecosystem.</p>
-                  </div>
-                </div>
+                <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">The ONENEXA product suite</p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">Purpose-built products. One connected ecosystem.</p>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
                   {[
                     { name: "Taskosphere", logo: "/logo-transparent.png", text: "Tasks" },
@@ -132,17 +251,11 @@ export default function Login() {
                   { icon: BarChart3, title: "Visible", text: "Teams and operations stay measurable." },
                 ].map(({ icon: Icon, title, text }) => (
                   <div key={title} className="flex gap-3">
-                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-[#1769ff] shadow-sm ring-1 ring-slate-200">
-                      <Icon size={15} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-extrabold text-[#173c70]">{title}</p>
-                      <p className="mt-1 text-[11px] leading-4 text-slate-500">{text}</p>
-                    </div>
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-[#1769ff] shadow-sm ring-1 ring-slate-200"><Icon size={15} /></div>
+                    <div><p className="text-xs font-extrabold text-[#173c70]">{title}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{text}</p></div>
                   </div>
                 ))}
               </div>
-
               <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-2 text-[10px] font-semibold text-slate-400">
                 <span><strong className="text-sm text-[#163b6e]">500+</strong> businesses</span>
                 <span><strong className="text-sm text-[#163b6e]">99.9%</strong> reliability</span>
@@ -156,65 +269,24 @@ export default function Login() {
             <div className="flex min-h-full flex-col px-6 py-8 sm:px-10 lg:px-9 lg:py-12">
               <div className="my-auto">
                 <div className="mb-7">
-                  <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef5ff] text-[#1769ff]">
-                    <LockKeyhole size={20} />
-                  </div>
-                  <h2 className="text-3xl font-black tracking-[-.04em] text-[#102f62]">
-                    {mode === "signin" ? "Welcome back." : "Activate your workspace."}
-                  </h2>
-                  <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">
-                    {mode === "signin" ? "Sign in to continue to your ONENEXA workspace." : "Verify your license and create the first administrator account."}
-                  </p>
+                  <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef5ff] text-[#1769ff]"><LockKeyhole size={20} /></div>
+                  <h2 className="text-3xl font-black tracking-[-.04em] text-[#102f62]">{mode === "signin" ? "Welcome back." : "Activate your workspace."}</h2>
+                  <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500">{mode === "signin" ? "Sign in to continue to your ONENEXA workspace." : "Verify your license and create the first administrator account."}</p>
                 </div>
-
                 <div className="mb-7 flex border-b border-slate-200">
-                  <button type="button" onClick={() => setMode("signin")} className={`relative flex-1 pb-3 text-sm font-bold transition ${mode === "signin" ? "text-[#102f62]" : "text-slate-400"}`}>
-                    Sign in
-                    {mode === "signin" && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1769ff]" />}
-                  </button>
-                  <button type="button" onClick={() => setMode("license")} className={`relative flex-1 pb-3 text-sm font-bold transition ${mode === "license" ? "text-[#102f62]" : "text-slate-400"}`}>
-                    I have a license
-                    {mode === "license" && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1769ff]" />}
-                  </button>
+                  <button type="button" onClick={() => setMode("signin")} className={`relative flex-1 pb-3 text-sm font-bold transition ${mode === "signin" ? "text-[#102f62]" : "text-slate-400"}`}>Sign in{mode === "signin" && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1769ff]" />}</button>
+                  <button type="button" onClick={() => setMode("license")} className={`relative flex-1 pb-3 text-sm font-bold transition ${mode === "license" ? "text-[#102f62]" : "text-slate-400"}`}>I have a license{mode === "license" && <span className="absolute inset-x-0 bottom-0 h-0.5 bg-[#1769ff]" />}</button>
                 </div>
-
                 {mode === "signin" ? (
                   <>
                     <form onSubmit={handleSubmit} className="space-y-5">
-                      <label className="block">
-                        <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Email address</span>
-                        <Input autoComplete="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" className="h-12 rounded-lg border-slate-200 bg-slate-50 px-4 text-sm focus-visible:ring-2 focus-visible:ring-blue-100" />
-                      </label>
-                      <label className="block">
-                        <span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Password</span>
-                        <div className="relative">
-                          <Input autoComplete="current-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="h-12 rounded-lg border-slate-200 bg-slate-50 px-4 pr-11 text-sm focus-visible:ring-2 focus-visible:ring-blue-100" />
-                          <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3 text-slate-400 hover:text-slate-700">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button>
-                        </div>
-                      </label>
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500">
-                          <input type="checkbox" checked={keepSignedIn} onChange={(e) => setKeepSignedIn(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
-                          Remember me
-                        </label>
-                        <Link to="/forgot-password" className="text-xs font-bold text-[#1769ff] hover:text-[#102f62]">Forgot password?</Link>
-                      </div>
-                      <motion.button type="submit" disabled={loading} whileTap={{ scale: .985 }} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#102f62] text-sm font-bold text-white transition hover:bg-[#0b2855] disabled:opacity-60">
-                        {loading ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}
-                      </motion.button>
+                      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Email address</span><Input autoComplete="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" className="h-12 rounded-lg border-slate-200 bg-slate-50 px-4 text-sm" /></label>
+                      <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Password</span><div className="relative"><Input autoComplete="current-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="h-12 rounded-lg border-slate-200 bg-slate-50 px-4 pr-11 text-sm" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3 text-slate-400 hover:text-slate-700">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></div></label>
+                      <div className="flex items-center justify-between gap-3"><label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500"><input type="checkbox" checked={keepSignedIn} onChange={(e) => setKeepSignedIn(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />Remember me</label><Link to="/forgot-password" className="text-xs font-bold text-[#1769ff] hover:text-[#102f62]">Forgot password?</Link></div>
+                      <motion.button type="submit" disabled={loading} whileTap={{ scale: .985 }} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#102f62] text-sm font-bold text-white transition hover:bg-[#0b2855] disabled:opacity-60">{loading ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</motion.button>
                     </form>
-
                     <AnimatePresence>{serverWaking && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-4 overflow-hidden"><div className="border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">Server is waking up{wakingDots}. This may take a few seconds.</div></motion.div>}</AnimatePresence>
-
-                    <div className="mt-7 border-t border-slate-200 pt-5">
-                      <div className="flex items-start gap-3">
-                        <ShieldCheck size={17} className="mt-0.5 shrink-0 text-emerald-600" />
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">Secure workspace access</p>
-                          <p className="mt-1 text-xs leading-5 text-slate-500">{config?.login_card_note || "Access is protected by the permissions assigned to your account."}</p>
-                        </div>
-                      </div>
-                    </div>
+                    <div className="mt-7 border-t border-slate-200 pt-5"><div className="flex items-start gap-3"><ShieldCheck size={17} className="mt-0.5 shrink-0 text-emerald-600" /><div><p className="text-xs font-bold text-slate-800">Secure workspace access</p><p className="mt-1 text-xs leading-5 text-slate-500">{config?.login_card_note || "Access is protected by the permissions assigned to your account."}</p></div></div></div>
                     <p className="mt-6 text-center text-xs text-slate-500">New to ONENEXA? <Link to="/" className="font-bold text-[#1769ff]">Request a demo</Link></p>
                   </>
                 ) : (
@@ -239,14 +311,10 @@ export default function Login() {
                   </>
                 )}
               </div>
-
-              <div className="mt-10 flex items-center justify-center gap-3 text-[10px] text-slate-400">
-                <ShieldCheck size={13} /> Secure access · Privacy · Terms · Support
-              </div>
+              <div className="mt-10 flex items-center justify-center gap-3 text-[10px] text-slate-400"><ShieldCheck size={13} /> Secure access · Privacy · Terms · Support</div>
             </div>
           </aside>
         </div>
       </div>
     </div>
-  );
-}
+  );}
