@@ -741,6 +741,8 @@ async def startup_event():
         await db.ai_document_memory.create_index("created_at")
         await create_gst_portal_sync_indexes()
         await create_accounting_integrity_indexes()
+        from backend.accounting_lock import create_phase4_accounting_indexes
+        await create_phase4_accounting_indexes()
         await create_accounting_extended_indexes()
         await db.tasks.create_index("created_by")
         await db.tasks.create_index("due_date")
