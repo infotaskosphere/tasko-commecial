@@ -4,28 +4,44 @@ import { getPublicWebsiteConfig } from "@/lib/websiteApi";
 
 const STORAGE_KEY = "taskosphere_saved_website_config";
 
+const rebrandPublicText = (value) => typeof value === "string"
+  ? value
+    .replace(/\btaskosphere\b/gi, "Task Management")
+    .replace(/\bonenexa\b/gi, "ONENEXA")
+    .replace(/\/onenexa-logo\.svg/gi, "/onenexa-logo.png")
+  : value;
+
+const rebrandBuilder = (value) => {
+  if (Array.isArray(value)) return value.map(rebrandBuilder);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rebrandBuilder(item)]));
+  return rebrandPublicText(value);
+};
+
 const identityFromConfig = (config = {}) => ({
-  site_name: config.site_name,
-  site_tagline: config.site_tagline,
-  logo_url: config.logo_url,
-  favicon_url: config.favicon_url,
-  footer_company: config.footer_company,
-  footer_text: config.footer_text,
-  footer_copyright: config.footer_copyright,
+  site_name: rebrandPublicText(config.site_name) || "ONENEXA",
+  site_tagline: rebrandPublicText(config.site_tagline) || "One platform for modern business operations.",
+  logo_url: rebrandPublicText(config.logo_url) || "/onenexa-logo.png",
+  favicon_url: rebrandPublicText(config.favicon_url) || "/onenexa-logo.png",
+  footer_company: rebrandPublicText(config.footer_company) || "ONENEXA",
+  footer_text: rebrandPublicText(config.footer_text),
+  footer_copyright: rebrandPublicText(config.footer_copyright) || "© 2026 ONENEXA. All rights reserved.",
 });
 
-const normalizeBuilder = (savedBuilder) => ({
-  ...DEFAULT_BUILDER,
-  ...savedBuilder,
-  global: {
-    ...DEFAULT_BUILDER.global,
-    ...savedBuilder?.global,
-    design: { ...DEFAULT_BUILDER.global.design, ...savedBuilder?.global?.design },
-    header: { ...DEFAULT_BUILDER.global.header, ...savedBuilder?.global?.header },
-    footer: { ...DEFAULT_BUILDER.global.footer, ...savedBuilder?.global?.footer },
-  },
-  pages: savedBuilder?.pages,
-});
+const normalizeBuilder = (savedBuilder) => {
+  const branded = rebrandBuilder(savedBuilder || {});
+  return {
+    ...DEFAULT_BUILDER,
+    ...branded,
+    global: {
+      ...DEFAULT_BUILDER.global,
+      ...branded.global,
+      design: { ...DEFAULT_BUILDER.global.design, ...branded.global?.design },
+      header: { ...DEFAULT_BUILDER.global.header, ...branded.global?.header },
+      footer: { ...DEFAULT_BUILDER.global.footer, ...branded.global?.footer },
+    },
+    pages: branded.pages || DEFAULT_BUILDER.pages,
+  };
+};
 
 const getCachedConfig = () => {
   if (typeof window === "undefined" || !window.localStorage) return null;
@@ -88,7 +104,7 @@ export default function WebsiteHome() {
   }, []);
 
   useEffect(() => {
-    document.title = identity.site_name || "Taskosphere";
+    document.title = identity.site_name || "ONENEXA";
     if (identity.favicon_url) {
       const link = document.querySelector('link[rel="icon"]') || document.createElement("link");
       link.rel = "icon";
@@ -99,7 +115,7 @@ export default function WebsiteHome() {
 
   if (!ready || !builder) {
     return (
-      <div className="min-h-screen bg-white text-slate-900" aria-label="Loading Taskosphere">
+      <div className="min-h-screen bg-white text-slate-900" aria-label="Loading ONENEXA">
         <header className="h-[72px] border-b border-slate-200 bg-white" />
         <main className="min-h-[calc(100vh-72px)] bg-slate-50" />
       </div>
