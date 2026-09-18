@@ -781,7 +781,7 @@ async def bulk_update_status(
     # ── Permission gate ─────────────────────────────────────────────────────
     perms = current_user.permissions if isinstance(current_user.permissions, dict) else \
             (current_user.permissions.model_dump() if hasattr(current_user.permissions, "model_dump") else {})
-    if current_user.role != "admin" and not perms.get("can_view_compliance", False):
+    if current_user.role != "admin" and not perms.get("can_manage_compliance", False):
         raise HTTPException(403, "You do not have permission to update compliance assignments")
 
     # Dept scope check
