@@ -64,7 +64,7 @@ export default function Login() {
   }, [serverWaking]);
 
   const siteName = "ONENEXA";
-  const logo = "/onenexa-logo.png?v=20260918";
+  const logo = "/onenexa-logo.svg?v=20260918";
 
   const scrollModules = (direction) => {
     const rail = railRef.current;
@@ -133,20 +133,20 @@ export default function Login() {
     } finally { setLookupBusy(false); }
   };
 
-  const pageStyle = { background: "linear-gradient(135deg, #ffffff 0%, #f8fbff 62%, #f4f8ff 100%)" };
+  const pageStyle = { background: "#f7f9fc" };
 
   const duplicatedModules = useMemo(() => MODULES, []);
 
   return (
-    <div className="login-shell min-h-screen overflow-x-hidden bg-transparent text-slate-900" style={pageStyle}>
+    <div className="login-shell min-h-screen overflow-x-hidden text-slate-900" style={pageStyle}>
       <div className="pointer-events-none fixed inset-0 hidden overflow-hidden">
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cyan-200/20 blur-3xl" />
         <div className="absolute right-[28%] top-[-12rem] h-96 w-96 rounded-full bg-blue-200/20 blur-3xl" />
         <div className="absolute bottom-[-10rem] left-[18%] h-96 w-96 rounded-full bg-emerald-200/15 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1800px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_480px]">
-        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-5 pt-4 sm:px-8 lg:px-9 lg:py-5 xl:px-10" style={{ background: "transparent" }}>
+      <div className="relative mx-auto flex min-h-screen w-full max-w-[1920px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_460px]">
+        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-5 pb-5 pt-4 sm:px-8 lg:px-10 lg:py-5 xl:px-12" style={{ background: "transparent" }}>
           <header className="flex items-center justify-between gap-4">
             <Link to="/" className="inline-flex items-center">
               <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
@@ -156,28 +156,28 @@ export default function Login() {
             </Link>
           </header>
 
-          <div className="flex flex-1 flex-col justify-center py-5 lg:py-3">
+          <div className="flex flex-1 flex-col justify-center py-4 lg:py-2">
             <div className="login-hero-copy max-w-none bg-transparent">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/75 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
                 <Sparkles size={14} className="text-cyan-500" />
                 {config?.hero_badge || "The modern business operating system"}
               </div>
-              <h1 className="max-w-5xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[3.85rem]">
+              <h1 className="max-w-5xl text-4xl font-black leading-[1.01] tracking-[-0.045em] text-[#102f62] sm:text-5xl xl:text-[3.6rem]">
                  {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
               </h1>
-              <p className="mt-4 max-w-3xl text-[15px] leading-6 text-slate-600 sm:text-base">
+              <p className="mt-3 max-w-3xl text-[15px] leading-6 text-slate-600 sm:text-base">
                  {config?.hero_subtitle || "Task management, invoicing, accounting, HRMS, records, compliance and intelligent automation — connected in one workspace."}
               </p>
             </div>
 
-             <section className="mt-5 min-w-0" aria-label="ONENEXA capabilities">
+             <section className="mt-4 min-w-0" aria-label="ONENEXA capabilities">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Everything connected</p>
                   <p className="mt-1 text-sm font-semibold text-slate-700">One platform. Every business function.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => scrollModules(-1)} aria-label="Previous modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/85 text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronLeft size={17} /></button>
+                  <button type="button" onClick={() => scrollModules(-1)} aria-label="Previous modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronLeft size={17} /></button>
                   <button type="button" onClick={() => scrollModules(1)} aria-label="Next modules" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white/85 text-slate-500 shadow-sm transition hover:border-blue-200 hover:text-blue-600"><ChevronRight size={17} /></button>
                 </div>
               </div>
@@ -185,7 +185,7 @@ export default function Login() {
                 {duplicatedModules.map((item, index) => {
                   const Icon = item.icon;
                   return (
-                    <motion.article key={`${item.title}-${index}`} whileHover={{ y: -3 }} className="w-[168px] min-w-[168px] shrink-0 snap-start rounded-2xl border border-white/90 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,.07)] backdrop-blur sm:w-[185px] sm:min-w-[185px] sm:shrink-0">
+                    <motion.article key={`${item.title}-${index}`} whileHover={{ y: -3 }} className="w-[168px] min-w-[168px] shrink-0 snap-start rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,.06)] sm:w-[185px] sm:min-w-[185px] sm:shrink-0">
                       <div className={`mb-5 flex h-11 w-11 items-center justify-center rounded-xl border ${TONES[item.tone]}`}>
                         <Icon size={21} strokeWidth={2.1} />
                       </div>
@@ -204,13 +204,13 @@ export default function Login() {
               </div>
             </section>
 
-             <section className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3" aria-label="ONENEXA business capabilities">
+             <section className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label="ONENEXA business capabilities">
               {[
                 { title: "One connected workspace", text: "Tasks, customers, finance and operations stay connected.", icon: Sparkles, tone: "text-cyan-600 bg-cyan-50" },
                 { title: "Built for control", text: "Permissions, compliance and records stay organised.", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
                 { title: "Made to move faster", text: "Automate routine work and keep teams focused.", icon: BarChart3, tone: "text-violet-600 bg-violet-50" },
               ].map(({ title, text, icon: Icon, tone }) => (
-                <div key={title} className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200/80 bg-white/80 px-3.5 py-3 shadow-[0_5px_18px_rgba(15,23,42,.04)]">
+                <div key={title} className="flex min-w-0 items-start gap-3 rounded-xl border border-slate-200/80 bg-white px-3.5 py-3 shadow-[0_5px_18px_rgba(15,23,42,.04)]">
                   <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tone}`}><Icon size={16} /></div>
                   <div className="min-w-0">
                     <p className="text-[11px] font-extrabold text-[#163b6e]">{title}</p>
@@ -220,7 +220,7 @@ export default function Login() {
               ))}
             </section>
 
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-200/70 pt-3 text-[10px] font-semibold text-slate-500">
+              <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-200/70 pt-3 text-[10px] font-semibold text-slate-500">
                 <span className="inline-flex items-center gap-1.5"><ShieldCheck size={14} className="text-blue-500" /> Enterprise-grade access</span>
                 <span className="inline-flex items-center gap-1.5"><Sparkles size={14} className="text-emerald-500" /> Automation built in</span>
                 <span className="inline-flex items-center gap-1.5"><BarChart3 size={14} className="text-violet-500" /> Business visibility</span>
@@ -239,13 +239,13 @@ export default function Login() {
           </footer>
         </main>
 
-        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-slate-50/70 px-5 py-5 backdrop-blur-xl sm:px-8 lg:border-l lg:border-t-0 lg:px-8 lg:py-5 xl:px-10">
+        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-white/70 px-5 py-4 backdrop-blur-xl sm:px-7 lg:border-l lg:border-t-0 lg:px-7 lg:py-4 xl:px-8">
           <div className="flex justify-end">
             <Link to="/" className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-bold text-blue-600 shadow-sm transition hover:bg-blue-50">Request a Demo</Link>
           </div>
 
-          <div className="flex flex-1 items-center justify-center py-7">
-            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[440px] rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,.11)] sm:p-7">
+          <div className="flex flex-1 items-center justify-center py-4">
+            <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[420px] rounded-[22px] border border-slate-200/80 bg-white p-6 shadow-[0_20px_50px_rgba(15,23,42,.10)] sm:p-7">
               <div className="mb-7 text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><LockKeyhole size={22} /></div>
                  <h2 className="text-3xl font-black tracking-[-0.03em] text-[#102f62]">{mode === "signin" ? "Welcome back" : "I have a license"}</h2>
