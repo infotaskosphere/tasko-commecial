@@ -4898,7 +4898,7 @@ async def sync_invoice_journal_entry(invoice_id: str):
         
     # If an active posting exists, compare its amount. Matching entries are
     # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    _active = await db.journal_entries.find_one({"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
     if _active:
         _desired_total = round(float(float(inv.get("grand_total") or 0)), 2)
         if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
@@ -4982,7 +4982,7 @@ async def sync_payment_journal_entry(payment_id: str):
     
     # If an active posting exists, compare its amount. Matching entries are
     # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({source": "payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    _active = await db.journal_entries.find_one({"source": "payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
     if _active:
         _desired_total = round(float(amount), 2)
         if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
@@ -5066,7 +5066,7 @@ async def sync_purchase_journal_entry(invoice_id: str):
 
     # If an active posting exists, compare its amount. Matching entries are
     # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    _active = await db.journal_entries.find_one({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
     if _active:
         _desired_total = round(float(grand_total), 2)
         if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
@@ -5132,7 +5132,7 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
 
     # If an active posting exists, compare its amount. Matching entries are
     # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    _active = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
     if _active:
         _desired_total = round(float(amount), 2)
         if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
