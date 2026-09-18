@@ -3133,21 +3133,19 @@ async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(
     if not existing:
         raise HTTPException(404, "Purchase invoice not found")
 
-    # Clean up any payments recorded against this bill (and their journal entries)
-    # before deleting the bill's own journal entry, so nothing dangles in the ledger.
+    # Preserve the accounting trail when the source document is deleted:
+    # reverse each posted payment and the bill itself before removing the
+    # operational records.
+    from backend.accounting_lock import reverse_journal_entry
     payments = await db.purchase_payments.find({"purchase_invoice_id": invoice_id}, {"_id": 0, "id": 1}).to_list(500)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"]})
+        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"], "reversed": {"$ne": True}})
         if existing_pe:
-            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
-            await db.journal_entries.delete_one({"id": existing_pe["id"]})
+            await reverse_journal_entry(existing_pe["id"], "Purchase payment deleted", current_user.id)
+    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(50)
+    for entry in _old_entries:
+        await reverse_journal_entry(entry["id"], "Purchase invoice deleted", current_user.id)
     await db.purchase_payments.delete_many({"purchase_invoice_id": invoice_id})
-
-    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
 
     await db.purchase_invoices.delete_one({"id": invoice_id})
     client_id = existing.get("client_id")
@@ -4216,18 +4214,25 @@ async def delete_invoice(inv_id: str, current_user: User = Depends(check_module_
     _existing = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1, "original_invoice_id": 1})
     _parent_id = _existing.get("original_invoice_id") if _existing and _existing.get("invoice_type") in ("credit_note", "debit_note") else None
 
-    # Delete journal entries for associated payments
+    # Preserve the accounting trail when deleting the operational invoice:
+    # reverse all posted receipts first; never erase their journal history.
+    from backend.accounting_lock import reverse_journal_entry
     payments = await db.payments.find({"invoice_id": inv_id}).to_list(1000)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"]})
+        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"], "reversed": {"$ne": True}})
         if existing_pe:
-            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
-            await db.journal_entries.delete_one({"id": existing_pe["id"]})
+            await reverse_journal_entry(existing_pe["id"], "Customer payment deleted with invoice", current_user.id)
     await db.payments.delete_many({"invoice_id": inv_id})
 
+    # Reverse the invoice posting before deleting the operational record.
+    _invoice_entries = await db.journal_entries.find(
+        {"source": "sale", "source_id": inv_id, "reversed": {"$ne": True}},
+        {"_id": 0, "id": 1},
+    ).to_list(50)
+    for entry in _invoice_entries:
+        await reverse_journal_entry(entry["id"], "Sales invoice deleted", current_user.id)
     result = await db.invoices.delete_one({"id": inv_id})
     if result.deleted_count == 0: raise HTTPException(404, "Invoice not found")
-    await sync_invoice_journal_entry(inv_id)
     if _parent_id:
         await recalculate_invoice_accounting(_parent_id)
     return {"message": f"Invoice {inv_id} deleted"}
