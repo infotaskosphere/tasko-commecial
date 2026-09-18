@@ -142,7 +142,7 @@ export default function Login() {
     ? { backgroundImage: `linear-gradient(120deg, rgba(245,251,255,.90), rgba(238,250,250,.92)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
     : { background: "radial-gradient(circle at 8% 8%, rgba(8,189,232,.12), transparent 28%), radial-gradient(circle at 76% 0%, rgba(37,99,235,.11), transparent 28%), radial-gradient(circle at 20% 100%, rgba(16,185,129,.12), transparent 30%), linear-gradient(135deg, #f7fbff 0%, #f4fbfb 46%, #f5f8ff 100%)" };
 
-  const duplicatedModules = useMemo(() => [...MODULES, ...MODULES], []);
+  const duplicatedModules = useMemo(() => MODULES, []);
 
   return (
     <div className="min-h-screen overflow-x-hidden text-slate-900" style={pageStyle}>
@@ -192,7 +192,7 @@ export default function Login() {
                 {duplicatedModules.map((item, index) => {
                   const Icon = item.icon;
                   return (
-                    <motion.article key={`${item.title}-${index}`} whileHover={{ y: -3 }} className="w-[168px] min-w-[168px] snap-start rounded-2xl border border-white/90 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,.07)] backdrop-blur sm:w-[185px] sm:min-w-[185px]">
+                    <motion.article key={`${item.title}-${index}`} whileHover={{ y: -3 }} className="w-[168px] min-w-[168px] shrink-0 snap-start rounded-2xl border border-white/90 bg-white/80 p-4 shadow-[0_12px_30px_rgba(15,23,42,.07)] backdrop-blur sm:w-[185px] sm:min-w-[185px] sm:shrink-0">
                       <div className={`mb-5 flex h-11 w-11 items-center justify-center rounded-xl border ${TONES[item.tone]}`}>
                         <Icon size={21} strokeWidth={2.1} />
                       </div>
