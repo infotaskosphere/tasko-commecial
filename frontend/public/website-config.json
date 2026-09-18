@@ -1,231 +1,39 @@
 {
-  "site_name": "Taskosphere",
-  "site_tagline": "One platform for tasks, finance, compliance and people.",
-  "logo_url": "/logo.png",
-  "favicon_url": "/favicon.png",
-  "primary_color": "#0D3B66",
-  "accent_color": "#1FAF5A",
+  "site_name": "ONENEXA",
+  "site_tagline": "One platform for every business function.",
+  "logo_url": "/onenexa-logo.png",
+  "favicon_url": "/onenexa-logo.png",
+  "primary_color": "#102A56",
+  "accent_color": "#16C7A2",
   "hero_badge": "THE MODERN BUSINESS OPERATING SYSTEM",
   "hero_title": "Everything your business needs. Nothing scattered.",
-  "hero_subtitle": "Task management, invoicing, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
-  "hero_cta_text": "Explore Taskosphere",
+  "hero_subtitle": "Task management, finance, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
+  "hero_cta_text": "Explore ONENEXA",
   "hero_cta_href": "#features",
   "hero_secondary_text": "Sign In",
   "hero_secondary_href": "/login",
-  "hero_image_url": "/logo-transparent.png",
+  "hero_image_url": "/onenexa-logo.png",
   "features_title": "Platform Modules",
-  "features_subtitle": "Choose the exact software package your customer needs and activate it through your commercial license.",
+  "features_subtitle": "Choose the capabilities your business needs and activate them through your ONENEXA license.",
   "features": [
-    {
-      "id": "tasks",
-      "title": "Task Management",
-      "eyebrow": "OPERATIONS",
-      "description": "Projects, tasks, workflows, reminders and team visibility.",
-      "route": "/tasks"
-    },
-    {
-      "id": "invoicing",
-      "title": "Invoicing & Billing",
-      "eyebrow": "FINANCE",
-      "description": "Quotations, invoices, purchases and customer billing.",
-      "route": "/invoicing"
-    },
-    {
-      "id": "accounting",
-      "title": "Accounting & Banking",
-      "eyebrow": "FINIX SUITE",
-      "description": "Ledgers, banking, financial reports and audit controls.",
-      "route": "/accounting-reports"
-    },
-    {
-      "id": "hrms",
-      "title": "HRMS & People",
-      "eyebrow": "PEOPLE MATRIX",
-      "description": "Attendance, leave, payroll, recruitment and staff activity.",
-      "route": "/people-matrix"
-    },
-    {
-      "id": "compliance",
-      "title": "Compliance & GST",
-      "eyebrow": "LEGAL & TAX",
-      "description": "GST reconciliation, ROC filing, trademark and legal dates.",
-      "route": "/compliance-dashboard"
-    },
-    {
-      "id": "records",
-      "title": "Client Records",
-      "eyebrow": "VAULT",
-      "description": "Client records, DSC repository, document register and approvals.",
-      "route": "/records-dashboard"
-    },
-    {
-      "id": "ai",
-      "title": "AI & Automation",
-      "eyebrow": "INTELLIGENCE",
-      "description": "Intelligent document processing and operational assistance.",
-      "route": "/ai-reader"
-    }
+     { "id": "tasks", "title": "Task Management", "eyebrow": "OPERATIONS", "description": "Projects, tasks, workflows, reminders and team visibility.", "route": "/tasks" },
+    { "id": "invoicing", "title": "Invoicing & Billing", "eyebrow": "FINIX", "description": "Quotations, invoices, purchases and customer billing.", "route": "/invoicing" },
+    { "id": "accounting", "title": "Accounting & Banking", "eyebrow": "FINIX", "description": "Ledgers, banking, financial reports and audit controls.", "route": "/accounting-reports" },
+    { "id": "hrms", "title": "HRMS & People", "eyebrow": "PEOPLE MATRIX", "description": "Attendance, leave, payroll, recruitment and staff activity.", "route": "/people-matrix" },
+    { "id": "compliance", "title": "Compliance & GST", "eyebrow": "COMPLIGENIE", "description": "GST reconciliation, ROC filing, trademark and legal dates.", "route": "/compliance-dashboard" },
+    { "id": "records", "title": "Client Records", "eyebrow": "RECORDS", "description": "Client records, DSC repository, document register and approvals.", "route": "/records-dashboard" },
+    { "id": "ai", "title": "AI & Automation", "eyebrow": "ONENEXA AI", "description": "Intelligent document processing and operational assistance.", "route": "/ai-reader" }
   ],
-  "solutions": [
-    {
-      "title": "Chartered Accountants & Tax Practitioners",
-      "description": "Consolidate GST, ROC filings, DSC tracking, task assignments and billing in a dedicated professional portal."
-    },
-    {
-      "title": "Corporate Law & Trademark Firms",
-      "description": "Manage intellectual property, annual secretarial compliance, and client document authorizations with audit trails."
-    },
-    {
-      "title": "Growing Enterprises & Agencies",
-      "description": "Unify employee attendance, payroll processing, vendor payments and client invoices without switching tools."
-    }
-  ],
-  "pricing": [
-    {
-      "name": "Starter Suite",
-      "price": "₹4,999",
-      "period": "/ month",
-      "description": "Ideal for growing agencies and independent firms needing tasks, billing and client records.",
-      "featured": false
-    },
-    {
-      "name": "Professional Suite",
-      "price": "₹9,999",
-      "period": "/ month",
-      "description": "Complete enterprise stack including Invoicing, Full Accounting, HRMS and Compliance.",
-      "featured": true
-    },
-    {
-      "name": "Enterprise Custom",
-      "price": "Custom",
-      "period": "/ year",
-      "description": "Dedicated Cloud deployment, custom SLA, WhatsApp gateway and tailored integrations.",
-      "featured": false
-    }
-  ],
-  "testimonials": [
-    {
-      "name": "CA Rajesh Sharma",
-      "role": "Managing Partner, Sharma & Associates",
-      "quote": "Taskosphere eliminated WhatsApp chaos in our firm. 400+ client compliances and DSC expiries are now tracked accurately."
-    },
-    {
-      "name": "Pooja Mehta",
-      "role": "Operations Director, Nexa Solutions",
-      "quote": "Having our billing, automated bank book and staff attendance inside one system saved us 20 hours every month."
-    }
-  ],
-  "seo_title": "Taskosphere — Business Operating System",
-  "seo_description": "Task management, invoicing, accounting, HRMS and compliance in one connected platform.",
-  "seo_og_image": "",
-  "footer_company": "Taskosphere",
-  "footer_text": "A configurable commercial business operating system.",
-  "footer_email": "support@taskosphere.com",
+  "solutions": [],
+  "pricing": [],
+  "testimonials": [],
+  "seo_title": "ONENEXA — Business Operating Platform",
+  "seo_description": "ONENEXA connects operations, finance, compliance, records, client growth and people workflows in one licensed workspace.",
+  "seo_og_image": "/onenexa-logo.png",
+  "footer_company": "ONENEXA",
+  "footer_text": "One platform connecting business operations through modular licensed products.",
+  "footer_email": "support@onenexa.com",
   "footer_phone": "+91 98765 43210",
   "footer_address": "Tech Hub, 4th Floor, Sector 62, India",
-  "footer_copyright": "© 2026 Taskosphere. All rights reserved.",
-  "builder": {
-    "version": 5,
-    "activePageId": "home",
-    "pages": [
-      {
-        "id": "home",
-        "name": "Home",
-        "slug": "/",
-        "visible": true,
-        "sections": [
-          {
-            "id": "hero",
-            "type": "hero",
-            "title": "Hero",
-            "visible": true,
-            "layout": "split",
-            "data": {
-              "badge": "THE MODERN BUSINESS OPERATING SYSTEM",
-              "title": "Everything your business needs. Nothing scattered.",
-              "subtitle": "Task management, invoicing, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
-              "primaryText": "Explore Taskosphere",
-              "primaryHref": "#features",
-              "secondaryText": "Sign in",
-              "secondaryHref": "/login",
-              "image": "/logo-transparent.png",
-              "theme": "executive"
-            }
-          },
-          {
-            "id": "features",
-            "type": "features",
-            "title": "Platform Modules",
-            "visible": true,
-            "layout": "cards",
-            "data": {
-              "heading": "One platform. Every business function.",
-              "subtitle": "Choose the exact software package your customer needs and activate it through your commercial license.",
-              "items": [
-                { "title": "Task Management", "description": "Projects, tasks, workflows, reminders and team visibility.", "route": "/tasks" },
-                { "title": "Invoicing & Billing", "description": "Quotations, invoices, purchases and customer billing.", "route": "/invoicing" },
-                { "title": "Accounting & Banking", "description": "Ledgers, banking, financial reports and audit controls.", "route": "/accounting-reports" },
-                { "title": "HRMS & People", "description": "Attendance, leave, payroll, recruitment and staff activity.", "route": "/people-matrix" },
-                { "title": "Compliance & GST", "description": "GST reconciliation, ROC filing, trademark and legal dates.", "route": "/compliance-dashboard" },
-                { "title": "Client Records", "description": "Client records, DSC repository, document register and approvals.", "route": "/records-dashboard" },
-                { "title": "AI & Automation", "description": "Intelligent document processing and operational assistance.", "route": "/ai-reader" }
-              ]
-            }
-          },
-          {
-            "id": "why",
-            "type": "text",
-            "title": "Why Taskosphere",
-            "visible": true,
-            "data": {
-              "heading": "Run work from one connected workspace",
-              "body": "Assign and track work, communicate with your team, manage documents, monitor productivity and keep financial and compliance operations connected — without scattering information across different systems."
-            }
-          },
-          {
-            "id": "pricing",
-            "type": "pricing",
-            "title": "Pricing & Licenses",
-            "visible": true,
-            "data": {
-              "heading": "Transparent Commercial Licensing",
-              "subtitle": "Activate standalone modular packages or deploy the complete enterprise business suite.",
-              "items": [
-                { "name": "Starter Suite", "price": "₹4,999", "period": "/ month", "description": "Ideal for growing agencies and independent firms needing tasks, billing and client records.", "featured": false },
-                { "name": "Professional Suite", "price": "₹9,999", "period": "/ month", "description": "Complete enterprise stack including Invoicing, Full Accounting, HRMS and Compliance.", "featured": true },
-                { "name": "Enterprise Custom", "price": "Custom", "period": "/ year", "description": "Dedicated Cloud deployment, custom SLA, WhatsApp gateway and tailored integrations.", "featured": false }
-              ]
-            }
-          },
-          {
-            "id": "cta",
-            "type": "cta",
-            "title": "Call to Action",
-            "visible": true,
-            "layout": "center",
-            "data": {
-              "heading": "Ready to build your Taskosphere workspace?",
-              "text": "Configure the modules your business needs and get started today.",
-              "button": "Sign in to workspace",
-              "href": "/login"
-            }
-          }
-        ]
-      }
-    ],
-    "global": {
-      "header": { "sticky": true, "showLogin": true, "logo": true },
-      "footer": { "show": true, "text": "A configurable commercial business operating system.", "social": true },
-      "design": {
-        "primary": "#0D3B66",
-        "accent": "#1FAF5A",
-        "background": "#FFFFFF",
-        "text": "#0F172A",
-        "font": "Plus Jakarta Sans",
-        "radius": "medium",
-        "width": "wide"
-      }
-    },
-    "media": []
-  }
+  "footer_copyright": "© 2026 ONENEXA. All rights reserved."
 }
