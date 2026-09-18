@@ -135,14 +135,14 @@ export default function Login() {
   };
 
   const pageStyle = backgroundImage
-    ? { backgroundImage: `linear-gradient(120deg, rgba(245,251,255,.90), rgba(238,250,250,.92)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
-    : { background: "radial-gradient(circle at 8% 8%, rgba(8,189,232,.12), transparent 28%), radial-gradient(circle at 76% 0%, rgba(37,99,235,.11), transparent 28%), radial-gradient(circle at 20% 100%, rgba(16,185,129,.12), transparent 30%), linear-gradient(135deg, #f7fbff 0%, #f4fbfb 46%, #f5f8ff 100%)" };
+    ? { backgroundImage: `linear-gradient(120deg, rgba(255,255,255,.96), rgba(248,251,255,.96)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
+    : { background: "#ffffff" };
 
   const duplicatedModules = useMemo(() => MODULES, []);
 
   return (
     <div className="login-shell min-h-screen overflow-x-hidden bg-transparent text-slate-900" style={pageStyle}>
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+      <div className="pointer-events-none fixed inset-0 hidden overflow-hidden">
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cyan-200/20 blur-3xl" />
         <div className="absolute right-[28%] top-[-12rem] h-96 w-96 rounded-full bg-blue-200/20 blur-3xl" />
         <div className="absolute bottom-[-10rem] left-[18%] h-96 w-96 rounded-full bg-emerald-200/15 blur-3xl" />
@@ -244,11 +244,11 @@ export default function Login() {
               <span className="hidden h-5 w-px bg-slate-200 sm:block" />
               <span><strong className="text-lg text-[#163b6e]">24/7</strong> support</span>
             </div>
-            <span>{config?.footer_copyright || `© 2026 ${siteName}`}</span>
+            <span>© 2026 OneNexa. All rights reserved.</span>
           </footer>
         </main>
 
-        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-white/65 px-5 py-6 backdrop-blur-xl sm:px-10 lg:border-l lg:border-t-0 lg:px-10 lg:py-8 xl:px-14">
+        <aside className="relative flex min-w-0 flex-col border-t border-slate-200/70 bg-slate-50/70 px-5 py-6 backdrop-blur-xl sm:px-10 lg:border-l lg:border-t-0 lg:px-10 lg:py-8 xl:px-14">
           <div className="flex justify-end">
             <Link to="/" className="rounded-xl border border-blue-200 bg-white px-4 py-2.5 text-xs font-bold text-blue-600 shadow-sm transition hover:bg-blue-50">Request a Demo</Link>
           </div>
