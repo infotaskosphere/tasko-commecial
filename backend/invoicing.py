@@ -4828,13 +4828,8 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
 async def sync_invoice_journal_entry(invoice_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # 1. Clean up any existing journal entries for this invoice
-    _old_entries = await db.journal_entries.find({"source": "sale", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-        
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current invoice document
     inv = await db.invoices.find_one({"id": invoice_id})
     if not inv:
@@ -4918,13 +4913,8 @@ async def sync_invoice_journal_entry(invoice_id: str):
 async def sync_payment_journal_entry(payment_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # 1. Clean up any existing journal entries for this payment
-    _old_entries = await db.journal_entries.find({"source": "payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-        
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current payment document
     payment = await db.payments.find_one({"id": payment_id})
     if not payment:
@@ -5000,13 +4990,8 @@ async def sync_purchase_journal_entry(invoice_id: str):
     liability), and removed again if the bill is cancelled or deleted."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # 1. Clean up any existing journal entry for this purchase bill
-    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current purchase invoice document
     inv = await db.purchase_invoices.find_one({"id": invoice_id})
     if not inv:
@@ -5076,13 +5061,8 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
     Cr Cash/Bank — the entry for actually paying a vendor bill."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # 1. Clean up any existing journal entry for this payment
-    _old_entries = await db.journal_entries.find({"source": "purchase_payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
-    if _old_entries:
-        _old_ids = [e["id"] for e in _old_entries]
-        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
-
+    # Historical journal entries are immutable. Any changed business document
+    # must be corrected with a compensating reversal and a fresh posting.
     # 2. Fetch the current payment document
     payment = await db.purchase_payments.find_one({"id": payment_id})
     if not payment:
