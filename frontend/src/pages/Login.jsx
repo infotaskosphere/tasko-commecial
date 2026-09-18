@@ -66,10 +66,8 @@ export default function Login() {
   }, [serverWaking]);
 
   const siteName = "OneNexa";
-  const logo = "/onenexa-logo.svg";
-  const primary = "#0B2B61";
-  const accent = "#08BDE8";
-  const backgroundImage = config?.login_background_image;
+  const logo = "/onenexa-logo.svg?v=20260918";
+    const backgroundImage = config?.login_background_image;
 
   const scrollModules = (direction) => {
     const rail = railRef.current;
@@ -153,10 +151,10 @@ export default function Login() {
       </div>
 
       <div className="relative mx-auto flex min-h-screen max-w-[1680px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_520px]">
-        <main className="flex min-w-0 flex-1 flex-col px-6 pb-8 pt-6 sm:px-10 lg:px-14 lg:py-8 xl:px-20">
+        <main className="login-page-main flex min-w-0 flex-1 flex-col bg-transparent px-6 pb-8 pt-6 sm:px-10 lg:px-14 lg:py-8 xl:px-20" style={{ background: "transparent" }}>
           <header className="flex items-center justify-between gap-4">
             <Link to="/" className="inline-flex items-center">
-              <img src={logo} alt={siteName} className="h-12 w-auto max-w-[260px] object-contain sm:h-14" />
+              <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
             </Link>
             <Link to="/" className="hidden items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#0B2B61] sm:inline-flex">
               <Globe2 size={15} /> Explore OneNexa
@@ -164,7 +162,7 @@ export default function Login() {
           </header>
 
           <div className="flex flex-1 flex-col justify-center py-10 lg:py-6">
-            <div className="max-w-4xl">
+            <div className="login-hero-copy max-w-4xl bg-transparent">
               <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white/75 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.2em] text-[#174a91] shadow-sm backdrop-blur">
                 <Sparkles size={14} className="text-cyan-500" />
                 {config?.hero_badge || "The modern business operating system"}
