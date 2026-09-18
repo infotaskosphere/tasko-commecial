@@ -1,6 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
+import "./commercial-console-native-tab.css";
+import "./commercial-console-sidebar.css";
+import "./commercial-card-shape-fixes.css";
+import "./module-switcher-commercial.css";
 import "./App.css";
 import "./enterprise-design.css";
 import "./general-settings-commercial.css";
