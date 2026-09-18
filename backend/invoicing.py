@@ -4846,7 +4846,19 @@ async def sync_invoice_journal_entry(invoice_id: str):
     # that Accounting Reports (Trial Balance / P&L / Balance Sheet) reflect
     # the same figure as the Sales/Invoicing page.
     status = inv.get("status", "draft")
-    if status == "cancelled":
+    invoice_type = inv.get("invoice_type") or "tax_invoice"
+    if status == "cancelled" or invoice_type in ("proforma", "estimate"):
+        _active = await db.journal_entries.find_one(
+            {"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}},
+            {"_id": 0, "id": 1},
+        )
+        if _active:
+            from backend.accounting_lock import reverse_journal_entry
+            await reverse_journal_entry(
+                _active["id"],
+                "Sales document cancelled or changed to non-posting type",
+                inv.get("updated_by") or inv.get("created_by") or "system",
+            )
         return
 
     # 3b. Proforma invoices / estimates are quotations, not real invoices —
@@ -5024,8 +5036,20 @@ async def sync_purchase_journal_entry(invoice_id: str):
     if not inv:
         return
 
-    # 3. Cancelled bills don't sit in the ledger
+    # 3. Cancelled bills don't sit in the ledger. Preserve any existing
+    # posting by reversing it rather than deleting its history.
     if inv.get("status") == "cancelled":
+        _active = await db.journal_entries.find_one(
+            {"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}},
+            {"_id": 0, "id": 1},
+        )
+        if _active:
+            from backend.accounting_lock import reverse_journal_entry
+            await reverse_journal_entry(
+                _active["id"],
+                "Purchase bill cancelled",
+                inv.get("updated_by") or inv.get("created_by") or "system",
+            )
         return
 
     company_id = inv.get("company_id") or ""
