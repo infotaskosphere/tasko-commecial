@@ -130,6 +130,11 @@ async def list_party_ledgers(
 ):
     if not _perm_view(current_user):
         raise HTTPException(403, "Access denied.")
+    user_company_id = str(getattr(current_user, "company_id", "") or "")
+    if user_company_id and company_id and str(company_id) != user_company_id:
+        raise HTTPException(403, "Cross-company ledger access is not permitted.")
+    if not company_id:
+        company_id = user_company_id
     q: dict = {"company_id": company_id}
     if party_type:
         q["party_type"] = party_type
@@ -141,6 +146,9 @@ async def get_party_ledger(party_type: str, party_id: str, current_user: User = 
     if not _perm_view(current_user):
         raise HTTPException(403, "Access denied.")
     party = await db.party_ledgers.find_one({"id": party_id, "party_type": party_type}, {"_id": 0})
+    user_company_id = str(getattr(current_user, "company_id", "") or "")
+    if party and user_company_id and str(party.get("company_id") or "") != user_company_id:
+        raise HTTPException(403, "Cross-company ledger access is not permitted.")
     if not party:
         raise HTTPException(404, "Ledger not found.")
 
