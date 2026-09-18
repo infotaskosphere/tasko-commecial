@@ -38,10 +38,10 @@ export default function Login() {
     return () => clearInterval(timer);
   }, [serverWaking]);
 
-  const siteName = config?.site_name || "Taskosphere";
-  const logo = config?.logo_url || "/logo.png";
-  const primary = config?.primary_color || "#0D3B66";
-  const accent = config?.accent_color || "#1FAF5A";
+  const siteName = "OneNexa";
+  const logo = "/onenexa-logo.svg";
+  const primary = "#0B2B61";
+  const accent = "#08BDE8";
   const backgroundImage = config?.login_background_image;
 
   const loginWithRetry = async () => {
@@ -120,8 +120,8 @@ export default function Login() {
   };
 
   const pageStyle = backgroundImage
-    ? { backgroundImage: `linear-gradient(120deg, rgba(4,34,31,.78), rgba(8,65,105,.82)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
-    : { background: "radial-gradient(circle at 4% 8%, rgba(34,197,94,.34) 0, rgba(34,197,94,0) 27%), radial-gradient(circle at 96% 8%, rgba(37,99,235,.34) 0, rgba(37,99,235,0) 30%), radial-gradient(circle at 82% 82%, rgba(14,165,233,.30) 0, rgba(14,165,233,0) 31%), radial-gradient(circle at 10% 94%, rgba(16,185,129,.34) 0, rgba(16,185,129,0) 35%), linear-gradient(135deg, #e8f9f0 0%, #e8f7f8 38%, #e9f3ff 72%, #dff1ff 100%)" };
+    ? { backgroundImage: `linear-gradient(120deg, rgba(11,43,97,.82), rgba(8,189,232,.72)), url(${backgroundImage})`, backgroundPosition: "center", backgroundSize: "cover" }
+    : { background: "radial-gradient(circle at 4% 8%, rgba(67,219,59,.30) 0, rgba(34,197,94,0) 27%), radial-gradient(circle at 96% 8%, rgba(7,88,217,.30) 0, rgba(37,99,235,0) 30%), radial-gradient(circle at 82% 82%, rgba(8,189,232,.28) 0, rgba(14,165,233,0) 31%), radial-gradient(circle at 10% 94%, rgba(36,205,168,.28) 0, rgba(16,185,129,0) 35%), linear-gradient(135deg, #eefaf8 0%, #edf9fb 38%, #eef6ff 72%, #e7f6ff 100%)" };
 
   return <div className="min-h-screen" style={pageStyle}>
     <div className="mx-auto grid min-h-screen max-w-[1500px] lg:grid-cols-[1.05fr_.95fr]">
@@ -134,7 +134,7 @@ export default function Login() {
       <section className="flex items-center justify-center px-4 py-8 sm:px-8 lg:px-10">
         <motion.div initial={{ opacity: 0, y: 22 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[520px] rounded-[2rem] border border-white/80 bg-white/95 p-6 shadow-[0_30px_80px_rgba(15,23,42,.18)] backdrop-blur-xl sm:p-9">
           <div className="mb-8 lg:hidden"><Link to="/" className="flex items-center gap-3"><img src={logo} alt={siteName} className="h-10 w-auto object-contain" /><span className="font-bold text-slate-900">{siteName}</span></Link></div>
-          <div className="mb-6"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: `${accent}16`, color: accent }}>{mode === "signin" ? <LockKeyhole size={22} /> : <KeyRound size={22} />}</div><h2 className="text-3xl font-black tracking-tight text-slate-950">{mode === "signin" ? (config?.login_title || "Welcome Back") : "I Have a License"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? (config?.login_subtitle || `Sign in to your ${siteName} workspace.`) : "Enter the company name and license supplied by Taskosphere. Your registered company details will be loaded automatically."}</p></div>
+          <div className="mb-6"><div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: `${accent}16`, color: accent }}>{mode === "signin" ? <LockKeyhole size={22} /> : <KeyRound size={22} />}</div><h2 className="text-3xl font-black tracking-tight text-slate-950">{mode === "signin" ? (config?.login_title || "Welcome Back") : "I Have a License"}</h2><p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? (config?.login_subtitle || `Sign in to your ${siteName} workspace.`) : "Enter the company name and license supplied by OneNexa. Your registered company details will be loaded automatically."}</p></div>
 
           <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1"><button type="button" onClick={() => setMode("signin")} className={`rounded-lg px-3 py-2.5 text-sm font-bold transition ${mode === "signin" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Sign in</button><button type="button" onClick={() => setMode("license")} className={`rounded-lg px-3 py-2.5 text-sm font-bold transition ${mode === "license" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>I have a license</button></div>
 
