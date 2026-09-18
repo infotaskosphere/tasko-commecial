@@ -4804,6 +4804,10 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
     else:
         new_status = current_status
 
+    # Never allow accounting to produce a negative receivable. A credit/debit
+    # note may move the balance through zero, but the invoice's stored
+    # outstanding amount remains bounded at zero.
+    outstanding = round(max(outstanding, 0.0), 2)
     await db.invoices.update_one(
         {"id": invoice_id},
         {"$set": {
