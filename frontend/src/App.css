@@ -156,3 +156,30 @@ body {
       linear-gradient(135deg, #eefbf5 0%, #ffffff 45%, #f0f7ff 100%) !important;
   }
 }
+
+
+/* -------------------------------------------------------------------------
+   OneNexa commercial login: the login page owns its background/layout.
+   Prevent legacy global login styling from painting a large white panel
+   behind the hero content or restoring the old green/blue canvas.
+   ------------------------------------------------------------------------- */
+#root:has(.login-shell) > .login-shell {
+  background: #fff !important;
+  min-height: 100vh;
+}
+#root:has(.login-shell) .login-page-main,
+#root:has(.login-shell) .login-hero-copy {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#root:has(.login-shell) .login-module-rail {
+  scrollbar-width: none;
+}
+#root:has(.login-shell) .login-module-rail::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 1024px) {
+  #root:has(.login-shell) .login-page-main {
+    min-height: 100vh;
+  }
+}
