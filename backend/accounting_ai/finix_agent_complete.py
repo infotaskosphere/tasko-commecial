@@ -135,7 +135,21 @@ async def agent_inbox_action(payload: InboxActionRequest, current_user: User = D
     except Exception as exc:
         raise HTTPException(500, f"Finix posting was blocked: {type(exc).__name__}: {exc}")
     now = datetime.now(timezone.utc).isoformat()
-    await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"status": "POSTED", "journal_entry": entry, "posted_by": current_user.id, "posted_at": now, "updated_at": now}})
+    await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {
+        "status": "POSTED",
+        "journal_entry": entry,
+        "posted_by": current_user.id,
+        "posted_at": now,
+        "updated_at": now,
+        "audit": {
+            "proposal_created_by": proposal.get("created_by"),
+            "approved_by": current_user.id,
+            "approved_at": now,
+            "accounting_date": proposal.get("accounting_date"),
+            "journal_entry_id": entry.get("id") if isinstance(entry, dict) else None,
+            "source": "finix_ai_agent",
+        },
+    }})
     await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("interpretation", {}).get("party_name", ""), proposal, "APPROVED_POSTED", current_user.id)
     return {"success": True, "status": "POSTED", "journal_entry": entry}
 
