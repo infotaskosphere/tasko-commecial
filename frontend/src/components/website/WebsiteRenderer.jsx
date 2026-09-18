@@ -12,10 +12,10 @@ export const DEFAULT_BUILDER = {
         badge: "THE MODERN BUSINESS OPERATING SYSTEM",
         title: "Everything your business needs. Nothing scattered.",
         subtitle: "Task management, invoicing, accounting, HRMS, records, compliance and AI — connected in one intelligent workspace.",
-        primaryText: "Explore OneNexa", primaryHref: "#modules", secondaryText: "Sign in", secondaryHref: "/login", image: "/onenexa-logo.svg", theme: "executive"
+        primaryText: "Explore ONENEXA", primaryHref: "#modules", secondaryText: "Sign in", secondaryHref: "/login", image: "/onenexa-logo.png", theme: "executive"
       }},
       { id: "features", type: "features", title: "Platform Modules", visible: true, layout: "cards", data: {
-        heading: "One platform. Every business function.", subtitle: "Choose the exact software package your customer needs and activate it through your commercial license.",
+        heading: "One platform. Every business function.", subtitle: "Choose the capabilities your business needs and activate them through your commercial license.",
         items: [
           { title: "Task Management", description: "Projects, tasks, workflows, reminders and team visibility.", route: "/tasks" },
           { title: "Invoicing & Billing", description: "Quotations, invoices, purchases and customer billing.", route: "/invoicing" },
@@ -26,16 +26,16 @@ export const DEFAULT_BUILDER = {
           { title: "AI & Automation", description: "Intelligent document processing and operational assistance.", route: "/ai-reader" }
         ]
       }},
-      { id: "why", type: "text", title: "Why OneNexa", visible: true, data: { heading: "Run your business from one connected workspace", body: "Assign and track work, communicate with your team, manage documents, monitor productivity and keep financial and compliance operations connected — without scattering information across different systems." }},
+      { id: "why", type: "text", title: "Why ONENEXA", visible: true, data: { heading: "Run your business from one connected workspace", body: "Assign and track work, communicate with your team, manage documents, monitor productivity and keep financial and compliance operations connected — without scattering information across different systems." }},
       { id: "pricing", type: "pricing", title: "Pricing & Licenses", visible: true, data: { heading: "Transparent Commercial Licensing", subtitle: "Activate standalone modular packages or deploy the complete enterprise business suite.", items: [
         { name: "Starter Suite", price: "₹4,999", period: "/ month", description: "Tasks, billing and client records.", featured: false },
         { name: "Professional Suite", price: "₹9,999", period: "/ month", description: "Invoicing, accounting, HRMS and compliance.", featured: true },
         { name: "Enterprise Custom", price: "Custom", period: "/ year", description: "Dedicated cloud, integrations and tailored workflows.", featured: false }
       ]}},
-      { id: "cta", type: "cta", title: "Call to Action", visible: true, data: { heading: "Ready to build your OneNexa workspace?", text: "Configure the modules your business needs and get started today.", button: "Sign in to workspace", href: "/login" }}
+      { id: "cta", type: "cta", title: "Call to Action", visible: true, data: { heading: "Ready to build your ONENEXA workspace?", text: "Configure the capabilities your business needs and get started today.", button: "Sign in to workspace", href: "/login" }}
     ]
   }],
-  global: { header: { sticky: true, showLogin: true, logo: true }, footer: { show: true, text: "A configurable commercial business operating system." }, design: { primary: "#0B2B61", accent: "#08BDE8", background: "#FFFFFF", text: "#0F172A", font: "Plus Jakarta Sans", radius: "medium", width: "wide" } },
+  global: { header: { sticky: true, showLogin: true, logo: true }, footer: { show: true, text: "A configurable commercial business operating system." }, design: { primary: "#102A56", accent: "#16C7A2", background: "#FFFFFF", text: "#0F172A", font: "Plus Jakarta Sans", radius: "medium", width: "wide" } },
   media: []
 };
 
@@ -46,18 +46,17 @@ function SmartLink({ href = "#", children, className = "", style }) { return hre
 
 function Header({ builder, identity }) {
   const d = builder.global?.design || {}, h = builder.global?.header || {};
-  return <header className={`${h.sticky ? "sticky top-0" : ""} z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur`}><Container width={d.width || "wide"} className="flex min-h-[72px] items-center gap-5">
-    <div className="flex min-w-0 flex-1 items-center gap-3">{h.logo !== false && <img src={identity?.logo_url || builder.global?.identity?.logoUrl || "/logo.png"} alt={identity?.site_name || "OneNexa"} className="h-10 w-auto max-w-[180px] object-contain" />}<div className="min-w-0"><div className="truncate text-lg font-extrabold tracking-tight text-slate-900">{identity?.site_name || builder.global?.identity?.siteName || "Taskosphere"}</div><div className="hidden truncate text-xs text-slate-500 sm:block">{identity?.site_tagline || builder.global?.identity?.tagline || "One platform for tasks, finance, compliance and people."}</div></div></div>
+  return <header className={`${h.sticky ? "sticky top-0" : ""} z-40 border-b border-slate-200/80 bg-white/90 shadow-[0_1px_18px_rgba(15,23,42,.04)] backdrop-blur-xl`}><Container width={d.width || "wide"} className="flex min-h-[78px] items-center gap-5">
+    <div className="flex min-w-0 flex-1 items-center gap-3">{h.logo !== false && <img src={identity?.logo_url || builder.global?.identity?.logoUrl || "/onenexa-logo.png"} alt={identity?.site_name || "ONENEXA"} className="h-11 w-auto max-w-[190px] object-contain" />}<div className="min-w-0"><div className="truncate text-lg font-extrabold tracking-tight text-slate-900">{identity?.site_name || builder.global?.identity?.siteName || "ONENEXA"}</div><div className="hidden truncate text-xs text-slate-500 sm:block">{identity?.site_tagline || builder.global?.identity?.tagline || "One platform for modern business operations."}</div></div></div>
     <nav className="hidden items-center justify-center gap-7 md:flex">{(builder.pages || []).filter(p => p.visible !== false).slice(0, 5).map(p => <a key={p.id} href={`#page-${p.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-950">{p.name}</a>)}{(builder.pages?.[0]?.sections || []).slice(0, 4).map(s => <a key={s.id} href={`#section-${s.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-950">{s.title}</a>)}</nav>
-    {h.showLogin !== false && <SmartLink href="/login" className="shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-sm" style={{ background: d.primary || "#0D3B66" }}>Sign in</SmartLink>}
+    {h.showLogin !== false && <SmartLink href="/login" className="shrink-0 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-[0_10px_24px_rgba(16,42,86,.2)] transition hover:-translate-y-0.5" style={{ background: d.primary || "#102A56" }}>Sign in</SmartLink>}
   </Container></header>;
 }
 
 function Hero({ section, global }) { const d = section.data || {}, design = global.design || {}, dark = d.theme !== "light"; const bg = d.backgroundColor || (dark ? `linear-gradient(135deg, ${design.primary || "#0D3B66"} 0%, #102A43 58%, #061827 100%)` : "#f8fafc"); const align = d.contentAlign || "left"; return <section id={`section-${section.id}`} style={{ ...sectionStyle(section, design), background: bg, color: dark ? "#fff" : design.text }}><Container width={design.width || "wide"} className="grid min-h-[520px] items-center gap-12 py-16 lg:grid-cols-[1.05fr_.95fr] lg:py-24"><div className={`${align === "center" ? "text-center" : "text-left"} min-w-0`}>{d.badge && <div className={`mb-6 inline-flex max-w-full items-center rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[.14em] ${dark ? "border-white/15 bg-white/10 text-white/90" : "border-slate-200 bg-white text-slate-600"}`}>{d.badge}</div>}<h1 className="break-words text-4xl font-black leading-[1.03] tracking-[-.045em] sm:text-5xl lg:text-6xl xl:text-7xl">{d.title || ""}</h1>{d.subtitle && <p className={`mt-6 max-w-2xl text-base leading-7 sm:text-lg ${dark ? "text-white/75" : "text-slate-600"} ${align === "center" ? "mx-auto" : ""}`}>{d.subtitle}</p>}<div className={`mt-8 flex flex-wrap gap-3 ${align === "center" ? "justify-center" : "justify-start"}`}>{d.primaryText && <SmartLink href={d.primaryHref || "#"} className="rounded-xl px-6 py-3.5 text-sm font-bold text-white shadow-lg" style={{ background: design.accent || "#1FAF5A" }}>{d.primaryText}<ArrowRight size={16} className="ml-2 inline" /></SmartLink>}{d.secondaryText && <SmartLink href={d.secondaryHref || "/login"} className={`rounded-xl border px-6 py-3.5 text-sm font-bold ${dark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-800"}`}>{d.secondaryText}</SmartLink>}</div></div><div className={`relative flex min-h-[300px] items-center justify-center ${d.imagePosition === "left" ? "order-first lg:order-first" : ""}`}><div className={`flex w-full min-h-[300px] items-center justify-center overflow-hidden rounded-3xl border p-5 shadow-2xl ${dark ? "border-white/10 bg-white/10" : "border-slate-200 bg-white"}`}>{d.image ? <img src={d.image} alt="" className="max-h-[340px] max-w-full object-contain" /> : <div className="text-sm opacity-60">Add a hero image</div>}</div></div></Container></section>; }
 function ModuleLogoScroller() {
   const modules = [
-    { name: "OneNexa", logo: "/onenexa-logo.svg" },
-    { name: "Taskosphere", logo: "/logo-transparent.png" },
+    { name: "ONENEXA", logo: "/onenexa-logo.png" },
     { name: "CompliGenie", logo: "/compligenie-logo.png" },
     { name: "Finix", logo: "/finix-logo.png" },
     { name: "LeadSense", logo: "/leadsense-logo.png" },
@@ -67,8 +66,8 @@ function ModuleLogoScroller() {
   return <section id="modules" className="border-y border-slate-200 bg-slate-50/80 py-8">
     <Container width="wide">
       <div className="mb-4 text-center">
-        <p className="text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">The OneNexa ecosystem</p>
-        <p className="mt-1 text-sm text-slate-600">Connected products. One business platform.</p>
+       <p className="text-[11px] font-bold uppercase tracking-[.18em] text-slate-500">The ONENEXA ecosystem</p>
+       <p className="mt-1 text-sm text-slate-600">Connected capabilities. One business platform.</p>
       </div>
       <div className="no-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
         {modules.map((module) => <div key={module.name} className="flex min-w-[210px] snap-start items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
@@ -101,6 +100,6 @@ export default function WebsiteRenderer({ builder, identity = {}, editor = false
   return <div className="min-h-full bg-white" style={{ color: global.design?.text || "#0F172A", fontFamily: global.design?.font || "Plus Jakarta Sans" }} onClick={() => editor && onSelectSection?.(null)}>
     <Header builder={source} identity={identity} />
     <main>{(page.sections || []).map(section => <div key={section.id} className={editor ? `relative cursor-pointer outline-offset-[-2px] transition ${selectedSectionId === section.id ? "outline-2 outline-blue-500" : "hover:outline hover:outline-1 hover:outline-blue-300"}` : ""} onClick={editor ? e => { e.stopPropagation(); onSelectSection?.(section.id); } : undefined}>{editor && selectedSectionId === section.id && <div className="pointer-events-none absolute left-3 top-3 z-30 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white">{section.title || section.type}</div>}<RenderSection section={section} global={global} /></div>)}</main>
-    {global.footer?.show !== false && <footer className="border-t border-slate-200 bg-white py-10"><Container width={global.design?.width || "wide"} className="flex flex-col gap-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between"><div>{identity.footer_company || global.footer?.company || identity.site_name || "Taskosphere"} — {identity.footer_text || global.footer?.text || ""}</div><div>{identity.footer_copyright || global.footer?.copyright || "© 2026 Taskosphere. All rights reserved."}</div></Container></footer>}
+     {global.footer?.show !== false && <footer className="border-t border-slate-200 bg-white py-10"><Container width={global.design?.width || "wide"} className="flex flex-col gap-4 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between"><div>{identity.footer_company || global.footer?.company || identity.site_name || "ONENEXA"} — {identity.footer_text || global.footer?.text || ""}</div><div>{identity.footer_copyright || global.footer?.copyright || "© 2026 ONENEXA. All rights reserved."}</div></Container></footer>}
   </div>;
 }
