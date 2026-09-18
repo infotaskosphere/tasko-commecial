@@ -4896,6 +4896,17 @@ async def sync_invoice_journal_entry(invoice_id: str):
             lines.append({"account_id": gst_pay_id, "account_name": "GST Output Payable", "debit": 0.0, "credit": total_gst, "memo": f"GST Output on Invoice {invoice_no}"})
         narration = f"Sales Invoice {invoice_no} to {client_name}"
         
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(float(inv.get("grand_total") or 0)), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -4969,6 +4980,17 @@ async def sync_payment_journal_entry(payment_id: str):
         f"Receipt from {client_name} ({payment_mode.upper()})"
     )
     
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({source": "payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(amount), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5042,6 +5064,17 @@ async def sync_purchase_journal_entry(invoice_id: str):
         lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
     narration = f"Purchase Bill {invoice_no} from {supplier_name}"
 
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(grand_total), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5096,6 +5129,17 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
         {"account_id": credit_acct_id, "account_name": credit_acct_name, "debit": 0.0, "credit": amount, "memo": f"Payment for Bill {invoice_no} via {payment_mode.upper()}"},
     ]
     narration = f"Payment to {supplier_name} for Bill {invoice_no} ({payment_mode.upper()})"
+
+    # If an active posting exists, compare its amount. Matching entries are
+    # left untouched; changed source data gets an auditable reversal first.
+    _active = await db.journal_entries.find_one({source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
+    if _active:
+        _desired_total = round(float(amount), 2)
+        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
+            return
+        from backend.accounting_lock import reverse_journal_entry
+        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", payment.get("created_by", "system") if "payment" in locals() else inv.get("created_by", "system"))
+        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
     try:
         await post_journal_entry(
