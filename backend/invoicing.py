@@ -4187,29 +4187,51 @@ async def bulk_delete_invoices(ids: List[str], current_user: User = Depends(chec
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     if not ids: raise HTTPException(400, "No IDs provided")
     deleted, failed = 0, 0
+    from backend.accounting_lock import reverse_journal_entry
     for inv_id in ids:
         try:
             _existing = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1, "original_invoice_id": 1})
             _parent_id = _existing.get("original_invoice_id") if _existing and _existing.get("invoice_type") in ("credit_note", "debit_note") else None
 
-            # Delete journal entries for associated payments
+            # Preserve the accounting trail: reverse posted payment journals
+            # before removing the operational payment records.
             payments = await db.payments.find({"invoice_id": inv_id}).to_list(1000)
             for p in payments:
-                existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"]})
+                existing_pe = await db.journal_entries.find_one({
+                    "source": "payment",
+                    "source_id": p["id"],
+                    "reversed": {"$ne": True},
+                })
                 if existing_pe:
-                    await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
-                    await db.journal_entries.delete_one({"id": existing_pe["id"]})
+                    await reverse_journal_entry(
+                        existing_pe["id"],
+                        "Customer payment deleted with invoice",
+                        current_user.id,
+                    )
             await db.payments.delete_many({"invoice_id": inv_id})
+
+            # Reverse the invoice posting before deleting the operational
+            # invoice. Journal history is append-only and never erased.
+            invoice_entries = await db.journal_entries.find(
+                {"source": "sale", "source_id": inv_id, "reversed": {"$ne": True}},
+                {"_id": 0, "id": 1},
+            ).to_list(50)
+            for entry in invoice_entries:
+                await reverse_journal_entry(
+                    entry["id"],
+                    "Sales invoice deleted",
+                    current_user.id,
+                )
 
             r = await db.invoices.delete_one({"id": inv_id})
             if r.deleted_count:
                 deleted += 1
-                await sync_invoice_journal_entry(inv_id)
                 if _parent_id:
                     await recalculate_invoice_accounting(_parent_id)
             else:
                 failed += 1
-        except Exception: failed += 1
+        except Exception:
+            failed += 1
     return {"deleted": deleted, "failed": failed, "total": len(ids)}
 
 
