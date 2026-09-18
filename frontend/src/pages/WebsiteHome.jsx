@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import WebsiteRenderer, { DEFAULT_BUILDER } from "@/components/website/WebsiteRenderer";
+import ModernOneNexaHome from "@/components/website/ModernOneNexaHome";
 import { getPublicWebsiteConfig } from "@/lib/websiteApi";
 
 const STORAGE_KEY = "taskosphere_saved_website_config";
@@ -58,7 +59,8 @@ const getCachedBuilder = () => {
   return cached?.builder?.pages?.length ? normalizeBuilder(cached.builder) : null;
 };
 
-export default function WebsiteHome() {
+export default function WebsiteHome() {\n  if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/website")) return <ModernOneNexaHome />;
+
   // Use the last successfully saved website immediately. This prevents the
   // default builder from being painted first and then replaced by the saved
   // design after the public config request completes.
