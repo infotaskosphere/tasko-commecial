@@ -63,8 +63,8 @@ export default function Login() {
     return () => clearInterval(timer);
   }, [serverWaking]);
 
-  const siteName = "OneNexa";
-  const logo = "/onenexa-logo.svg?v=20260918";
+  const siteName = "ONENEXA";
+  const logo = "/onenexa-logo.png?v=20260918";
 
   const scrollModules = (direction) => {
     const rail = railRef.current;
@@ -151,8 +151,8 @@ export default function Login() {
             <Link to="/" className="inline-flex items-center">
               <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
             </Link>
-            <Link to="/" className="hidden items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#0B2B61] sm:inline-flex">
-              <Globe2 size={15} /> Explore OneNexa
+             <Link to="/" className="hidden items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-[#0B2B61] sm:inline-flex">
+               <Globe2 size={15} /> Explore ONENEXA
             </Link>
           </header>
 
@@ -163,14 +163,14 @@ export default function Login() {
                 {config?.hero_badge || "The modern business operating system"}
               </div>
               <h1 className="max-w-5xl text-4xl font-black leading-[1.04] tracking-[-0.04em] text-[#102f62] sm:text-5xl xl:text-[3.85rem]">
-                {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
+                 {config?.hero_title || <>Everything your business needs.<br /><span className="bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-500 bg-clip-text text-transparent">Nothing scattered.</span></>}
               </h1>
               <p className="mt-4 max-w-3xl text-[15px] leading-6 text-slate-600 sm:text-base">
-                {config?.hero_subtitle || "Task management, invoicing, accounting, HRMS, records, compliance and intelligent automation — connected in one workspace."}
+                 {config?.hero_subtitle || "Task management, invoicing, accounting, HRMS, records, compliance and intelligent automation — connected in one workspace."}
               </p>
             </div>
 
-            <section className="mt-5 min-w-0" aria-label="OneNexa modules">
+             <section className="mt-5 min-w-0" aria-label="ONENEXA capabilities">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Everything connected</p>
@@ -204,7 +204,7 @@ export default function Login() {
               </div>
             </section>
 
-            <section className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3" aria-label="OneNexa business capabilities">
+             <section className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3" aria-label="ONENEXA business capabilities">
               {[
                 { title: "One connected workspace", text: "Tasks, customers, finance and operations stay connected.", icon: Sparkles, tone: "text-cyan-600 bg-cyan-50" },
                 { title: "Built for control", text: "Permissions, compliance and records stay organised.", icon: ShieldCheck, tone: "text-blue-600 bg-blue-50" },
@@ -235,7 +235,7 @@ export default function Login() {
               <span className="hidden h-5 w-px bg-slate-200 sm:block" />
               <span><strong className="text-base text-[#163b6e]">24/7</strong> support</span>
             </div>
-            <span>© 2026 OneNexa. All rights reserved.</span>
+             <span>© 2026 ONENEXA. All rights reserved.</span>
           </footer>
         </main>
 
@@ -248,8 +248,8 @@ export default function Login() {
             <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={spring} className="w-full max-w-[440px] rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_24px_60px_rgba(15,23,42,.11)] sm:p-7">
               <div className="mb-7 text-center">
                 <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><LockKeyhole size={22} /></div>
-                <h2 className="text-3xl font-black tracking-[-0.03em] text-[#102f62]">{mode === "signin" ? "Welcome Back" : "I Have a License"}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? "Sign in to your OneNexa workspace" : "Verify your company license to create the first administrator account."}</p>
+                 <h2 className="text-3xl font-black tracking-[-0.03em] text-[#102f62]">{mode === "signin" ? "Welcome back" : "I have a license"}</h2>
+                 <p className="mt-2 text-sm leading-6 text-slate-500">{mode === "signin" ? "Sign in to your ONENEXA workspace" : "Verify your company license to create the first administrator account."}</p>
               </div>
 
               <div className="mb-6 grid grid-cols-2 rounded-xl bg-slate-100 p-1">
@@ -270,7 +270,7 @@ export default function Login() {
 
                   <div className="mt-6 flex items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4"><ShieldCheck size={18} className="mt-0.5 shrink-0 text-emerald-600" /><div><p className="text-xs font-bold text-slate-800">Your workspace is protected</p><p className="mt-1 text-xs leading-5 text-slate-500">{config?.login_card_note || "Access is protected by the permissions assigned to your account."}</p></div></div>
 
-                  <div className="mt-6 text-center text-sm text-slate-500">New to OneNexa? <Link to="/" className="font-bold text-blue-600">Request a Demo</Link></div>
+                   <div className="mt-6 text-center text-sm text-slate-500">New to ONENEXA? <Link to="/" className="font-bold text-blue-600">Request a demo</Link></div>
                 </>
               ) : (
                 <>
