@@ -22,6 +22,4 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q backend
       - name: Run hardening regression tests
-        run: |
-          python -m unittest discover -s . -p 'test_production_hardening.py' -v
-          python -m unittest discover -s . -p 'test_finix_integrity_hardening.py' -v
+        run: python -m unittest -v test_production_hardening.py test_finix_integrity_hardening.py
