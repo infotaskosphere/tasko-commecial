@@ -50,6 +50,17 @@ class IntegrityContractTests(unittest.TestCase):
         self.assertIn('"approved_by"', ai)
         self.assertIn('"approved_by"', agent)
 
+    def test_phase3_journal_lifecycle_is_append_only(self):
+        invoicing = source("invoicing.py")
+        bank = source("bank_accounts.py")
+        lock = source("accounting_lock.py")
+        self.assertIn("reverse_journal_entry", invoicing)
+        self.assertIn("reverse_journal_entry", bank)
+        self.assertIn("Historical journal entries are immutable", invoicing)
+        self.assertIn("append-only", lock.lower())
+        self.assertNotIn('journal_lines.delete_many({"entry_id": existing_pe["id"]})', invoicing)
+        self.assertNotIn('journal_entries.delete_one({"id": existing_pe["id"]})', invoicing)
+
     def test_changed_python_files_parse(self):
         for name in ("accounting_core.py", "governed_modules.py", "quotations.py", "compliance.py", "leads.py"):
             ast.parse(source(name), filename=name)
