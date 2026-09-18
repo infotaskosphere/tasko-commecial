@@ -5571,8 +5571,9 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 # Payment belongs to a bank-reconciled invoice — its journal
                 # entry (if any survived) must be removed, not re-posted.
                 if pe:
-                    await db.journal_lines.delete_many({"entry_id": pe["id"]})
-                    await db.journal_entries.delete_one({"id": pe["id"]})
+                    from backend.accounting_lock import reverse_journal_entry
+                    await reverse_journal_entry(pe["id"], "Payment journal superseded by bank reconciliation", "system")
+                    await db.journal_entries.update_one({"id": pe["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
                 continue
             stale_narration = pe and "for Invoice Unknown" in (pe.get("narration") or "") and (p.get("client_name") or "").strip()
             if not pe or stale_narration or abs(float(pe.get("total_debit", 0)) - float(p.get("amount", 0))) > 0.01:
@@ -5607,8 +5608,10 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_ids = [e["id"] for source_id, e in entry_by_source_id.items() if source_id not in active_invoice_ids]
         if stale_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
         for inv in active_invoices:
             inv_id = inv["id"]
@@ -5646,8 +5649,9 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
                 )
                 if not wrong_debit:
                     continue
-                await db.journal_lines.delete_many({"entry_id": bank_je["id"]})
-                await db.journal_entries.delete_one({"id": bank_je["id"]})
+                from backend.accounting_lock import reverse_journal_entry
+                await reverse_journal_entry(bank_je["id"], "Legacy bank reconciliation posting corrected", "system")
+                await db.journal_entries.update_one({"id": bank_je["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
                 amount = float(inv.get("grand_total") or 0) or float(bank_je.get("total_debit") or 0)
                 if amount > 0 and ap_id and bnk_id:
                     await _post_je(
@@ -5695,8 +5699,10 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_pay_ids = [pe["id"] for source_id, pe in pay_entry_by_source_id.items() if source_id not in payment_ids]
         if stale_pay_ids:
-            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
-            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
+            from backend.accounting_lock import reverse_journal_entry
+            for stale_id in stale_pay_ids:
+                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
+                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
         for p in payments:
             p_id = p["id"]
