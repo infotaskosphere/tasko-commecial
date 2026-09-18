@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus, CheckSquare2, UsersRound, FileText, BarChart3, CalendarDays, FolderOpen, Receipt, Bot, ChevronLeft, ChevronRight } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowRight, CheckCircle2, Eye, EyeOff, Globe2, KeyRound, LockKeyhole, ShieldCheck, Sparkles, Building2, UserPlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,8 +54,6 @@ export default function Login() {
   const [adminPassword, setAdminPassword] = useState("");
   const [showAdminPassword, setShowAdminPassword] = useState(false);
   const [lookupBusy, setLookupBusy] = useState(false);
-  const railRef = useRef(null);
-
   useEffect(() => { getPublicWebsiteConfig().then(setConfig).catch(() => setConfig(null)); }, []);
   useEffect(() => {
     if (!serverWaking) return;
@@ -65,12 +63,6 @@ export default function Login() {
 
   const siteName = "ONENEXA";
   const logo = "/onenexa-logo.svg?v=20260918";
-
-  const scrollModules = (direction) => {
-    const rail = railRef.current;
-    if (!rail) return;
-    rail.scrollBy({ left: direction * Math.max(300, rail.clientWidth * 0.65), behavior: "smooth" });
-  };
 
   const loginWithRetry = async () => {
     let lastError;
