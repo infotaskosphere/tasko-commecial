@@ -133,7 +133,10 @@ async def _recover_jwt_user(credentials) -> User:
 
 async def get_current_user_with_commercial_guard_compat(request: Request, credentials=Depends(_dependencies.security)) -> User:
     try:
-        user = await _BASE_GET_CURRENT_USER(credentials)
+        # The commercial module guard also requires the request object.
+        # Passing credentials alone makes every downstream authenticated GET
+        # fail before the endpoint handler executes.
+        user = await _BASE_GET_CURRENT_USER(request, credentials)
     except HTTPException as error:
         if error.status_code != 403 or error.detail != "Authenticated user is not associated with a company":
             raise
