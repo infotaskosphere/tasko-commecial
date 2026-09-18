@@ -71,6 +71,26 @@ class StubRecordUpdate(BaseModel):
     status: Optional[str] = None
     extra: Optional[Dict[str, Any]] = None
 
+def has_governed_visibility(current_user: User, item: Dict[str, Any], scope: Dict[str, Any]) -> bool:
+    if getattr(current_user, "role", None) == "admin":
+        return True
+    owner_id = item.get("created_by")
+    department = item.get("department")
+    selected = scope.get("selected") or []
+    scope_name = scope.get("scope")
+    if scope_name == "organization":
+        return True
+    if scope_name == "own":
+        return owner_id == current_user.id
+    if scope_name == "selected_users":
+        return owner_id == current_user.id or owner_id in selected
+    if scope_name == "selected_departments":
+        return department in selected
+    if scope_name == "selected_roles":
+        return str(item.get("role") or "") in selected
+    return owner_id == current_user.id
+
+
 def _build_router(*, prefix: str, tag: str, module_key: str, view_flag: str, manage_flag: str, collection: str, resource_type: str, audit_module: str) -> APIRouter:
     router = APIRouter(prefix=prefix, tags=[tag])
     @router.get("")
