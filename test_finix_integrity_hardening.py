@@ -61,6 +61,16 @@ class IntegrityContractTests(unittest.TestCase):
         self.assertNotIn('journal_lines.delete_many({"entry_id": existing_pe["id"]})', invoicing)
         self.assertNotIn('journal_entries.delete_one({"id": existing_pe["id"]})', invoicing)
 
+
+    def test_phase4_concurrency_and_company_contracts(self):
+        lock = source("accounting_lock.py")
+        party = source("party_ledgers.py")
+        server = source("server.py")
+        self.assertIn("unique=True", lock)
+        self.assertIn("uq_journal_source_company", lock)
+        self.assertIn("Cross-company ledger access is not permitted.", party)
+        self.assertIn("create_phase4_accounting_indexes()", server)
+
     def test_changed_python_files_parse(self):
         for name in ("accounting_core.py", "governed_modules.py", "quotations.py", "compliance.py", "leads.py"):
             ast.parse(source(name), filename=name)
