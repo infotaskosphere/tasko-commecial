@@ -504,6 +504,7 @@ async def convert_lead_to_client(
     client_id = str(uuid.uuid4())
     client_data = {
         "id": client_id,
+        "company_id": lead.get("company_id") or getattr(current_user, "company_id", ""),
         "company_name": lead["company_name"],
         "contact_name": lead.get("contact_name"),
         "email": lead.get("email"),
@@ -519,8 +520,12 @@ async def convert_lead_to_client(
 
     await db.clients.insert_one(client_data)
 
+    conversion_guard = {
+        "_id": obj_id,
+        "converted_client_id": {"$in": [None, ""]},
+    }
     await db.leads.update_one(
-        {"_id": obj_id},
+        conversion_guard,
         {
             "$set": {
                 "status": "won",
