@@ -385,6 +385,15 @@ def _harden_email_crypto():
         return
 
 
+async def ensure_phase4_accounting_indexes():
+    try:
+        from backend.accounting_lock import create_phase4_accounting_indexes
+        await create_phase4_accounting_indexes()
+    except Exception:
+        logging.getLogger(__name__).exception("Phase 4 accounting indexes failed")
+        raise
+
+
 def _harden_password_crypto():
     try:
         import backend.passwords as password_module
