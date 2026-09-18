@@ -105,6 +105,9 @@ def _build_router(*, prefix: str, tag: str, module_key: str, view_flag: str, man
     async def get_record(record_id: str, current_user: User = Depends(require_page(module_key, view_flag))):
         item = await db[collection].find_one({"id": record_id}, {"_id": 0})
         if not item: raise HTTPException(status_code=404, detail="Not found")
+        scope = get_visibility_scope(current_user, resource_type)
+        if not has_governed_visibility(current_user, item, scope):
+            raise HTTPException(status_code=404, detail="Not found")
         return item
     @router.post("")
     async def create_record(payload: StubRecordIn, current_user: User = Depends(require_action(module_key, manage_flag, "create"))):
@@ -118,6 +121,9 @@ def _build_router(*, prefix: str, tag: str, module_key: str, view_flag: str, man
     async def update_record(record_id: str, payload: StubRecordUpdate, current_user: User = Depends(require_action(module_key, manage_flag, "edit"))):
         existing = await db[collection].find_one({"id": record_id}, {"_id": 0})
         if not existing: raise HTTPException(status_code=404, detail="Not found")
+        scope = get_visibility_scope(current_user, resource_type)
+        if not has_governed_visibility(current_user, existing, scope):
+            raise HTTPException(status_code=404, detail="Not found")
         updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         await db[collection].update_one({"id": record_id}, {"$set": updates})
@@ -127,6 +133,9 @@ def _build_router(*, prefix: str, tag: str, module_key: str, view_flag: str, man
     async def delete_record(record_id: str, current_user: User = Depends(require_action(module_key, manage_flag, "delete"))):
         existing = await db[collection].find_one({"id": record_id}, {"_id": 0})
         if not existing: raise HTTPException(status_code=404, detail="Not found")
+        scope = get_visibility_scope(current_user, resource_type)
+        if not has_governed_visibility(current_user, existing, scope):
+            raise HTTPException(status_code=404, detail="Not found")
         await db[collection].delete_one({"id": record_id})
         await create_audit_log(current_user, "DELETE", audit_module, record_id=record_id, old_data=existing)
         return {"message": "Deleted"}
