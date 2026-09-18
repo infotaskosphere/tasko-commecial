@@ -143,7 +143,7 @@ export default function Login() {
   const duplicatedModules = useMemo(() => MODULES, []);
 
   return (
-    <div className="min-h-screen overflow-x-hidden text-slate-900" style={pageStyle}>
+    <div className="login-shell min-h-screen overflow-x-hidden bg-transparent text-slate-900" style={pageStyle}>
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cyan-200/20 blur-3xl" />
         <div className="absolute right-[28%] top-[-12rem] h-96 w-96 rounded-full bg-blue-200/20 blur-3xl" />
@@ -151,7 +151,7 @@ export default function Login() {
       </div>
 
       <div className="relative mx-auto flex min-h-screen max-w-[1680px] flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_520px]">
-        <main className="login-page-main flex min-w-0 flex-1 flex-col bg-transparent px-6 pb-8 pt-6 sm:px-10 lg:px-14 lg:py-8 xl:px-20" style={{ background: "transparent" }}>
+        <main className="login-page-main !bg-transparent flex min-w-0 flex-1 flex-col bg-transparent px-6 pb-8 pt-6 sm:px-10 lg:px-14 lg:py-8 xl:px-20" style={{ background: "transparent" }}>
           <header className="flex items-center justify-between gap-4">
             <Link to="/" className="inline-flex items-center">
               <img src={logo} alt={siteName} className="h-16 w-auto max-w-[300px] object-contain sm:h-[4.5rem] lg:h-20" />
