@@ -2,7 +2,7 @@ name: Production Hardening Regression
 
 on:
   push:
-    branches: ["feature/master-console", "hardening/finix-integrity-20260918", "hardening/finix-phase3-20260918"]
+    branches: ["feature/master-console", "hardening/finix-integrity-20260918", "hardening/finix-phase3-20260918", "hardening/phase4-transaction-isolation-20260918"]
   pull_request:
     branches: ["feature/master-console"]
 
