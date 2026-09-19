@@ -126,6 +126,11 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
                     break
 
         selected = {str(flag).strip() for flag in raw_selected} if isinstance(raw_selected, list) else set()
+        # Backward compatibility for an existing license edited to add a module
+        # without a selected_features entry. Explicit feature selections remain
+        # authoritative and restrictive.
+        if raw_selected is None and module_allowed:
+            selected = {str(page.get("flag")).strip() for page in module_def.get("pages", []) or [] if page.get("flag")}
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
             if flag:
