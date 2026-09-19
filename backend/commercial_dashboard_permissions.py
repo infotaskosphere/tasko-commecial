@@ -30,5 +30,10 @@ def normalize_dashboard_feature_selection(selected_features: Dict[str, List[str]
                 flags.append(dashboard_flag)
         else:
             flags = [flag for flag in flags if flag != dashboard_flag]
+        # Keep the module dashboard/report entry point available whenever the
+        # module itself has selected features. Other page selections remain
+        # restrictive and are still enforced individually.
+        if flags and dashboard_flag not in flags:
+            flags.append(dashboard_flag)
         normalized[module_id] = flags
     return normalized
