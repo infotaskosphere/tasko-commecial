@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import { lazyWithRetry as lazy } from '@/lib/lazyWithRetry.js';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { firstAccessiblePath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 import DashboardLayout from '@/components/layout/DashboardLayout.jsx';
 import ModuleGate from '@/components/ModuleGate.jsx';
 import { PageGuard } from '@/components/governance/GovernanceGuards.jsx';
@@ -80,9 +81,9 @@ const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
-function LicensedDashboardHome() { const { user, loading } = useAuth(); if (loading) return <AuthLoading />; const isInternalAdmin=user?.role?.toLowerCase()==='admin'&&!user?.company_id; if(isInternalAdmin||user?.permissions?.can_access_taskosphere===true)return <Dashboard/>; const fallbacks=[['can_access_finix','/finix-dashboard'],['can_access_compliance','/compliance-dashboard'],['can_access_records','/records-dashboard'],['can_access_proposals','/client-proposals-dashboard'],['can_access_people_matrix','/people-matrix']]; const destination=fallbacks.find(([flag])=>user?.permissions?.[flag]===true)?.[1]; return <Navigate to={destination||'/login'} replace/>; }
+function LicensedDashboardHome() { const { user, loading } = useAuth(); if (loading) return <AuthLoading />; const isInternalAdmin=user?.role?.toLowerCase()==='admin'&&!user?.company_id; if(isInternalAdmin||user?.permissions?.can_access_taskosphere===true)return <Dashboard/>; const destination=isCommercialTenant(user)?firstAccessiblePath(user):(['/finix-dashboard','/compliance-dashboard','/records-dashboard','/client-proposals-dashboard','/people-matrix'].find((path)=>{ const flag={ '/finix-dashboard':'can_access_finix','/compliance-dashboard':'can_access_compliance','/records-dashboard':'can_access_records','/client-proposals-dashboard':'can_access_proposals','/people-matrix':'can_access_people_matrix' }[path]; return user?.permissions?.[flag]===true; })||null); return <Navigate to={destination||'/login'} replace/>; }
 function ProtectedLayout(){const {user,loading}=useAuth();const location=useLocation();if(loading)return <AuthLoading/>;if(!user)return <Navigate to="/login" replace/>;return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><Suspense fallback={<div className="w-full min-h-[42vh]"><GifLoader /></div>}><RouteAnimatedOutlet/></Suspense></RouteErrorBoundary></DashboardLayout>}
-function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user)return <Navigate to="/dashboard" replace/>;return children}
+function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user){const destination=isCommercialTenant(user)?firstAccessiblePath(user):'/dashboard';return <Navigate to={destination} replace/>;}return children}
 function AdminOnly({children}){const {user}=useAuth();if(user?.role?.toLowerCase()!=='admin')return <Navigate to="/dashboard" replace/>;return children}
 function BackupPermission({children}){const {user}=useAuth();const isAdmin=user?.role?.toLowerCase()==='admin';if(isAdmin||user?.permissions?.can_view_backup_restore===true)return children;return <Navigate to="/dashboard" replace/>}
 function PlatformOwnerOnly({children}){const {user,loading,isPlatformOwner}=useAuth();if(loading)return <AuthLoading/>;const isOwner=Boolean(isPlatformOwner) || String(user?.email||'').trim().toLowerCase()==='info.taskosphere@gmail.com';if(!isOwner)return <Navigate to="/dashboard" replace/>;return children}
