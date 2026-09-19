@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasModuleAccess, isPlatformOwner } from "@/lib/commercialPermissionMatrix";
 
 // How often to ask the backend "is anything due right now?"
 // Default is 30 s; users can override it from the "Notification settings"
@@ -89,6 +90,9 @@ export default function ReminderPopupManager() {
 
   const fetchDuePopups = useCallback(async () => {
     if (!user) return;
+    // Reminders are a Taskosphere feature. Do not poll this endpoint for
+    // Finix-only or other module-only licenses, where a 403 is expected.
+    if (!isPlatformOwner(user) && !hasModuleAccess(user, "taskosphere")) return;
     try {
       const { data } = await api.get("/reminders/due-popups");
       if (Array.isArray(data) && data.length > 0) {
@@ -107,6 +111,10 @@ export default function ReminderPopupManager() {
 
   useEffect(() => {
     if (!user) return;
+    if (!isPlatformOwner(user) && !hasModuleAccess(user, "taskosphere")) {
+      setQueue([]);
+      return;
+    }
     fetchDuePopups(); // check immediately on login / page load
 
     const start = () => {
