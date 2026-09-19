@@ -126,6 +126,20 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
                     break
 
         selected = {str(flag).strip() for flag in raw_selected} if isinstance(raw_selected, list) else set()
+        # Dashboard/report entry pages are derived entitlements. Existing licenses
+        # may have persisted page selections without the derived dashboard flag.
+        # Keep runtime permissions aligned with normalize_dashboard_feature_selection.
+        dashboard_flags = {
+            "taskosphere": "can_view_dashboard",
+            "finix": "can_view_accounting_reports",
+            "compliance": "can_view_compliance",
+            "records": "can_view_documents",
+            "proposals": "can_view_all_leads",
+            "people_matrix": "can_view_user_page",
+        }
+        dashboard_flag = dashboard_flags.get(module_id)
+        if module_allowed and dashboard_flag and selected and dashboard_flag not in selected:
+            selected.add(dashboard_flag)
         # Backward compatibility for an existing license edited to add a module
         # without a selected_features entry. Explicit feature selections remain
         # authoritative and restrictive.
