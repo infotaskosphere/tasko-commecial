@@ -59,7 +59,10 @@ const getCachedBuilder = () => {
   return cached?.builder?.pages?.length ? normalizeBuilder(cached.builder) : null;
 };
 
-export default function WebsiteHome() {\n  if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/website")) return <ModernOneNexaHome />;
+export default function WebsiteHome() {
+  if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/website")) {
+    return <ModernOneNexaHome />;
+  }
 
   // Use the last successfully saved website immediately. This prevents the
   // default builder from being painted first and then replaced by the saved
