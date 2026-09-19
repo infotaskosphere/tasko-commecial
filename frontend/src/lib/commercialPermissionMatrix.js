@@ -91,7 +91,7 @@ export function hasEffectivePermission(user, permission) {
   if (pageEntry) {
     const [moduleId] = pageEntry;
     if (!hasPageLicense(user, permission, moduleId)) return false;
-    return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
+    // Commercial licensee admins are governed by the selected license page, not a stale copied user flag.\n    // Backend enforcement remains the final authority; this keeps the frontend route/landing decision in sync.\n    if (String(user.role || "").toLowerCase() === "admin") return true;\n    return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
   }
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
