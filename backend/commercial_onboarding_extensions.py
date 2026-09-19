@@ -106,10 +106,13 @@ def _apply_feature_entitlements(role: str, selected_modules: List[str], selected
     selected = set(selected_modules)
     selected_features = selected_features or {module_id: _all_feature_flags(module_id) for module_id in selected_modules}
     for module_id, module_flag in MODULE_FLAG_BY_ID.items():
-        allowed = module_id in selected and bool(selected_features.get(module_id))
+        # Licensed module => access to THAT module. An empty/missing page list means
+        # "all pages of this module"; unlicensed modules stay closed regardless of
+        # stale selected_features keys.
+        allowed = module_id in selected
         permissions[module_flag] = allowed
         module_def = MODULE_HIERARCHY.get(module_id, {})
-        allowed_features = set(selected_features.get(module_id) or [])
+        allowed_features = set(selected_features.get(module_id) or []) or {p["flag"] for p in module_def.get("pages", []) if p.get("flag")}
         for page in module_def.get("pages", []):
             permissions[page["flag"]] = bool(allowed and page["flag"] in allowed_features and permissions.get(page["flag"], False))
     return permissions
