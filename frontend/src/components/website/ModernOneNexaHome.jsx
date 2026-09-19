@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, Check, ShieldCheck, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, BarChart3, Bell, CalendarDays, Check, CircleDollarSign, ClipboardList, Home as HomeIcon, Search, Settings, ShieldCheck, Sparkles, TrendingUp, UserRound, Users, Zap } from "lucide-react";
 
 const MODULES = [
   { name: "Taskosphere", logo: "/logo-transparent.png", description: "Plan, assign and track work effortlessly.", route: "/tasks", tone: "blue" },
@@ -38,7 +38,7 @@ function ModuleCard({ module, compact = false }) {
 export default function ModernOneNexaHome() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-white text-slate-900">
-      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex min-h-[76px] w-full max-w-7xl items-center gap-5 px-5 sm:px-8">
           <Link to="/" className="flex min-w-0 flex-1 items-center">
             <img src="/onenexa-logo.png" alt="OneNexa" className="h-11 w-auto max-w-[190px] object-contain" />
@@ -54,34 +54,118 @@ export default function ModernOneNexaHome() {
       </header>
 
       <main>
-        <section className="relative overflow-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eef7ff_52%,#f4fffb_100%)]">
-          <div className="absolute -left-28 top-10 h-80 w-80 rounded-full bg-blue-200/30 blur-3xl" />
-          <div className="absolute -right-20 bottom-0 h-96 w-96 rounded-full bg-emerald-200/25 blur-3xl" />
-          <div className="relative mx-auto grid min-h-[620px] w-full max-w-7xl items-center gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[.9fr_1.1fr] lg:py-20">
+        <section className="relative overflow-hidden bg-[linear-gradient(135deg,#f8fbff_0%,#eef7ff_52%,#f4fffb_100%)] lg:min-h-[calc(100vh-76px)]">
+          <div className="pointer-events-none absolute -left-28 top-10 h-80 w-80 rounded-full bg-blue-200/30 blur-3xl" />
+          <div className="pointer-events-none absolute -right-20 bottom-0 h-96 w-96 rounded-full bg-emerald-200/25 blur-3xl" />
+          <div className="relative mx-auto grid min-h-[680px] w-full max-w-7xl items-center gap-10 px-5 py-12 sm:px-8 lg:grid-cols-[.82fr_1.18fr] lg:gap-10 lg:py-10">
             <div className="min-w-0">
               <div className="inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-4 py-2 text-[10px] font-bold uppercase tracking-[.16em] text-blue-700"><Sparkles size={13} className="mr-2" />All-in-one business operating system</div>
-              <h1 className="mt-6 max-w-2xl text-5xl font-black leading-[.98] tracking-[-.065em] text-[#102A56] sm:text-6xl xl:text-7xl">Simplify today.<br /><span className="text-[#1687F7]">Scale tomorrow.</span></h1>
+              <h1 className="mt-6 max-w-2xl text-5xl font-black leading-[.96] tracking-[-.065em] text-[#102A56] sm:text-6xl xl:text-7xl">Simplify today.<br /><span className="text-[#1687F7]">Scale tomorrow.</span></h1>
               <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg">OneNexa brings together task management, finance, compliance, HRMS and growth into one intelligent platform built for modern businesses.</p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <a href="#modules" className="rounded-xl bg-[#1687F7] px-6 py-3.5 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5">Explore Modules <ArrowRight size={16} className="ml-2 inline" /></a>
-                <Link to="/login" className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-bold text-slate-800">Get Started</Link>
+                <a href="#modules" className="rounded-xl bg-[#1687F7] px-6 py-3.5 text-sm font-bold text-white shadow-[0_12px_25px_rgba(22,135,247,.22)] transition hover:-translate-y-0.5">Explore Modules <ArrowRight size={16} className="ml-2 inline" /></a>
+                <Link to="/login" className="rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-sm font-bold text-slate-800 shadow-sm">Get Started</Link>
               </div>
               <div className="mt-7 flex flex-wrap gap-x-6 gap-y-2 text-xs font-semibold text-slate-500"><span>✓ Modular pricing</span><span>✓ Secure workspace</span><span>✓ Built to scale</span></div>
             </div>
 
             <div className="relative min-w-0">
-              <div className="absolute inset-5 rounded-[2rem] bg-blue-200/40 blur-2xl" />
-              <div className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-[0_30px_80px_rgba(15,23,42,.14)] backdrop-blur-xl">
-                <div className="flex items-center gap-3 border-b border-slate-100 px-2 pb-3"><img src="/onenexa-logo.png" alt="OneNexa" className="h-6 w-auto max-w-[105px] object-contain" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="ml-auto h-7 w-36 rounded-full bg-slate-100" /></div>
-                <div className="grid gap-4 p-2 sm:grid-cols-[145px_1fr]">
-                  <div className="rounded-2xl bg-[#102A56] p-4 text-white">
-                    <img src="/onenexa-logo.png" alt="OneNexa" className="mb-7 max-h-9 max-w-full object-contain brightness-0 invert" />
-                    <div className="space-y-2.5 text-[10px] text-white/70"><div className="rounded-lg bg-white/15 px-3 py-2 text-white">Dashboard</div><div>Tasks</div><div>Finix</div><div>Compliance</div><div>People</div><div>LeadSense</div></div>
+              <div className="absolute inset-3 rounded-[2rem] bg-blue-200/40 blur-3xl" />
+              <div className="relative overflow-hidden rounded-[1.75rem] border border-white/90 bg-white shadow-[0_30px_80px_rgba(15,23,42,.16)]">
+                <div className="flex h-12 items-center gap-2 border-b border-slate-100 bg-white px-4">
+                  <img src="/onenexa-logo.png" alt="OneNexa" className="h-7 w-auto max-w-[125px] object-contain" />
+                  <div className="ml-3 hidden h-8 max-w-[245px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 sm:flex">
+                    <Search size={13} className="text-slate-400" />
+                    <span className="text-[9px] text-slate-400">Search anything...</span>
                   </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <div className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-slate-100 text-slate-500"><Bell size={14} /><span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-red-500" /></div>
+                    <div className="flex h-8 items-center gap-2 rounded-lg bg-slate-50 px-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#102A56] text-[8px] font-bold text-white">JD</span><span className="hidden text-[9px] font-bold text-slate-700 sm:inline">John Doe</span></div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 bg-slate-50/60 p-3 sm:grid-cols-[150px_1fr]">
+                  <aside className="rounded-2xl bg-[#102A56] p-3 text-white shadow-inner">
+                    <div className="mb-5 flex items-center gap-2 px-1">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-sm font-black text-white">N</span>
+                      <div><div className="text-[11px] font-black tracking-tight">OneNexa</div><div className="text-[6px] font-medium uppercase tracking-[.13em] text-white/45">All in one. Ahead always.</div></div>
+                    </div>
+                    <div className="space-y-1 text-[10px]">
+                      {[
+                        ["Dashboard", HomeIcon],
+                        ["Tasks", ClipboardList],
+                        ["Finix", CircleDollarSign],
+                        ["Compliance", ShieldCheck],
+                        ["People", Users],
+                        ["LeadSense", TrendingUp],
+                        ["Clients", UserRound],
+                        ["Reports", BarChart3],
+                      ].map(([label, Icon], index) => (
+                        <div key={label} className={`flex items-center gap-2 rounded-lg px-3 py-2.5 ${index === 0 ? "bg-white/15 text-white shadow-sm" : "text-white/65"}`}>
+                          <Icon size={12} />
+                          <span>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-5 border-t border-white/10 pt-3 text-[9px] text-white/50"><div className="flex items-center gap-2 px-3 py-2"><Settings size={12} /> Settings</div></div>
+                  </aside>
+
                   <div className="min-w-0 p-1">
-                    <div className="flex items-end justify-between gap-3"><div><div className="text-[9px] font-bold tracking-[.16em] text-slate-400">ONENEXA WORKSPACE</div><div className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">Everything in one place.</div></div><div className="rounded-xl bg-emerald-50 px-3 py-2 text-[9px] font-bold text-emerald-700">All systems ready</div></div>
-                    <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">{[["Tasks","128"],["Clients","56"],["Due this week","12"],["Productivity","94%"]].map(([label,value])=><div key={label} className="rounded-xl border border-slate-100 bg-slate-50 p-3"><div className="text-[9px] font-semibold text-slate-400">{label}</div><div className="mt-2 text-xl font-black text-slate-900">{value}</div></div>)}</div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-[1.2fr_.8fr]"><div className="h-32 rounded-xl border border-slate-100 bg-white p-3"><div className="text-[9px] font-bold text-slate-500">Business activity</div><div className="mt-5 flex h-16 items-end gap-2">{[35,55,45,70,58,82,68].map((height,index)=><div key={index} className="flex-1 rounded-t-md bg-blue-200" style={{height: height+"%"}} />)}</div></div><div className="h-32 rounded-xl border border-slate-100 bg-white p-3"><div className="text-[9px] font-bold text-slate-500">Upcoming</div><div className="mt-3 space-y-2 text-[9px] text-slate-600"><div>GST return <span className="float-right font-bold text-red-500">18 Sep</span></div><div>ROC filing <span className="float-right font-bold">20 Sep</span></div><div>Trademark <span className="float-right font-bold">25 Sep</span></div></div></div></div>
+                    <div className="flex items-end justify-between gap-3">
+                      <div><div className="text-[8px] font-bold tracking-[.16em] text-slate-400">ONENEXA WORKSPACE</div><div className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">Everything in one place.</div><div className="mt-1 text-[9px] text-slate-500">Your business at a glance.</div></div>
+                      <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[8px] font-bold text-slate-600 sm:flex"><CalendarDays size={12} /> Sat, 19 Sep 2026</div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                      {[
+                        ["Tasks", "128", "+12%", ClipboardList, "text-blue-600", "bg-blue-50"],
+                        ["Clients", "56", "+8%", Users, "text-emerald-600", "bg-emerald-50"],
+                        ["Due This Week", "12", "-5%", CalendarDays, "text-orange-600", "bg-orange-50"],
+                        ["Productivity", "94%", "+6%", BarChart3, "text-purple-600", "bg-purple-50"],
+                      ].map(([label, value, change, Icon, iconColor, iconBg]) => (
+                        <div key={label} className="rounded-xl border border-slate-100 bg-white p-2.5 shadow-[0_4px_16px_rgba(15,23,42,.04)]">
+                          <div className="flex items-center justify-between"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${iconBg} `}><Icon size={13} className={iconColor} /></span><span className={`text-[7px] font-bold ${change.startsWith("-") ? "text-red-500" : "text-emerald-600"}`}>{change}</span></div>
+                          <div className="mt-2 text-[8px] font-semibold text-slate-400">{label}</div>
+                          <div className="mt-0.5 text-xl font-black text-slate-900">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-3 grid gap-2.5 sm:grid-cols-[1.2fr_.8fr]">
+                      <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-[0_4px_16px_rgba(15,23,42,.03)]">
+                        <div className="flex items-center justify-between"><div className="text-[9px] font-bold text-slate-700">Business Activity</div><span className="text-[7px] font-semibold text-slate-400">This Week</span></div>
+                        <div className="mt-3 flex h-20 items-end gap-2">
+                          {[35,55,45,70,58,82,68].map((height,index)=><div key={index} className="flex h-full flex-1 items-end"><div className="w-full rounded-t-md bg-blue-200" style={{height: height+"%"}} /></div>)}
+                        </div>
+                        <div className="mt-1 flex justify-between px-1 text-[6px] font-semibold text-slate-400"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-white p-3 shadow-[0_4px_16px_rgba(15,23,42,.03)]">
+                        <div className="flex items-center justify-between"><div className="text-[9px] font-bold text-slate-700">Upcoming</div><span className="text-[7px] font-bold text-blue-600">View All</span></div>
+                        <div className="mt-3 space-y-2.5 text-[8px] text-slate-600">
+                          <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-purple-500" />GST return</span><b className="text-red-500">18 Sep</b></div>
+                          <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-pink-500" />ROC filing</span><b>20 Sep</b></div>
+                          <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Trademark</span><b>25 Sep</b></div>
+                          <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-orange-500" />TDS payment</span><b>28 Sep</b></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 grid gap-2.5 sm:grid-cols-[1.15fr_.85fr]">
+                      <div className="rounded-xl border border-slate-100 bg-white p-3">
+                        <div className="flex items-center justify-between"><div className="text-[9px] font-bold text-slate-700">Recent Tasks</div><span className="text-[7px] font-bold text-blue-600">View All</span></div>
+                        <div className="mt-2.5 space-y-2 text-[8px] text-slate-600">
+                          <div className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-slate-300" /><span className="min-w-0 flex-1 truncate">Prepare board resolution</span><span className="rounded bg-red-50 px-1.5 py-0.5 text-[6px] font-bold text-red-500">High</span><b className="text-[7px] text-slate-400">19 Sep</b></div>
+                          <div className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-slate-300" /><span className="min-w-0 flex-1 truncate">Client document review</span><span className="rounded bg-amber-50 px-1.5 py-0.5 text-[6px] font-bold text-amber-600">Medium</span><b className="text-[7px] text-slate-400">20 Sep</b></div>
+                          <div className="flex items-center gap-2"><span className="h-3 w-3 rounded border border-slate-300" /><span className="min-w-0 flex-1 truncate">Trademark application filing</span><span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[6px] font-bold text-emerald-600">Low</span><b className="text-[7px] text-slate-400">22 Sep</b></div>
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-white p-3">
+                        <div className="flex items-center justify-between"><div className="text-[9px] font-bold text-slate-700">Module Quick Access</div><span className="text-[7px] font-bold text-blue-600">View All</span></div>
+                        <div className="mt-2.5 grid grid-cols-4 gap-1.5">
+                          {[[ClipboardList,"Tasks","bg-blue-50","text-blue-600"],[CircleDollarSign,"Finix","bg-emerald-50","text-emerald-600"],[ShieldCheck,"Compliance","bg-orange-50","text-orange-600"],[Users,"People","bg-purple-50","text-purple-600"]].map(([Icon,label,bg,fg])=><div key={label} className="text-center"><span className={`mx-auto flex h-8 w-8 items-center justify-center rounded-lg ${bg} `}><Icon size={14} className={fg} /></span><div className="mt-1 text-[6px] font-bold text-slate-500">{label}</div></div>)}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
