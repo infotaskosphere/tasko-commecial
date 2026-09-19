@@ -6,6 +6,7 @@ but never bypasses the commercial license boundary itself. Module access and
 page access are independent: a purchased module does not imply access to every
 page in that module.
 """
+import logging
 from typing import Optional, Tuple
 
 from fastapi import Depends, HTTPException, Request
@@ -16,6 +17,28 @@ from backend.platform_owner import is_platform_owner
 from backend.commercial_licensee_admin import resolve_license_modules, get_all_admin_permissions
 
 _BASE_GET_CURRENT_USER = _dependencies.get_current_user
+logger = logging.getLogger("commercial_module_guard")
+
+
+def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict] = None) -> HTTPException:
+    """Build a 403 and log exactly WHY, so a licensee lock-out is diagnosable from
+    the server log alone (previously the log only said "403 Forbidden")."""
+    try:
+        logger.warning(
+            "403 %s %s | user=%s role=%s company_id=%s license_id=%s | licensed_modules=%s | selected_features=%s | reason=%s",
+            request.method,
+            request.url.path,
+            getattr(user, "email", None),
+            getattr(user, "role", None),
+            getattr(user, "company_id", None),
+            (license_doc or {}).get("id"),
+            sorted(resolve_license_modules(license_doc)) if license_doc else None,
+            {k: len(v) if isinstance(v, (list, tuple, set)) else v for k, v in ((license_doc or {}).get("selected_features") or {}).items()},
+            detail,
+        )
+    except Exception:  # logging must never mask the real response
+        pass
+    return HTTPException(status_code=403, detail=detail)
 
 MODULE_PREFIXES = {
     "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
@@ -304,17 +327,17 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
 
     module = module_for_path(request.url.path, request.method)
     if module and not _licensed_module(module, commercial):
-        raise HTTPException(status_code=403, detail=f"This company license does not include the {module} module.")
+        raise _deny(request, user, f"This company license does not include the {module} module.", commercial)
 
     feature = feature_for_path(request.url.path, request.method)
     if feature:
         feature_module, feature_flag = feature
         if not _licensed_module(feature_module, commercial):
-            raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_module} module.")
+            raise _deny(request, user, f"This company license does not include the {feature_module} module.", commercial)
         if not _permission_flag(user, feature_flag, commercial, feature_module):
-            raise HTTPException(status_code=403, detail=f"This company license does not include the {feature_flag} feature.")
+            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial)
     elif module:
-        raise HTTPException(status_code=403, detail=f"This company license does not include a selected page for {module}.")
+        raise _deny(request, user, f"This company license does not include a selected page for {module}.", commercial)
 
     return user
 
