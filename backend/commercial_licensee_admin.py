@@ -140,10 +140,13 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         dashboard_flag = dashboard_flags.get(module_id)
         if module_allowed and dashboard_flag and selected and dashboard_flag not in selected:
             selected.add(dashboard_flag)
+        # A licensed module with no explicit page list (missing OR empty) grants every
+        # page of that module -- and only that module. Unlicensed modules stay closed.
+        no_explicit_pages = raw_selected is None or (isinstance(raw_selected, list) and len(raw_selected) == 0)
         # Backward compatibility for an existing license edited to add a module
         # without a selected_features entry. Explicit feature selections remain
         # authoritative and restrictive.
-        if raw_selected is None and module_allowed:
+        if no_explicit_pages and module_allowed:
             selected = {str(page.get("flag")).strip() for page in module_def.get("pages", []) or [] if page.get("flag")}
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
