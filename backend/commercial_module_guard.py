@@ -19,16 +19,19 @@ from backend.commercial_licensee_admin import resolve_license_modules, get_all_a
 _BASE_GET_CURRENT_USER = _dependencies.get_current_user
 logger = logging.getLogger("commercial_module_guard")
 
+
 def _is_admin_role(user: User) -> bool:
     """Handle both string and UserRole enum representations of the admin role."""
     role = getattr(user, "role", "")
     value = getattr(role, "value", None)
     name = getattr(role, "name", None)
     candidates = [value, name, role]
+
     for candidate in candidates:
         normalized = str(candidate or "").strip().lower()
         if normalized == "admin" or normalized.endswith(".admin"):
             return True
+
     return False
 
 
@@ -49,18 +52,102 @@ def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict]
             effective_pages,
             detail,
         )
-    except Exception:  # logging must never mask the real response
+    except Exception:
         pass
+
     return HTTPException(status_code=403, detail=detail)
 
+
 MODULE_PREFIXES = {
-    "taskosphere": ("/tasks", "/todos", "/todo", "/attendance", "/reminders", "/action-center", "/visits", "/ai-reader", "/client-portal-manager"),
-    "finix": ("/finix-dashboard", "/invoicing", "/purchase", "/bank-accounts", "/chart-of-accounts", "/journal-entries", "/accounting-reports", "/zero-touch-entry", "/gst-portal-sync", "/accounting-integrity", "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report", "/bank-reconciliation", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report", "/yearly-report", "/opening-balances", "/accounting-audit-trail", "/bulk-import", "/due-dates", "/import-invoices", "/reports/day-book", "/reports/journal-register", "/reports/cash-bank-book", "/reports/cash-flow", "/reports/outstanding", "/reports/financial-ratios", "/reports/comparative", "/reports/yearly", "/reports/trial-balance", "/reports/profit-loss", "/reports/balance-sheet", "/reports/mis-compliance", "/reports/parties", "/reports/party-ledger", "/reports/validation-engine", "/reports/ledger-by-code", "/reports/finix-dashboard"),
-    "compliance": ("/compliance-dashboard", "/compliance", "/gst-reconciliation", "/trademark-sphere", "/mis-report", "/salary-slips", "/roc-sphere"),
-    "records": ("/records-dashboard", "/client-approvals", "/dsc", "/documents", "/clients", "/passwords"),
-    "proposals": ("/client-proposals-dashboard", "/leads", "/quotations", "/client-discussion"),
-    "people_matrix": ("/people-matrix", "/users", "/leave", "/payroll", "/hr", "/recruitment", "/performance"),
+    "taskosphere": (
+        "/tasks",
+        "/todos",
+        "/todo",
+        "/attendance",
+        "/reminders",
+        "/action-center",
+        "/visits",
+        "/ai-reader",
+        "/client-portal-manager",
+    ),
+    "finix": (
+        "/finix-dashboard",
+        "/invoicing",
+        "/purchase",
+        "/bank-accounts",
+        "/chart-of-accounts",
+        "/journal-entries",
+        "/accounting-reports",
+        "/zero-touch-entry",
+        "/gst-portal-sync",
+        "/accounting-integrity",
+        "/day-book",
+        "/cash-bank-book",
+        "/cash-flow",
+        "/outstanding-report",
+        "/bank-reconciliation",
+        "/depreciation",
+        "/tds-tcs",
+        "/financial-ratios",
+        "/comparative-report",
+        "/yearly-report",
+        "/opening-balances",
+        "/accounting-audit-trail",
+        "/bulk-import",
+        "/due-dates",
+        "/import-invoices",
+        "/reports/day-book",
+        "/reports/journal-register",
+        "/reports/cash-bank-book",
+        "/reports/cash-flow",
+        "/reports/outstanding",
+        "/reports/financial-ratios",
+        "/reports/comparative",
+        "/reports/yearly",
+        "/reports/trial-balance",
+        "/reports/profit-loss",
+        "/reports/balance-sheet",
+        "/reports/mis-compliance",
+        "/reports/parties",
+        "/reports/party-ledger",
+        "/reports/validation-engine",
+        "/reports/ledger-by-code",
+        "/reports/finix-dashboard",
+    ),
+    "compliance": (
+        "/compliance-dashboard",
+        "/compliance",
+        "/gst-reconciliation",
+        "/trademark-sphere",
+        "/mis-report",
+        "/salary-slips",
+        "/roc-sphere",
+    ),
+    "records": (
+        "/records-dashboard",
+        "/client-approvals",
+        "/dsc",
+        "/documents",
+        "/clients",
+        "/passwords",
+    ),
+    "proposals": (
+        "/client-proposals-dashboard",
+        "/leads",
+        "/quotations",
+        "/client-discussion",
+    ),
+    "people_matrix": (
+        "/people-matrix",
+        "/users",
+        "/leave",
+        "/payroll",
+        "/hr",
+        "/recruitment",
+        "/performance",
+    ),
 }
+
 
 FEATURE_PREFIXES = {
     "taskosphere": {
@@ -73,7 +160,10 @@ FEATURE_PREFIXES = {
         "can_view_client_visits": ("/visits",),
         "can_view_ai_document_reader": ("/ai-reader",),
         "can_view_client_portal": ("/client-portal-manager",),
-        "can_reset_client_passwords": ("/client-portal-manager/password", "/client-portal-manager/reset"),
+        "can_reset_client_passwords": (
+            "/client-portal-manager/password",
+            "/client-portal-manager/reset",
+        ),
     },
     "finix": {
         "can_view_accounting_reports": (
@@ -84,92 +174,211 @@ FEATURE_PREFIXES = {
             "/reports/validation-engine",
             "/reports/finix-dashboard",
         ),
-        "can_view_sale": ("/invoicing", "/sales", "/invoices"),
-        "can_view_purchase": ("/purchase", "/purchase-invoices"),
-        "can_view_bank": ("/bank-accounts",),
-        "can_view_chart_of_accounts": ("/chart-of-accounts",),
-        "can_manage_chart_of_accounts": ("/chart-of-accounts/manage",),
-        "can_view_journal_entries": ("/journal-entries",),
-        "can_post_journal_entries": ("/journal-entries/post", "/zero-touch-entry"),
-        "can_match_bank": ("/bank-reconciliation",),
+        "can_view_sale": (
+            "/invoicing",
+            "/sales",
+            "/invoices",
+        ),
+        "can_view_purchase": (
+            "/purchase",
+            "/purchase-invoices",
+        ),
+        "can_view_bank": (
+            "/bank-accounts",
+        ),
+        "can_view_chart_of_accounts": (
+            "/chart-of-accounts",
+        ),
+        "can_manage_chart_of_accounts": (
+            "/chart-of-accounts/manage",
+        ),
+        "can_view_journal_entries": (
+            "/journal-entries",
+        ),
+        "can_post_journal_entries": (
+            "/journal-entries/post",
+            "/zero-touch-entry",
+        ),
+        "can_match_bank": (
+            "/bank-reconciliation",
+        ),
     },
     "compliance": {
-        "can_view_compliance": ("/compliance-dashboard", "/compliance"),
-        "can_manage_compliance": ("/compliance/manage",),
-        "can_view_gst_reconciliation": ("/gst-reconciliation",),
-        "can_view_trademark_sphere": ("/trademark-sphere",),
-        "can_view_mis_report": ("/mis-report",),
-        "can_manage_mis_report": ("/mis-report/manage",),
-        "can_view_salary_slips": ("/salary-slips",),
-        "can_manage_salary_slips": ("/salary-slips/manage",),
-        "can_view_roc_sphere": ("/roc-sphere",),
-        "can_manage_roc_sphere": ("/roc-sphere/manage",),
+        "can_view_compliance": (
+            "/compliance-dashboard",
+            "/compliance",
+        ),
+        "can_manage_compliance": (
+            "/compliance/manage",
+        ),
+        "can_view_gst_reconciliation": (
+            "/gst-reconciliation",
+        ),
+        "can_view_trademark_sphere": (
+            "/trademark-sphere",
+        ),
+        "can_view_mis_report": (
+            "/mis-report",
+        ),
+        "can_manage_mis_report": (
+            "/mis-report/manage",
+        ),
+        "can_view_salary_slips": (
+            "/salary-slips",
+        ),
+        "can_manage_salary_slips": (
+            "/salary-slips/manage",
+        ),
+        "can_view_roc_sphere": (
+            "/roc-sphere",
+        ),
+        "can_manage_roc_sphere": (
+            "/roc-sphere/manage",
+        ),
     },
     "records": {
-        "can_view_all_dsc": ("/dsc",),
-        "can_view_documents": ("/documents",),
-        "can_view_passwords": ("/passwords",),
-        "can_edit_passwords": ("/passwords/manage",),
-        "can_view_clients": ("/client-approvals",),
-        "can_edit_clients": ("/clients/manage",),
-        "can_approve_clients": ("/clients/approve", "/client-approvals/approve"),
-        "can_approve_whatsapp_wishes": ("/automation/whatsapp",),
-        "can_approve_email_wishes": ("/automation/email",),
+        "can_view_all_dsc": (
+            "/dsc",
+        ),
+        "can_view_documents": (
+            "/documents",
+        ),
+        "can_view_passwords": (
+            "/passwords",
+        ),
+        "can_edit_passwords": (
+            "/passwords/manage",
+        ),
+        "can_view_clients": (
+            "/client-approvals",
+        ),
+        "can_edit_clients": (
+            "/clients/manage",
+        ),
+        "can_approve_clients": (
+            "/clients/approve",
+            "/client-approvals/approve",
+        ),
+        "can_approve_whatsapp_wishes": (
+            "/automation/whatsapp",
+        ),
+        "can_approve_email_wishes": (
+            "/automation/email",
+        ),
     },
     "proposals": {
-        "can_view_all_leads": ("/leads",),
-        "can_create_quotations": ("/quotations",),
-        "can_view_client_discussion": ("/client-discussion",),
-        "can_manage_client_discussion": ("/client-discussion/manage",),
+        "can_view_all_leads": (
+            "/leads",
+        ),
+        "can_create_quotations": (
+            "/quotations",
+        ),
+        "can_view_client_discussion": (
+            "/client-discussion",
+        ),
+        "can_manage_client_discussion": (
+            "/client-discussion/manage",
+        ),
     },
     "people_matrix": {
-        "can_view_user_page": ("/users/manage", "/people-matrix"),
-        "can_view_leave": ("/leave",),
-        "can_manage_leave": ("/leave/manage",),
-        "can_view_payroll": ("/payroll",),
-        "can_manage_payroll": ("/payroll/manage",),
-        "can_view_hr": ("/hr",),
-        "can_manage_hr": ("/hr/manage",),
-        "can_view_recruitment": ("/recruitment",),
-        "can_manage_recruitment": ("/recruitment/manage",),
-        "can_view_performance": ("/performance",),
-        "can_manage_performance": ("/performance/manage",),
+        "can_view_user_page": (
+            "/users/manage",
+            "/people-matrix",
+        ),
+        "can_view_leave": (
+            "/leave",
+        ),
+        "can_manage_leave": (
+            "/leave/manage",
+        ),
+        "can_view_payroll": (
+            "/payroll",
+        ),
+        "can_manage_payroll": (
+            "/payroll/manage",
+        ),
+        "can_view_hr": (
+            "/hr",
+        ),
+        "can_manage_hr": (
+            "/hr/manage",
+        ),
+        "can_view_recruitment": (
+            "/recruitment",
+        ),
+        "can_manage_recruitment": (
+            "/recruitment/manage",
+        ),
+        "can_view_performance": (
+            "/performance",
+        ),
+        "can_manage_performance": (
+            "/performance/manage",
+        ),
     },
 }
 
 
 def _matches(path: str, prefixes: Tuple[str, ...]) -> bool:
-    return any(path == prefix or path.startswith(prefix + "/") for prefix in prefixes)
+    return any(
+        path == prefix or path.startswith(prefix + "/")
+        for prefix in prefixes
+    )
 
 
 def module_for_path(path: str, method: str = "GET") -> Optional[str]:
     normalized = path.split("?", 1)[0]
+
     if normalized.startswith("/api"):
         normalized = normalized[4:] or "/"
+
     if method == "GET":
-        if normalized == "/users" or (normalized.startswith("/users/") and not any(sub in normalized for sub in ("/salary-report", "/offboard"))):
+        if normalized == "/users" or (
+            normalized.startswith("/users/")
+            and not any(
+                sub in normalized
+                for sub in ("/salary-report", "/offboard")
+            )
+        ):
             return None
+
         if normalized in ("/clients", "/clients/search"):
             return None
+
     for module, prefixes in MODULE_PREFIXES.items():
         if _matches(normalized, prefixes):
             return module
+
     return None
 
 
-def feature_for_path(path: str, method: str = "GET") -> Optional[Tuple[str, str]]:
+def feature_for_path(
+    path: str,
+    method: str = "GET",
+) -> Optional[Tuple[str, str]]:
     normalized = path.split("?", 1)[0]
+
     if normalized.startswith("/api"):
         normalized = normalized[4:] or "/"
+
     if method == "GET":
-        if normalized == "/users" or (normalized.startswith("/users/") and not any(sub in normalized for sub in ("/salary-report", "/offboard"))):
+        if normalized == "/users" or (
+            normalized.startswith("/users/")
+            and not any(
+                sub in normalized
+                for sub in ("/salary-report", "/offboard")
+            )
+        ):
             return None
+
         if normalized in ("/clients", "/clients/search"):
             return None
+
     for module, features in FEATURE_PREFIXES.items():
         for flag, prefixes in features.items():
             if _matches(normalized, prefixes):
                 return module, flag
+
     return None
 
 
@@ -183,13 +392,16 @@ async def _commercial_license(user: User) -> Optional[dict]:
     customer-id lookup is only the fallback for legacy records without one.
     """
     db = getattr(_dependencies, "_raw_db", _dependencies.db)
+
     from backend.licensing_api import _expiry_reason
 
     async def _valid(doc: Optional[dict]) -> Optional[dict]:
         if not doc or doc.get("status") not in {"active", "trial"}:
             return None
+
         if _expiry_reason(doc):
             return None
+
         return doc
 
     # The tenant/company license is the canonical source of truth. A user can
@@ -198,56 +410,122 @@ async def _commercial_license(user: User) -> Optional[dict]:
     # 403 seen when a newly-enabled Finix/Compliance module is checked.
     company_id = str(getattr(user, "company_id", "") or "").strip()
     company = None
+
     if company_id:
         company = await db.companies.find_one(
             {"id": company_id},
-            {"_id": 0, "commercial_customer_id": 1, "license_id": 1, "source": 1},
+            {
+                "_id": 0,
+                "commercial_customer_id": 1,
+                "license_id": 1,
+                "source": 1,
+            },
         )
-        company_license_id = str((company or {}).get("license_id") or "").strip()
+
+        company_license_id = str(
+            (company or {}).get("license_id") or ""
+        ).strip()
+
         if company_license_id:
-            doc = await db.commercial_licenses.find_one({"id": company_license_id}, {"_id": 0})
+            doc = await db.commercial_licenses.find_one(
+                {"id": company_license_id},
+                {"_id": 0},
+            )
+
             valid = await _valid(doc)
+
             if valid:
                 return valid
 
-    user_license_id = str(getattr(user, "license_id", "") or "").strip()
+    user_license_id = str(
+        getattr(user, "license_id", "") or ""
+    ).strip()
+
     if user_license_id:
-        doc = await db.commercial_licenses.find_one({"id": user_license_id}, {"_id": 0})
+        doc = await db.commercial_licenses.find_one(
+            {"id": user_license_id},
+            {"_id": 0},
+        )
+
         valid = await _valid(doc)
+
         if valid:
             return valid
 
-    customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
+    customer_id = str(
+        getattr(user, "commercial_customer_id", "") or ""
+    ).strip()
+
     if not customer_id:
-        customer_id = str((company or {}).get("commercial_customer_id") or "").strip() if company_id else ""
+        customer_id = (
+            str(
+                (company or {}).get("commercial_customer_id") or ""
+            ).strip()
+            if company_id
+            else ""
+        )
+
     if not customer_id and company_id:
         # Legacy commercial company records may use company_id itself as the
         # customer id. Only use this fallback when no explicit license link exists.
         customer_id = company_id
+
     if not customer_id:
         return None
 
     docs = await db.commercial_licenses.find(
-        {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
-        {"_id": 0},
-    ).sort("issued_at", -1).limit(20).to_list(20)
+        {
+            "customer_id": customer_id,
+            "status": {
+                "$in": ["active", "trial"]
+            },
+        },
+        {
+            "_id": 0
+        },
+    ).sort(
+        "issued_at",
+        -1,
+    ).limit(20).to_list(20)
+
     for doc in docs:
         valid = await _valid(doc)
+
         if valid:
             return valid
+
     return None
 
 
 def _hydrate_admin(user: User, license_doc: dict) -> User:
     if not _is_admin_role(user):
         return user
+
     data = user.model_dump()
-    data["commercial_customer_id"] = data.get("commercial_customer_id") or license_doc.get("customer_id")
+
+    data["commercial_customer_id"] = (
+        data.get("commercial_customer_id")
+        or license_doc.get("customer_id")
+    )
+
     data["license_id"] = license_doc.get("id")
     data["license_key"] = license_doc.get("license_key")
-    data["licensed_modules"] = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
-    data["selected_features"] = license_doc.get("selected_features") or {}
-    data["permissions"] = get_all_admin_permissions(license_doc)
+
+    data["licensed_modules"] = list(
+        license_doc.get("modules")
+        or license_doc.get("licensed_modules")
+        or []
+    )
+
+    data["selected_features"] = (
+        license_doc.get("selected_features")
+        or {}
+    )
+
+    data["permissions"] = get_all_admin_permissions(
+        license_doc
+    )
+
     return User.model_validate(data)
 
 
@@ -255,7 +533,10 @@ def _licensed_module(module: str, license_doc: dict) -> bool:
     return module in resolve_license_modules(license_doc)
 
 
-def _selected_license_features(license_doc: dict, module: str) -> set[str]:
+def _selected_license_features(
+    license_doc: dict,
+    module: str,
+) -> set[str]:
     """Return the exact page flags selected in the active commercial license.
 
     The license document is the commercial source of truth. Accept canonical
@@ -267,35 +548,80 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
     # selected_features (e.g. a "taskosphere" entry left behind after the
     # license was switched to Finix). A licensed module with no explicit page
     # list (missing OR empty) grants every page of THAT module only.
-    all_module_flags = set(FEATURE_PREFIXES.get(module, {}).keys())
+    all_module_flags = set(
+        FEATURE_PREFIXES.get(module, {}).keys()
+    )
+
     if not _licensed_module(module, license_doc):
         return set()
+
     raw = license_doc.get("selected_features")
+
     if not isinstance(raw, dict):
         return all_module_flags
+
     values = raw.get(module)
+
     if values is None:
         aliases = {
-            "taskosphere": {"taskosphere", "tasks"},
-            "finix": {"finix", "invoicing", "accounting"},
-            "compliance": {"compliance"},
-            "records": {"records"},
-            "proposals": {"proposals", "client_proposals", "client-proposals"},
-            "people_matrix": {"people_matrix", "people-matrix", "hrms", "peoplematrix"},
-        }.get(module, {module})
+            "taskosphere": {
+                "taskosphere",
+                "tasks",
+            },
+            "finix": {
+                "finix",
+                "invoicing",
+                "accounting",
+            },
+            "compliance": {
+                "compliance",
+            },
+            "records": {
+                "records",
+            },
+            "proposals": {
+                "proposals",
+                "client_proposals",
+                "client-proposals",
+            },
+            "people_matrix": {
+                "people_matrix",
+                "people-matrix",
+                "hrms",
+                "peoplematrix",
+            },
+        }.get(
+            module,
+            {module},
+        )
+
         for raw_key, candidate in raw.items():
             key = str(raw_key).strip().lower().replace("-", "_")
-            if key in {str(alias).replace("-", "_") for alias in aliases}:
+
+            if key in {
+                str(alias).replace("-", "_")
+                for alias in aliases
+            }:
                 values = candidate
                 break
+
     # A module added to an existing license may not yet have a
     # selected_features entry. In that legacy/module-only case, the licensed
     # module remains available while explicit feature selections stay restrictive.
-    if values is None or (isinstance(values, (list, tuple, set)) and len(values) == 0):
+    if values is None or (
+        isinstance(values, (list, tuple, set))
+        and len(values) == 0
+    ):
         return all_module_flags
+
     if not isinstance(values, (list, tuple, set)):
         return set()
-    selected = {str(flag).strip() for flag in values}
+
+    selected = {
+        str(flag).strip()
+        for flag in values
+    }
+
     # Dashboard/report entry points are derived from an active module's
     # selected pages. Older licenses may not have persisted the derived flag.
     dashboard_flags = {
@@ -306,13 +632,21 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
         "proposals": "can_view_all_leads",
         "people_matrix": "can_view_user_page",
     }
+
     dashboard_flag = dashboard_flags.get(module)
+
     if selected and dashboard_flag:
         selected.add(dashboard_flag)
+
     return selected
 
 
-def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[str] = None) -> bool:
+def _permission_flag(
+    user: User,
+    flag: str,
+    license_doc: dict,
+    module: Optional[str] = None,
+) -> bool:
     # The active commercial license's MODULE list is the hard ceiling for every
     # role (checked by the caller via _licensed_module before this runs). Once
     # a module is on the license, the tenant admin — the identity the license
@@ -320,10 +654,16 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
     # like an internal admin account. The narrower "selected_features" page
     # list is a restriction that only applies to non-admin licensee users.
     is_admin = _is_admin_role(user)
+
     if module is not None:
         if is_admin:
             return True
-        selected = _selected_license_features(license_doc, module)
+
+        selected = _selected_license_features(
+            license_doc,
+            module,
+        )
+
         if flag not in selected:
             # Client Discussion was introduced after the first commercial
             # proposals licenses were issued. Those licenses selected Lead
@@ -335,42 +675,137 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
                 and "can_view_all_leads" in selected
             ):
                 return False
+
     # The license ceiling above has passed. A tenant admin is governed by the
     # license alone, so do not additionally require a per-user permission dict.
     if is_admin:
         return True
+
     permissions = getattr(user, "permissions", None)
+
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
+
     if not isinstance(permissions, dict):
         return False
-    return bool(permissions.get(flag, False))
+
+    return bool(
+        permissions.get(
+            flag,
+            False,
+        )
+    )
 
 
-async def get_current_user_with_commercial_guard(request: Request, credentials=Depends(_dependencies.security)) -> User:
+async def get_current_user_with_commercial_guard(
+    request: Request,
+    credentials=Depends(_dependencies.security),
+) -> User:
     user = await _BASE_GET_CURRENT_USER(credentials)
+
     if is_platform_owner(user):
         return user
 
     commercial = await _commercial_license(user)
+
     if not commercial:
         return user
 
-    user = _hydrate_admin(user, commercial)
+    user = _hydrate_admin(
+        user,
+        commercial,
+    )
 
-    module = module_for_path(request.url.path, request.method)
-    if module and not _licensed_module(module, commercial):
-        raise _deny(request, user, f"This company license does not include the {module} module.", commercial)
+    module = module_for_path(
+        request.url.path,
+        request.method,
+    )
 
-    feature = feature_for_path(request.url.path, request.method)
+    if module and not _licensed_module(
+        module,
+        commercial,
+    ):
+        raise _deny(
+            request,
+            user,
+            f"This company license does not include the {module} module.",
+            commercial,
+        )
+
+    feature = feature_for_path(
+        request.url.path,
+        request.method,
+    )
+
     if feature:
         feature_module, feature_flag = feature
-        if not _licensed_module(feature_module, commercial):
-            raise _deny(request, user, f"This company license does not include the {feature_module} module.", commercial)
-        if not _permission_flag(user, feature_flag, commercial, feature_module):
-            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial, {"rules": GUARD_RULES_VERSION, "flag": feature_flag, "license_pages": sorted(_selected_license_features(commercial, feature_module)), "user_has_flag": bool((getattr(user, "permissions", None).model_dump() if hasattr(getattr(user, "permissions", None), "model_dump") else (getattr(user, "permissions", None) or {})).get(feature_flag))})
+
+        if not _licensed_module(
+            feature_module,
+            commercial,
+        ):
+            raise _deny(
+                request,
+                user,
+                f"This company license does not include the {feature_module} module.",
+                commercial,
+            )
+
+        if not _permission_flag(
+            user,
+            feature_flag,
+            commercial,
+            feature_module,
+        ):
+            raise _deny(
+                request,
+                user,
+                f"This company license does not include the {feature_flag} feature.",
+                commercial,
+                {
+                    "rules": GUARD_RULES_VERSION,
+                    "flag": feature_flag,
+                    "license_pages": sorted(
+                        _selected_license_features(
+                            commercial,
+                            feature_module,
+                        )
+                    ),
+                    "user_has_flag": bool(
+                        (
+                            getattr(
+                                user,
+                                "permissions",
+                                None,
+                            ).model_dump()
+                            if hasattr(
+                                getattr(
+                                    user,
+                                    "permissions",
+                                    None,
+                                ),
+                                "model_dump",
+                            )
+                            else (
+                                getattr(
+                                    user,
+                                    "permissions",
+                                    None,
+                                )
+                                or {}
+                            )
+                        ).get(feature_flag)
+                    ),
+                },
+            )
+
     elif module:
-        raise _deny(request, user, f"This company license does not include a selected page for {module}.", commercial)
+        raise _deny(
+            request,
+            user,
+            f"This company license does not include a selected page for {module}.",
+            commercial,
+        )
 
     return user
 
@@ -381,8 +816,16 @@ GUARD_RULES_VERSION = "2026-09-19.admin-full-module-access"
 def install() -> None:
     # Boot marker: if this line is missing from the Render log after a deploy, the
     # server is still running the OLD entitlement code.
-    logger.info("commercial_module_guard active: rules=%s", GUARD_RULES_VERSION)
-    if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_commercial_guard":
+    logger.info(
+        "commercial_module_guard active: rules=%s",
+        GUARD_RULES_VERSION,
+    )
+
+    if getattr(
+        _dependencies.get_current_user,
+        "__name__",
+        "",
+    ) != "get_current_user_with_commercial_guard":
         _dependencies.get_current_user = get_current_user_with_commercial_guard
 
 
