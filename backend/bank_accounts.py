@@ -50,8 +50,20 @@ router = APIRouter(tags=["Bank Accounts"])
 MAX_FILE_BYTES = 15 * 1024 * 1024  # 15 MB — statements can run to many pages
 
 
+def _is_admin_role(user: User) -> bool:
+    """Handle both string and UserRole enum representations of the admin role."""
+    role = getattr(user, "role", "")
+    value = getattr(role, "value", None)
+    name = getattr(role, "name", None)
+    for candidate in (value, name, role):
+        normalized = str(candidate or "").strip().lower()
+        if normalized == "admin" or normalized.endswith(".admin"):
+            return True
+    return False
+
+
 def _perm_view_bank(user: User) -> bool:
-    if str(user.role or "").strip().lower() == "admin":
+    if _is_admin_role(user):
         return True
     perms = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
     return bool(perms.get("can_view_bank"))
@@ -65,7 +77,7 @@ def _perm_use_bank_picker(user: User) -> bool:
     to an existing bank account. Full Bank Accounts page access remains
     protected by _perm_view_bank().
     """
-    if str(user.role or "").strip().lower() == "admin":
+    if _is_admin_role(user):
         return True
     perms = (
         user.permissions
@@ -84,7 +96,7 @@ def _perm_match_bank(user: User) -> bool:
     access to the page. Admin: always allowed. Manager: allowed by default
     (can_match_bank defaults True in DEFAULT_ROLE_PERMISSIONS). Staff: view
     only unless an admin grants can_match_bank via Permission Governance."""
-    if user.role == "admin":
+    if _is_admin_role(user):
         return True
     perms = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
     return bool(perms.get("can_match_bank"))
