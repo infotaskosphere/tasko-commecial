@@ -73,12 +73,15 @@ async def _resolve_customer_id(user: Any) -> str | None:
     return None
 
 
-async def _active_license(customer_id: str, license_id: str | None = None) -> dict[str, Any] | None:
-    """Resolve the exact active license linked to the tenant.
+async def _active_license(
+    customer_id: str,
+    license_id: str | None = None,
+    company_license_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Resolve the tenant current active license.
 
-    Never combine ``license_id`` and ``customer_id`` in one sorted ``$or``
-    query: a customer can have multiple historical licenses, and that pattern
-    can hydrate a user from the wrong license and cause false 403s.
+    The company/tenant license link is authoritative. A user license_id may
+    point to a historical license after a Commercial Console update.
     """
     db = _raw_db()
     now = datetime.now(timezone.utc)
@@ -90,6 +93,14 @@ async def _active_license(customer_id: str, license_id: str | None = None) -> di
         if expires and expires <= now:
             return None
         return doc
+
+    if company_license_id:
+        doc = await db.commercial_licenses.find_one(
+            {"id": company_license_id}, {"_id": 0}
+        )
+        valid = await _valid(doc)
+        if valid:
+            return valid
 
     if license_id:
         doc = await db.commercial_licenses.find_one({"id": license_id}, {"_id": 0})
@@ -116,11 +127,23 @@ async def _hydrate(user: Any):
         return user
     customer_id = await _resolve_customer_id(user)
     license_id = str(getattr(user, "license_id", "") or "").strip() or None
-    if not customer_id and not license_id:
+    company_license_id = None
+    company_id = str(getattr(user, "company_id", "") or "").strip()
+    if company_id:
+        company = await _raw_db().companies.find_one(
+            {"id": company_id},
+            {"_id": 0, "commercial_customer_id": 1, "license_id": 1},
+        )
+        company_license_id = str((company or {}).get("license_id") or "").strip() or None
+        if not customer_id:
+            customer_id = str((company or {}).get("commercial_customer_id") or "").strip() or None
+    if not customer_id and not license_id and not company_license_id:
         return user
-    license_doc = await _active_license(customer_id or "", license_id)
-    if not license_doc:
-        return user
+    license_doc = await _active_license(
+        customer_id or "",
+        license_id,
+        company_license_id,
+    )
 
     modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
     data = user.model_dump()
