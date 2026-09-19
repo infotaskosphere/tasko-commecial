@@ -9,7 +9,10 @@ import { handleMockRoute } from "./mockBackend";
 // Commercial deployments must use VITE_API_URL so the frontend
 // can be connected to the separate commercial backend on Render.
 const CONFIGURED_API_URL =
-  import.meta.env.VITE_API_URL || "";
+  (import.meta.env.VITE_API_URL || "").replace(
+    "tasko-commecial-backend.onrender.com",
+    "tasko-commercial-backend.onrender.com"
+  );
 
 // Local development backend fallback.
 const LOCAL_API_URL =
