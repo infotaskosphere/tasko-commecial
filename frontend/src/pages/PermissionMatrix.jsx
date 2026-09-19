@@ -71,8 +71,8 @@ export default function PermissionMatrix() {
       {loading ? (
         <LoadingState label="Loading permission matrix…" />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5 items-start">
-          <SectionCard icon={UsersIcon} title="Users" badge={filteredUsers.length}>
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+          <SectionCard icon={UsersIcon} title="Users" badge={filteredUsers.length} className="h-fit overflow-hidden">
             <div className="relative mb-3">
               <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
               <Input
@@ -82,7 +82,7 @@ export default function PermissionMatrix() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="space-y-1 max-h-[64vh] overflow-y-auto pr-1">
+            <div className="space-y-1 max-h-[64vh] min-h-0 overflow-y-auto overflow-x-hidden pr-1">
               {filteredUsers.length === 0 && (
                 <p className="text-xs text-slate-400 py-6 text-center">No users match “{search}”.</p>
               )}
@@ -92,7 +92,7 @@ export default function PermissionMatrix() {
                   <button
                     key={u.id}
                     onClick={() => setSelectedUserId(u.id)}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-sm flex items-center justify-between gap-2 transition-colors ${
+                    className={`w-full min-w-0 text-left px-3 py-2 rounded-xl text-sm flex items-center justify-between gap-2 transition-colors ${
                       active
                         ? 'bg-[#1F6FB2]/12 font-semibold'
                         : isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'
@@ -113,7 +113,7 @@ export default function PermissionMatrix() {
             </div>
           </SectionCard>
 
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {!selectedUserId ? (
               <SectionCard icon={KeyRound} title="Access Governance">
                 <EmptyState
