@@ -61,7 +61,32 @@ async def update_commercial_license(license_id: str, payload: Dict[str, Any], cu
         from backend.commercial_licensee_admin import ensure_licensee_admin, get_all_admin_permissions
         company = await db.companies.find_one({"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]}, {"_id": 0}) or {"id": customer_id, "name": customer.get("company_name") or "Licensed Company", "commercial_customer_id": customer_id}
         await ensure_licensee_admin(customer, updated or {}, company)
-        await db.users.update_many({"$or": [{"company_id": customer_id}, {"commercial_customer_id": customer_id}, {"email": str(customer.get("email", "")).lower().strip()}]}, {"$set": {"licensed_modules": modules, "selected_features": selected_features, "license_id": str(license_id), "permissions": get_all_admin_permissions(updated)}})
+        # Refresh every user tied to this tenant, including legacy users whose
+        # company_id is the generated commercial company id rather than the
+        # commercial customer id, or whose license_id still points to an older
+        # license. The guard also resolves from the company license link, so
+        # access works immediately without requiring logout/login.
+        company_ids = await db.companies.distinct(
+            "id",
+            {"commercial_customer_id": customer_id, "source": "commercial-license"},
+        )
+        user_match = [
+            {"company_id": customer_id},
+            {"commercial_customer_id": customer_id},
+            {"license_id": str(license_id)},
+            {"email": str(customer.get("email", "")).lower().strip()},
+        ]
+        user_match.extend({"company_id": company_id} for company_id in company_ids if company_id)
+        await db.users.update_many(
+            {"$or": user_match},
+            {"$set": {
+                "licensed_modules": modules,
+                "selected_features": selected_features,
+                "license_id": str(license_id),
+                "commercial_customer_id": customer_id,
+                "permissions": get_all_admin_permissions(updated),
+            }},
+        )
     except Exception as exc:
         import logging; logging.getLogger("commercial_customer_directory").warning("Failed to refresh licensee admin permissions after license update: %s", exc)
     return _public(updated or {})
