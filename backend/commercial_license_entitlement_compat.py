@@ -19,6 +19,18 @@ from backend import dependencies as _dependencies
 from backend.commercial_licensee_admin import get_all_admin_permissions
 from backend.platform_owner import is_platform_owner
 
+def _is_admin_role(user: Any) -> bool:
+    """Handle both string and UserRole enum representations of the admin role."""
+    role = getattr(user, "role", "")
+    value = getattr(role, "value", None)
+    name = getattr(role, "name", None)
+    candidates = [value, name, role]
+    for candidate in candidates:
+        normalized = str(candidate or "").strip().lower()
+        if normalized == "admin" or normalized.endswith(".admin"):
+            return True
+    return False
+
 
 def _raw_db():
     return getattr(_dependencies, "_raw_db", _dependencies.db)
@@ -123,7 +135,7 @@ async def _active_license(
 
 
 async def _hydrate(user: Any):
-    if is_platform_owner(user) or str(getattr(user, "role", "")).lower() != "admin":
+    if is_platform_owner(user) or not _is_admin_role(user):
         return user
     customer_id = await _resolve_customer_id(user)
     license_id = str(getattr(user, "license_id", "") or "").strip() or None
