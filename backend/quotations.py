@@ -1731,9 +1731,21 @@ async def list_companies(current_user: User = Depends(get_current_user)):
         "tm_logo_base64": 1,
         "signature_base64": 1,
     }
-    companies = await db.companies.find(
-        {"created_by": str(current_user.id)}, projection
-    ).sort("name", 1).to_list(500)
+    # Licensed (commercial) tenant admins always own their tenant's operational
+    # company record, which is created by license generation and therefore has
+    # no `created_by` matching the admin. Without this clause a licensee admin
+    # gets an empty list (or, worse, a stale list cached from another session),
+    # and every report call is then sent with a company_id that the tenant
+    # guard rejects with 403 "Cross-company access is not permitted".
+    list_filter: Dict[str, Any] = {"created_by": str(current_user.id)}
+    tenant_company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    if (
+        tenant_company_id
+        and str(getattr(current_user, "role", "") or "").lower() == "admin"
+        and getattr(current_user, "commercial_customer_id", None)
+    ):
+        list_filter = {"$or": [{"created_by": str(current_user.id)}, {"id": tenant_company_id}]}
+    companies = await db.companies.find(list_filter, projection).sort("name", 1).to_list(500)
     for c in companies:
         await _hydrate_company_bank(c)
     return companies
