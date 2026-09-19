@@ -14,6 +14,7 @@ route modules, so newly registered sensitive routes inherit the hardening.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -23,6 +24,8 @@ from backend import dependencies as _dependencies
 from backend import commercial_module_guard as _guard
 from backend.platform_owner import is_platform_owner
 from backend.tenant_runtime import TENANT_COLLECTIONS, in_platform_owner_context
+
+_hardening_logger = logging.getLogger("production_hardening")
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +203,23 @@ async def get_current_user_hardened(
     for key, value in request.query_params.multi_items():
         if key == "company_id" or key.endswith("_company_id"):
             if value and str(value).strip() != company_id:
-                raise HTTPException(status_code=403, detail="Cross-company access is not permitted")
+                # Say WHICH ids disagree (both belong to the caller / their own
+                # request, so nothing about another tenant is disclosed). A bare
+                # "Cross-company access is not permitted" made a stale company
+                # picked by the browser indistinguishable from a real attack.
+                _hardening_logger.warning(
+                    "403 cross-company %s %s | user=%s authenticated_company_id=%s requested_%s=%s",
+                    request.method, request.url.path, getattr(user, "email", None),
+                    company_id, key, value,
+                )
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Cross-company access is not permitted: the selected company "
+                        f"({str(value).strip()}) is not your licensed company ({company_id}). "
+                        "Sign out, sign in again and select your own company."
+                    ),
+                )
 
     # Check JSON request bodies as well. Starlette caches request.json(), so the
     # downstream FastAPI/Pydantic body parser can still consume the same body.
