@@ -297,10 +297,16 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
 
 
 def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[str] = None) -> bool:
-    # The active commercial license is the hard ceiling for every role.
-    # Company admins receive all explicitly selected pages; regular licensee
-    # users must also retain their own internal page permission.
+    # The active commercial license's MODULE list is the hard ceiling for every
+    # role (checked by the caller via _licensed_module before this runs). Once
+    # a module is on the license, the tenant admin — the identity the license
+    # was actually issued to — receives every page inside that module, exactly
+    # like an internal admin account. The narrower "selected_features" page
+    # list is a restriction that only applies to non-admin licensee users.
+    is_admin = str(getattr(user, "role", "")).lower() == "admin"
     if module is not None:
+        if is_admin:
+            return True
         selected = _selected_license_features(license_doc, module)
         if flag not in selected:
             # Client Discussion was introduced after the first commercial
@@ -315,7 +321,7 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
                 return False
     # The license ceiling above has passed. A tenant admin is governed by the
     # license alone, so do not additionally require a per-user permission dict.
-    if str(getattr(user, "role", "")).lower() == "admin":
+    if is_admin:
         return True
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
