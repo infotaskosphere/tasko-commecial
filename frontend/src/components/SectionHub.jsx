@@ -33,7 +33,7 @@ export function HubBanner({ icon: Icon, eyebrow, title, subtitle, isDark, stats 
     >
       <div className="absolute -right-10 -top-10 w-56 h-56 rounded-full bg-white/5" />
       <div className="absolute -right-4 bottom-0 w-32 h-32 rounded-full bg-white/5" />
-      <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+      <div className="relative flex flex-col lg:flex-col xl:flex-row lg:items-start xl:items-center lg:justify-between gap-5 xl:gap-6 min-w-0">
         <div>
           {eyebrow && (
             <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-blue-200 mb-2">
@@ -45,13 +45,13 @@ export function HubBanner({ icon: Icon, eyebrow, title, subtitle, isDark, stats 
         </div>
 
         {visibleStats.length > 0 && (
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 w-full xl:w-auto min-w-0">
             {visibleStats.map((s, i) => (
               <div
                 key={i}
-                className="min-w-[110px] rounded-2xl px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/10"
+                className="min-w-0 w-full xl:min-w-[110px] rounded-2xl px-3 sm:px-4 py-3 bg-white/10 backdrop-blur-sm border border-white/10 overflow-hidden"
               >
-                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-100/70">{s.label}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-100/70 truncate">{s.label}</p>
                 <p className="text-xl font-extrabold text-white mt-0.5">
                   {s.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : s.value}
                 </p>
