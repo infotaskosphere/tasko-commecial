@@ -240,6 +240,11 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
             if key in {str(alias).replace("-", "_") for alias in aliases}:
                 values = candidate
                 break
+    # A module added to an existing license may not yet have a
+    # selected_features entry. In that legacy/module-only case, the licensed
+    # module remains available while explicit feature selections stay restrictive.
+    if values is None and _licensed_module(module, license_doc):
+        return set(FEATURE_PREFIXES.get(module, {}).keys())
     if not isinstance(values, (list, tuple, set)):
         return set()
     return {str(flag).strip() for flag in values}
