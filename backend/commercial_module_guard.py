@@ -359,7 +359,7 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
     return user
 
 
-GUARD_RULES_VERSION = "2026-09-19.module-isolation"
+GUARD_RULES_VERSION = "2026-09-19.admin-full-module-access"
 
 
 def install() -> None:
