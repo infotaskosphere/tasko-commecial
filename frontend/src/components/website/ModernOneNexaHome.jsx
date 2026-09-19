@@ -72,7 +72,7 @@ export default function ModernOneNexaHome() {
             <div className="relative min-w-0">
               <div className="absolute inset-5 rounded-[2rem] bg-blue-200/40 blur-2xl" />
               <div className="relative overflow-hidden rounded-[2rem] border border-white/80 bg-white/90 p-4 shadow-[0_30px_80px_rgba(15,23,42,.14)] backdrop-blur-xl">
-                <div className="flex items-center gap-2 border-b border-slate-100 px-2 pb-3"><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="ml-auto h-7 w-36 rounded-full bg-slate-100" /></div>
+                <div className="flex items-center gap-3 border-b border-slate-100 px-2 pb-3"><img src="/onenexa-logo.png" alt="OneNexa" className="h-6 w-auto max-w-[105px] object-contain" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="h-2.5 w-2.5 rounded-full bg-slate-200" /><span className="ml-auto h-7 w-36 rounded-full bg-slate-100" /></div>
                 <div className="grid gap-4 p-2 sm:grid-cols-[145px_1fr]">
                   <div className="rounded-2xl bg-[#102A56] p-4 text-white">
                     <img src="/onenexa-logo.png" alt="OneNexa" className="mb-7 max-h-9 max-w-full object-contain brightness-0 invert" />
