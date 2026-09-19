@@ -180,13 +180,10 @@ async def _commercial_license(user: User) -> Optional[dict]:
             return None
         return doc
 
-    user_license_id = str(getattr(user, "license_id", "") or "").strip()
-    if user_license_id:
-        doc = await db.commercial_licenses.find_one({"id": user_license_id}, {"_id": 0})
-        valid = await _valid(doc)
-        if valid:
-            return valid
-
+    # The tenant/company license is the canonical source of truth. A user can
+    # retain a historical license_id after the platform owner edits/reissues a
+    # license; trusting that stale user field first causes exactly the false
+    # 403 seen when a newly-enabled Finix/Compliance module is checked.
     company_id = str(getattr(user, "company_id", "") or "").strip()
     company = None
     if company_id:
@@ -200,6 +197,13 @@ async def _commercial_license(user: User) -> Optional[dict]:
             valid = await _valid(doc)
             if valid:
                 return valid
+
+    user_license_id = str(getattr(user, "license_id", "") or "").strip()
+    if user_license_id:
+        doc = await db.commercial_licenses.find_one({"id": user_license_id}, {"_id": 0})
+        valid = await _valid(doc)
+        if valid:
+            return valid
 
     customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
     if not customer_id:
