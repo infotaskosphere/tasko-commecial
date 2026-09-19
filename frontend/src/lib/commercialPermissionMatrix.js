@@ -44,19 +44,32 @@ const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
 });
 
 export function normalizedSelectedFeatures(user) {
-  const raw = user?.selected_features || user?.company?.selected_features || user?.license?.selected_features; if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  // MODULE ISOLATION RULE (identical for every module):
+  //  * a module that is not on the license grants nothing, even if a stale entry
+  //    for it is still present in selected_features;
+  //  * a licensed module with no explicit page list (missing or empty) grants all
+  //    pages of THAT module, and only that module.
+  const licensed = normalizeModules(user);
+  const raw = user?.selected_features || user?.company?.selected_features || user?.license?.selected_features;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const result = {};
-  for (const [moduleKey, flags] of Object.entries(raw)) {
+  for (const [moduleKey, flags] of Object.entries(source)) {
     const normalizedModule = normalize(moduleKey);
     const moduleId = Object.entries(MODULES).find(([id, def]) => id === normalizedModule || def.aliases.includes(normalizedModule))?.[0] || normalizedModule;
+    if (licensed.size > 0 && !licensed.has(moduleId)) continue;
     const list = Array.isArray(flags) ? flags.map((flag) => normalize(flag)) : [];
     const hasAll = list.some((flag) => ["all", "*", "all_features", "full", "complete"].includes(flag));
     const effectiveFlags = new Set(hasAll ? (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []) : list.map((flag) => String(flag).trim()));
+    if (effectiveFlags.size === 0 && licensed.has(moduleId)) (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []).forEach((flag) => effectiveFlags.add(flag));
     // Dashboard/report landing access is a derived entitlement. Existing
     // licenses can contain selected pages without the persisted derived flag.
     const dashboardFlag = DASHBOARD_FLAG_BY_MODULE[moduleId];
     if (dashboardFlag && effectiveFlags.size > 0) effectiveFlags.add(dashboardFlag);
     result[moduleId] = effectiveFlags;
+  }
+  // Licensed modules that have no selected_features entry at all.
+  for (const moduleId of licensed) {
+    if (!result[moduleId] && ALL_PAGE_FLAGS_BY_MODULE[moduleId]) result[moduleId] = new Set(ALL_PAGE_FLAGS_BY_MODULE[moduleId]);
   }
   return result;
 }
@@ -66,7 +79,7 @@ export function isCommercialTenant(user) { return Boolean(user) && !isPlatformOw
 export function moduleForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[0] || null; }
 export function pageFlagForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[1] || null; }
 
-export function hasModuleAccess(user, moduleId) { if (!user) return false; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.has(moduleId)) return true; const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
+export function hasModuleAccess(user, moduleId) { if (!user) return false; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.size > 0) return modules.has(moduleId); const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
 
 export function hasPageLicense(user, pageFlag, moduleId = null) {
   if (!user || !pageFlag) return false;
@@ -91,7 +104,10 @@ export function hasEffectivePermission(user, permission) {
   if (pageEntry) {
     const [moduleId] = pageEntry;
     if (!hasPageLicense(user, permission, moduleId)) return false;
-    // Commercial licensee admins are governed by the selected license page, not a stale copied user flag.\n    // Backend enforcement remains the final authority; this keeps the frontend route/landing decision in sync.\n    if (String(user.role || "").toLowerCase() === "admin") return true;\n    return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
+    // Commercial licensee admins are governed by the selected license page, not a stale copied user flag.
+    // Backend enforcement remains the final authority; this keeps the frontend route/landing decision in sync.
+    if (String(user.role || "").toLowerCase() === "admin") return true;
+    return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
   }
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
