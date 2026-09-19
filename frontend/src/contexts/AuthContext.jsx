@@ -17,6 +17,21 @@ const MODULE_FLAG_TO_KEYS = {
   can_access_people_matrix: ["people_matrix", "people-matrix", "hrms", "peoplematrix"],
 };
 
+// Company-scoped UI caches (Finix dashboard company list / metrics, last selected
+// company) are NOT keyed by user. If they survive a logout, the next person who
+// signs in on the same tab/browser inherits the previous user's company ids, sends
+// them to the API, and gets 403 "Cross-company access is not permitted" on every
+// report. Purge them whenever the session identity changes.
+const purgeCompanyScopedCaches = () => {
+  try {
+    Object.keys(sessionStorage).forEach((key) => {
+      if (key.startsWith("finix:")) sessionStorage.removeItem(key);
+    });
+    localStorage.removeItem("accountingReports:lastCompanyId");
+  } catch {}
+  try { window.dispatchEvent(new CustomEvent("company-scoped-caches-purged")); } catch {}
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -74,6 +89,7 @@ export const AuthProvider = ({ children }) => {
       "taskosphere_active_session_email",
     ].forEach((key) => localStorage.removeItem(key));
     ["token", "user", "session_token"].forEach((key) => sessionStorage.removeItem(key));
+    purgeCompanyScopedCaches();
     delete api.defaults.headers.common["Authorization"];
   };
   const INACTIVITY_LIMIT_MS = 6 * 60 * 60 * 1000;
@@ -200,7 +216,7 @@ export const AuthProvider = ({ children }) => {
     return () => { cancelled = true; };
   }, []);
 
-  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); authGenerationRef.current += 1; window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; window.__TASKO_LOGOUT_IN_PROGRESS__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
+  const login = (responseData, rememberMe = false) => { const token = responseData?.access_token || responseData?.token; const userData = responseData?.user || responseData?.data?.user; const sessionToken = responseData?.session_token || responseData?.data?.session_token || null; if (!token || !userData) { console.error("Invalid login response:", responseData); return false; } const normalizedUser = normalizeTenantContext(userData); purgeCompanyScopedCaches(); authGenerationRef.current += 1; window.__TASKO_SESSION_REPLACEMENT_LOGGED_OUT__ = false; window.__TASKO_LOGOUT_IN_PROGRESS__ = false; persistAuth(token, normalizedUser, rememberMe, sessionToken); setUser(normalizedUser); window.__STOP_ACTIVITY__ = false; autoAuthenticateAgent(token, normalizedUser.id).catch(() => {}); return true; };
   const logout = async () => {
     const token = localStorage.getItem("token") || sessionStorage.getItem("token");
     const sessionToken = localStorage.getItem("session_token") || sessionStorage.getItem("session_token");
