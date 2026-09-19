@@ -17,6 +17,8 @@ import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { runVerifyAndFix, describeValidationResult } from '@/lib/verifyAndFixLedger';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 
 const fmtC = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -40,7 +42,7 @@ const INTEGRITY_CHECKS = [
 // scratch every time. These caches make a revisit within the TTL instant,
 // the same pattern already used for the validation engine in
 // verifyAndFixLedger.js. Pass { force: true } to bypass (manual refresh).
-const _companiesCache_finix = { data: null, ts: 0 };
+const _companiesCache_finix = { data: null, ts: 0, owner: null };
 const _metricsCache_finix = new Map(); // companyId -> { data, ts }
 const COMPANIES_CACHE_TTL_MS = 5 * 60_000;
 const METRICS_CACHE_TTL_MS = 60_000;
@@ -70,6 +72,48 @@ function ssRead(key) {
 }
 function ssWrite(key, value) {
   try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* quota / privacy mode — non-fatal */ }
+}
+
+// ─── Cache ownership ───────────────────────────────────────────────────────
+// The caches above were global: keyed by company only, never by WHO is signed
+// in. Sign out of one account and into another in the same tab and the second
+// account was handed the first account's company ids (and numbers). For a
+// licensed tenant those ids fail the backend's tenant check with
+//   403 "Cross-company access is not permitted"
+// on every report call. Stamp the caches with the signed-in user's id and drop
+// everything the moment a different user shows up.
+const SS_OWNER_KEY = 'finix:cache-owner';
+function ensureCacheOwner(uid) {
+  const owner = String(uid || '');
+  let stored = null;
+  try { stored = sessionStorage.getItem(SS_OWNER_KEY); } catch { /* ignore */ }
+  if (stored === owner && _companiesCache_finix.owner === owner) return;
+  _companiesCache_finix.data = null;
+  _companiesCache_finix.ts = 0;
+  _companiesCache_finix.owner = owner;
+  _metricsCache_finix.clear();
+  try {
+    Object.keys(sessionStorage).forEach((k) => { if (k.startsWith('finix:')) sessionStorage.removeItem(k); });
+    sessionStorage.setItem(SS_OWNER_KEY, owner);
+  } catch { /* ignore */ }
+}
+if (typeof window !== 'undefined') {
+  // AuthContext purges sessionStorage on login/logout; mirror that for the in-memory copies.
+  window.addEventListener('company-scoped-caches-purged', () => {
+    _companiesCache_finix.data = null;
+    _companiesCache_finix.ts = 0;
+    _companiesCache_finix.owner = null;
+    _metricsCache_finix.clear();
+  });
+}
+
+// One toast (not one per failed request) that tells the person WHY the backend
+// refused the reports, using the server's own `detail` text.
+function reportReportsDenied(err) {
+  const detail = err?.response?.data?.detail;
+  const text = typeof detail === 'string' && detail ? detail : 'The server refused access to the accounting reports (403).';
+  console.warn('[Finix] reports denied:', text);
+  toast.error(text, { id: 'finix-reports-denied', duration: 12000 });
 }
 
 // Synchronously checks whether a still-fresh snapshot for `cid` already
@@ -102,6 +146,11 @@ export default function FinixDashboard() {
 
 function FinixDashboardInner() {
   const isDark = useDark();
+  const { user } = useAuth();
+  // A licensed tenant owns exactly one ledger: its own company. Never send any
+  // other company_id — the backend answers 403 "Cross-company access...".
+  const tenantCompanyId = isCommercialTenant(user) ? String(user?.company_id || '') : '';
+  const tenantCompanyName = user?.company_name || user?.company?.name || 'My Company';
   const [loading, setLoading] = useState(true);
   const [companies, setCompanies] = useState([]);
   const [companyId, setCompanyId] = useState('');
@@ -145,12 +194,24 @@ function FinixDashboardInner() {
   // slower, now-stale response can't clobber the newer selection's data.
   const fetchIdRef = useRef(0);
 
+  // Restrict whatever list we have (server / cache) to what this account may
+  // actually query. Commercial tenants: only their own company (synthesised from
+  // the session if the server list does not contain it). Everyone else: as-is.
+  const scopeCompanies = (list) => {
+    const rows = Array.isArray(list) ? list : [];
+    if (!tenantCompanyId) return rows;
+    const own = rows.filter((c) => c && c.id === tenantCompanyId);
+    return own.length ? own : [{ id: tenantCompanyId, name: tenantCompanyName }];
+  };
+
   const fetchCompanies = async () => {
+    ensureCacheOwner(user?.id);
     // Companies rarely change within a session; skip the round trip on a
     // revisit within the TTL and go straight to loading dashboard data.
     if (_companiesCache_finix.data && Date.now() - _companiesCache_finix.ts < COMPANIES_CACHE_TTL_MS) {
-      setCompanies(_companiesCache_finix.data);
-      return _companiesCache_finix.data;
+      const scoped = scopeCompanies(_companiesCache_finix.data);
+      setCompanies(scoped);
+      return scoped;
     }
     // Nothing in memory (e.g. fresh hard reload) — fall back to the
     // sessionStorage mirror so the dropdown paints immediately instead of
@@ -159,7 +220,7 @@ function FinixDashboardInner() {
     if (cached?.data && Date.now() - cached.ts < COMPANIES_CACHE_TTL_MS) {
       _companiesCache_finix.data = cached.data;
       _companiesCache_finix.ts = cached.ts;
-      setCompanies(cached.data);
+      setCompanies(scopeCompanies(cached.data));
     }
     try {
       const res = await api.get('/companies/list');
@@ -167,10 +228,11 @@ function FinixDashboardInner() {
       _companiesCache_finix.data = list;
       _companiesCache_finix.ts = Date.now();
       ssWrite(SS_COMPANIES_KEY, { data: list, ts: _companiesCache_finix.ts });
-      setCompanies(list);
-      return list;
+      const scoped = scopeCompanies(list);
+      setCompanies(scoped);
+      return scoped;
     } catch {
-      return cached?.data || [];
+      return scopeCompanies(cached?.data || []);
     }
   };
 
@@ -268,6 +330,8 @@ function FinixDashboardInner() {
     ]);
 
     const [tbRes, pnlRes, bsRes] = batchSettled;
+    const deniedReport = batchSettled.find((r) => r.status === 'rejected' && r.reason?.response?.status === 403);
+    if (deniedReport) reportReportsDenied(deniedReport.reason);
 
     let tbData = tbRes.status === 'fulfilled' ? tbRes.value.data : null;
     let pnlData = pnlRes.status === 'fulfilled' ? pnlRes.value.data : null;
@@ -689,7 +753,7 @@ function FinixDashboardInner() {
         fetchMetrics(initialCid);
       }
     })();
-  }, []);
+  }, [user?.id]);
 
   const handleCompanyChange = (val) => {
     setCompanyId(val);
