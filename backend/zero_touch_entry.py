@@ -232,11 +232,12 @@ async def resolve_company(current_user: User, extracted: dict) -> Tuple[Optional
     figure out which of the firm's companies this document belongs to.
     Priority: GSTIN match > billing-email match > fuzzy name match.
     Returns (company_id or None, human-readable reason, all_candidate_companies)."""
-    # Companies are org-wide master data (Admin -> Master Data), so never scope
-    # them by created_by -- otherwise documents uploaded by a non-admin could
-    # not be matched to companies the admin created.
+    # Company Master is creator-scoped across the rest of the application
+    # (/companies and /companies/list). Keep Zero-Touch Entry on the same
+    # visibility boundary so a platform owner/user never sees another owner's
+    # company (including a licensee/commercial company) in this module.
     companies = await db.companies.find(
-        {},
+        {"created_by": str(current_user.id)},
         {"_id": 0, "id": 1, "name": 1, "gstin": 1, "email": 1},
     ).to_list(500)
 
@@ -794,8 +795,12 @@ async def list_processed_documents(
 @router.get("/companies")
 async def list_companies_for_zte(current_user: User = Depends(get_current_user)):
     """Company picker for the manual-override dropdown in the upload UI.
-    Org-wide master data: visible to any authenticated user."""
-    return await db.companies.find({}, {"_id": 0, "id": 1, "name": 1, "gstin": 1}).sort("name", 1).to_list(500)
+    Match the canonical Company Master visibility used by /companies/list:
+    only companies created by the current user are visible."""
+    return await db.companies.find(
+        {"created_by": str(current_user.id)},
+        {"_id": 0, "id": 1, "name": 1, "gstin": 1},
+    ).sort("name", 1).to_list(500)
 
 
 class AssignCompanyBody(BaseModel):
@@ -814,6 +819,14 @@ async def assign_company(doc_id: str, body: AssignCompanyBody, current_user: Use
         raise HTTPException(404, "Document not found.")
     if doc["status"] in ("posted", "rejected"):
         raise HTTPException(400, f"Document is already {doc['status']}.")
+    # Do not allow a manual assignment to bypass the same Company Master
+    # ownership boundary used by the picker and auto-detection.
+    company = await db.companies.find_one(
+        {"id": body.company_id, "created_by": str(current_user.id)},
+        {"_id": 0, "id": 1, "name": 1},
+    )
+    if not company:
+        raise HTTPException(404, "Company not found in your Company Master.")
     await db.zte_processed_documents.update_one(
         {"id": doc_id},
         {"$set": {"company_id": body.company_id, "company_match_reason": "Company assigned manually.", "posting_error": None}},
