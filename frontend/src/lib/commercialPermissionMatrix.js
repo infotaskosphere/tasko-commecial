@@ -51,7 +51,12 @@ export function normalizedSelectedFeatures(user) {
     const moduleId = Object.entries(MODULES).find(([id, def]) => id === normalizedModule || def.aliases.includes(normalizedModule))?.[0] || normalizedModule;
     const list = Array.isArray(flags) ? flags.map((flag) => normalize(flag)) : [];
     const hasAll = list.some((flag) => ["all", "*", "all_features", "full", "complete"].includes(flag));
-    result[moduleId] = new Set(hasAll ? (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []) : list.map((flag) => String(flag).trim()));
+    const effectiveFlags = new Set(hasAll ? (ALL_PAGE_FLAGS_BY_MODULE[moduleId] || []) : list.map((flag) => String(flag).trim()));
+    // Dashboard/report landing access is a derived entitlement. Existing
+    // licenses can contain selected pages without the persisted derived flag.
+    const dashboardFlag = DASHBOARD_FLAG_BY_MODULE[moduleId];
+    if (dashboardFlag && effectiveFlags.size > 0) effectiveFlags.add(dashboardFlag);
+    result[moduleId] = effectiveFlags;
   }
   return result;
 }
