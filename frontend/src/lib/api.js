@@ -44,7 +44,7 @@ const _isLocalHost =
 // ─────────────────────────────────────────────────────────────
 
 // Commercial Render backend default for deployed environments (e.g. Vercel, Render)
-const PRODUCTION_API_URL = "https://tasko-commecial-backend.onrender.com";
+const PRODUCTION_API_URL = "https://tasko-commercial-backend.onrender.com";
 
 let BASE_URL;
 
