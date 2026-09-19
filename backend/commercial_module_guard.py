@@ -19,6 +19,18 @@ from backend.commercial_licensee_admin import resolve_license_modules, get_all_a
 _BASE_GET_CURRENT_USER = _dependencies.get_current_user
 logger = logging.getLogger("commercial_module_guard")
 
+def _is_admin_role(user: User) -> bool:
+    """Handle both string and UserRole enum representations of the admin role."""
+    role = getattr(user, "role", "")
+    value = getattr(role, "value", None)
+    name = getattr(role, "name", None)
+    candidates = [value, name, role]
+    for candidate in candidates:
+        normalized = str(candidate or "").strip().lower()
+        if normalized == "admin" or normalized.endswith(".admin"):
+            return True
+    return False
+
 
 def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict] = None, effective_pages=None) -> HTTPException:
     """Build a 403 and log exactly WHY, so a licensee lock-out is diagnosable from
@@ -227,7 +239,7 @@ async def _commercial_license(user: User) -> Optional[dict]:
 
 
 def _hydrate_admin(user: User, license_doc: dict) -> User:
-    if str(getattr(user, "role", "")).lower() != "admin":
+    if not _is_admin_role(user):
         return user
     data = user.model_dump()
     data["commercial_customer_id"] = data.get("commercial_customer_id") or license_doc.get("customer_id")
@@ -307,7 +319,7 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
     # was actually issued to — receives every page inside that module, exactly
     # like an internal admin account. The narrower "selected_features" page
     # list is a restriction that only applies to non-admin licensee users.
-    is_admin = str(getattr(user, "role", "")).lower() == "admin"
+    is_admin = _is_admin_role(user)
     if module is not None:
         if is_admin:
             return True
