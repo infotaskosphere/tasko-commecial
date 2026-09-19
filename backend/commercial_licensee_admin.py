@@ -71,16 +71,20 @@ def resolve_license_modules(license_doc: Dict[str, Any]) -> set[str]:
 
 
 def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Return admin rights capped by the commercial license's explicit page selections.
+    """Return admin rights capped by the commercial license's MODULE list only.
 
-    A purchased module is only the parent entitlement. It does not grant every
-    page. If selected_features is absent, no operational page is granted; the
-    platform owner must explicitly select the pages that belong to the license.
+    The email on the license is the tenant's administrator, so once a module
+    is on the license the admin gets every page belonging to that module —
+    the same behaviour as an internal admin account. Unlicensed modules stay
+    fully closed. (`selected_features` — the granular per-page selection made
+    when the license was issued — is still enforced for any additional,
+    non-admin users the licensee admin invites into the tenant; see
+    `_permission_flag` in `commercial_module_guard.py`.)
 
     The reset of legacy aliases below is intentional. Several existing UI/API
     paths predate MODULE_HIERARCHY and still inspect flags such as
     can_manage_invoices. Leaving the admin defaults intact would silently
-    re-open pages that were not selected in the commercial license.
+    re-open pages that belong to a module not on the license at all.
     """
     if license_doc is None:
         admin_perms = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
@@ -117,37 +121,18 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         if module_flag:
             permissions[module_flag] = module_allowed
 
-        raw_selected = selected_features.get(module_id)
-        if raw_selected is None:
-            for raw_key, value in selected_features.items():
-                normalized = str(raw_key).strip().lower().replace("-", "_")
-                if LICENSE_MODULE_ALIASES.get(normalized) == module_id:
-                    raw_selected = value
-                    break
-
-        selected = {str(flag).strip() for flag in raw_selected} if isinstance(raw_selected, list) else set()
-        # Dashboard/report entry pages are derived entitlements. Existing licenses
-        # may have persisted page selections without the derived dashboard flag.
-        # Keep runtime permissions aligned with normalize_dashboard_feature_selection.
-        dashboard_flags = {
-            "taskosphere": "can_view_dashboard",
-            "finix": "can_view_accounting_reports",
-            "compliance": "can_view_compliance",
-            "records": "can_view_documents",
-            "proposals": "can_view_all_leads",
-            "people_matrix": "can_view_user_page",
-        }
-        dashboard_flag = dashboard_flags.get(module_id)
-        if module_allowed and dashboard_flag and selected and dashboard_flag not in selected:
-            selected.add(dashboard_flag)
-        # A licensed module with no explicit page list (missing OR empty) grants every
-        # page of that module -- and only that module. Unlicensed modules stay closed.
-        no_explicit_pages = raw_selected is None or (isinstance(raw_selected, list) and len(raw_selected) == 0)
-        # Backward compatibility for an existing license edited to add a module
-        # without a selected_features entry. Explicit feature selections remain
-        # authoritative and restrictive.
-        if no_explicit_pages and module_allowed:
+        # The licensee admin is the identity the license was actually issued
+        # to. Once a module is on the license, the admin gets every page of
+        # that module — the same way an internal admin account works — rather
+        # than being capped to whichever individual pages happened to be
+        # ticked when the license was created. The narrower selected_features
+        # list still applies to any additional (non-admin) users the admin
+        # invites under this tenant; see _permission_flag in
+        # commercial_module_guard.py for that enforcement point.
+        if module_allowed:
             selected = {str(page.get("flag")).strip() for page in module_def.get("pages", []) or [] if page.get("flag")}
+        else:
+            selected = set()
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
             if flag:
