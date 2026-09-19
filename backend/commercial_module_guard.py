@@ -247,7 +247,21 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
         return set(FEATURE_PREFIXES.get(module, {}).keys())
     if not isinstance(values, (list, tuple, set)):
         return set()
-    return {str(flag).strip() for flag in values}
+    selected = {str(flag).strip() for flag in values}
+    # Dashboard/report entry points are derived from an active module's
+    # selected pages. Older licenses may not have persisted the derived flag.
+    dashboard_flags = {
+        "taskosphere": "can_view_dashboard",
+        "finix": "can_view_accounting_reports",
+        "compliance": "can_view_compliance",
+        "records": "can_view_documents",
+        "proposals": "can_view_all_leads",
+        "people_matrix": "can_view_user_page",
+    }
+    dashboard_flag = dashboard_flags.get(module)
+    if _licensed_module(module, license_doc) and selected and dashboard_flag:
+        selected.add(dashboard_flag)
+    return selected
 
 
 def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[str] = None) -> bool:
