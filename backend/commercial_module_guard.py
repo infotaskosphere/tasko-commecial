@@ -20,12 +20,12 @@ _BASE_GET_CURRENT_USER = _dependencies.get_current_user
 logger = logging.getLogger("commercial_module_guard")
 
 
-def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict] = None) -> HTTPException:
+def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict] = None, effective_pages=None) -> HTTPException:
     """Build a 403 and log exactly WHY, so a licensee lock-out is diagnosable from
     the server log alone (previously the log only said "403 Forbidden")."""
     try:
         logger.warning(
-            "403 %s %s | user=%s role=%s company_id=%s license_id=%s | licensed_modules=%s | selected_features=%s | reason=%s",
+            "403 %s %s | user=%s role=%s company_id=%s license_id=%s | licensed_modules=%s | selected_features=%s | effective_pages=%s | reason=%s",
             request.method,
             request.url.path,
             getattr(user, "email", None),
@@ -34,6 +34,7 @@ def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict]
             (license_doc or {}).get("id"),
             sorted(resolve_license_modules(license_doc)) if license_doc else None,
             {k: len(v) if isinstance(v, (list, tuple, set)) else v for k, v in ((license_doc or {}).get("selected_features") or {}).items()},
+            effective_pages,
             detail,
         )
     except Exception:  # logging must never mask the real response
@@ -245,9 +246,17 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
     module ids plus legacy aliases so a historical license cannot drift from the
     permission matrix merely because its module key was stored differently.
     """
+    # MODULE ISOLATION RULE (same for every module): a module that is not on the
+    # license grants nothing, no matter what stale keys remain in
+    # selected_features (e.g. a "taskosphere" entry left behind after the
+    # license was switched to Finix). A licensed module with no explicit page
+    # list (missing OR empty) grants every page of THAT module only.
+    all_module_flags = set(FEATURE_PREFIXES.get(module, {}).keys())
+    if not _licensed_module(module, license_doc):
+        return set()
     raw = license_doc.get("selected_features")
     if not isinstance(raw, dict):
-        return set()
+        return all_module_flags
     values = raw.get(module)
     if values is None:
         aliases = {
@@ -266,8 +275,8 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
     # A module added to an existing license may not yet have a
     # selected_features entry. In that legacy/module-only case, the licensed
     # module remains available while explicit feature selections stay restrictive.
-    if values is None and _licensed_module(module, license_doc):
-        return set(FEATURE_PREFIXES.get(module, {}).keys())
+    if values is None or (isinstance(values, (list, tuple, set)) and len(values) == 0):
+        return all_module_flags
     if not isinstance(values, (list, tuple, set)):
         return set()
     selected = {str(flag).strip() for flag in values}
@@ -282,7 +291,7 @@ def _selected_license_features(license_doc: dict, module: str) -> set[str]:
         "people_matrix": "can_view_user_page",
     }
     dashboard_flag = dashboard_flags.get(module)
-    if _licensed_module(module, license_doc) and selected and dashboard_flag:
+    if selected and dashboard_flag:
         selected.add(dashboard_flag)
     return selected
 
@@ -304,13 +313,15 @@ def _permission_flag(user: User, flag: str, license_doc: dict, module: Optional[
                 and "can_view_all_leads" in selected
             ):
                 return False
+    # The license ceiling above has passed. A tenant admin is governed by the
+    # license alone, so do not additionally require a per-user permission dict.
+    if str(getattr(user, "role", "")).lower() == "admin":
+        return True
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
     if not isinstance(permissions, dict):
         return False
-    if str(getattr(user, "role", "")).lower() == "admin":
-        return True
     return bool(permissions.get(flag, False))
 
 
@@ -335,7 +346,7 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
         if not _licensed_module(feature_module, commercial):
             raise _deny(request, user, f"This company license does not include the {feature_module} module.", commercial)
         if not _permission_flag(user, feature_flag, commercial, feature_module):
-            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial)
+            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial, sorted(_selected_license_features(commercial, feature_module)))
     elif module:
         raise _deny(request, user, f"This company license does not include a selected page for {module}.", commercial)
 
