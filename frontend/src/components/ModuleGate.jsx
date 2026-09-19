@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { canAccessPath, firstAccessiblePath, isPlatformOwner as matrixIsPlatformOwner, moduleForPath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
+import NoModuleAccess from '@/components/NoModuleAccess.jsx';
 
 const MODULE_FLAGS = {
   taskosphere: 'can_access_taskosphere',
@@ -138,6 +139,17 @@ function ModuleGate({ module, children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (matrixIsPlatformOwner(user) || isPlatformOwner) return children;
 
+  // firstAccessiblePath() answers "/login" when the account has no entitled page
+  // at all. Redirecting a signed-in user to /login bounces straight back (login is
+  // a public-only route) and paints a blank white screen forever. Show an
+  // explanatory screen instead, and never redirect to the page we are already on.
+  const redirectOrBlock = (destination) => {
+    if (!destination || destination === '/login' || destination === location.pathname) {
+      return <NoModuleAccess />;
+    }
+    return <Navigate to={destination} replace />;
+  };
+
   const commercial = isCommercialTenant(user);
 
   if (commercial) {
@@ -147,17 +159,17 @@ function ModuleGate({ module, children }) {
     const routeModule = moduleForPath(location.pathname);
     if (routeModule) {
       if (!canAccessPath(user, location.pathname)) {
-        return <Navigate to={firstAccessiblePath(user, module)} replace />;
+        return redirectOrBlock(firstAccessiblePath(user, module));
       }
       return children;
     }
     // This component was invoked for a commercial module route that the matrix
     // does not know about. Do not grant it merely because the module is licensed.
-    return <Navigate to={firstAccessiblePath(user, module)} replace />;
+    return redirectOrBlock(firstAccessiblePath(user, module));
   }
 
   if (flag && !hasPermission(flag)) {
-    return <Navigate to={firstAccessiblePath(user)} replace />;
+    return redirectOrBlock(firstAccessiblePath(user));
   }
   return children;
 }
