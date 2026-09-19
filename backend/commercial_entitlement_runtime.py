@@ -152,8 +152,13 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
                     selected_value = value
                     break
 
-        restriction_exists = selected_value is not None
+        # An empty list is "nothing selected yet", not "everything forbidden": treat it
+        # like a missing list so a licensed module grants its own pages (only its own).
+        restriction_exists = selected_value is not None and not (isinstance(selected_value, list) and len(selected_value) == 0)
         selected = {str(flag).strip() for flag in (selected_value or [])} if isinstance(selected_value, list) else set()
+        _dash = {"taskosphere": "can_view_dashboard", "finix": "can_view_accounting_reports", "compliance": "can_view_compliance", "records": "can_view_documents", "proposals": "can_view_all_leads", "people_matrix": "can_view_user_page"}.get(module_id)
+        if module_allowed and selected and _dash:
+            selected.add(_dash)
 
         # Backward compatibility: Client Discussion was introduced after the
         # original Proposals/Lead Management entitlement. The frontend already
