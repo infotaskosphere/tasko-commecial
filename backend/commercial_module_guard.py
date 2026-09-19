@@ -346,14 +346,20 @@ async def get_current_user_with_commercial_guard(request: Request, credentials=D
         if not _licensed_module(feature_module, commercial):
             raise _deny(request, user, f"This company license does not include the {feature_module} module.", commercial)
         if not _permission_flag(user, feature_flag, commercial, feature_module):
-            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial, sorted(_selected_license_features(commercial, feature_module)))
+            raise _deny(request, user, f"This company license does not include the {feature_flag} feature.", commercial, {"rules": GUARD_RULES_VERSION, "flag": feature_flag, "license_pages": sorted(_selected_license_features(commercial, feature_module)), "user_has_flag": bool((getattr(user, "permissions", None).model_dump() if hasattr(getattr(user, "permissions", None), "model_dump") else (getattr(user, "permissions", None) or {})).get(feature_flag))})
     elif module:
         raise _deny(request, user, f"This company license does not include a selected page for {module}.", commercial)
 
     return user
 
 
+GUARD_RULES_VERSION = "2026-09-19.module-isolation"
+
+
 def install() -> None:
+    # Boot marker: if this line is missing from the Render log after a deploy, the
+    # server is still running the OLD entitlement code.
+    logger.info("commercial_module_guard active: rules=%s", GUARD_RULES_VERSION)
     if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_commercial_guard":
         _dependencies.get_current_user = get_current_user_with_commercial_guard
 
