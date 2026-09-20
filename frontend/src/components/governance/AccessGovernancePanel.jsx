@@ -551,7 +551,7 @@ export default function AccessGovernancePanel({
                             className="mt-0.5 h-[18px] w-[18px]"
                             checked={!!permissions[page.flag]}
                             disabled={locked}
-                            onCheckedChange={(c) => togglePage(page.flag, !!c)}
+                            onCheckedChange={(c) => togglePage(mod, page, !!c)}
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
