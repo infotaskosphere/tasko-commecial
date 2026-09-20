@@ -13,7 +13,7 @@ const MODULE_BRANDING = {
   compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
-  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-logo-dark.png', alt: 'AIWeave' },
+  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo.svg', darkLogo: '/aiweave-logo.svg', collapsedLogo: '/aiweave-logo.svg', alt: 'AIWeave' },
 };
 
 const FALLBACK = MODULE_BRANDING.core;
@@ -96,6 +96,14 @@ const syncModuleBranding = () => {
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
   if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
+  if (!visibleLogo.dataset.aiweaveFallbackBound) {
+    visibleLogo.dataset.aiweaveFallbackBound = 'true';
+    visibleLogo.addEventListener('error', () => {
+      if (moduleId === 'aiweave' && visibleLogo.getAttribute('src') !== '/aiweave-logo.svg') {
+        visibleLogo.setAttribute('src', '/aiweave-logo.svg');
+      }
+    }, { once: true });
+  }
   visibleLogo.setAttribute('aria-label', branding.alt);
   visibleLogo.style.display = 'block';
   visibleLogo.style.objectFit = 'contain';
