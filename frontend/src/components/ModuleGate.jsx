@@ -142,9 +142,10 @@ function ModuleGate({ module, children }) {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  // AIWeave is deliberately excluded from the normal admin/platform-owner
-  // bypass. It must have an explicit module + page grant.
+  // Platform Owner is outside commercial license enforcement, including AIWeave.
+  // Licensees still require both explicit AIWeave module and page grants.
   if (module === 'aiweave') {
+    if (matrixIsPlatformOwner(user) || isPlatformOwner) return children;
     const aiGranted =
       user?.permissions?.can_access_aiweave === true &&
       user?.permissions?.can_view_aiweave === true;
