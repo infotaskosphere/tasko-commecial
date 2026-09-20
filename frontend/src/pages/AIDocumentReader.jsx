@@ -166,30 +166,6 @@ export default function AIDocumentReader() {
     </aside>}
 
     <main className="flex min-w-0 flex-1 flex-col">
-      <section className="relative shrink-0 overflow-hidden bg-gradient-to-r from-[#0D3B66] via-[#1267A8] to-[#1F6FB2] text-white">
-        <div className="absolute inset-0 opacity-20" aria-hidden="true">
-          <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full border-[28px] border-cyan-200/30"></div>
-          <div className="absolute right-24 top-10 h-24 w-24 rounded-full border border-cyan-100/20"></div>
-          <div className="absolute right-8 bottom-5 h-20 w-20 rounded-full bg-cyan-200/10 blur-2xl"></div>
-        </div>
-        <div className="relative flex min-h-[132px] items-center justify-between gap-4 px-5 py-6 sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <button className="rounded-lg p-2 text-white/80 hover:bg-white/10 md:hidden" onClick={()=>setSidebar(true)} aria-label="Open AIWeave history"><Menu size={19}/></button>
-            <button className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 md:block" onClick={()=>setSidebar(x=>!x)} aria-label="Toggle AIWeave history">{sidebar?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}</button>
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100">AIWEAVE</div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">AIWeave</h1>
-              <p className="mt-1 text-xs text-blue-100 sm:text-sm">Your multi-model AI workspace. Ask anything, get results.</p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button onClick={newChat} className="hidden items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/15 sm:flex"><Plus size={14}/>New Chat</button>
-            <button onClick={()=>{setSettings(true);setTab("audit");}} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="Execution history"><History size={17}/></button>
-            <button onClick={()=>setSettings(true)} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="AIWeave settings"><Settings size={17}/></button>
-          </div>
-        </div>
-      </section>
-
       <div className="flex min-h-0 flex-1">
         <section className="flex min-w-0 flex-1 flex-col">
           <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 flex-col px-3 sm:px-6">
