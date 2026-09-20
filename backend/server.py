@@ -3285,65 +3285,78 @@ async def reject_user(user_id: str, current_user: User = Depends(get_current_use
 # USER MANAGEMENT
 # =============================================================
 async def _scope_users_query_by_company(current_user: User, base_query: Optional[dict] = None) -> dict:
-    """Isolate users by company / tenant:
-    - Commercial licensee users only see users belonging to their licensed company / customer.
-    - Platform owner / platform operational users only see operational users created for
-      their company to assign tasks (commercial licensee users are strictly excluded).
+    """Return the authoritative visibility scope for the operational Users surface.
+
+    There are exactly three identity classes:
+      1. Platform Owner — sees Platform Owner/internal operational users only.
+      2. Commercial Licensee — sees users belonging to that commercial customer only.
+      3. Legacy/internal tenant — sees users in its authenticated company only.
+
+    The Commercial Console is deliberately separate and uses its own control-plane
+    endpoints; it is the only place where cross-customer license records are
+    intentionally visible.
     """
+    from backend.platform_owner import is_platform_owner, platform_owner_emails
+
     base = dict(base_query or {})
+    owner_emails = sorted(platform_owner_emails())
 
-    # Discover all commercial licensee company IDs
-    licensee_comp_ids = set()
-    try:
-        raw_lic_comps = await db.companies.find(
-            {"$or": [
-                {"source": {"$in": ["commercial-license", "commercial", "license"]}},
-                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
-                {"license_id": {"$nin": [None, "", "platform-owner-license"]}},
-            ]},
-            {"_id": 0, "id": 1},
-        ).to_list(5000)
-        licensee_comp_ids = {str(c["id"]) for c in raw_lic_comps if c.get("id")}
-    except Exception:
-        pass
+    if is_platform_owner(current_user):
+        platform_scope = {
+            "$or": [
+                {"email": {"$in": owner_emails}},
+                {"is_internal_commercial_admin": True},
+                {"company_id": "__commercial_control_plane__"},
+                {"email": {"$regex": r"@taskosphere\\.internal$"}},
+            ]
+        }
+        return {"$and": [base, platform_scope]} if base else platform_scope
 
-    user_customer_id = getattr(current_user, "commercial_customer_id", None)
-    user_license_id = getattr(current_user, "license_id", None)
-    user_comp_id = getattr(current_user, "company_id", None)
+    customer_id = str(getattr(current_user, "commercial_customer_id", "") or "").strip()
+    license_id = str(getattr(current_user, "license_id", "") or "").strip()
+    company_id = str(getattr(current_user, "company_id", "") or "").strip()
 
-    is_licensee_user = bool(
-        (user_customer_id and str(user_customer_id).strip() != "platform-owner") or
-        (user_license_id and str(user_license_id).strip() != "platform-owner-license") or
-        (user_comp_id and str(user_comp_id) in licensee_comp_ids)
+    # A real commercial identity must carry a customer id. license_id/company_id
+    # are compatibility fallbacks for older records, but platform-owner markers
+    # are always excluded.
+    is_licensee = bool(
+        customer_id and customer_id != "platform-owner"
+    ) or bool(
+        license_id and license_id != "platform-owner-license"
     )
 
-    if is_licensee_user:
-        clauses = []
-        if user_customer_id and str(user_customer_id).strip() != "platform-owner":
-            clauses.append({"commercial_customer_id": str(user_customer_id)})
-        if user_license_id and str(user_license_id).strip() != "platform-owner-license":
-            clauses.append({"license_id": str(user_license_id)})
-        if user_comp_id:
-            clauses.append({"company_id": str(user_comp_id)})
+    if is_licensee:
+        scope_clauses = []
+        if customer_id and customer_id != "platform-owner":
+            scope_clauses.append({"commercial_customer_id": customer_id})
+        if license_id and license_id != "platform-owner-license":
+            scope_clauses.append({"license_id": license_id})
+        if company_id:
+            scope_clauses.append({"company_id": company_id})
 
-        scope = {"$or": clauses} if clauses else {}
-        if base and scope:
-            return {"$and": [base, scope]}
-        return base or scope
+        licensee_scope = {
+            "$and": [
+                {"$or": scope_clauses},
+                {"email": {"$nin": owner_emails}},
+                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
+                {"license_id": {"$nin": ["", "platform-owner-license"]}},
+            ]
+        }
+        return {"$and": [base, licensee_scope]} if base else licensee_scope
 
-    # Platform owner / platform operational user:
-    # Only see operational users created for their company to assign tasks.
-    # Licensee company users must NOT be visible here.
-    scope = {
+    if not company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Authenticated user is not associated with a tenant.",
+        )
+
+    internal_scope = {
+        "company_id": company_id,
+        "email": {"$nin": owner_emails},
         "commercial_customer_id": {"$in": [None, "", "platform-owner"]},
         "license_id": {"$in": [None, "", "platform-owner-license"]},
     }
-    if licensee_comp_ids:
-        scope["company_id"] = {"$nin": list(licensee_comp_ids)}
-
-    if base:
-        return {"$and": [base, scope]}
-    return scope
+    return {"$and": [base, internal_scope]} if base else internal_scope
 
 
 @api_router.get("/users")
