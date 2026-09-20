@@ -1,8 +1,21 @@
 import os, io, base64, asyncio, time, logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from backend.dependencies import get_current_user
+from backend.dependencies import get_current_user, get_user_permissions
 
-router = APIRouter(prefix="/api/ai", tags=["AI Document Reader"])
+async def _require_aiweave_access(current_user=Depends(get_current_user)):
+    """AIWeave is an explicitly governed module. A license or admin role alone
+    never unlocks it; Permission Matrix / Access Governance must grant the user."""
+    permissions = get_user_permissions(current_user)
+    if not bool(permissions.get("can_view_aiweave", False)):
+        raise HTTPException(status_code=403, detail="AIWeave access has not been granted to this user.")
+    return current_user
+
+
+router = APIRouter(
+    prefix="/api/ai",
+    tags=["AIWeave"],
+    dependencies=[Depends(_require_aiweave_access)],
+)
 
 _batch_logger = logging.getLogger("ai_document_reader.batching")
 
