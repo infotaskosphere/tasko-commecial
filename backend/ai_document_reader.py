@@ -1,10 +1,23 @@
 import os, io, base64, asyncio, time, logging
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from backend.dependencies import get_current_user, get_user_permissions
+from backend.platform_owner import is_platform_owner
 
 async def _require_aiweave_access(current_user=Depends(get_current_user)):
-    """AIWeave is an explicitly governed module. A license or admin role alone
-    never unlocks it; Permission Matrix / Access Governance must grant the user."""
+    """AIWeave requires an active commercial license for licensees AND an
+    explicit module + page grant for the individual user."""
+    if not is_platform_owner(current_user) and (
+        getattr(current_user, "company_id", None)
+        or getattr(current_user, "license_id", None)
+        or getattr(current_user, "commercial_customer_id", None)
+    ):
+        # Resolve the active tenant license directly so an expired/revoked
+        # license can never continue to use AIWeave because of stale user flags.
+        from backend.commercial_module_guard import _commercial_license
+        from backend.commercial_licensee_admin import resolve_license_modules
+        license_doc = await _commercial_license(current_user)
+        if not license_doc or "aiweave" not in resolve_license_modules(license_doc):
+            raise HTTPException(status_code=403, detail="AIWeave is not included in the active license.")
     permissions = get_user_permissions(current_user)
     if not bool(permissions.get("can_access_aiweave", False)) or not bool(permissions.get("can_view_aiweave", False)):
         raise HTTPException(status_code=403, detail="AIWeave access has not been granted to this user.")
