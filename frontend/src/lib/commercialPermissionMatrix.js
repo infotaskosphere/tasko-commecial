@@ -90,8 +90,11 @@ export function hasModuleAccess(user, moduleId) { if (!user) return false; if (m
 
 export function hasPageLicense(user, pageFlag, moduleId = null) {
   if (!user || !pageFlag) return false;
-  if (pageFlag === "can_view_aiweave" || pageFlag === "can_access_aiweave") {
-    return user.permissions?.[pageFlag] === true;
+  if (pageFlag === "can_access_aiweave") {
+    return user.permissions?.can_access_aiweave === true;
+  }
+  if (pageFlag === "can_view_aiweave") {
+    return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true;
   }
   if (isPlatformOwner(user)) return true;
   const selected = normalizedSelectedFeatures(user);
@@ -108,7 +111,8 @@ export function hasPageLicense(user, pageFlag, moduleId = null) {
 
 export function hasEffectivePermission(user, permission) {
   if (!user || !permission) return false;
-  if (permission === "can_view_aiweave" || permission === "can_access_aiweave") return user.permissions?.[permission] === true;
+  if (permission === "can_access_aiweave") return user.permissions?.can_access_aiweave === true;
+  if (permission === "can_view_aiweave") return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true;
   if (isPlatformOwner(user)) return true;
   if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
   const moduleEntry = Object.entries(MODULES).find(([, def]) => def.flag === permission); if (moduleEntry) return hasModuleAccess(user, moduleEntry[0]);
