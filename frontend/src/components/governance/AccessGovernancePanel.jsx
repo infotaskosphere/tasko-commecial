@@ -166,8 +166,8 @@ export default function AccessGovernancePanel({
         money, credentials or colleagues&rsquo; personal data — grant it deliberately and review it periodically.
       </GuidanceNote>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 min-w-0 w-full">
+        <div className="relative min-w-0 w-full">
           <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
           <Input
             className="pl-8"
@@ -176,7 +176,7 @@ export default function AccessGovernancePanel({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+        <span className={`text-xs font-semibold whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
           {totalGranted}/{totalPages} pages granted
         </span>
         {showSave && (
@@ -199,8 +199,9 @@ export default function AccessGovernancePanel({
             key={mod.module}
             color={color}
             padded={false}
+            className="w-full min-w-0 max-w-full overflow-hidden"
             title={
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2 min-w-0 max-w-full flex-wrap break-words">
                 {mod.label}
                 <span className={`text-[11px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   {grantedIn(mod)}/{pages.length} pages
@@ -208,10 +209,11 @@ export default function AccessGovernancePanel({
               </span>
             }
             actions={
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end gap-2 flex-wrap min-w-0 max-w-full">
                 <Button
                   size="sm"
                   variant="outline"
+                  className="whitespace-nowrap shrink-0"
                   disabled={readOnly || adminModule}
                   onClick={() => bulkPages(mod, true)}
                 >
@@ -220,6 +222,7 @@ export default function AccessGovernancePanel({
                 <Button
                   size="sm"
                   variant="outline"
+                  className="whitespace-nowrap shrink-0"
                   disabled={readOnly || adminModule}
                   onClick={() => bulkPages(mod, false)}
                 >
@@ -228,6 +231,7 @@ export default function AccessGovernancePanel({
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="shrink-0"
                   onClick={() => setExpanded((p) => ({ ...p, [mod.module]: !open }))}
                 >
                   {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -247,7 +251,7 @@ export default function AccessGovernancePanel({
                   <p className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
                     Module access
                   </p>
-                  <p className={`text-xs mt-0.5 leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  <p className={`text-xs mt-0.5 leading-relaxed break-words [overflow-wrap:anywhere] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                     {moduleNote(mod.module, mod.description)}
                   </p>
                 </div>
@@ -265,7 +269,7 @@ export default function AccessGovernancePanel({
                     return (
                       <div
                         key={page.flag}
-                        className={`rounded-xl px-3 py-2.5 flex items-start gap-3 ${
+                        className={`rounded-xl px-3 py-2.5 flex items-start gap-3 min-w-0 max-w-full overflow-hidden ${
                           isDark ? 'bg-slate-900/40' : 'bg-slate-50'
                         }`}
                       >
@@ -275,10 +279,10 @@ export default function AccessGovernancePanel({
                           disabled={readOnly || !moduleOn}
                           onCheckedChange={(c) => togglePage(page.flag, !!c)}
                         />
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 overflow-hidden">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span
-                              className={`text-xs font-semibold ${
+                              className={`text-xs font-semibold break-words [overflow-wrap:anywhere] ${
                                 !moduleOn ? 'text-slate-400' : isDark ? 'text-slate-100' : 'text-slate-800'
                               }`}
                             >
@@ -290,7 +294,7 @@ export default function AccessGovernancePanel({
                               </span>
                             )}
                           </div>
-                          <p className={`text-[11px] mt-0.5 leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          <p className={`text-[11px] mt-0.5 leading-relaxed break-words [overflow-wrap:anywhere] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                             {pageNote(page.flag, page.label)}
                           </p>
                           {!!page.actions?.length && (
