@@ -491,6 +491,33 @@ async def _platform_change_user_status(user_id: str, identifier: str, status: st
     return {"message": f"User {status} successfully", "user_id": user_id, "status": status}
 
 
+@router.get("/platform-users/deleted")
+async def list_platform_company_deleted_users(company_id: Optional[str] = Query(None), customer_id: Optional[str] = Query(None), license_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
+    target_id = company_id or customer_id or license_id
+    license_doc, company = await _platform_company_context(current_user, target_id)
+    cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
+    comp_id = str(company.get("id") or "")
+    lic_id = str(license_doc.get("id") or "")
+    query = {"status": "deleted", "role": {"$ne": "superadmin"}, "is_internal_commercial_admin": {"$ne": True}, "email": {"$nin": sorted(platform_owner_emails())}, "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}, {"license_id": lic_id}]}
+    users = await db.users.find(query, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).sort("deleted_at", -1).to_list(2000)
+    return {"users": [_clean_user(u) for u in users], "count": len(users)}
+
+@router.post("/platform-users/{user_id}/restore")
+async def restore_platform_company_user(user_id: str, company_id: Optional[str] = Query(None), customer_id: Optional[str] = Query(None), license_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
+    target_id = company_id or customer_id or license_id
+    license_doc, company = await _platform_company_context(current_user, target_id)
+    cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
+    comp_id = str(company.get("id") or "")
+    existing = await db.users.find_one({"id": user_id, "status": "deleted", "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}, {"license_id": str(license_doc.get("id") or "")}]}, {"_id": 0})
+    if not existing: raise HTTPException(status_code=404, detail="Deleted company user not found.")
+    max_users = max(1, int(license_doc.get("max_users", 1)))
+    active_count = await db.users.count_documents({"status": "active", "$or": [{"company_id": comp_id}, {"commercial_customer_id": cust_id}]})
+    if active_count >= max_users: raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
+    now = _now()
+    update = {"status": "active", "is_active": True, "restored_at": now, "restored_by": current_user.id, "approved_by": current_user.id, "approved_at": now}
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    await create_audit_log(current_user, "RESTORE_PLATFORM_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
+    return {"message": "User restored successfully", "user_id": user_id, "status": "active"}
 @router.post("/platform-users/{user_id}/activate")
 async def activate_platform_company_user(
     user_id: str,
