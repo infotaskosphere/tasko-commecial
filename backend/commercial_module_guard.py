@@ -284,13 +284,7 @@ FEATURE_PREFIXES = {
         ),
     },
     "aiweave": {
-        "can_view_aiweave": (
-            "/ai",
-            "/ai-reader",
-        ),
-    },
-    "aiweave": {
-        "can_view_aiweave": ("/ai-reader", "/ai"),
+        "can_view_aiweave": ("/ai", "/ai-reader"),
     },
     "people_matrix": {
         "can_view_user_page": (
