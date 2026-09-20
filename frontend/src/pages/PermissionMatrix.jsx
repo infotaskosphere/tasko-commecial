@@ -1,10 +1,16 @@
 // PermissionMatrix.jsx — Admin → Permission Matrix.
 //
 // Redesigned to match the Dashboard / section-hub look (gradient banner,
-// KPI tiles, SectionCards) via @/components/ui/PageKit, and rebuilt on top
-// of the SHARED <AccessGovernancePanel />, which is the very same editor
-// rendered inside Users → Access Governance. One component, one set of
-// rules, one set of guidance notes — the two screens can no longer drift.
+// KPI tiles) via @/components/ui/PageKit, and rebuilt on top of the SHARED
+// <AccessGovernancePanel />, which is the very same editor rendered inside
+// Users → Access Governance. One component, one set of rules, one set of
+// guidance notes — the two screens can no longer drift.
+//
+// LAYOUT NOTE: the cards on this screen use <GovCard> (plain <div>s) rather
+// than <SectionCard>. SectionCard renders a real <header> element, and the
+// app's global CSS forces `#root header { height: 64px }` and
+// `#root header + div { height: 40px }`, which squashed every card body and
+// made the page look "distorted". See the notes in AccessGovernancePanel.jsx.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, ShieldCheck, Users as UsersIcon, KeyRound, UserCog } from 'lucide-react';
@@ -13,9 +19,14 @@ import api from '@/lib/api';
 import { toast } from 'sonner';
 import useDark from '@/hooks/useDark';
 import {
-  PageShell, PageBanner, StatRow, SectionCard, LoadingState, EmptyState, HUB_COLORS,
+  PageShell, PageBanner, StatRow, LoadingState, EmptyState, HUB_COLORS,
 } from '@/components/ui/PageKit';
-import AccessGovernancePanel from '@/components/governance/AccessGovernancePanel';
+import AccessGovernancePanel, { GovCard } from '@/components/governance/AccessGovernancePanel';
+
+// Inline so it beats the global `#root p/span/label/button { overflow-wrap:anywhere }`.
+const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
+
+const initialOf = (u) => (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
 
 export default function PermissionMatrix() {
   const isDark = useDark();
@@ -49,9 +60,10 @@ export default function PermissionMatrix() {
   }, [users, search]);
 
   const adminCount = users.filter((u) => (u.role || '').toLowerCase() === 'admin').length;
+  const editingName = selectedUser ? (selectedUser.full_name || selectedUser.email) : '—';
 
   return (
-    <PageShell className="permission-matrix-page">
+    <PageShell>
       <PageBanner
         icon={ShieldCheck}
         eyebrow="Admin"
@@ -64,17 +76,30 @@ export default function PermissionMatrix() {
         items={[
           { icon: UsersIcon, label: 'Team members', value: users.length, color: HUB_COLORS.mediumBlue },
           { icon: ShieldCheck, label: 'Admins (unrestricted)', value: adminCount, color: HUB_COLORS.emeraldGreen },
-          { icon: UserCog, label: 'Editing', value: selectedUser ? (selectedUser.full_name || selectedUser.email) : '—', color: '#7C3AED' },
+          {
+            icon: UserCog,
+            label: 'Editing',
+            // Long names truncate instead of pushing the tile out of shape.
+            value: <span className="block truncate max-w-full" title={editingName}>{editingName}</span>,
+            color: '#7C3AED',
+          },
         ]}
       />
 
       {loading ? (
         <LoadingState label="Loading permission matrix…" />
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-5 items-start min-w-0">
-          <SectionCard icon={UsersIcon} title="Users" badge={filteredUsers.length} className="h-auto min-h-[150px] self-start w-full min-w-0 max-w-full !overflow-hidden">
-            <div className="relative mb-3 w-full min-w-0">
-              <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] gap-5 items-start min-w-0">
+          {/* ── Users ─────────────────────────────────────────────── */}
+          <GovCard
+            icon={UsersIcon}
+            title="Users"
+            badge={filteredUsers.length}
+            className="w-full lg:sticky lg:top-2"
+            bodyClassName="p-3 space-y-3"
+          >
+            <div className="relative w-full min-w-0">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               <Input
                 className="pl-8"
                 placeholder="Search users…"
@@ -82,46 +107,65 @@ export default function PermissionMatrix() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 max-w-full space-y-1 max-h-[64vh] min-h-[42px] overflow-y-auto overflow-x-hidden pr-1">
+
+            <div className="w-full min-w-0 space-y-1 max-h-[45vh] lg:max-h-[60vh] overflow-y-auto overflow-x-hidden">
               {filteredUsers.length === 0 && (
-                <p className="text-xs text-slate-400 py-6 text-center">No users match “{search}”.</p>
+                <p style={TXT} className="text-xs text-slate-400 py-6 text-center">
+                  No users match &ldquo;{search}&rdquo;.
+                </p>
               )}
               {filteredUsers.map((u) => {
                 const active = u.id === selectedUserId;
+                const admin = (u.role || '').toLowerCase() === 'admin';
                 return (
                   <button
                     key={u.id}
+                    type="button"
                     onClick={() => setSelectedUserId(u.id)}
-                    className={`w-full min-w-0 max-w-full text-left px-3 py-2 rounded-xl text-sm flex items-center justify-between gap-2 overflow-hidden transition-colors ${
+                    title={u.email || undefined}
+                    aria-pressed={active}
+                    className={`w-full min-w-0 text-left px-2.5 py-2 flex items-center gap-3 border-l-[3px] cursor-pointer transition-colors ${
                       active
-                        ? 'bg-[#1F6FB2]/12 font-semibold'
-                        : isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'
+                        ? 'border-[#1F6FB2] bg-[#1F6FB2]/10'
+                        : `border-transparent ${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'}`
                     }`}
                   >
-                    <span className="min-w-0">
-                      <span className={`block truncate ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                    <span
+                      className="flex items-center justify-center w-8 h-8 shrink-0 text-xs font-bold text-white"
+                      style={{ background: `linear-gradient(135deg, ${HUB_COLORS.deepBlue}, ${HUB_COLORS.mediumBlue})` }}
+                    >
+                      {initialOf(u)}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        style={TXT}
+                        className={`block truncate text-sm ${active ? 'font-bold' : 'font-semibold'} ${
+                          isDark ? 'text-slate-100' : 'text-slate-800'
+                        }`}
+                      >
                         {u.full_name || u.email}
                       </span>
-                      <span className="block text-[11px] text-slate-400 capitalize">{u.role || 'user'}</span>
+                      <span style={TXT} className="block truncate text-[11px] text-slate-400 capitalize">
+                        {u.role || 'user'}
+                      </span>
                     </span>
-                    {(u.role || '').toLowerCase() === 'admin' && (
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                    )}
+                    {admin && <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />}
                   </button>
                 );
               })}
             </div>
-          </SectionCard>
+          </GovCard>
 
-          <div className="permission-matrix-governance w-full min-w-0 max-w-full space-y-4">
+          {/* ── Access editor ─────────────────────────────────────── */}
+          <div className="w-full min-w-0 max-w-full space-y-4">
             {!selectedUserId ? (
-              <SectionCard icon={KeyRound} title="Access Governance">
+              <GovCard icon={KeyRound} title="Access Governance">
                 <EmptyState
                   icon={KeyRound}
                   title="Pick a user"
                   hint="Select someone on the left to review and change what they can reach."
                 />
-              </SectionCard>
+              </GovCard>
             ) : (
               <AccessGovernancePanel
                 key={selectedUserId}
