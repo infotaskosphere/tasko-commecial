@@ -11,6 +11,7 @@ const MODULE_FLAGS = {
   records: 'can_access_records',
   proposals: 'can_access_proposals',
   peopleMatrix: 'can_access_people_matrix',
+  aiweave: 'can_access_aiweave',
 };
 
 // Commercial fallback pages are resolved from the same page-entitlement map
@@ -85,6 +86,9 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_all_leads', '/leads'],
     ['can_create_quotations', '/quotations'],
     ['can_view_client_discussion', '/client-discussion'],
+  ],
+  aiweave: [
+    ['can_view_aiweave', '/ai-reader'],
   ],
   peopleMatrix: [
     ['can_view_user_page', '/people-matrix'],
