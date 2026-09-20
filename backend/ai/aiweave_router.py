@@ -169,7 +169,8 @@ async def test_provider(row,key):
     elif p=="gemini":
         r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",params={"key":key,"pageSize":"1"},timeout=15)
     elif p=="claude":
-        return await claude_call(key,"claude-sonnet-5","Reply with OK.",20)
+        r=await req("GET","https://api.anthropic.com/v1/models",
+                    {"x-api-key":key,"anthropic-version":"2023-06-01"},timeout=15)
     else:
         r=await req("GET",BASES[p]+"/models",{"Authorization":f"Bearer {key}"},timeout=15)
     if r.status_code!=200:raise PError(classify(r.status_code),err(r))
@@ -188,6 +189,10 @@ async def discover(row,key):
             r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",params={"key":key,"pageSize":"1000"},timeout=20)
             if r.status_code!=200:return []
             return [{"id":str(x.get("name","")).replace("models/",""),"provider":p,"name":x.get("displayName") or x.get("name"),"capabilities":[],"availability":"discovered","lastVerified":now()} for x in r.json().get("models",[]) if x.get("name")]
+        if p=="claude":
+            r=await req("GET","https://api.anthropic.com/v1/models",headers={"x-api-key":key,"anthropic-version":"2023-06-01"},timeout=20)
+            if r.status_code!=200:return []
+            return [{"id":str(x.get("id")),"provider":p,"name":x.get("display_name") or x.get("id"),"capabilities":[],"availability":"discovered","lastVerified":now()} for x in r.json().get("data",[]) if x.get("id")]
         if p=="ollama":
             r=await req("GET",(row.get("base_url") or "http://127.0.0.1:11434").rstrip("/")+"/api/tags",timeout=20)
             if r.status_code!=200:return []
