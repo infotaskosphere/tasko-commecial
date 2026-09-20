@@ -82,7 +82,7 @@ export function isCommercialTenant(user) { return Boolean(user) && !isPlatformOw
 export function moduleForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[0] || null; }
 export function pageFlagForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[1] || null; }
 
-export function hasModuleAccess(user, moduleId) { if (!user) return false; if (moduleId === "aiweave") return user.permissions?.can_access_aiweave === true; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.size > 0) return modules.has(moduleId); const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
+export function hasModuleAccess(user, moduleId) { if (!user) return false; if (moduleId === "aiweave") return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true; if (isPlatformOwner(user)) return true; if (!MODULES[moduleId]) return false; const modules = normalizeModules(user); if (modules.size > 0) return modules.has(moduleId); const selected = normalizedSelectedFeatures(user); return selected[moduleId]?.size > 0; }
 
 export function hasPageLicense(user, pageFlag, moduleId = null) {
   if (!user || !pageFlag) return false;
@@ -107,7 +107,7 @@ export function hasPageLicense(user, pageFlag, moduleId = null) {
 
 export function hasEffectivePermission(user, permission) {
   if (!user || !permission) return false;
-  if (permission === "can_access_aiweave") return user.permissions?.can_access_aiweave === true;
+  if (permission === "can_access_aiweave") return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true;
   if (permission === "can_view_aiweave") return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true;
   if (isPlatformOwner(user)) return true;
   if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
