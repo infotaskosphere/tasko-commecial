@@ -137,6 +137,10 @@ MODULE_PREFIXES = {
         "/quotations",
         "/client-discussion",
     ),
+    "aiweave": (
+        "/ai",
+        "/ai-reader",
+    ),
     "people_matrix": (
         "/people-matrix",
         "/users",
@@ -278,6 +282,12 @@ FEATURE_PREFIXES = {
         ),
         "can_manage_client_discussion": (
             "/client-discussion/manage",
+        ),
+    },
+    "aiweave": {
+        "can_view_aiweave": (
+            "/ai",
+            "/ai-reader",
         ),
     },
     "people_matrix": {
@@ -656,6 +666,15 @@ def _permission_flag(
     is_admin = _is_admin_role(user)
 
     if module is not None:
+        # AIWeave is explicitly user-governed. A commercial license can make
+        # the module available to the tenant, but never auto-grants it — not
+        # even to the licensee administrator.
+        if module == "aiweave":
+            permissions = getattr(user, "permissions", None)
+            if hasattr(permissions, "model_dump"):
+                permissions = permissions.model_dump()
+            return isinstance(permissions, dict) and permissions.get(flag, False) is True
+
         if is_admin:
             return True
 
