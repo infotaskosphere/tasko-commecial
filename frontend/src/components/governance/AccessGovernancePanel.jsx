@@ -359,6 +359,7 @@ export default function AccessGovernancePanel({
           money, credentials or colleagues&rsquo; personal data — grant it deliberately and review it periodically.
         </span>
       </GuidanceNote>
+      {adminGovernanceNote}
 
       {/* Toolbar — stays in view while the module list scrolls underneath. */}
       <div
@@ -474,7 +475,7 @@ export default function AccessGovernancePanel({
                   size="sm"
                   variant="outline"
                   className="whitespace-nowrap"
-                  disabled={readOnly || adminModule}
+                  disabled={readOnly || adminModule || lockedByAdmin}
                   onClick={() => bulkPages(mod, pages, true)}
                 >
                   <Check className="w-3.5 h-3.5" /> Grant all
@@ -484,7 +485,7 @@ export default function AccessGovernancePanel({
                   size="sm"
                   variant="outline"
                   className="whitespace-nowrap"
-                  disabled={readOnly || adminModule}
+                  disabled={readOnly || adminModule || lockedByAdmin}
                   onClick={() => bulkPages(mod, pages, false)}
                 >
                   <X className="w-3.5 h-3.5" /> Clear all
