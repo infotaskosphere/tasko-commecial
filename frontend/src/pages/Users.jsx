@@ -33,6 +33,7 @@ import {
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFormMinimizer } from '@/contexts/MinimizedFormsContext';
+import AccessGovernancePanel from '@/components/governance/AccessGovernancePanel';
 
 // ── Brand Colors ─────────────────────────────────────────────────────────────
 const COLORS = {
@@ -4289,89 +4290,13 @@ export default function Users() {
               })}
             </div>
             {activePermTab === 'modules' && (
-              <div className="space-y-4">
-                <SectionHeader icon={Zap} title="Module Access" color={COLORS.violet} />
-
-                {/* ── Permission Matrix toolbar: search, expand/collapse all, copy from another user ── */}
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 min-w-0">
-                  <div className="relative flex-1 min-w-[180px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-                    <Input
-                      value={moduleMatrixSearch}
-                      onChange={e => setModuleMatrixSearch(e.target.value)}
-                      placeholder="Search modules & pages…"
-                      className="pl-8 h-9 rounded-lg text-xs"
-                    />
-                    {moduleMatrixSearch && (
-                      <button onClick={() => setModuleMatrixSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <button type="button"
-                    onClick={() => setCollapsedModules(prev => {
-                      const allCollapsed = MODULE_TREE.every(m => prev[m.key]);
-                      const next = {};
-                      MODULE_TREE.forEach(m => { next[m.key] = !allCollapsed; });
-                      return next;
-                    })}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 transition-colors">
-                    <ChevronsDownUp className="h-3.5 w-3.5" /> Expand / Collapse All
-                  </button>
-                  <div className="flex flex-wrap items-center justify-start lg:justify-end gap-1.5 min-w-0">
-                    <Select value={copyFromUserId} onValueChange={setCopyFromUserId} disabled={copyingPerms}>
-                      <SelectTrigger className="h-9 w-full sm:w-[190px] max-w-full rounded-lg text-xs">
-                        <SelectValue placeholder="Copy permissions from…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {users.filter(u => u.id !== selectedUserForPerms?.id).map(u => (
-                          <SelectItem key={u.id} value={u.id}>{u.full_name} ({u.role})</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <button type="button" disabled={!copyFromUserId || copyingPerms}
-                      onClick={() => copyPermissionsFromUser(copyFromUserId)}
-                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      <Copy className="h-3.5 w-3.5" /> {copyingPerms ? 'Copying…' : 'Copy'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 min-w-0 overflow-hidden">
-                  {/* ── Centralized Module → Page governance tree (Taskosphere, Finix,
-                      Compliance, Records, Client Proposals, People Matrix) — reuses the
-                      MODULE_HIERARCHY that backend/permission_governance.py and
-                      backend/governance_core.py already enforce, so there is exactly
-                      one place these flags are defined and one place they're gated. ── */}
-                  {MODULE_TREE.map(module => (
-                    <ModuleGovernanceCard
-                      key={module.key}
-                      module={module}
-                      permissions={permissions}
-                      setPermissions={setPermissions}
-                      expanded={!collapsedModules[module.key]}
-                      onToggleExpanded={() => toggleModuleCollapsed(module.key)}
-                      searchTerm={moduleMatrixSearch}
-                    />
-                  ))}
-
-                  {/* Client Portal Manager now lives as a page inside the Taskosphere
-                      module card above (can_view_client_portal), not as a standalone
-                      card — it was moved out of Admin and is properly module-gated. */}
-
-                  {/* ── WhatsApp Settings ──────────────────────────────── */}
-                  <ModuleAccessCard
-                    icon={MessageSquare}
-                    title="WhatsApp Settings"
-                    desc="Access and configure WhatsApp integration — manage API credentials, message templates, and notification rules."
-                    permKey="can_manage_whatsapp"
-                    permissions={permissions}
-                    setPermissions={setPermissions}
-                    accentColor="#25D366"
-                    badge={permissions.can_manage_whatsapp ? 'Full Access' : undefined}
-                  />
-                </div>
-              </div>
+              <AccessGovernancePanel
+                value={permissions}
+                onChange={setPermissions}
+                isAdminUser={selectedUserForPerms?.role === 'admin'}
+                readOnly={!canManagePermissions}
+                showSave={false}
+              />
             )}
             {activePermTab === 'view' && (
               <div>
