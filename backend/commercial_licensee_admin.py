@@ -34,6 +34,7 @@ LICENSE_MODULE_ALIASES = {
     "proposals": "proposals",
     "client_proposals": "proposals",
     "client-proposals": "proposals",
+    "leadsense": "proposals",
     "aiweave": "aiweave",
     "ai-weave": "aiweave",
 }
