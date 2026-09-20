@@ -611,6 +611,7 @@ def _selected_license_features(
                 "proposals",
                 "client_proposals",
                 "client-proposals",
+                "leadsense",
             },
             "people_matrix": {
                 "people_matrix",
