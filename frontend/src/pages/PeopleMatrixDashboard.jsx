@@ -165,7 +165,7 @@ export default function PeopleMatrixDashboard() {
         <div className="relative z-10 flex flex-col xl:flex-row xl:items-center justify-between gap-6 h-full">
           <div className="min-w-0 max-w-2xl">
             <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-white/60 mb-2 flex items-center gap-2"><UserCog className="h-3.5 w-3.5" /> People Matrix</p>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Good Evening, {user?.full_name?.split(' ')[0] || 'there'}! <span aria-hidden="true">👋</span></h1>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">Good Evening, {user?.full_name?.split(' ')[0] || 'there'}!</h1>
             <p className="text-sm font-semibold text-white/80 mt-1">Great people build greater businesses.</p>
             <p className="text-sm italic text-white/60 mt-2">“Empower people today for a stronger tomorrow.”</p>
           </div>
