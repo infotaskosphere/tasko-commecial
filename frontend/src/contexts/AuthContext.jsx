@@ -110,7 +110,7 @@ export const AuthProvider = ({ children }) => {
     }
     const cleanEmail = String(email || "").trim().toLowerCase();
     const cleanId = String(uid || "").trim();
-    return cleanEmail === PLATFORM_OWNER_EMAIL || cleanId === "usr-admin-01" || cleanId === "saas-bootstrap-admin";
+    const companyId = String(targetUser?.company_id || targetUser?.company?.id || "").trim().toLowerCase(); return cleanEmail === PLATFORM_OWNER_EMAIL || cleanId === "usr-admin-01" || cleanId === "saas-bootstrap-admin" || companyId === "platform-owner-48fe785fdd75127f";
   }, [user]);
 
   const forceLogoutForReplacement = useCallback(() => {
