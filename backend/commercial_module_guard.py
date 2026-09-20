@@ -67,7 +67,6 @@ MODULE_PREFIXES = {
         "/reminders",
         "/action-center",
         "/visits",
-        "/ai-reader",
         "/client-portal-manager",
     ),
     "finix": (
@@ -139,7 +138,8 @@ MODULE_PREFIXES = {
     ),
     "aiweave": (
         "/ai",
-        "/ai-reader",
+        "/aiweave",
+        "/ai-reader",  # legacy URL; still AIWeave, never Taskosphere
     ),
     "people_matrix": (
         "/people-matrix",
@@ -284,7 +284,7 @@ FEATURE_PREFIXES = {
         ),
     },
     "aiweave": {
-        "can_view_aiweave": ("/ai", "/ai-reader"),
+        "can_view_aiweave": ("/ai", "/aiweave", "/ai-reader"),
     },
     "people_matrix": {
         "can_view_user_page": (
