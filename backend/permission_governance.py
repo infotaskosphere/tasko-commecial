@@ -58,8 +58,8 @@ GOVERNED_MODULES = {
 
 # =============================================================================
 # MAIN PERMISSION MODULE HIERARCHY
-# Six main permission modules — Taskosphere, Finix, Compliance, Records,
-# Client Proposals, People Matrix — each with a master "module access" flag
+# Seven main permission modules — Taskosphere, Finix, AIWeave, CompliGenie, Records,
+# LeadSense, People Matrix — each with a master "module access" flag
 # and a set of individual page-level flags nested beneath it (see
 # MODULE_HIERARCHY in backend/models.py for the full mapping). A page flag
 # can only ever be effectively usable while its parent module's master flag
