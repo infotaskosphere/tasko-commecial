@@ -34,8 +34,9 @@ export function PageGuard({ module, page, children }) {
   const isAIWeave = module === 'aiweave' || page === 'can_view_aiweave' || page === 'can_access_aiweave';
 
   if (isAIWeave) {
-    // AIWeave is explicitly governed for EVERY user, including platform-owner
-    // and tenant-admin accounts. License/module purchase alone is never enough.
+    // Platform Owner is outside commercial license/page enforcement.
+    // Tenant users remain explicitly permission-gated.
+    if (matrixIsPlatformOwner(user) || isPlatformOwner) return children;
     if (!hasEffectivePermission(user, page || 'can_view_aiweave')) return <EntitledHome />;
     return children;
   }
@@ -66,6 +67,7 @@ export function ActionGuard({ module, page, action, fallback = null, children })
   const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
 
   if (module === 'aiweave') {
+    if (matrixIsPlatformOwner(user) || isPlatformOwner) return ['view', 'create'].includes(action) ? children : fallback;
     if (!hasEffectivePermission(user, page || 'can_view_aiweave')) return fallback;
     if (!['view', 'create'].includes(action)) return fallback;
     return children;
