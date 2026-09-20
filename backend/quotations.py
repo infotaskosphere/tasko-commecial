@@ -1754,9 +1754,16 @@ async def list_companies(current_user: User = Depends(get_current_user)):
 @router.get("/companies/{company_id}")
 async def get_company(company_id: str, current_user: User = Depends(get_current_user)):
     """Single company record — used by pages that only know a company_id."""
-    company = await db.companies.find_one(
-        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
-    )
+    owner_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if is_platform_owner(current_user):
+        # Platform Owner manages its own operational Company Master records.
+        # Commercial-license companies remain isolated in the Commercial Console.
+        owner_scope = {
+            "id": company_id,
+            "source": {"$nin": ["commercial-license", "commercial", "license"]},
+            "commercial_customer_id": {"$in": [None, ""]},
+        }
+    company = await db.companies.find_one(owner_scope, {"_id": 0})
     if not company:
         raise HTTPException(404, "Company not found")
     await _hydrate_company_bank(company)
@@ -1769,9 +1776,16 @@ async def update_company(
     data: dict,
     current_user: User = Depends(require_company_manage),
 ):
-    existing = await db.companies.find_one(
-        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
-    )
+    company_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if is_platform_owner(current_user):
+        # Platform Owner Company Master is separate from commercial license
+        # tenants. Allow editing only non-commercial operational companies.
+        company_scope = {
+            "id": company_id,
+            "source": {"$nin": ["commercial-license", "commercial", "license"]},
+            "commercial_customer_id": {"$in": [None, ""]},
+        }
+    existing = await db.companies.find_one(company_scope, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Company not found")
     allowed = [
@@ -1820,12 +1834,8 @@ async def update_company(
         if resolved:
             update["state"] = resolved.get("state") or ""
             update["state_code"] = resolved.get("state_code") or ""
-    await db.companies.update_one(
-        {"id": company_id, "created_by": str(current_user.id)}, {"$set": update}
-    )
-    updated = await db.companies.find_one(
-        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
-    )
+    await db.companies.update_one(company_scope, {"$set": update})
+    updated = await db.companies.find_one(company_scope, {"_id": 0})
     # Keep the Bank Accounts page in sync: mirror the company's primary
     # bank details into the bank_accounts collection whenever they change
     # here (Invoice/Quotation settings both save through this endpoint).
@@ -1842,12 +1852,17 @@ async def delete_company(
     company_id: str,
     current_user: User = Depends(require_company_manage),
 ):
-    existing = await db.companies.find_one(
-        {"id": company_id, "created_by": str(current_user.id)}, {"_id": 0}
-    )
+    company_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if is_platform_owner(current_user):
+        company_scope = {
+            "id": company_id,
+            "source": {"$nin": ["commercial-license", "commercial", "license"]},
+            "commercial_customer_id": {"$in": [None, ""]},
+        }
+    existing = await db.companies.find_one(company_scope, {"_id": 0})
     if not existing:
         raise HTTPException(404, "Company not found")
-    await db.companies.delete_one({"id": company_id, "created_by": str(current_user.id)})
+    await db.companies.delete_one(company_scope)
     return {"message": "Company deleted"}
 
 
