@@ -13,8 +13,26 @@ const MODULE_BRANDING = {
   compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
-  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo.svg', darkLogo: '/aiweave-logo.svg', collapsedLogo: '/aiweave-logo.svg', alt: 'AIWeave' },
+  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
 };
+
+// Last-resort logo that ships INSIDE the JS bundle. If a static file is missing
+// from a deployment (Vercel rewrites unknown paths to index.html, so a missing
+// image comes back as HTML and shows as a broken picture) the header still gets
+// a real AIWeave logo instead of alt text.
+const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">'
+  + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D3B66"/><stop offset=".55" stop-color="#1F6FB2"/><stop offset="1" stop-color="#1FAF5A"/></linearGradient></defs>'
+  + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/>'
+  + '<path d="M21 45c7-18 18-25 31-18 7 4 11 11 7 20-4 10-16 14-27 8" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"/>'
+  + '<path d="M25 29c6 9 15 12 28 8M27 56c7-7 15-11 28-10" fill="none" stroke="#1FAF5A" stroke-width="4" stroke-linecap="round"/>'
+  + '<circle cx="20" cy="45" r="4" fill="#1F6FB2"/><circle cx="52" cy="27" r="4" fill="#1FAF5A"/><circle cx="58" cy="48" r="4" fill="#0D3B66"/></g>'
+  + '<text x="96" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#0D3B66">AI</text>'
+  + '<text x="145" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#1FAF5A">Weave</text></svg>';
+const INLINE_FALLBACK_LOGOS = {
+  aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG),
+};
+// Logo URLs that failed to load in this browser session.
+const failedLogos = new Set();
 
 const FALLBACK = MODULE_BRANDING.core;
 let scheduled = false;
@@ -91,18 +109,28 @@ const syncModuleBranding = () => {
 
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  const logoSrc = collapsed ? branding.collapsedLogo : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
+  let logoSrc = collapsed ? branding.collapsedLogo : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
+  if (failedLogos.has(logoSrc) && INLINE_FALLBACK_LOGOS[moduleId]) logoSrc = INLINE_FALLBACK_LOGOS[moduleId];
 
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
   if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
-  if (!visibleLogo.dataset.aiweaveFallbackBound) {
-    visibleLogo.dataset.aiweaveFallbackBound = 'true';
+  // The previous handler compared the failing src to the very same path it then
+  // "fell back" to, so it never did anything. Record the failure instead and let
+  // the next sync pick the inline fallback (also covers a load that already
+  // failed before this listener was attached).
+  if (!visibleLogo.dataset.brandingFallbackBound) {
+    visibleLogo.dataset.brandingFallbackBound = 'true';
     visibleLogo.addEventListener('error', () => {
-      if (moduleId === 'aiweave' && visibleLogo.getAttribute('src') !== '/aiweave-logo.svg') {
-        visibleLogo.setAttribute('src', '/aiweave-logo.svg');
-      }
-    }, { once: true });
+      const failed = visibleLogo.getAttribute('src');
+      if (!failed || failed.startsWith('data:') || failedLogos.has(failed)) return;
+      failedLogos.add(failed);
+      scheduleSync();
+    });
+  }
+  if (visibleLogo.complete && visibleLogo.naturalWidth === 0 && !logoSrc.startsWith('data:') && !failedLogos.has(logoSrc)) {
+    failedLogos.add(logoSrc);
+    scheduleSync();
   }
   visibleLogo.setAttribute('aria-label', branding.alt);
   visibleLogo.style.display = 'block';
