@@ -591,7 +591,7 @@ const PermissionMatrixSummary = ({ permissions }) => {
 const PermToggleRow = ({ permKey, label, desc, icon: Icon, permissions, setPermissions }) => {
   const isOn = !!permissions[permKey];
   return (
-    <div className={`flex items-center justify-between px-4 py-3.5 rounded-xl border transition-all ${
+    <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 sm:px-4 py-3.5 rounded-xl border transition-all min-w-0 overflow-hidden ${
       isOn
         ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800'
         : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
@@ -604,9 +604,9 @@ const PermToggleRow = ({ permKey, label, desc, icon: Icon, permissions, setPermi
             <Icon className="h-4 w-4" />
           </div>
         )}
-        <div className="min-w-0">
-          <p className={`font-semibold text-sm ${isOn ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-700 dark:text-slate-200'}`}>{label}</p>
-          <p className="text-xs text-slate-400 mt-0.5 leading-snug">{desc}</p>
+        <div className="min-w-0 overflow-hidden">
+          <p className={`font-semibold text-sm break-words ${isOn ? 'text-emerald-800 dark:text-emerald-200' : 'text-slate-700 dark:text-slate-200'}`}>{label}</p>
+          <p className="text-xs text-slate-400 mt-0.5 leading-snug break-words overflow-wrap-anywhere">{desc}</p>
         </div>
       </div>
       <Switch checked={isOn} onCheckedChange={val => setPermissions(p => ({ ...p, [permKey]: val }))} />
@@ -620,6 +620,7 @@ const ModuleAccessCard = ({ icon: Icon, title, desc, permKey, permissions, setPe
   const toggle    = () => setPermissions(p => ({ ...p, [permKey]: !p[permKey] }));
   return (
     <motion.div
+      style={{ minWidth: 0 }}
       whileHover={{ y: -2, transition: springPhysics.lift }}
       whileTap={{ scale: 0.99 }}
       onClick={toggle}
@@ -633,7 +634,7 @@ const ModuleAccessCard = ({ icon: Icon, title, desc, permKey, permissions, setPe
         style={isEnabled ? { background: `linear-gradient(135deg, ${accent}, ${accent}cc)` } : {}}>
         <Icon className="h-5 w-5" />
       </div>
-      <div className="flex-1 min-w-0 pt-0.5">
+      <div className="flex-1 min-w-0 overflow-hidden pt-0.5">
         <div className="flex items-center gap-2 flex-wrap">
           <p className={`font-semibold text-sm ${isEnabled ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>{title}</p>
           {badge && (
@@ -641,7 +642,7 @@ const ModuleAccessCard = ({ icon: Icon, title, desc, permKey, permissions, setPe
               style={{ background: `${accent}15`, color: accent }}>{badge}</span>
           )}
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">{desc}</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed break-words overflow-wrap-anywhere">{desc}</p>
       </div>
       <div className="flex-shrink-0 flex items-center" onClick={e => e.stopPropagation()}>
         <Switch checked={isEnabled} onCheckedChange={toggle} />
@@ -889,7 +890,7 @@ const ModuleGovernanceCard = ({ module, permissions, setPermissions, expanded = 
     <div className="space-y-3">
       <div
         onClick={() => !alwaysOn && toggleMaster(!masterOn)}
-        className={`flex gap-4 p-4 rounded-xl border-2 transition-all hover:shadow-md ${alwaysOn ? 'cursor-default' : 'cursor-pointer'}`}
+        className={`grid grid-cols-[auto,minmax(0,1fr),auto] gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border-2 transition-all hover:shadow-md min-w-0 overflow-hidden ${alwaysOn ? 'cursor-default' : 'cursor-pointer'}`}
         style={masterOn ? { borderColor: `${accent}40`, background: `${accent}06` } : {}}
       >
         <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 transition-all ${
@@ -899,7 +900,7 @@ const ModuleGovernanceCard = ({ module, permissions, setPermissions, expanded = 
         </div>
         <div className="flex-1 min-w-0 pt-0.5">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className={`font-bold text-sm ${masterOn ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>{label}</p>
+            <p className={`font-bold text-sm break-words overflow-wrap-anywhere ${masterOn ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300'}`}>{label}</p>
             {pages.length > 0 && (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: `${accent}15`, color: accent }}>
                 {alwaysOn ? `Always on · ${enabledCount}/${pageKeys.length} pages` : (masterOn ? `${enabledCount}/${pageKeys.length} pages` : 'Access off')}
@@ -938,7 +939,7 @@ const ModuleGovernanceCard = ({ module, permissions, setPermissions, expanded = 
       </div>
 
       {showPages && (
-        <div className={`ml-5 space-y-2 transition-opacity ${masterOn ? '' : 'opacity-50 pointer-events-none select-none'}`}>
+        <div className={`ml-0 sm:ml-5 space-y-2 transition-opacity min-w-0 ${masterOn ? '' : 'opacity-50 pointer-events-none select-none'}`}>
           <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 pt-1">
             {label} pages{!masterOn ? ' — turn on module access above to edit' : ''}
           </p>
@@ -949,7 +950,7 @@ const ModuleGovernanceCard = ({ module, permissions, setPermissions, expanded = 
             <React.Fragment key={pg.permKey}>
               <PermToggleRow permKey={pg.permKey} label={pg.label} desc={pg.desc} icon={pg.icon} permissions={permissions} setPermissions={setPermissions} />
               {permissions[pg.permKey] && (pg.writePerms || []).map(w => (
-                <div className="ml-5" key={w.permKey}>
+                <div className="ml-0 sm:ml-5 min-w-0" key={w.permKey}>
                   <PermToggleRow permKey={w.permKey} label={w.label} desc={w.desc} icon={w.icon} permissions={permissions} setPermissions={setPermissions} />
                 </div>
               ))}
@@ -4232,7 +4233,7 @@ export default function Users() {
 
       {/* ════ PERMISSIONS DIALOG ════ */}
       <Dialog open={permDialogOpen} onOpenChange={setPermDialogOpen}>
-        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
+        <DialogContent className="w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-2rem)] max-w-5xl max-h-[92vh] overflow-x-hidden overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
           <DialogHeader className="sr-only">
             <DialogTitle>{`Permissions — ${selectedUserForPerms?.full_name || 'User'}`}</DialogTitle>
             <DialogDescription>Configure access levels and module permissions for this user.</DialogDescription>
@@ -4273,7 +4274,7 @@ export default function Users() {
                 );
               })}
             </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
+            <div className="flex flex-wrap gap-1.5 pb-1 w-full min-w-0">
               {permTabs.map(tab => {
                 const TabIcon = tab.icon;
                 return (
@@ -4292,7 +4293,7 @@ export default function Users() {
                 <SectionHeader icon={Zap} title="Module Access" color={COLORS.violet} />
 
                 {/* ── Permission Matrix toolbar: search, expand/collapse all, copy from another user ── */}
-                <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 min-w-0">
                   <div className="relative flex-1 min-w-[180px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
                     <Input
@@ -4317,9 +4318,9 @@ export default function Users() {
                     className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-slate-300 transition-colors">
                     <ChevronsDownUp className="h-3.5 w-3.5" /> Expand / Collapse All
                   </button>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center justify-start lg:justify-end gap-1.5 min-w-0">
                     <Select value={copyFromUserId} onValueChange={setCopyFromUserId} disabled={copyingPerms}>
-                      <SelectTrigger className="h-9 w-[190px] rounded-lg text-xs">
+                      <SelectTrigger className="h-9 w-full sm:w-[190px] max-w-full rounded-lg text-xs">
                         <SelectValue placeholder="Copy permissions from…" />
                       </SelectTrigger>
                       <SelectContent>
@@ -4336,7 +4337,7 @@ export default function Users() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-3 min-w-0 overflow-hidden">
                   {/* ── Centralized Module → Page governance tree (Taskosphere, Finix,
                       Compliance, Records, Client Proposals, People Matrix) — reuses the
                       MODULE_HIERARCHY that backend/permission_governance.py and
