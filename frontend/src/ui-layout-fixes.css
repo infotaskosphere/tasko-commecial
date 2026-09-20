@@ -59,3 +59,69 @@ body:not(.website-surface) #root .taskosphere-route-loading { width:100% !import
   #root #top-module-switcher-bar > div:nth-child(1):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"],
   #root #top-module-switcher-bar > div:nth-child(3):has(> button[id^="nav-tab-"]) > button[id^="nav-tab-"] { flex-basis:104px !important; width:104px !important; min-width:104px !important; max-width:104px !important; }
 }
+
+
+/* PERMISSION MATRIX — structural layout contract.
+ * Governance cards are dynamic-height content. Keep the module body in normal
+ * document flow and prevent global card rules from collapsing it.
+ */
+#root main .permission-matrix-page,
+#root main .permission-matrix-page > *,
+#root main .permission-matrix-page .permission-matrix-governance {
+  width:100% !important; min-width:0 !important; max-width:100% !important;
+  height:auto !important; min-height:0 !important; max-height:none !important;
+  box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-card {
+  display:block !important; position:relative !important;
+  width:100% !important; min-width:0 !important; max-width:100% !important;
+  height:auto !important; min-height:0 !important; max-height:none !important;
+  overflow:visible !important; align-self:start !important; flex:none !important;
+  box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-card > header {
+  display:grid !important; position:relative !important; width:100% !important;
+  min-width:0 !important; height:auto !important; min-height:0 !important;
+  max-height:none !important; overflow:visible !important; box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-card > header > div {
+  min-width:0 !important; max-width:100% !important;
+}
+#root main .permission-matrix-page .permission-governance-card > header > div:last-child {
+  display:flex !important; flex-wrap:wrap !important; align-items:center !important;
+  justify-content:flex-end !important; min-width:0 !important; max-width:100% !important;
+  height:auto !important; min-height:0 !important; max-height:none !important;
+}
+#root main .permission-matrix-page .permission-governance-card-body {
+  display:block !important; position:relative !important; width:100% !important;
+  min-width:0 !important; max-width:100% !important; height:auto !important;
+  min-height:0 !important; max-height:none !important; overflow:visible !important;
+  box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-card-body > div {
+  min-width:0 !important; max-width:100% !important; height:auto !important;
+  min-height:0 !important; max-height:none !important; box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-page-list {
+  position:relative !important; display:block !important; width:100% !important;
+  min-width:0 !important; max-width:100% !important; height:auto !important;
+  min-height:0 !important; max-height:none !important; overflow:visible !important;
+  box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-page-list > div {
+  width:100% !important; min-width:0 !important; max-width:100% !important;
+  height:auto !important; min-height:0 !important; max-height:none !important;
+  box-sizing:border-box !important;
+}
+#root main .permission-matrix-page .permission-governance-page-list p,
+#root main .permission-matrix-page .permission-governance-page-list span {
+  max-width:100% !important; overflow-wrap:anywhere !important; word-break:normal !important;
+}
+@media (max-width:1100px) {
+  #root main .permission-matrix-page .permission-governance-card > header {
+    grid-template-columns:1fr !important;
+  }
+  #root main .permission-matrix-page .permission-governance-card > header > div:last-child {
+    justify-content:flex-start !important;
+  }
+}
