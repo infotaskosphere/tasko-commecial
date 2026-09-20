@@ -141,7 +141,7 @@ const syncModuleBranding = () => {
   visibleLogo.style.margin = '0 auto';
   visibleLogo.style.transform = 'translateY(0)';
 
-  if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance' || moduleId === 'aiweave') {
+  if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance') {
     visibleLogo.style.background = '#ffffff';
     visibleLogo.style.borderRadius = '8px';
     visibleLogo.style.padding = '0';
