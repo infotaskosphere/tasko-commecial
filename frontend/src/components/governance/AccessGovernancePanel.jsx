@@ -17,10 +17,25 @@
 //
 // Usage — self-loading (Permission Matrix page, one user at a time):
 //   <AccessGovernancePanel userId={selectedUserId} showSave />
+//
+// ── LAYOUT NOTES (why this file avoids <SectionCard>) ─────────────────────
+// The app ships global "enterprise" CSS that targets *elements*, not classes:
+//
+//   commercial-business-ui.css   #root header        { height: 64px !important }
+//                                #root header + div  { height: 40px !important }
+//                                #root header + div button { height: 40px … }
+//   enterprise-design.css        #root p, span, label, button { overflow-wrap: anywhere }
+//
+// <SectionCard> renders a real <header> followed by a <div>, so its body was
+// being squashed to 40px (clipped "Module access" rows, overlapping cards,
+// 40px-tall checkboxes) and text was breaking in the middle of words.
+// Everything below is therefore built from plain <div>s (no <header>), and
+// text elements carry an inline overflow-wrap so the global rule cannot win.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown, ChevronRight, Search, Check, X, ShieldAlert, Info, Save, Loader2,
+  ChevronDown, Check, X, ShieldAlert, Info, Save, Loader2, Search,
+  ChevronsDownUp, ChevronsUpDown,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -28,7 +43,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import useDark from '@/hooks/useDark';
-import { SectionCard, GuidanceNote, LoadingState, HUB_COLORS } from '@/components/ui/PageKit';
+import { GuidanceNote, LoadingState, HUB_COLORS } from '@/components/ui/PageKit';
 import { moduleNote, pageNote, actionNote, isHighRisk } from '@/lib/permissionGuidance';
 
 const MODULE_COLOR = {
@@ -40,6 +55,91 @@ const MODULE_COLOR = {
   people_matrix: '#0EA5E9',
   admin: HUB_COLORS.deepBlue,
 };
+
+// Inline so it beats the global `#root p/span/label/button { overflow-wrap:anywhere }`.
+// `break-word` only splits a word when it genuinely cannot fit on its own line.
+const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
+
+const CHIP_TONES = {
+  slate: 'bg-slate-500/10 text-slate-600 dark:text-slate-300',
+  green: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+  amber: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+  blue: 'bg-[#1F6FB2]/10 text-[#1F6FB2] dark:text-sky-300',
+};
+
+function Chip({ tone = 'slate', className = '', children, ...rest }) {
+  return (
+    <span
+      style={TXT}
+      className={`inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 text-[10px] font-bold leading-4 ${CHIP_TONES[tone]} ${className}`}
+      {...rest}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * GovCard — the card chrome used on the Permission Matrix screen.
+ * Plain <div>s only (see LAYOUT NOTES above). Exported so the page can reuse
+ * the exact same card look for the Users list.
+ */
+export function GovCard({
+  icon: Icon, title, badge, color = HUB_COLORS.mediumBlue, actions,
+  children, className = '', bodyClassName = '',
+}) {
+  const isDark = useDark();
+  return (
+    <div
+      className={`min-w-0 max-w-full border rounded-2xl ${
+        isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-200 shadow-sm'
+      } ${className}`}
+    >
+      {(title || actions) && (
+        <div
+          className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 border-b ${
+            isDark ? 'border-slate-700/80' : 'border-slate-100'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            {Icon && (
+              <span
+                className="flex items-center justify-center w-8 h-8 shrink-0"
+                style={{ background: `${color}18` }}
+              >
+                <Icon className="w-4 h-4" style={{ color }} />
+              </span>
+            )}
+            <span
+              style={TXT}
+              className={`text-sm font-bold min-w-0 ${isDark ? 'text-slate-100' : 'text-slate-800'}`}
+            >
+              {title}
+            </span>
+            {badge !== undefined && badge !== null && (
+              <span
+                className="text-[10px] font-extrabold px-2 py-0.5 shrink-0"
+                style={{ background: `${color}18`, color }}
+              >
+                {badge}
+              </span>
+            )}
+          </div>
+          {actions}
+        </div>
+      )}
+      <div className={`min-w-0 max-w-full ${bodyClassName}`}>{children}</div>
+    </div>
+  );
+}
+
+// Number of flags that differ between two permission maps (undefined ≡ false).
+function countChanges(a = {}, b = {}) {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  let n = 0;
+  keys.forEach((k) => { if ((a[k] ?? false) !== (b[k] ?? false)) n += 1; });
+  return n;
+}
 
 export default function AccessGovernancePanel({
   userId,
@@ -55,7 +155,9 @@ export default function AccessGovernancePanel({
 
   const [moduleTree, setModuleTree] = useState([]);
   const [internal, setInternal] = useState({});
+  const [baseline, setBaseline] = useState({});
   const [loading, setLoading] = useState(true);
+  const [permsLoading, setPermsLoading] = useState(!controlled && !!userId);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState({});
@@ -69,40 +171,52 @@ export default function AccessGovernancePanel({
 
   // Module tree (shared by both hosts) ────────────────────────────────────
   useEffect(() => {
+    let alive = true;
     (async () => {
       try {
         const { data } = await api.get('/permission-governance/module-tree');
-        setModuleTree(Array.isArray(data) ? data : []);
+        if (alive) setModuleTree(Array.isArray(data) ? data : []);
       } catch {
         toast.error('Could not load the module tree');
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
+    return () => { alive = false; };
   }, []);
 
   // Only the self-loading (Permission Matrix) mode fetches a user's perms.
   useEffect(() => {
-    if (controlled || !userId) return;
+    if (controlled || !userId) { setPermsLoading(false); return undefined; }
+    let alive = true;
+    setPermsLoading(true);
     (async () => {
       try {
         const { data } = await api.get(`/users/${userId}/permissions`);
+        if (!alive) return;
         setInternal(data || {});
+        setBaseline(data || {});
       } catch {
         toast.error('Could not load this user\u2019s permissions');
+      } finally {
+        if (alive) setPermsLoading(false);
       }
     })();
+    return () => { alive = false; };
   }, [userId, controlled]);
 
+  const searching = search.trim().length > 0;
+
+  // [{ mod, pages }] — `pages` is what is currently visible (search-filtered).
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return moduleTree;
+    if (!q) return moduleTree.map((mod) => ({ mod, pages: mod.pages || [] }));
     return moduleTree
       .map((mod) => {
-        const modHit = (mod.label || '').toLowerCase().includes(q);
-        const pages = (mod.pages || []).filter((p) => (p.label || '').toLowerCase().includes(q));
-        if (modHit) return mod;
-        return pages.length ? { ...mod, pages } : null;
+        const all = mod.pages || [];
+        if ((mod.label || '').toLowerCase().includes(q)) return { mod, pages: all };
+        const pages = all.filter((p) => (p.label || '').toLowerCase().includes(q));
+        return pages.length ? { mod, pages } : null;
       })
       .filter(Boolean);
   }, [moduleTree, search]);
@@ -119,10 +233,10 @@ export default function AccessGovernancePanel({
   const togglePage = (flag, checked) =>
     setPermissions((prev) => ({ ...prev, [flag]: checked }));
 
-  const bulkPages = (mod, checked) =>
+  const bulkPages = (mod, pages, checked) =>
     setPermissions((prev) => {
       const next = { ...prev };
-      (mod.pages || []).forEach((p) => { next[p.flag] = checked; });
+      pages.forEach((p) => { next[p.flag] = checked; });
       if (checked) next[mod.flag] = true;
       return next;
     });
@@ -130,12 +244,22 @@ export default function AccessGovernancePanel({
   const grantedIn = (mod) => (mod.pages || []).filter((p) => permissions[p.flag]).length;
   const totalGranted = moduleTree.reduce((n, m) => n + grantedIn(m), 0);
   const totalPages = moduleTree.reduce((n, m) => n + (m.pages?.length || 0), 0);
+  const pct = totalPages ? Math.round((totalGranted / totalPages) * 100) : 0;
+
+  const changes = !controlled ? countChanges(permissions, baseline) : 0;
+  const dirty = changes > 0;
+
+  const isOpen = (mod) => expanded[mod.module] ?? searching;
+  const setAllOpen = (open) =>
+    setExpanded(Object.fromEntries(filtered.map(({ mod }) => [mod.module, open])));
+  const allOpen = filtered.length > 0 && filtered.every(({ mod }) => isOpen(mod));
 
   const handleSave = async () => {
     if (!userId) return;
     setSaving(true);
     try {
       await api.put(`/users/${userId}/permissions`, permissions);
+      setBaseline(permissions);
       toast.success('Permissions updated');
       onSaved?.(permissions);
     } catch (e) {
@@ -145,7 +269,7 @@ export default function AccessGovernancePanel({
     }
   };
 
-  if (loading) return <LoadingState label="Loading access governance…" />;
+  if (loading || permsLoading) return <LoadingState label="Loading access governance…" />;
 
   if (isAdminUser) {
     return (
@@ -157,18 +281,29 @@ export default function AccessGovernancePanel({
     );
   }
 
+  const muted = isDark ? 'text-slate-400' : 'text-slate-500';
+  const strong = isDark ? 'text-slate-100' : 'text-slate-800';
+  const divider = isDark ? 'border-slate-700/80' : 'border-slate-100';
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0 max-w-full">
       <GuidanceNote icon={Info}>
-        <strong>How access works:</strong> a user reaches a page only when the <em>module</em> switch
-        and the <em>page</em> switch are both on. Turning a module off instantly revokes every page
-        inside it. Anything marked <span className="font-semibold text-amber-600">High risk</span> exposes
-        money, credentials or colleagues&rsquo; personal data — grant it deliberately and review it periodically.
+        <span style={TXT}>
+          <strong>How access works:</strong> a user reaches a page only when the <em>module</em> switch
+          and the <em>page</em> switch are both on. Turning a module off instantly revokes every page
+          inside it. Anything marked <span className="font-semibold text-amber-600">High risk</span> exposes
+          money, credentials or colleagues&rsquo; personal data — grant it deliberately and review it periodically.
+        </span>
       </GuidanceNote>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 min-w-0 w-full">
-        <div className="relative min-w-0 w-full">
-          <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
+      {/* Toolbar — stays in view while the module list scrolls underneath. */}
+      <div
+        className={`sticky top-2 z-20 flex flex-wrap items-center gap-x-3 gap-y-2 p-3 border rounded-xl min-w-0 ${
+          isDark ? 'bg-slate-900 border-slate-700/80' : 'bg-white border-slate-200 shadow-sm'
+        }`}
+      >
+        <div className="relative flex-[1_1_260px] min-w-[220px]">
+          <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           <Input
             className="pl-8"
             placeholder="Search modules and pages…"
@@ -176,146 +311,220 @@ export default function AccessGovernancePanel({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <span className={`text-xs font-semibold whitespace-nowrap ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          {totalGranted}/{totalPages} pages granted
-        </span>
-        {showSave && (
-          <Button onClick={handleSave} disabled={saving || readOnly || !userId}>
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            Save changes
+
+        <div className="flex items-center gap-2 shrink-0" title={`${totalGranted} of ${totalPages} pages granted`}>
+          <span style={TXT} className={`text-xs font-semibold whitespace-nowrap ${muted}`}>
+            {totalGranted}/{totalPages} pages granted
+          </span>
+          <span className={`hidden tablet-md:block w-20 h-1.5 overflow-hidden ${isDark ? 'bg-slate-700' : 'bg-slate-200'}`}>
+            <span className="block h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="whitespace-nowrap"
+            onClick={() => setAllOpen(!allOpen)}
+            disabled={filtered.length === 0}
+          >
+            {allOpen ? <ChevronsDownUp className="w-3.5 h-3.5" /> : <ChevronsUpDown className="w-3.5 h-3.5" />}
+            {allOpen ? 'Collapse all' : 'Expand all'}
           </Button>
-        )}
+          {showSave && dirty && (
+            <Chip tone="amber" className="!text-[11px]">
+              {changes} unsaved {changes === 1 ? 'change' : 'changes'}
+            </Chip>
+          )}
+          {showSave && (
+            <Button
+              type="button"
+              className="whitespace-nowrap"
+              onClick={handleSave}
+              disabled={saving || readOnly || !userId || !dirty}
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save changes
+            </Button>
+          )}
+        </div>
       </div>
 
-      {filtered.map((mod) => {
+      {filtered.length === 0 && (
+        <GuidanceNote tone="warning" icon={Search}>
+          <span style={TXT}>No modules or pages match &ldquo;{search}&rdquo;.</span>
+        </GuidanceNote>
+      )}
+
+      {filtered.map(({ mod, pages }) => {
         const color = MODULE_COLOR[mod.module] || HUB_COLORS.mediumBlue;
-        const pages = mod.pages || [];
-        const open = expanded[mod.module] ?? !!search;
+        const allPages = mod.pages || [];
+        const open = isOpen(mod);
         const moduleOn = !!permissions[mod.flag];
         const adminModule = mod.module === 'admin';
+        const modId = `gov-mod-${mod.module}`;
 
         return (
-          <SectionCard
+          <div
             key={mod.module}
-            color={color}
-            padded={false}
-            className="permission-governance-card w-full min-w-0 max-w-full"
-            title={
-              <span className="flex items-center gap-2 min-w-0 max-w-full flex-wrap break-words">
-                {mod.label}
-                <span className={`text-[11px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {grantedIn(mod)}/{pages.length} pages
+            className={`min-w-0 max-w-full border border-l-4 rounded-2xl overflow-hidden ${
+              isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-200 shadow-sm'
+            }`}
+            style={{ borderLeftColor: color }}
+          >
+            {/* Module row: master switch · title · quick actions · expand */}
+            <div
+              className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
+              style={{ background: `${color}0d` }}
+            >
+              <Checkbox
+                id={modId}
+                className="h-[18px] w-[18px]"
+                aria-label={`Module access for ${mod.label}`}
+                checked={moduleOn}
+                disabled={readOnly || adminModule}
+                onCheckedChange={(c) => toggleModule(mod, !!c)}
+              />
+
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setExpanded((p) => ({ ...p, [mod.module]: !open }))}
+                className="flex items-center gap-2 flex-[1_1_200px] min-w-[min(100%,200px)] text-left cursor-pointer"
+              >
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                  <span style={TXT} className={`text-sm font-bold ${strong}`}>{mod.label}</span>
+                  <Chip tone="slate">{grantedIn(mod)}/{allPages.length} pages</Chip>
+                  <Chip tone={moduleOn ? 'green' : 'amber'}>
+                    {moduleOn ? 'Module on' : 'Module off'}
+                  </Chip>
                 </span>
-              </span>
-            }
-            actions={
-              <div className="flex items-center justify-end gap-2 flex-wrap min-w-0 max-w-full">
+              </button>
+
+              <div className="flex items-center gap-2 ml-auto shrink-0">
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
-                  className="whitespace-nowrap shrink-0"
+                  className="whitespace-nowrap"
                   disabled={readOnly || adminModule}
-                  onClick={() => bulkPages(mod, true)}
+                  onClick={() => bulkPages(mod, pages, true)}
                 >
-                  <Check className="w-3.5 h-3.5 mr-1" /> Grant all
+                  <Check className="w-3.5 h-3.5" /> Grant all
                 </Button>
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
-                  className="whitespace-nowrap shrink-0"
+                  className="whitespace-nowrap"
                   disabled={readOnly || adminModule}
-                  onClick={() => bulkPages(mod, false)}
+                  onClick={() => bulkPages(mod, pages, false)}
                 >
-                  <X className="w-3.5 h-3.5 mr-1" /> Clear all
+                  <X className="w-3.5 h-3.5" /> Clear all
                 </Button>
                 <Button
-                  size="sm"
+                  type="button"
+                  size="icon"
                   variant="ghost"
-                  className="shrink-0"
+                  className="h-8 w-8"
+                  aria-label={open ? `Collapse ${mod.label}` : `Expand ${mod.label}`}
                   onClick={() => setExpanded((p) => ({ ...p, [mod.module]: !open }))}
                 >
-                  {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <ChevronDown className={`w-4 h-4 transition-transform ${open ? '' : '-rotate-90'}`} />
                 </Button>
               </div>
-            }
-          >
-            <div className="permission-governance-card-body px-5 py-4 space-y-3">
-              <div className="flex items-start gap-3">
-                <Checkbox
-                  className="mt-0.5"
-                  checked={moduleOn}
-                  disabled={readOnly || adminModule}
-                  onCheckedChange={(c) => toggleModule(mod, !!c)}
-                />
-                <div className="min-w-0">
-                  <p className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                    Module access
-                  </p>
-                  <p className={`text-xs mt-0.5 leading-relaxed break-words [overflow-wrap:anywhere] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    {moduleNote(mod.module, mod.description)}
-                  </p>
-                </div>
-              </div>
+            </div>
 
-              {open && (
-                <div className={`permission-governance-page-list pt-2 border-t space-y-2 ${isDark ? 'border-slate-700/80' : 'border-slate-100'}`}>
-                  {pages.length === 0 && (
-                    <p className="text-xs text-slate-400">
-                      No sub-pages — access to this module is all-or-nothing.
-                    </p>
-                  )}
-                  {pages.map((page) => {
-                    const risky = isHighRisk(page.flag);
-                    return (
-                      <div
-                        key={page.flag}
-                        className={`rounded-xl px-3 py-2.5 flex items-start gap-3 min-w-0 max-w-full overflow-hidden ${
-                          isDark ? 'bg-slate-900/40' : 'bg-slate-50'
-                        }`}
-                      >
-                        <Checkbox
-                          className="mt-0.5"
-                          checked={!!permissions[page.flag]}
-                          disabled={readOnly || !moduleOn}
-                          onCheckedChange={(c) => togglePage(page.flag, !!c)}
-                        />
-                        <div className="min-w-0 flex-1 overflow-hidden">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`text-xs font-semibold break-words [overflow-wrap:anywhere] ${
-                                !moduleOn ? 'text-slate-400' : isDark ? 'text-slate-100' : 'text-slate-800'
-                              }`}
-                            >
-                              {page.label}
-                            </span>
-                            {risky && (
-                              <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 inline-flex items-center gap-1">
-                                <ShieldAlert className="w-3 h-3" /> High risk
-                              </span>
+            {open && (
+              <div className={`border-t px-4 py-4 space-y-3 ${divider}`}>
+                <p style={TXT} className={`text-xs leading-relaxed ${muted}`}>
+                  <label htmlFor={modId} className={`font-semibold cursor-pointer ${strong}`} style={TXT}>
+                    Module access.{' '}
+                  </label>
+                  {moduleNote(mod.module, mod.description)}
+                </p>
+
+                {!moduleOn && allPages.length > 0 && !adminModule && (
+                  <GuidanceNote tone="warning" icon={ShieldAlert}>
+                    <span style={TXT}>
+                      Module access is off, so every page below is locked. Turn the module on
+                      (checkbox at the top-left of this card) to grant individual pages.
+                    </span>
+                  </GuidanceNote>
+                )}
+
+                {allPages.length === 0 && (
+                  <p style={TXT} className="text-xs text-slate-400">
+                    No sub-pages — access to this module is all-or-nothing.
+                  </p>
+                )}
+
+                {pages.length > 0 && (
+                  <div
+                    className="grid gap-2.5"
+                    style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))' }}
+                  >
+                    {pages.map((page) => {
+                      const risky = isHighRisk(page.flag);
+                      const pid = `gov-page-${page.flag}`;
+                      const locked = readOnly || !moduleOn;
+                      return (
+                        <div
+                          key={page.flag}
+                          className={`flex items-start gap-3 p-3 border min-w-0 ${
+                            risky
+                              ? isDark ? 'border-amber-500/40 bg-amber-500/5' : 'border-amber-300 bg-amber-50/60'
+                              : isDark ? 'border-slate-700/80 bg-slate-900/40' : 'border-slate-200 bg-slate-50'
+                          } ${!moduleOn ? 'opacity-60' : ''}`}
+                        >
+                          <Checkbox
+                            id={pid}
+                            className="mt-0.5 h-[18px] w-[18px]"
+                            checked={!!permissions[page.flag]}
+                            disabled={locked}
+                            onCheckedChange={(c) => togglePage(page.flag, !!c)}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <label
+                                htmlFor={pid}
+                                style={TXT}
+                                className={`text-[13px] font-semibold leading-snug ${
+                                  locked ? 'cursor-not-allowed' : 'cursor-pointer'
+                                } ${!moduleOn ? 'text-slate-400' : strong}`}
+                              >
+                                {page.label}
+                              </label>
+                              {risky && (
+                                <Chip tone="amber">
+                                  <ShieldAlert className="w-3 h-3" /> High risk
+                                </Chip>
+                              )}
+                            </div>
+                            <p style={TXT} className={`text-[11px] mt-1 leading-relaxed ${muted}`}>
+                              {pageNote(page.flag, page.label)}
+                            </p>
+                            {!!page.actions?.length && (
+                              <div className="flex flex-wrap items-center gap-1 mt-2">
+                                <span style={TXT} className="text-[10px] font-semibold text-slate-400">Allows:</span>
+                                {page.actions.map((a) => (
+                                  <Chip key={a} tone="blue" className="capitalize" title={actionNote(a)}>
+                                    {a}
+                                  </Chip>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <p className={`text-[11px] mt-0.5 leading-relaxed break-words [overflow-wrap:anywhere] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            {pageNote(page.flag, page.label)}
-                          </p>
-                          {!!page.actions?.length && (
-                            <p className="text-[10px] mt-1 text-slate-400">
-                              Allows:{' '}
-                              {page.actions.map((a, i) => (
-                                <span key={a} title={actionNote(a)}>
-                                  {i > 0 && ' · '}
-                                  <span className="font-semibold capitalize">{a}</span>
-                                </span>
-                              ))}
-                            </p>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </SectionCard>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         );
       })}
     </div>
