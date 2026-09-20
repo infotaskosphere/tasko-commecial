@@ -1,4 +1,5 @@
 import React,{useCallback,useEffect,useMemo,useRef,useState} from 'react';
+import { useAuth } from '@/contexts/AuthContext.jsx';
 import {UserPlus,Pencil,CheckCircle2,XCircle,UserX,Search,Loader2,Users2,ShieldCheck,Building2,Mail,Phone,CalendarDays,Clock,Camera,Briefcase,Landmark,Upload,KeyRound} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
@@ -18,9 +19,10 @@ const Section=({icon:Icon,title,children})=><div className="border border-slate-
 const readFileAsDataUrl=(file)=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file)});
 
 export default function CompanyUserManager(){
+ const { isPlatformOwner } = useAuth();
  const [users,setUsers]=useState([]),[deletedUsers,setDeletedUsers]=useState([]),[license,setLicense]=useState(null),[company,setCompany]=useState(null),[loading,setLoading]=useState(true),[busy,setBusy]=useState(null),[tab,setTab]=useState('active'),[search,setSearch]=useState(''),[status,setStatus]=useState('all'),[editing,setEditing]=useState(null),[form,setForm]=useState(EMPTY),[open,setOpen]=useState(false),[saving,setSaving]=useState(false),[photoBusy,setPhotoBusy]=useState(false);
  const photoRef=useRef(null);
- const load=useCallback(async()=>{setLoading(true);try{const r=await api.get('/commercial-master-data/users');setUsers(r.data?.users||[]);setLicense(r.data?.license||null);setCompany(r.data?.company||null);const d=await api.get('/commercial-master-data/users/deleted');setDeletedUsers(d.data?.users||[])}catch(e){toast.error(e?.response?.data?.detail||'Failed to load company users')}finally{setLoading(false)}},[]);
+ const load=useCallback(async()=>{setLoading(true);try{const r=await api.get('/commercial-master-data/users');setUsers(r.data?.users||[]);setLicense(r.data?.license||null);setCompany(r.data?.company||null);if(!isPlatformOwner){const d=await api.get('/commercial-master-data/users/deleted');setDeletedUsers(d.data?.users||[])}else{setDeletedUsers([])}}catch(e){toast.error(e?.response?.data?.detail||'Failed to load company users')}finally{setLoading(false)}},[isPlatformOwner]);
  useEffect(()=>{load()},[load]);
  const managers=useMemo(()=>users.filter(u=>u.role==='manager'&&u.status!=='rejected'),[users]);
  const visible=useMemo(()=>{const source=tab==='deleted'?deletedUsers:users;const q=search.trim().toLowerCase();return source.filter(u=>(tab==='deleted'||status==='all'||u.status===status)&&(!q||[u.full_name,u.email,u.phone,u.employee_code,u.designation,u.department_id,(u.departments||[]).join(' ')].filter(Boolean).some(v=>String(v).toLowerCase().includes(q))))},[users,deletedUsers,search,status,tab]);
