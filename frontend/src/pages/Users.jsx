@@ -716,7 +716,6 @@ const MODULE_TREE = [
       { permKey: 'can_view_reminders',          label: 'Reminders',        desc: 'View and manage reminders', icon: Bell },
       { permKey: 'can_view_action_center',      label: 'Action Center',    desc: 'View pending actions and approvals awaiting the user', icon: Zap },
       { permKey: 'can_view_client_visits',      label: 'Client Visits',    desc: 'Log and view client visit records', icon: MapPin },
-      { permKey: 'can_view_aiweave', label: 'AIWeave', desc: 'Use the unified AIWeave workspace for document intelligence and analysis', icon: BrainCircuit },
       { permKey: 'can_view_client_portal',      label: 'Client Portal Manager', desc: 'Create and manage client portal accounts, Drive folder visibility, portal messages and settings', icon: Building2 },
       { permKey: 'can_reset_client_passwords',  label: 'Password Reset', desc: 'Reset client portal passwords in bulk and download the credentials sheet. Off = the user cannot reset any portal password.', icon: KeyRound },
     ],
