@@ -137,7 +137,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_download_reports: true, can_view_selected_users_reports: true,
       can_view_todo_dashboard: true, can_edit_clients: true, can_use_chat: true,
       can_view_dashboard: true, can_view_reminders: true, can_view_action_center: true,
-      can_view_client_visits: true, can_view_ai_document_reader: true,
+      can_view_client_visits: true, can_view_aiweave: true,
       can_view_all_leads: true, can_manage_settings: true, can_assign_clients: true,
       can_view_staff_rankings: true, can_delete_data: true, can_delete_tasks: true,
       can_connect_email: true, can_view_own_data: true, can_create_quotations: true,
@@ -199,7 +199,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own + Team)
       can_view_action_center: true,   // Action Center → VIEW (Own + Team)
       can_view_client_visits: true,   // Client Visits → VIEW (Own + Team)
-      can_view_ai_document_reader: true, // AI Document Reader → VIEW (Own + Team)
+      can_view_aiweave: true, // AI Document Reader → VIEW (Own + Team)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
@@ -271,7 +271,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own)
       can_view_action_center: true,   // Action Center → VIEW (Own)
       can_view_client_visits: true,   // Client Visits → VIEW (Own)
-      can_view_ai_document_reader: true, // AI Document Reader → VIEW (Own)
+      can_view_aiweave: true, // AI Document Reader → VIEW (Own)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
@@ -317,7 +317,7 @@ const EMPTY_PERMISSIONS = {
   can_download_reports: false, can_view_selected_users_reports: false,
   can_view_todo_dashboard: false, can_edit_clients: false, can_use_chat: false,
   can_view_dashboard: false, can_view_reminders: false, can_view_action_center: false,
-  can_view_client_visits: false, can_view_ai_document_reader: false,
+  can_view_client_visits: false, can_view_aiweave: false,
   can_view_all_leads: false, can_manage_settings: false, can_assign_clients: false,
   can_view_staff_rankings: false, can_delete_data: false, can_delete_tasks: false,
   can_connect_email: false, can_view_own_data: false, can_create_quotations: false,
@@ -559,6 +559,7 @@ const PermissionMatrixSummary = ({ permissions }) => {
     // Main permission module master switches (Modules tab)
     'can_access_taskosphere', 'can_access_finix', 'can_access_compliance',
     'can_access_records', 'can_access_proposals', 'can_access_people_matrix',
+    'can_access_aiweave',
   ];
   const allPerms = [...GLOBAL_PERMS, ...OPS_PERMS, ...EDIT_PERMS];
   const granted  = allPerms.filter(p => permissions[p.key]).length
@@ -706,7 +707,7 @@ const pagesWithWritePerms = (pagePerms, writePerms) => pagePerms.map(pg => ({
 const MODULE_TREE = [
   {
     key: 'taskosphere', flag: 'can_access_taskosphere', label: 'Taskosphere', icon: ClipboardList, accent: '#1F6FB2',
-    desc: 'The core workspace — Tasks, To-Do, Attendance, Reminders, Action Center, Client Visits, AI Document Reader and Client Portal Manager.',
+    desc: 'The core workspace — Tasks, To-Do, Attendance, Reminders, Action Center, Client Visits, Client Portal Manager.',
     pages: [
       { permKey: 'can_view_dashboard',         label: 'Dashboard',         desc: 'View the personal dashboard — summary widgets, quick stats and recent activity', icon: LayoutDashboard },
       { permKey: 'can_view_tasks',              label: 'Tasks',             desc: 'View and manage assigned tasks', icon: CheckSquare },
@@ -715,7 +716,7 @@ const MODULE_TREE = [
       { permKey: 'can_view_reminders',          label: 'Reminders',        desc: 'View and manage reminders', icon: Bell },
       { permKey: 'can_view_action_center',      label: 'Action Center',    desc: 'View pending actions and approvals awaiting the user', icon: Zap },
       { permKey: 'can_view_client_visits',      label: 'Client Visits',    desc: 'Log and view client visit records', icon: MapPin },
-      { permKey: 'can_view_ai_document_reader', label: 'AI Document Reader', desc: 'Upload and analyze documents using the AI reader', icon: BrainCircuit },
+      { permKey: 'can_view_aiweave', label: 'AIWeave', desc: 'Use the unified AIWeave workspace for document intelligence and analysis', icon: BrainCircuit },
       { permKey: 'can_view_client_portal',      label: 'Client Portal Manager', desc: 'Create and manage client portal accounts, Drive folder visibility, portal messages and settings', icon: Building2 },
       { permKey: 'can_reset_client_passwords',  label: 'Password Reset', desc: 'Reset client portal passwords in bulk and download the credentials sheet. Off = the user cannot reset any portal password.', icon: KeyRound },
     ],
