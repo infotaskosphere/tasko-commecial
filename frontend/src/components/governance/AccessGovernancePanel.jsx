@@ -199,7 +199,7 @@ export default function AccessGovernancePanel({
             key={mod.module}
             color={color}
             padded={false}
-            className="w-full min-w-0 max-w-full overflow-hidden"
+            className="permission-governance-card w-full min-w-0 max-w-full"
             title={
               <span className="flex items-center gap-2 min-w-0 max-w-full flex-wrap break-words">
                 {mod.label}
@@ -239,7 +239,7 @@ export default function AccessGovernancePanel({
               </div>
             }
           >
-            <div className="px-5 py-4 space-y-3">
+            <div className="permission-governance-card-body px-5 py-4 space-y-3">
               <div className="flex items-start gap-3">
                 <Checkbox
                   className="mt-0.5"
@@ -258,7 +258,7 @@ export default function AccessGovernancePanel({
               </div>
 
               {open && (
-                <div className={`pt-2 border-t space-y-2 ${isDark ? 'border-slate-700/80' : 'border-slate-100'}`}>
+                <div className={`permission-governance-page-list pt-2 border-t space-y-2 ${isDark ? 'border-slate-700/80' : 'border-slate-100'}`}>
                   {pages.length === 0 && (
                     <p className="text-xs text-slate-400">
                       No sub-pages — access to this module is all-or-nothing.
