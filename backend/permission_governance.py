@@ -74,7 +74,7 @@ _MODULE_TO_PAGE_FLAGS = {
 # exempt from the "parent module off -> zero out its pages" rule below.
 # Taskosphere used to be listed here — it no longer is. Every one of its
 # pages (Dashboard, Tasks, To-Do, Attendance, Reminders, Action Center,
-# Client Visits, AI Document Reader, Client Portal Manager) now has its own
+# Client Visits, Client Portal Manager) now has its own
 # individually-governed flag, and can_access_taskosphere is a real, editable
 # master switch like every other module: switching it off correctly cascades
 # and clears every page flag beneath it, same as Finix/Compliance/etc.
