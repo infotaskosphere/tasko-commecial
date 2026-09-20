@@ -835,7 +835,7 @@ async def get_current_user_with_commercial_guard(
     return user
 
 
-GUARD_RULES_VERSION = "2026-09-19.admin-full-module-access"
+GUARD_RULES_VERSION = "2026-09-20.aiweave-explicit-governance"
 
 
 def install() -> None:
