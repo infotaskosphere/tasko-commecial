@@ -110,7 +110,7 @@ def _apply_feature_entitlements(role: str, selected_modules: List[str], selected
         # "all pages of this module"; unlicensed modules stay closed regardless of
         # stale selected_features keys.
         allowed = module_id in selected
-        permissions[module_flag] = allowed
+        permissions[module_flag] = False if module_id == "aiweave" else allowed
         module_def = MODULE_HIERARCHY.get(module_id, {})
         allowed_features = set(selected_features.get(module_id) or []) or {p["flag"] for p in module_def.get("pages", []) if p.get("flag")}
         for page in module_def.get("pages", []):
