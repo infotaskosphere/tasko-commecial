@@ -55,7 +55,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_view_reminders": True,
           "can_view_action_center": True,
           "can_view_client_visits": True,
-          "can_view_ai_document_reader": True,
+          "can_view_aiweave": False,
           "can_use_chat": True,
           "can_view_staff_rankings": True,
           "can_delete_data": True,
@@ -156,7 +156,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_view_reminders": True,        # Reminders → VIEW (Own + Team)
           "can_view_action_center": True,    # Action Center → VIEW (Own + Team)
           "can_view_client_visits": True,    # Client Visits → VIEW (Own + Team)
-          "can_view_ai_document_reader": True,  # AI Document Reader → VIEW (Own + Team)
+          "can_view_aiweave": False,  # AI Document Reader → VIEW (Own + Team)
           "can_use_chat": False,             # ADMIN_GRANTED_ONLY
           "can_view_staff_rankings": False,  # ADMIN_GRANTED_ONLY
           "can_delete_data": False,          # ADMIN_GRANTED_ONLY
@@ -246,7 +246,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_view_reminders": True,        # Reminders → VIEW (Own)
           "can_view_action_center": True,    # Action Center → VIEW (Own)
           "can_view_client_visits": True,    # Client Visits → VIEW (Own)
-          "can_view_ai_document_reader": True,  # AI Document Reader → VIEW (Own)
+          "can_view_aiweave": False,  # AI Document Reader → VIEW (Own)
           "can_use_chat": False,             # ADMIN_GRANTED_ONLY
           "can_view_staff_rankings": False,  # ADMIN_GRANTED_ONLY
           "can_delete_data": False,          # ADMIN_GRANTED_ONLY
@@ -337,9 +337,16 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
             {"flag": "can_view_reminders",           "label": "Reminders",            "actions": ["view", "create", "edit", "delete"]},
             {"flag": "can_view_action_center",       "label": "Action Center",        "actions": ["view"]},
             {"flag": "can_view_client_visits",       "label": "Client Visits",        "actions": ["view", "create", "edit", "delete"]},
-            {"flag": "can_view_ai_document_reader",  "label": "AI Document Reader",   "actions": ["view", "create"]},
             {"flag": "can_view_client_portal",       "label": "Client Portal Manager", "actions": ["view", "create", "edit", "delete", "export", "print", "share"]},
             {"flag": "can_reset_client_passwords",   "label": "Password Reset", "actions": ["view", "edit", "export"]},
+        ],
+    },
+    "aiweave": {
+        "flag": "can_access_aiweave",
+        "label": "AIWeave",
+        "description": "Unified AI workspace — document intelligence, AI analysis and shared AI workflows.",
+        "pages": [
+            {"flag": "can_view_aiweave", "label": "AIWeave Workspace", "actions": ["view", "create"]},
         ],
     },
     "finix": {
@@ -496,7 +503,7 @@ class UserPermissions(BaseModel):
     can_view_reminders: bool = True
     can_view_action_center: bool = True
     can_view_client_visits: bool = True
-    can_view_ai_document_reader: bool = True
+    can_view_aiweave: bool = False
     can_use_chat: bool = False
     can_view_staff_rankings: bool = False
     can_delete_data: bool = False
@@ -607,6 +614,9 @@ class UserPermissions(BaseModel):
     can_access_records: bool = False
     can_access_proposals: bool = False
     can_access_people_matrix: bool = False
+    # AIWeave is deliberately NOT role-granted. Even admins must receive an explicit
+    # user-level grant through Permission Matrix / Access Governance.
+    can_access_aiweave: bool = False
     # Admin is role-gated, not flag-gated (see MODULE_HIERARCHY["admin"] note
     # above) — this flag exists only for uniform module-tree rendering and is
     # never consulted by has_module_access() for real access decisions.
