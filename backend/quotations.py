@@ -1681,8 +1681,19 @@ async def get_companies(
     Company master records are private creator-owned data; cross-user visibility
     is not permitted.
     """
+    list_filter: Dict[str, Any] = {"created_by": str(current_user.id)}
+    tenant_company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    tenant_customer_id = str(getattr(current_user, "commercial_customer_id", "") or "").strip()
+    if tenant_company_id and str(getattr(current_user, "role", "") or "").lower() == "admin":
+        owned_filters: List[Dict[str, Any]] = [
+            {"created_by": str(current_user.id)},
+            {"id": tenant_company_id},
+        ]
+        if tenant_customer_id:
+            owned_filters.append({"commercial_customer_id": tenant_customer_id})
+        list_filter = {"$or": owned_filters}
     companies = await db.companies.find(
-        {"created_by": str(current_user.id)}, {"_id": 0}
+        list_filter, {"_id": 0}
     ).sort("name", 1).to_list(500)
     for c in companies:
         await _hydrate_company_bank(c)
@@ -1756,6 +1767,20 @@ async def list_companies(current_user: User = Depends(get_current_user)):
 async def get_company(company_id: str, current_user: User = Depends(get_current_user)):
     """Single company record — used by pages that only know a company_id."""
     owner_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if (
+        not is_platform_owner(current_user)
+        and str(getattr(current_user, "role", "") or "").lower() == "admin"
+        and str(getattr(current_user, "company_id", "") or "").strip()
+    ):
+        tenant_company_id = str(getattr(current_user, "company_id") or "").strip()
+        tenant_customer_id = str(getattr(current_user, "commercial_customer_id") or "").strip()
+        owned_filters: List[Dict[str, Any]] = [
+            {"created_by": str(current_user.id)},
+            {"id": tenant_company_id},
+        ]
+        if tenant_customer_id:
+            owned_filters.append({"commercial_customer_id": tenant_customer_id})
+        owner_scope = {"id": company_id, "$or": owned_filters}
     if is_platform_owner(current_user):
         # Platform Owner manages its own operational Company Master records.
         # Commercial-license companies remain isolated in the Commercial Console.
@@ -1778,6 +1803,20 @@ async def update_company(
     current_user: User = Depends(require_company_manage),
 ):
     company_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if (
+        not is_platform_owner(current_user)
+        and str(getattr(current_user, "role", "") or "").lower() == "admin"
+        and str(getattr(current_user, "company_id", "") or "").strip()
+    ):
+        tenant_company_id = str(getattr(current_user, "company_id") or "").strip()
+        tenant_customer_id = str(getattr(current_user, "commercial_customer_id") or "").strip()
+        owned_filters: List[Dict[str, Any]] = [
+            {"created_by": str(current_user.id)},
+            {"id": tenant_company_id},
+        ]
+        if tenant_customer_id:
+            owned_filters.append({"commercial_customer_id": tenant_customer_id})
+        company_scope = {"id": company_id, "$or": owned_filters}
     if is_platform_owner(current_user):
         # Platform Owner Company Master is separate from commercial license
         # tenants. Allow editing only non-commercial operational companies.
@@ -1854,6 +1893,20 @@ async def delete_company(
     current_user: User = Depends(require_company_manage),
 ):
     company_scope = {"id": company_id, "created_by": str(current_user.id)}
+    if (
+        not is_platform_owner(current_user)
+        and str(getattr(current_user, "role", "") or "").lower() == "admin"
+        and str(getattr(current_user, "company_id", "") or "").strip()
+    ):
+        tenant_company_id = str(getattr(current_user, "company_id") or "").strip()
+        tenant_customer_id = str(getattr(current_user, "commercial_customer_id") or "").strip()
+        owned_filters: List[Dict[str, Any]] = [
+            {"created_by": str(current_user.id)},
+            {"id": tenant_company_id},
+        ]
+        if tenant_customer_id:
+            owned_filters.append({"commercial_customer_id": tenant_customer_id})
+        company_scope = {"id": company_id, "$or": owned_filters}
     if is_platform_owner(current_user):
         company_scope = {
             "id": company_id,
