@@ -153,6 +153,9 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
     company_name = str(input_data.get("company_name") or "").strip()
     if not company_name:
         raise HTTPException(status_code=400, detail="Company name is required.")
+    admin_name = str(input_data.get("admin_name") or input_data.get("contact_name") or "").strip()
+    if not admin_name:
+        admin_name = company_name
 
     customer_id = str(input_data.get("customer_id") or f"cus-{uuid.uuid4().hex}")
     existing_customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
@@ -162,6 +165,7 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
         customer = {
             "id": customer_id,
             "company_name": company_name,
+            "admin_name": admin_name,
             "contact_name": str(input_data.get("contact_name") or "").strip(),
             "email": str(input_data.get("email") or "").strip(),
             "phone": str(input_data.get("phone") or "").strip(),
@@ -211,7 +215,9 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
         "id": f"lic-{uuid.uuid4().hex}",
         "license_key": await _generate_unique_key(),
         "customer_id": customer["id"],
-        "customer_name": customer["company_name"],
+        "customer_name": customer.get("admin_name") or customer["company_name"],
+        "admin_name": customer.get("admin_name") or admin_name,
+        "company_name": customer["company_name"],
         "package_id": package["id"],
         "package_code": package["code"],
         "package_name": package["name"],
