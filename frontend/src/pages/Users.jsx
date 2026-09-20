@@ -836,7 +836,7 @@ const ModuleGovernanceCard = ({ module, permissions, setPermissions, expanded = 
   // Every module — including Taskosphere — now has a real, editable master
   // switch: turning it off cascades and clears every page flag nested
   // beneath it (Dashboard, Tasks, To-Do, Attendance, Reminders, Action
-  // Center, Client Visits, AI Document Reader, Client Portal Manager),
+  // Center, Client Visits, Client Portal Manager),
   // matching what the backend guarantees on save
   // (permission_governance._enforce_module_hierarchy).
   const alwaysOn = false;
