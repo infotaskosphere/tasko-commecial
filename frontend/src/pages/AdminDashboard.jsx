@@ -61,7 +61,9 @@ export default function AdminDashboard() {
   const companyName = user?.company_name || 'Current tenant';
   const scopeLabel = user?.company_id ? `${companyName} · license admin` : 'Platform administration';
   const links = [
-    { path: '/users', icon: Users, label: 'Users', description: 'Manage user accounts belonging to this tenant.', color: HUB_COLORS.mediumBlue },
+    // People Matrix owns the dedicated Users page only when that module is licensed.
+    // Without People Matrix, the same shared user master is available from Admin → Master Data.
+    { path: user?.permissions?.can_access_people_matrix === true ? '/users' : '/master-data#users', icon: Users, label: 'Users', description: user?.permissions?.can_access_people_matrix === true ? 'Manage users in People Matrix.' : 'Manage users from Admin Master Data.', color: HUB_COLORS.mediumBlue },
     { path: '/permission-matrix', icon: ShieldCheck, label: 'Permission Matrix', description: 'Review module, page and action access.', color: HUB_COLORS.emeraldGreen },
     { path: '/task-audit', icon: ScrollText, label: 'Audit Logs', description: 'Review recorded changes and administrative activity.', color: '#F59E0B' },
     { path: '/settings/general', icon: Settings, label: 'Settings', description: 'Manage organisation-level configuration.', color: HUB_COLORS.deepBlue },
