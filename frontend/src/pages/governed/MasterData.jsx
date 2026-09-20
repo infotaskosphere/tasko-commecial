@@ -24,7 +24,7 @@ export default function MasterData() {
 
       <MasterDataClientSection />
 
-      <MasterDataUserSection platformOwner={platformOwner} />
+      <div id="users"><MasterDataUserSection platformOwner={platformOwner} /></div>
     </PageShell>
   );
 }
