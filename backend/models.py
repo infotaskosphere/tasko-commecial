@@ -599,7 +599,7 @@ class UserPermissions(BaseModel):
     # grant via Permission Governance for permission-based access.
     can_match_bank: bool = False
     # ── Main permission module hierarchy (see MODULE_HIERARCHY above) ────────
-    # Master "module access" flags for the six main areas of the app, shown on
+    # Master "module access" flags for the seven main areas of the app, shown on
     # Users → Permissions → Modules. A page-level flag above can only ever be
     # effectively True while its parent module flag here is also True.
     # Taskosphere defaults True for every role (matching its historically-open
