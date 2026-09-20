@@ -68,8 +68,9 @@ def _commercial_license_allows(user: User, module_key: str) -> bool:
 # =============================================================================
 
 def has_module_access(user: User, module_key: str) -> bool:
-    # AIWeave is explicitly governed even for platform-owner/internal admins.
-    # A role of admin or a license purchase never grants it automatically.
+    # Platform Owner is outside commercial license/module enforcement.
+    if _admin_bypass(user):
+        return True
     if module_key == "aiweave":
         perms = get_user_permissions(user)
         return bool(
@@ -97,6 +98,8 @@ def has_module_access(user: User, module_key: str) -> bool:
 # =============================================================================
 
 def has_page_access(user: User, module_key: str, page_flag: str) -> bool:
+    if _admin_bypass(user):
+        return True
     if module_key == "aiweave":
         if page_flag != "can_view_aiweave":
             return False
