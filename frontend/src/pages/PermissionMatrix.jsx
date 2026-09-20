@@ -51,7 +51,7 @@ export default function PermissionMatrix() {
   const adminCount = users.filter((u) => (u.role || '').toLowerCase() === 'admin').length;
 
   return (
-    <PageShell>
+    <PageShell className="permission-matrix-page">
       <PageBanner
         icon={ShieldCheck}
         eyebrow="Admin"
@@ -113,7 +113,7 @@ export default function PermissionMatrix() {
             </div>
           </SectionCard>
 
-          <div className="w-full min-w-0 max-w-full space-y-4 overflow-hidden">
+          <div className="permission-matrix-governance w-full min-w-0 max-w-full space-y-4">
             {!selectedUserId ? (
               <SectionCard icon={KeyRound} title="Access Governance">
                 <EmptyState
