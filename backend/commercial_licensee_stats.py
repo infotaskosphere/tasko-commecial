@@ -137,9 +137,36 @@ async def get_licensee_snapshot(
     if active_license_id:
         user_scope_parts.append({"license_id": active_license_id})
     user_scope = {"$or": user_scope_parts} if user_scope_parts else {"_id": None}
-    users = await _find("users", _combine(user_scope, {"status": {"$ne": "deleted"}}), limit=10000)
-    if users is None:
-        raise HTTPException(status_code=503, detail="Unable to read the licensee user directory.")
+    # Resolve users using simple relationship queries first. The previous single
+    # $or query could become expensive on the shared users collection and surface
+    # as HTTP 503 even when the application itself was healthy.
+    users_by_key: Dict[str, Dict[str, Any]] = {}
+    try:
+        user_queries = []
+        if customer_id:
+            user_queries.append({"commercial_customer_id": customer_id})
+        if company_ids:
+            user_queries.append({"company_id": {"$in": company_ids}})
+        if active_license_id:
+            user_queries.append({"license_id": active_license_id})
+        for user_query in user_queries:
+            rows = await _find("users", user_query, limit=2000)
+            if rows is None:
+                continue
+            for row in rows:
+                if str(row.get("status") or "").lower() == "deleted":
+                    continue
+                key = str(row.get("id") or row.get("_id") or "")
+                if key:
+                    users_by_key[key] = row
+        users = list(users_by_key.values())
+    except Exception:
+        import logging
+        logging.getLogger("commercial-licensee-stats").exception(
+            "Unable to resolve licensee users for license_id=%s customer_id=%s company_ids=%s",
+            active_license_id, customer_id, company_ids,
+        )
+        users = []
 
     user_ids = _id_strings(users)
     now = datetime.now(timezone.utc)
