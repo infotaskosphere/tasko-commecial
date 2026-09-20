@@ -155,14 +155,16 @@ async def claude_call(key,model,prompt,timeout):
     r=await req("POST","https://api.anthropic.com/v1/messages",
                 {"x-api-key":key,"anthropic-version":"2023-06-01","content-type":"application/json"},
                 json={"model":model,"max_tokens":4096,"messages":[{"role":"user","content":prompt}]},timeout=timeout)
-    if r.status_code!=200:raise PError(classify(r.status_code),err(r))
+    if r.status_code!=200:
+        msg=err(r);raise PError(classify(r.status_code,msg),msg)
     d=r.json();u=d.get("usage") or {};parts=d.get("content") or []
     return {"output":"".join(str(x.get("text") or "") for x in parts if x.get("type")=="text"),"input_tokens":int(u.get("input_tokens",0) or 0),"output_tokens":int(u.get("output_tokens",0) or 0),"provider_request_id":d.get("id")}
 
 async def ollama_call(base,model,prompt,timeout):
     r=await req("POST",(base or "http://127.0.0.1:11434").rstrip("/")+"/api/chat",
                 {"Content-Type":"application/json"},json={"model":model,"messages":[{"role":"user","content":prompt}],"stream":False},timeout=timeout)
-    if r.status_code!=200:raise PError(classify(r.status_code),err(r))
+    if r.status_code!=200:
+        msg=err(r);raise PError(classify(r.status_code,msg),msg)
     d=r.json();m=d.get("message") or {}
     return {"output":str(m.get("content") or ""),"input_tokens":int(d.get("prompt_eval_count",0) or 0),"output_tokens":int(d.get("eval_count",0) or 0),"provider_request_id":None}
 
@@ -230,7 +232,10 @@ def model_for(provider,preferred,cap,cfg,discovered):
     # descriptive UI metadata and is never treated as proof of availability.
     c=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
     if preferred and preferred!="auto":
-        return next((m for m in c if m.get("id")==preferred),None)
+        exact=next((m for m in c if m.get("id")==preferred),None)
+        if exact:return exact
+        # When the requested model is unavailable/exhausted, fallback may use
+        # another eligible model on the next provider instead of terminating.
     return next((m for m in c if m.get("isFree")),None) if cfg.get("costPolicy")=="FREE_FIRST" else (c[0] if c else None)
 async def routing(user):
     s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});return {**DEFAULT_ROUTING,**(r or {})}
