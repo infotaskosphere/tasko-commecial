@@ -199,7 +199,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own + Team)
       can_view_action_center: true,   // Action Center → VIEW (Own + Team)
       can_view_client_visits: true,   // Client Visits → VIEW (Own + Team)
-      can_view_aiweave: true, // AI Document Reader → VIEW (Own + Team)
+      can_view_aiweave: true, // AIWeave → VIEW (Own + Team)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
@@ -271,7 +271,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own)
       can_view_action_center: true,   // Action Center → VIEW (Own)
       can_view_client_visits: true,   // Client Visits → VIEW (Own)
-      can_view_aiweave: true, // AI Document Reader → VIEW (Own)
+      can_view_aiweave: true, // AIWeave → VIEW (Own)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
