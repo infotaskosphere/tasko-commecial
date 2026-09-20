@@ -258,10 +258,29 @@ class RoutingUpdate(BaseModel):
     maxProviderAttempts:Optional[int]=Field(default=None,ge=1,le=10);maxTotalAttempts:Optional[int]=Field(default=None,ge=1,le=15)
     retryOnRateLimit:Optional[bool]=None;retryOnCapacityExhausted:Optional[bool]=None;timeoutMs:Optional[int]=Field(default=None,ge=5000,le=180000)
 class Execute(BaseModel):
-    prompt:str=Field(min_length=1,max_length=100000);taskType:str="general";requiredCapability:str="chat";preferredProvider:str="auto";preferredModel:str="auto"
+    prompt:str=Field(min_length=1,max_length=100000)
+    taskType:str="general"
+    requiredCapability:str="chat"
+    preferredProvider:str="auto"
+    preferredModel:str="auto"
+    conversationId:Optional[str]=None
+    messages:List[Dict[str,Any]]=Field(default_factory=list)
+    files:List[Dict[str,Any]]=Field(default_factory=list)
     mockSimulateExhaustion:bool=False
 
+class ConversationCreate(BaseModel):
+    title:Optional[str]=Field(default=None,max_length=160)
+
+class ConversationMessage(BaseModel):
+    role:str=Field(default="user",max_length=30)
+    content:str=Field(min_length=1,max_length=100000)
+    attachments:List[Dict[str,Any]]=Field(default_factory=list)
+
 async def create_aiweave_indexes():
+    try:
+        await db.aiweave_conversations.create_index([("scope_type",1),("scope_id",1),("updated_at",-1)])
+        await db.aiweave_conversations.create_index("conversation_id",unique=True)
+        await db.aiweave_conversations.create_index([("scope_type",1),("scope_id",1),("pinned",1),("updated_at",-1)])
     try:
         await db.aiweave_provider_accounts.create_index([("scope_type",1),("scope_id",1),("provider",1),("status",1)])
         await db.aiweave_provider_accounts.create_index("id",unique=True)
@@ -270,6 +289,37 @@ async def create_aiweave_indexes():
         await db.aiweave_executions.create_index([("scope_type",1),("scope_id",1),("timestamp",-1)])
         await db.aiweave_executions.create_index("execution_id",unique=True)
     except Exception as e:logger.warning("AIWeave index creation warning: %s",e)
+
+@router.post("/conversations")
+async def create_conversation(payload:ConversationCreate,user=Depends(get_current_user)):
+    s=scope(user);cid=f"conv-{uuid.uuid4().hex[:16]}";title=(payload.title or "New conversation").strip()[:160] or "New conversation";ts=now()
+    doc={**s,"conversation_id":cid,"id":cid,"title":title,"messages":[],"model_history":[],"provider_history":[],"execution_history":[],"attachments":[],"workspace_references":[],"fallback_history":[],"token_usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0},"status":"ACTIVE","pinned":False,"created_at":ts,"updated_at":ts}
+    await db.aiweave_conversations.insert_one(doc);doc.pop("_id",None);return doc
+
+@router.get("/conversations")
+async def list_conversations(user=Depends(get_current_user)):
+    s=scope(user)
+    return await db.aiweave_conversations.find(s,{"_id":0}).sort([("pinned",-1),("updated_at",-1)]).limit(200).to_list(200)
+
+@router.get("/conversations/{conversation_id}")
+async def get_conversation(conversation_id:str,user=Depends(get_current_user)):
+    s=scope(user);doc=await db.aiweave_conversations.find_one({**s,"conversation_id":conversation_id},{"_id":0})
+    if not doc: raise HTTPException(404,"AIWeave conversation not found.")
+    return doc
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(conversation_id:str,user=Depends(get_current_user)):
+    s=scope(user);result=await db.aiweave_conversations.delete_one({**s,"conversation_id":conversation_id})
+    if result.deleted_count==0: raise HTTPException(404,"AIWeave conversation not found.")
+    return {"success":True,"conversationId":conversation_id}
+
+@router.post("/conversations/{conversation_id}/messages")
+async def add_conversation_message(conversation_id:str,payload:ConversationMessage,user=Depends(get_current_user)):
+    s=scope(user);doc=await db.aiweave_conversations.find_one({**s,"conversation_id":conversation_id})
+    if not doc: raise HTTPException(404,"AIWeave conversation not found.")
+    msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":payload.role,"content":payload.content,"attachments":payload.attachments or [],"created_at":now()}
+    await db.aiweave_conversations.update_one({**s,"conversation_id":conversation_id},{"$push":{"messages":msg},"$set":{"updated_at":msg["created_at"]}})
+    return msg
 
 @router.get("/providers")
 async def list_providers(user=Depends(get_current_user)):
@@ -367,41 +417,64 @@ async def executions(user=Depends(get_current_user)):
 
 @router.post("/execute")
 async def execute(payload:Execute,user=Depends(get_current_user)):
-    if payload.requiredCapability not in CAPABILITIES:raise HTTPException(400,"Unsupported capability.")
-    s=scope(user);cfg=await routing(user);accounts=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500)
+    if payload.requiredCapability not in CAPABILITIES: raise HTTPException(400,"Unsupported capability.")
+    s=scope(user);cfg=await routing(user)
+    accounts=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500)
     discovered=await db.aiweave_provider_models.find(s,{"_id":0}).to_list(1000)
     maxa=int(cfg.get("maxAccountAttempts",3));maxp=int(cfg.get("maxProviderAttempts",3));maxt=int(cfg.get("maxTotalAttempts",5));timeout=float(cfg.get("timeoutMs",60000))/1000
     trail=[];attempts=0;provider_attempts=0;chosen=None;chosen_model=None;result=None;started=time.perf_counter()
+    # Preserve conversation context across every provider fallback.
+    context_messages=[m for m in (payload.messages or []) if isinstance(m,dict) and m.get("role") in {"system","user","assistant"} and m.get("content")]
+    context_text=""
+    if context_messages:
+        context_text="\n\n".join(f"{m.get('role','user').upper()}: {str(m.get('content'))[:30000]}" for m in context_messages[-30:])
+    execution_prompt=payload.prompt
+    if context_text:
+        execution_prompt=f"Conversation context:\n{context_text}\n\nCURRENT USER REQUEST:\n{payload.prompt}"
     for pid in provider_order(cfg,payload.preferredProvider):
-        if provider_attempts>=maxp or attempts>=maxt:break
-        provider_attempts+=1
-        provider_seen=0
+        if provider_attempts>=maxp or attempts>=maxt: break
+        provider_attempts+=1;provider_seen=0
         for a in rank([x for x in accounts if x.get("provider")==pid],str(cfg.get("strategy","PRIORITY"))):
-            if attempts>=maxt or provider_seen>=maxa:break
+            if attempts>=maxt or provider_seen>=maxa: break
+            if not eligible(a,payload): continue
             provider_seen+=1
-            if not eligible(a,payload):
-                trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":a.get("status","SKIPPED"),"reason":"Account is unavailable, restricted, or lacks the requested capability."});continue
             model=model_for(pid,payload.preferredModel,payload.requiredCapability,cfg,discovered)
             if not model:
-                trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":"MODEL_UNAVAILABLE","reason":"No compatible model is available."});continue
+                trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":"MODEL_UNAVAILABLE","reason":"No compatible discovered model is available."});continue
             attempts+=1;t=time.perf_counter()
+            if payload.mockSimulateExhaustion:
+                e=PError("TOKEN_EXHAUSTED","Simulated token/quota exhaustion for fallback testing.")
+                await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
+                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+                continue
             try:
-                result=await execute_adapter(a,model["id"],payload.prompt,timeout);chosen=a;chosen_model=model
+                result=await execute_adapter(a,model["id"],execution_prompt,timeout);chosen=a;chosen_model=model
                 await touch(a,True,latency=int((time.perf_counter()-t)*1000),inp=int(result.get("input_tokens",0) or 0),out=int(result.get("output_tokens",0) or 0));break
             except PError as e:
                 await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
-                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":e.kind,"reason":e.msg})
-        if result is not None:break
-    if not result or not chosen or not chosen_model:raise HTTPException(503,"No eligible AI provider/account/model completed this task within the configured fallback limits.")
+                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+            except httpx.TimeoutException as e:
+                kind="TIMEOUT";msg="Provider request timed out."
+                await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
+                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+            except Exception as e:
+                kind="NETWORK_ERROR" if isinstance(e,(httpx.NetworkError,httpx.ConnectError)) else "UNKNOWN_ERROR";msg=str(e)[:500] or "Provider execution failed."
+                await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
+                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+        if result is not None: break
+    if not result or not chosen or not chosen_model:
+        raise HTTPException(503,"AIWeave could not complete this request because no configured AI provider is currently available.")
     inp=int(result.get("input_tokens",0) or 0);out=int(result.get("output_tokens",0) or 0);eid=f"exec-{uuid.uuid4().hex[:12]}"
-    record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),
-      "user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"task_type":payload.taskType,"capability":payload.requiredCapability,
-      "prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),
-      "model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),
-      "tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),
-      "fallbackTrail":trail,"selectionReason":"Bounded fallback used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,
-      "provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id")}
-    await db.aiweave_executions.insert_one({**s,**record});return {k:v for k,v in record.items() if k not in {"tenant_id","company_id"}}
+    record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
+    await db.aiweave_executions.insert_one({**s,**record})
+    if payload.conversationId:
+        conv=await db.aiweave_conversations.find_one({**s,"conversation_id":payload.conversationId})
+        if conv:
+            ts=now()
+            user_msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":"user","content":payload.prompt,"created_at":ts,"attachments":payload.files or []}
+            assistant_msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":"assistant","content":result.get("output",""),"created_at":ts,"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"model":chosen_model["id"],"modelName":chosen_model.get("name"),"accountName":chosen.get("name"),"fallbackTrail":trail,"tokens":inp+out,"latencyMs":record["latencyMs"]}
+            await db.aiweave_conversations.update_one({**s,"conversation_id":payload.conversationId},{"$push":{"messages":{"$each":[user_msg,assistant_msg]},"model_history":chosen_model["id"],"provider_history":chosen["provider"],"execution_history":eid,"fallback_history":{"$each":trail}},"$inc":{"token_usage.input_tokens":inp,"token_usage.output_tokens":out,"token_usage.total_tokens":inp+out},"$set":{"updated_at":ts,"status":"ACTIVE"}})
+    return {k:v for k,v in record.items() if k not in {"tenant_id","company_id"}}
 
 @router.get("/stats")
 async def stats(user=Depends(get_current_user)):
