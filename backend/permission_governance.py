@@ -81,6 +81,41 @@ _MODULE_TO_PAGE_FLAGS = {
 _ALWAYS_ON_MODULES = set()
 
 
+def _commercial_actor(user: User) -> bool:
+    return bool(
+        getattr(user, "company_id", None)
+        or getattr(user, "license_id", None)
+        or getattr(user, "commercial_customer_id", None)
+    )
+
+
+def _cap_permissions_to_license(permissions: dict, actor: User) -> dict:
+    """Licensee admins may only grant modules their active license contains.
+    Internal/platform admins are intentionally uncapped here."""
+    if not _commercial_actor(actor):
+        return dict(permissions or {})
+
+    raw = getattr(actor, "licensed_modules", None) or []
+    allowed = {
+        LICENSE_MODULE_ALIASES.get(
+            str(value).strip().lower().replace("-", "_"),
+            str(value).strip().lower().replace("-", "_"),
+        )
+        for value in raw
+    }
+    result = dict(permissions or {})
+    matrix = dict(result.get("governance_matrix") or {})
+    for module_id, module_def in MODULE_HIERARCHY.items():
+        if module_id == "admin" or module_id in allowed:
+            continue
+        result[module_def["flag"]] = False
+        for page in module_def.get("pages", []):
+            result[page["flag"]] = False
+            matrix.pop(f"{module_id}.{page['flag']}", None)
+    result["governance_matrix"] = matrix
+    return result
+
+
 def _enforce_module_hierarchy(permissions: dict) -> dict:
     """
     Returns a copy of `permissions` with every page-level flag forced to
@@ -451,6 +486,7 @@ async def update_user_permissions(
         # Guarantee the module hierarchy holds even if the client sent a page
         # flag as True while its parent module flag is False.
         permissions = _enforce_module_hierarchy(permissions)
+        permissions = _cap_permissions_to_license(permissions, current_user)
         await db.users.update_one(
             {"id": user_id}, {"$set": {"permissions": permissions}}
         )
