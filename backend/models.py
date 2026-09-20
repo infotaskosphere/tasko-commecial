@@ -156,7 +156,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_view_reminders": True,        # Reminders → VIEW (Own + Team)
           "can_view_action_center": True,    # Action Center → VIEW (Own + Team)
           "can_view_client_visits": True,    # Client Visits → VIEW (Own + Team)
-          "can_view_aiweave": False,  # AI Document Reader → VIEW (Own + Team)
+          "can_view_aiweave": False,  # AIWeave → VIEW (Own + Team)
           "can_use_chat": False,             # ADMIN_GRANTED_ONLY
           "can_view_staff_rankings": False,  # ADMIN_GRANTED_ONLY
           "can_delete_data": False,          # ADMIN_GRANTED_ONLY
@@ -246,7 +246,7 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_view_reminders": True,        # Reminders → VIEW (Own)
           "can_view_action_center": True,    # Action Center → VIEW (Own)
           "can_view_client_visits": True,    # Client Visits → VIEW (Own)
-          "can_view_aiweave": False,  # AI Document Reader → VIEW (Own)
+          "can_view_aiweave": False,  # AIWeave → VIEW (Own)
           "can_use_chat": False,             # ADMIN_GRANTED_ONLY
           "can_view_staff_rankings": False,  # ADMIN_GRANTED_ONLY
           "can_delete_data": False,          # ADMIN_GRANTED_ONLY
