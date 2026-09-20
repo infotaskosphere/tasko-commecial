@@ -28,7 +28,7 @@ import {
   Landmark, CreditCard, ShoppingBag, BookOpen, NotebookPen, BarChart3,
   TrendingDown, CalendarClock, CalendarX2, CalendarCheck2, CalendarOff,
   Minimize2, Copy, ChevronsDownUp, ChevronsUpDown, Upload,
-  CheckSquare, BrainCircuit,
+  CheckSquare,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
