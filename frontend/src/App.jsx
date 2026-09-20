@@ -89,7 +89,7 @@ function RoutePrefetcher() {
 }
 
 const BUSINESS_PAGE_TITLES = {
-  "/compliance-dashboard": "CompliGenie Dashboard", "/tasks": "Tasks", "/todos": "To Do", "/attendance": "Attendance", "/reminders": "Reminders", "/action-center": "Action Center", "/visits": "Client Visits", "/ai-reader": "AIWeave",
+  "/compliance-dashboard": "CompliGenie Dashboard", "/tasks": "Tasks", "/todos": "To Do", "/attendance": "Attendance", "/reminders": "Reminders", "/action-center": "Action Center", "/visits": "Client Visits", "/aiweave": "AIWeave",
   "/compliance": "Compliance Tracker", "/gst-reconciliation": "GST Reconciliation", "/trademark-sphere": "Trademark Sphere", "/roc-sphere": "ROC Sphere", "/mis-report": "MIS Report", "/salary-slips": "Salary Slip Generator",
   "/records-dashboard": "Records Dashboard", "/client-approvals": "Client Approvals", "/dsc": "DSC Register", "/documents": "Document Register", "/clients": "Clients", "/passwords": "Password Vault",
   "/client-proposals-dashboard": "LeadSense Dashboard", "/leads": "Lead Management", "/quotations": "Quotations", "/finix-dashboard": "Finix", "/invoicing": "Sales & Invoicing", "/purchase": "Purchase", "/bank-accounts": "Bank Accounts", "/chart-of-accounts": "Chart of Accounts", "/journal-entries": "Journal Entries", "/accounting-reports": "Accounting Reports",
