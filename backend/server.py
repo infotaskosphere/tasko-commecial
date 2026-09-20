@@ -27,6 +27,7 @@ from backend.compliance import router as compliance_router, create_compliance_in
 from backend.roc_sphere import router as roc_sphere_router  # ROC Sphere: Companies Act document automation
 from backend.salary_slip_router import router as salary_slip_router, create_salary_slip_indexes
 from backend.ai_document_reader import router as ai_document_reader_router
+from backend.ai.aiweave_router import router as aiweave_router, create_aiweave_indexes
 from backend.gst_reconciliation import router as gst_reconciliation_router
 from backend.mis_report import router as mis_report_router
 from backend.gst_reconciliation import create_gst_reconciliation_indexes
@@ -739,6 +740,8 @@ async def startup_event():
         await db.ai_document_memory.create_index("invoice_number")
         await db.ai_document_memory.create_index("vendor_name")
         await db.ai_document_memory.create_index("created_at")
+        # AIWeave tenant-scoped provider/account/model/routing/audit indexes
+        await create_aiweave_indexes()
         await create_gst_portal_sync_indexes()
         await create_accounting_integrity_indexes()
         await create_accounting_extended_indexes()
@@ -15372,6 +15375,7 @@ api_router.include_router(roles_admin_router)   # Admin › Roles: role definiti
 for _governed_router in ALL_GOVERNED_ROUTERS:
     api_router.include_router(_governed_router)
 app.include_router(ai_document_reader_router)
+app.include_router(aiweave_router, prefix="/api")
 api_router.include_router(trademark_sphere_router)
 app.include_router(trademark_portals_router)  # already has /api/... prefix
 app.include_router(salary_slip_router)        # already has /api/compliance/salary-slips prefix
