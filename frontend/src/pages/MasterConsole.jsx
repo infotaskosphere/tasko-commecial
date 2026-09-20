@@ -16,7 +16,7 @@ import {
 import { fetchCompanyList } from "@/lib/companies";
 import CommercialCustomerEditor from "@/components/CommercialCustomerEditor.jsx";
 
-const MODULE_LABELS = { taskosphere: "Taskosphere", finix: "Finix", compliance: "Compliance", records: "Records", proposals: "Client Proposals", people_matrix: "People Matrix" };
+const MODULE_LABELS = { taskosphere: "Taskosphere", finix: "Finix", aiweave: "AIWeave", compliance: "CompliGenie", records: "Records", proposals: "LeadSense", people_matrix: "People Matrix" };
 const COMMERCIAL_MODULE_IDS = Object.freeze(Object.keys(MODULE_LABELS));
 const emptyForm = { company_name: "", admin_name: "", contact_name: "", email: "", phone: "", gstin: "", address: "", gst_address: "", city: "", state: "", pincode: "", validity_months: 12, amount_charged: "", currency: "INR", max_users: 10, max_installations: 1, notes: "", invoice_company_id: "" };
 const money = (value) => Number(value || 0).toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
