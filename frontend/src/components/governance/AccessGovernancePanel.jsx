@@ -337,15 +337,13 @@ export default function AccessGovernancePanel({
 
   if (loading || permsLoading) return <LoadingState label="Loading access governance…" />;
 
-  if (isAdminUser) {
-    return (
-      <GuidanceNote tone="success" icon={ShieldAlert}>
-        <strong>This user is an Admin.</strong> Admin access is granted by role, not by these
-        switches — they already have unrestricted access to every module, page and action.
-        To restrict them, change their role first.
-      </GuidanceNote>
-    );
-  }
+  const adminGovernanceNote = isAdminUser ? (
+    <GuidanceNote tone="success" icon={ShieldAlert}>
+      <strong>This user is an Admin.</strong> Ordinary modules remain role-governed and are not
+      editable here. <strong>AIWeave is the exception:</strong> it is explicitly governed for
+      every user, including Admins, and must be granted here or from the Permission Matrix.
+    </GuidanceNote>
+  ) : null;
 
   const muted = isDark ? 'text-slate-400' : 'text-slate-500';
   const strong = isDark ? 'text-slate-100' : 'text-slate-800';
@@ -430,6 +428,7 @@ export default function AccessGovernancePanel({
         const open = isOpen(mod);
         const moduleOn = !!permissions[mod.flag];
         const adminModule = mod.module === 'admin';
+        const lockedByAdmin = isAdminUser && mod.module !== 'aiweave';
         const modId = `gov-mod-${mod.module}`;
 
         return (
@@ -450,7 +449,7 @@ export default function AccessGovernancePanel({
                 className="h-[18px] w-[18px]"
                 aria-label={`Module access for ${mod.label}`}
                 checked={moduleOn}
-                disabled={readOnly || adminModule}
+                disabled={readOnly || adminModule || lockedByAdmin}
                 onCheckedChange={(c) => toggleModule(mod, !!c)}
               />
 
@@ -535,7 +534,7 @@ export default function AccessGovernancePanel({
                     {pages.map((page) => {
                       const risky = isHighRisk(page.flag);
                       const pid = `gov-page-${page.flag}`;
-                      const locked = readOnly || !moduleOn;
+                      const locked = readOnly || !moduleOn || lockedByAdmin;
                       return (
                         <div
                           key={page.flag}
