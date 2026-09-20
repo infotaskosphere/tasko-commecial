@@ -17,7 +17,7 @@ from backend.dependencies import db, get_current_user, create_audit_log
 from backend.models import User
 from backend.commercial_onboarding import _active_company_license, pwd_context
 from backend.commercial_onboarding_extensions import _apply_feature_entitlements
-from backend.platform_owner import is_platform_owner
+from backend.platform_owner import is_platform_owner, platform_owner_emails
 
 router = APIRouter(prefix="/commercial-master-data", tags=["commercial-master-data"])
 
@@ -249,8 +249,18 @@ async def list_company_users(current_user: User = Depends(get_current_user)):
             "users": [_clean_user(u) for u in users],
             "platform_owner": True,
         }
+    owner_emails = sorted(platform_owner_emails())
+    tenant_user_query = {
+        "company_id": str(company["id"]),
+        "status": {"$ne": "deleted"},
+        "role": {"$ne": "superadmin"},
+        "is_internal_commercial_admin": {"$ne": True},
+        "license_id": {"$nin": ["platform-owner-license", ""]},
+        "commercial_customer_id": {"$nin": ["platform-owner", ""]},
+        "email": {"$nin": owner_emails},
+    }
     users = await db.users.find(
-        {"company_id": str(company["id"])},
+        tenant_user_query,
         {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
     ).sort("full_name", 1).to_list(2000)
     return {
