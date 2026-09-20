@@ -120,26 +120,21 @@ export default function AIDocumentReader() {
     <div className="w-full min-w-0 p-5 md:p-6 space-y-5">
       {/* Existing application blue page-header treatment */}
       <div
-        className="w-full border border-blue-900/20 shadow-sm"
+        className="w-full rounded-xl border border-blue-900/20 shadow-sm overflow-hidden"
         style={{
           background: "linear-gradient(135deg,#0D3B66 0%,#145A8D 52%,#1F6FB2 100%)",
           color: "#fff",
         }}
       >
         <div className="px-5 py-4 md:px-6 md:py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="min-w-0">
-              <h1 className="text-xl md:text-2xl font-semibold tracking-tight">AIWeave</h1>
-              <p className="text-sm text-blue-100 mt-0.5">
-                Unified AI workspace for document intelligence, analysis and shared AI workflows.
-              </p>
-            </div>
-          </div>
+          <p className="text-sm md:text-base text-blue-50 leading-relaxed max-w-3xl">
+            Unified AI workspace for document intelligence, analysis and shared AI workflows.
+          </p>
           <div className="flex items-center gap-2 text-xs font-medium shrink-0">
-            <span className="border border-white/25 bg-white/10 px-3 py-2 flex items-center gap-2">
+            <span className="border border-white/25 bg-white/10 px-3 py-2 rounded-lg flex items-center gap-2">
               <Brain className="w-4 h-4" /> Persistent AI Memory
             </span>
-            <span className="border border-white/25 bg-white/10 px-3 py-2">
+            <span className="border border-white/25 bg-white/10 px-3 py-2 rounded-lg">
               {knowledge?.document_count || workspaceDocs.length || 0} documents learned
             </span>
           </div>
