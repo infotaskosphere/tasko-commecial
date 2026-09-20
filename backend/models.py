@@ -360,7 +360,7 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
     },
     "compliance": {
         "flag": "can_access_compliance",
-        "label": "Compliance",
+        "label": "CompliGenie",
         "description": "Compliance Tracker, GST Reconciliation, Trademark Sphere, MIS Report, Salary Slip Generator and ROC Sphere.",
         "pages": [
             {"flag": "can_view_compliance",          "label": "Compliance Tracker (view)", "actions": ["view", "export", "print"]},
@@ -377,7 +377,7 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
     },
     "records": {
         "flag": "can_access_records",
-        "label": "Records",
+        "label": "Client Records",
         "description": "DSC Register, Document Register, Clients (with approval workflow) and Password Vault.",
         "pages": [
             {"flag": "can_view_all_dsc",   "label": "DSC Register", "actions": ["view", "export"]},
@@ -393,7 +393,7 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
     },
     "proposals": {
         "flag": "can_access_proposals",
-        "label": "Client Proposals",
+        "label": "LeadSense",
         "description": "Lead management, quotations and client discussion threads.",
         "pages": [
             {"flag": "can_view_all_leads",    "label": "Lead Management", "actions": ["view", "create", "edit", "delete", "export"]},
