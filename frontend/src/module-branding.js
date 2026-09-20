@@ -151,6 +151,13 @@ const syncModuleBranding = () => {
     visibleLogo.style.padding = '';
   }
 
+  // AIWeave gets the same header slot and footprint as the CompliGenie logo
+  // (top-left brand block), showing the real AIWeave PNG at that size.
+  if (moduleId === 'aiweave') {
+    visibleLogo.style.width = collapsed ? '58px' : '205px';
+    visibleLogo.style.height = collapsed ? '58px' : '60px';
+  }
+
   if (moduleId === 'compliance') {
     const complianceTab = document.querySelector('#nav-tab-compliance');
     if (complianceTab) {
