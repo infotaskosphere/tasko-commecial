@@ -162,7 +162,6 @@ FEATURE_PREFIXES = {
         "can_view_reminders": ("/reminders",),
         "can_view_action_center": ("/action-center",),
         "can_view_client_visits": ("/visits",),
-        "can_view_ai_document_reader": ("/ai-reader",),
         "can_view_client_portal": ("/client-portal-manager",),
         "can_reset_client_passwords": (
             "/client-portal-manager/password",
@@ -289,6 +288,9 @@ FEATURE_PREFIXES = {
             "/ai",
             "/ai-reader",
         ),
+    },
+    "aiweave": {
+        "can_view_aiweave": ("/ai-reader", "/ai"),
     },
     "people_matrix": {
         "can_view_user_page": (
