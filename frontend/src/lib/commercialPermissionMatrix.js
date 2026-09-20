@@ -11,7 +11,7 @@ export const MODULES = Object.freeze({
   records: { flag: "can_access_records", aliases: ["records"], landing: "/records-dashboard" },
   proposals: { flag: "can_access_proposals", aliases: ["proposals", "client_proposals"], landing: "/client-proposals-dashboard" },
   people_matrix: { flag: "can_access_people_matrix", aliases: ["people_matrix", "hrms", "peoplematrix"], landing: "/people-matrix" },
-  aiweave: { flag: "can_access_aiweave", aliases: ["aiweave", "ai-weave"], landing: "/ai-reader" },
+  aiweave: { flag: "can_access_aiweave", aliases: ["aiweave", "ai-weave"], landing: "/aiweave" },
 });
 
 export const PAGE_MATRIX = Object.freeze([
@@ -20,7 +20,7 @@ export const PAGE_MATRIX = Object.freeze([
   ["compliance", "can_view_compliance", "/compliance-dashboard"], ["compliance", "can_view_compliance", "/compliance"], ["compliance", "can_manage_compliance", "/compliance/manage"], ["compliance", "can_view_gst_reconciliation", "/gst-reconciliation"], ["compliance", "can_view_trademark_sphere", "/trademark-sphere"], ["compliance", "can_view_mis_report", "/mis-report"], ["compliance", "can_manage_mis_report", "/mis-report/manage"], ["compliance", "can_view_salary_slips", "/salary-slips"], ["compliance", "can_manage_salary_slips", "/salary-slips/manage"], ["compliance", "can_view_roc_sphere", "/roc-sphere"], ["compliance", "can_manage_roc_sphere", "/roc-sphere/manage"],
   ["records", "can_view_documents", "/records-dashboard"], ["records", "can_view_all_dsc", "/dsc"], ["records", "can_view_documents", "/documents"], ["records", "can_view_passwords", "/passwords"], ["records", "can_edit_passwords", "/passwords/manage"], ["records", "can_view_all_clients", "/clients"], ["records", "can_edit_clients", "/clients/manage"], ["records", "can_approve_clients", "/clients/approve"], ["records", "can_approve_whatsapp_wishes", "/automation/whatsapp"], ["records", "can_approve_email_wishes", "/automation/email"],
   ["proposals", "can_view_all_leads", "/client-proposals-dashboard"], ["proposals", "can_view_all_leads", "/leads"], ["proposals", "can_create_quotations", "/quotations"], ["proposals", "can_view_client_discussion", "/client-discussion"], ["proposals", "can_manage_client_discussion", "/client-discussion/manage"],
-  ["aiweave", "can_view_aiweave", "/ai-reader"],
+  ["aiweave", "can_view_aiweave", "/aiweave"],
   ["people_matrix", "can_view_user_page", "/people-matrix"], ["people_matrix", "can_view_user_page", "/users"], ["people_matrix", "can_view_leave", "/leave"], ["people_matrix", "can_manage_leave", "/leave/manage"], ["people_matrix", "can_view_payroll", "/payroll"], ["people_matrix", "can_manage_payroll", "/payroll/manage"], ["people_matrix", "can_view_hr", "/hr"], ["people_matrix", "can_manage_hr", "/hr/manage"], ["people_matrix", "can_view_recruitment", "/recruitment"], ["people_matrix", "can_manage_recruitment", "/recruitment/manage"], ["people_matrix", "can_view_performance", "/performance"], ["people_matrix", "can_manage_performance", "/performance/manage"],
 ]);
 
@@ -124,5 +124,5 @@ export function hasEffectivePermission(user, permission) {
   const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" }; const page = legacyToPage[permission]; if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false; return user.permissions?.[permission] === true;
 }
 
-export function canAccessPath(user, pathname) { if (!user) return false; if (isPlatformOwner(user)) return true; const moduleId = moduleForPath(pathname); if (!moduleId) return true; const flag = pageFlagForPath(pathname); if (!flag) return false; return hasEffectivePermission(user, flag); }
+export function canAccessPath(user, pathname) { if (!user) return false; if (isPlatformOwner(user) && moduleForPath(pathname) !== "aiweave") return true; const moduleId = moduleForPath(pathname); if (!moduleId) return true; const flag = pageFlagForPath(pathname); if (!flag) return false; return hasEffectivePermission(user, flag); }
 export function firstAccessiblePath(user, preferredModule = null) { if (!user) return "/login"; if (isPlatformOwner(user)) return "/dashboard"; const ordered = preferredModule ? [preferredModule, ...Object.keys(MODULES).filter((id) => id !== preferredModule)] : Object.keys(MODULES); for (const moduleId of ordered) { if (!hasModuleAccess(user, moduleId)) continue; const page = PAGE_MATRIX.find(([id, flag, path]) => id === moduleId && hasEffectivePermission(user, flag)); if (page) return page[2]; } return "/login"; }
