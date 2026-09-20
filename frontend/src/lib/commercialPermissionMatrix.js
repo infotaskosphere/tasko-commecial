@@ -9,7 +9,7 @@ export const MODULES = Object.freeze({
   finix: { flag: "can_access_finix", aliases: ["finix", "invoicing", "accounting"], landing: "/finix-dashboard" },
   compliance: { flag: "can_access_compliance", aliases: ["compliance"], landing: "/compliance-dashboard" },
   records: { flag: "can_access_records", aliases: ["records"], landing: "/records-dashboard" },
-  proposals: { flag: "can_access_proposals", aliases: ["proposals", "client_proposals"], landing: "/client-proposals-dashboard" },
+  proposals: { flag: "can_access_proposals", aliases: ["proposals", "client_proposals", "leadsense"], landing: "/client-proposals-dashboard" },
   people_matrix: { flag: "can_access_people_matrix", aliases: ["people_matrix", "hrms", "peoplematrix"], landing: "/people-matrix" },
   aiweave: { flag: "can_access_aiweave", aliases: ["aiweave", "ai-weave"], landing: "/aiweave" },
 });
