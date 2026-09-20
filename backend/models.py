@@ -328,7 +328,7 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
     "taskosphere": {
         "flag": "can_access_taskosphere",
         "label": "Taskosphere",
-        "description": "Core workspace — Tasks, To-Do, Attendance, Reminders, Action Center, Client Visits, AI Document Reader and Client Portal Manager.",
+        "description": "Core workspace — Tasks, To-Do, Attendance, Reminders, Action Center, Client Visits and Client Portal Manager.",
         "pages": [
             {"flag": "can_view_dashboard",          "label": "Dashboard",           "actions": ["view"]},
             {"flag": "can_view_tasks",               "label": "Tasks",                "actions": ["view", "create", "edit", "delete"]},
@@ -606,7 +606,7 @@ class UserPermissions(BaseModel):
     # pages), but — unlike before — is now a real, editable master switch: an
     # admin can turn it off for a user, which cascades and clears every page
     # flag nested beneath it (Dashboard, Tasks, To-Do, Attendance, Reminders,
-    # Action Center, Client Visits, AI Document Reader, Client Portal Manager),
+    # Action Center, Client Visits, Client Portal Manager),
     # exactly like Finix/Compliance/Records/Proposals/People Matrix already do.
     can_access_taskosphere: bool = True
     can_access_finix: bool = False
