@@ -215,13 +215,12 @@ def provider_order(cfg,requested):
     if cfg.get("allowLocalFallback") and "ollama" not in out:out.append("ollama")
     return out
 def model_for(provider,preferred,cap,cfg,discovered):
+    # Execution uses provider-discovered models only. The static catalog is
+    # descriptive UI metadata and is never treated as proof of availability.
     c=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
-    if not c:c=[m for m in MODELS if m["provider"]==provider and cap in m.get("capabilities",[])]
     if preferred and preferred!="auto":
-        x=next((m for m in c if m.get("id")==preferred),None)
-        if x:return x
-    free=next((m for m in c if m.get("isFree")),None) if cfg.get("costPolicy")=="FREE_FIRST" else None
-    return free or (c[0] if c else None)
+        return next((m for m in c if m.get("id")==preferred),None)
+    return next((m for m in c if m.get("isFree")),None) if cfg.get("costPolicy")=="FREE_FIRST" else (c[0] if c else None)
 async def routing(user):
     s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});return {**DEFAULT_ROUTING,**(r or {})}
 async def touch(a,ok,kind=None,latency=None,inp=0,out=0,error=None):
