@@ -131,9 +131,10 @@ const DashboardLayout = ({ children }) => {
   // requires both explicit AIWeave permission flags.
   const shouldShowSectionTab = (sectionId) => {
     if (sectionId === 'aiweave') {
-      if (isPlatformOwner) return true;
-      if (isCommercialTenant(user)) return normalizeModulesForTab(user).has('aiweave');
-      return false;
+      // AIWeave is explicitly permissioned for every user type, including
+      // platform-owner users. A license/tenant entitlement alone must never
+      // make the tab visible or grant access.
+      return hasModuleAccess(user, 'aiweave');
     }
     return sectionHasAccess(sectionId);
   };
