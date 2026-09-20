@@ -671,8 +671,8 @@ const SectionHeader = ({ icon: Icon, title, count, color }) => (
 // ════════════════════════════════════════════════════════════════════════════════
 // MAIN PERMISSION MODULE HIERARCHY (Modules tab)
 // ────────────────────────────────────────────────────────────────────────────
-// Mirrors backend/models.py::MODULE_HIERARCHY. Six main permission modules —
-// Taskosphere, Finix, Compliance, Records, Client Proposals, People Matrix —
+// Mirrors backend/models.py::MODULE_HIERARCHY. Seven main permission modules —
+// Taskosphere, Finix, AIWeave, CompliGenie, Records, LeadSense, People Matrix —
 // each own one master "module access" flag plus the individual page-level
 // flags nested beneath it. A page toggle only takes effect while its
 // module's master switch is on; turning the module off cascades and clears
