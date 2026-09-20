@@ -98,7 +98,7 @@ export default function AIDocumentReader() {
   }catch(e){setDocAnswer(e?.response?.data?.detail||"Server-side document analysis is unavailable.");toast.error("Document analysis failed.");}finally{setDocBusy(false);}};
   const askDocs=async()=>{if(!docQuestion.trim())return;setDocBusy(true);try{const {data}=await api.post("/ai/workspace/query",{question:docQuestion.trim()},{timeout:180000});setDocAnswer(data?.answer||"No answer returned.");}catch(e){setDocAnswer(e?.response?.data?.detail||"AIWeave could not query document memory.");}finally{setDocBusy(false);}};
 
-  return <div className="flex h-[calc(100vh-64px)] min-h-[650px] w-full min-w-0 overflow-hidden bg-white text-slate-900">
+  return <div className="flex h-[calc(100vh-64px)] min-h-[650px] w-full min-w-0 flex-col overflow-hidden bg-white text-slate-900">
       <section className="relative shrink-0 overflow-hidden bg-gradient-to-r from-[#0D3B66] via-[#1267A8] to-[#1F6FB2] text-white">
         <div className="absolute inset-0 opacity-20" aria-hidden="true">
           <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full border-[28px] border-cyan-200/30"></div>
@@ -123,7 +123,7 @@ export default function AIDocumentReader() {
         </div>
       </section>
 
-      <div className="flex min-h-0 flex-1 min-w-0">\n    {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
+      <div className="flex min-h-0 flex-1 min-w-0">\n        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
       <div className="border-b border-slate-200 p-3">
         <button onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0D3B66] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a3155]">
           <Plus size={16}/>New Chat
