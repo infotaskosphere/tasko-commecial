@@ -68,7 +68,7 @@ def scope(user):
     raise HTTPException(403,"AIWeave tenant scope is unavailable.")
 def admin(user):
     role=str(getattr(user,"role","") or "").lower()
-    if role in {"admin","super_admin","platform_admin","owner"}:return True
+    if role in {"admin","super_admin","platform_admin","platform_owner","owner"}:return True
     p=getattr(user,"permissions",None)
     if hasattr(p,"model_dump"):p=p.model_dump()
     return isinstance(p,dict) and bool(p.get("can_manage_users") or p.get("can_manage_settings") or p.get("is_admin"))
