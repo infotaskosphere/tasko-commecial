@@ -703,5 +703,42 @@ async def deactivate_company_user(user_id: str, current_user: User = Depends(get
     return await _change_user_status(user_id, "inactive", current_user)
 
 
+@router.delete("/users/{user_id}")
+async def delete_company_user(user_id: str, current_user: User = Depends(get_current_user)):
+    license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user): raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
+    company_id = str(company["id"])
+    existing = await db.users.find_one({"id": user_id, "company_id": company_id, "status": {"$ne": "deleted"}}, {"_id": 0})
+    if not existing: raise HTTPException(status_code=404, detail="Company user not found.")
+    if user_id == current_user.id: raise HTTPException(status_code=400, detail="The company administrator cannot delete their own account here.")
+    if str(existing.get("email") or "").strip().lower() in platform_owner_emails() or existing.get("is_internal_commercial_admin") is True:
+        raise HTTPException(status_code=403, detail="Platform/internal accounts cannot be deleted from a customer tenant.")
+    now = _now()
+    update = {"status": "deleted", "is_active": False, "deleted_at": now, "deleted_by": current_user.id}
+    await db.users.update_one({"id": user_id, "company_id": company_id}, {"$set": update})
+    await create_audit_log(current_user, "DELETE_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
+    return {"message": "User moved to Deleted Users", "user_id": user_id, "status": "deleted"}
+
+@router.get("/users/deleted")
+async def list_deleted_company_users(current_user: User = Depends(get_current_user)):
+    license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user): raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
+    users = await db.users.find({"company_id": str(company["id"]), "status": "deleted", "role": {"$ne": "superadmin"}, "is_internal_commercial_admin": {"$ne": True}, "email": {"$nin": sorted(platform_owner_emails())}}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).sort("deleted_at", -1).to_list(2000)
+    return {"users": [_clean_user(u) for u in users], "count": len(users)}
+
+@router.post("/users/{user_id}/restore")
+async def restore_company_user(user_id: str, current_user: User = Depends(get_current_user)):
+    license_doc, company = await _company_context(current_user)
+    if is_platform_owner(current_user): raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
+    company_id = str(company["id"])
+    existing = await db.users.find_one({"id": user_id, "company_id": company_id, "status": "deleted"}, {"_id": 0})
+    if not existing: raise HTTPException(status_code=404, detail="Deleted company user not found.")
+    max_users = max(1, int(license_doc.get("max_users", 1)))
+    q = await _license_user_query(license_doc, company); q["status"] = "active"
+    if await db.users.count_documents(q) >= max_users: raise HTTPException(status_code=400, detail=f"User limit reached for this license ({max_users} users).")
+    now = _now(); update = {"status": "active", "is_active": True, "approved_by": current_user.id, "approved_at": now, "restored_at": now, "restored_by": current_user.id}
+    await db.users.update_one({"id": user_id, "company_id": company_id}, {"$set": update})
+    await create_audit_log(current_user, "RESTORE_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
+    return {"message": "User restored successfully", "user_id": user_id, "status": "active"}
 from backend.permission_governance import router as _permission_governance_router
 _permission_governance_router.include_router(router)
