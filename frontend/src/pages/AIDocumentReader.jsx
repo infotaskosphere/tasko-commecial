@@ -99,7 +99,31 @@ export default function AIDocumentReader() {
   const askDocs=async()=>{if(!docQuestion.trim())return;setDocBusy(true);try{const {data}=await api.post("/ai/workspace/query",{question:docQuestion.trim()},{timeout:180000});setDocAnswer(data?.answer||"No answer returned.");}catch(e){setDocAnswer(e?.response?.data?.detail||"AIWeave could not query document memory.");}finally{setDocBusy(false);}};
 
   return <div className="flex h-[calc(100vh-64px)] min-h-[650px] w-full min-w-0 overflow-hidden bg-white text-slate-900">
-    {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
+      <section className="relative shrink-0 overflow-hidden bg-gradient-to-r from-[#0D3B66] via-[#1267A8] to-[#1F6FB2] text-white">
+        <div className="absolute inset-0 opacity-20" aria-hidden="true">
+          <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full border-[28px] border-cyan-200/30"></div>
+          <div className="absolute right-24 top-10 h-24 w-24 rounded-full border border-cyan-100/20"></div>
+          <div className="absolute right-8 bottom-5 h-20 w-20 rounded-full bg-cyan-200/10 blur-2xl"></div>
+        </div>
+        <div className="relative flex min-h-[132px] items-center justify-between gap-4 px-5 py-6 sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <button className="rounded-lg p-2 text-white/80 hover:bg-white/10 md:hidden" onClick={()=>setSidebar(true)} aria-label="Open AIWeave history"><Menu size={19}/></button>
+            <button className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 md:block" onClick={()=>setSidebar(x=>!x)} aria-label="Toggle AIWeave history">{sidebar?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}</button>
+            <div>
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100">AIWEAVE</div>
+              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">AIWeave</h1>
+              <p className="mt-1 text-xs text-blue-100 sm:text-sm">Your multi-model AI workspace. Ask anything, get results.</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={newChat} className="hidden items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/15 sm:flex"><Plus size={14}/>New Chat</button>
+            <button onClick={()=>{setSettings(true);setTab("audit");}} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="Execution history"><History size={17}/></button>
+            <button onClick={()=>setSettings(true)} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="AIWeave settings"><Settings size={17}/></button>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex min-h-0 flex-1 min-w-0">\n    {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
       <div className="border-b border-slate-200 p-3">
         <button onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0D3B66] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a3155]">
           <Plus size={16}/>New Chat
@@ -194,7 +218,7 @@ export default function AIDocumentReader() {
         </section>
         {inspector&&<aside className="hidden w-[270px] shrink-0 border-l border-slate-200 bg-[#fbfcfe] xl:block"><div className="border-b px-4 py-4"><b className="text-sm">AIWeave</b><div className="text-[11px] text-slate-400">Execution inspector</div></div><div className="space-y-3 p-4"><div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-400">Current model</div><b className="text-sm">{activeModel?.name||"Auto"}</b><div className="text-xs text-slate-500">{provider==="auto"?"Best available provider":pname(provider)}</div></div><div className="grid grid-cols-2 gap-2">{[["Healthy",stats?.healthyAccounts||0],["Accounts",stats?.totalAccounts||0],["Executions",stats?.totalExecutionsCount||0],["Fallbacks",stats?.fallbackExecutions||0]].map(x=><div key={x[0]} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="text-[10px] text-slate-400">{x[0]}</div><b>{x[1]}</b></div>)}</div><div className="rounded-xl border border-slate-200 bg-white p-3 text-xs"><b>Routing</b><div className="mt-2 flex justify-between"><span>Strategy</span><b>{routing?.strategy||"PRIORITY"}</b></div><div className="flex justify-between"><span>Attempts</span><b>{routing?.maxTotalAttempts||5}</b></div><div className="flex justify-between"><span>Fallback</span><b>{routing?.retryOnRateLimit?"ON":"OFF"}</b></div></div><button onClick={()=>setInspector(false)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0D3B66] hover:bg-slate-50">View detailed logs</button></div></aside>}
       </div>
-    </main>
+    </main>\n      </div>
 
     {settings&&<div className="fixed inset-0 z-50 flex bg-slate-900/30"><div className="ml-auto flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b px-5 py-4"><div><b>AIWeave Settings</b><div className="text-xs text-slate-500">Platform-managed providers, models, routing, audit and documents</div></div><button onClick={()=>setSettings(false)}><X/></button></div><div className="flex min-h-0 flex-1"><nav className="hidden w-48 shrink-0 border-r bg-slate-50 p-3 sm:block">{[["providers","Providers"],["accounts","Accounts"],["models","Models"],["routing","Routing"],["audit","Audit"],["documents","Documents"]].map(x=><button key={x[0]} onClick={()=>setTab(x[0])} className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${tab===x[0]?"bg-white font-semibold shadow-sm":""}`}>{x[1]}</button>)}</nav><div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
       {tab==="providers"&&<div><div className="mb-4"><h2 className="text-lg font-semibold">AI Providers</h2><p className="mt-1 text-xs text-slate-500">AI providers are configured centrally by the software operator. Customer users only sign in with their Taskosphere account; they never enter provider API keys here.</p></div><div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800"><b>Platform-managed AI infrastructure</b><div className="mt-1">OpenAI, Gemini, Claude, Grok and other enabled providers are supplied from the backend environment and can be used automatically according to the platform routing policy.</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{PROVIDERS.map(p=>{const x=providers.find(y=>y.id===p.id);return <div key={p.id} className="rounded-xl border p-4"><div className="flex justify-between"><b className="text-sm">{p.name}</b><span className={x?.healthyCount?"text-emerald-600":"text-slate-300"}>●</span></div><div className="mt-1 text-[11px] text-slate-500">{x?.connectedCount||0} available · {x?.healthyCount||0} healthy</div><div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">Managed by platform administrator</div></div>})}</div></div>}
