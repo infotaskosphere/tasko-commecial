@@ -8,7 +8,12 @@ environment for additional internal owners.
 
 import os
 
-DEFAULT_PLATFORM_OWNER_EMAILS = {"info.taskosphere@gmail.com"}
+# Canonical platform-owner identities. Keep this list centralized so every
+# user-management surface classifies the same accounts consistently.
+DEFAULT_PLATFORM_OWNER_EMAILS = {
+    "info.taskosphere@gmail.com",
+    "infotaskosphere@gmail.com",
+}
 
 
 def platform_owner_emails() -> set[str]:
