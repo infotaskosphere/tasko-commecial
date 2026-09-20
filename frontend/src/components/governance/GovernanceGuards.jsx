@@ -65,6 +65,12 @@ export function ActionGuard({ module, page, action, fallback = null, children })
   const { hasActionAccess } = useGovernance();
   const isCommercialAdmin = String(user?.role || '').toLowerCase() === 'admin' && !!user?.company_id && !isPlatformOwner;
 
+  if (module === 'aiweave') {
+    if (!hasEffectivePermission(user, page || 'can_view_aiweave')) return fallback;
+    if (!['view', 'create'].includes(action)) return fallback;
+    return children;
+  }
+
   if (isCommercialAdmin) {
     // Actions are bounded by the selected page. Commercial license selection
     // does not create a second action-grant system; once a page is selected,
