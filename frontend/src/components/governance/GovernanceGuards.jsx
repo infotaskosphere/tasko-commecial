@@ -31,6 +31,15 @@ export function PageGuard({ module, page, children }) {
   const isAdmin = String(user?.role || '').toLowerCase() === 'admin';
   const isCommercialAdmin = isAdmin && !!user?.company_id && !isPlatformOwner;
 
+  const isAIWeave = module === 'aiweave' || page === 'can_view_aiweave' || page === 'can_access_aiweave';
+
+  if (isAIWeave) {
+    // AIWeave is explicitly governed for EVERY user, including platform-owner
+    // and tenant-admin accounts. License/module purchase alone is never enough.
+    if (!hasEffectivePermission(user, page || 'can_view_aiweave')) return <EntitledHome />;
+    return children;
+  }
+
   // Admin is the application control-plane area, not one of the six
   // commercially licensed operational modules. Admin-only routes are already
   // role-gated by AppRoutes and must not be redirected through an operational
