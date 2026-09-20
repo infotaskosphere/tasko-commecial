@@ -341,14 +341,6 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
             {"flag": "can_reset_client_passwords",   "label": "Password Reset", "actions": ["view", "edit", "export"]},
         ],
     },
-    "aiweave": {
-        "flag": "can_access_aiweave",
-        "label": "AIWeave",
-        "description": "Unified AI workspace — document intelligence, AI analysis and shared AI workflows.",
-        "pages": [
-            {"flag": "can_view_aiweave", "label": "AIWeave Workspace", "actions": ["view", "create"]},
-        ],
-    },
     "finix": {
         "flag": "can_access_finix",
         "label": "Finix",
@@ -363,6 +355,14 @@ MODULE_HIERARCHY: Dict[str, Dict[str, Any]] = {
             {"flag": "can_view_journal_entries",      "label": "Journal Entries (view)", "actions": ["view", "export"]},
             {"flag": "can_post_journal_entries",       "label": "Journal Entries & Zero Touch Entry (post)", "actions": ["create", "edit", "approve"]},
             {"flag": "can_match_bank",                "label": "Bank Reconciliation (match/unmatch)", "actions": ["edit"]},
+        ],
+    },
+    "aiweave": {
+        "flag": "can_access_aiweave",
+        "label": "AIWeave",
+        "description": "Unified AI workspace — document intelligence, AI analysis and shared AI workflows.",
+        "pages": [
+            {"flag": "can_view_aiweave", "label": "AIWeave Workspace", "actions": ["view", "create"]},
         ],
     },
     "compliance": {
