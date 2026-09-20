@@ -9,7 +9,7 @@ import api from "@/lib/api";
 import {
   listProviders, listAccounts, getModels, getRoutingConfig, updateRoutingConfig,
   getExecutionHistory, executeTask, getStats, listConversations,
-  createConversation, getConversation
+  createConversation, getConversation, deleteConversation
 } from "@/lib/aiweaveApi";
 import { PROVIDERS, CAPABILITIES, ROUTING_STRATEGIES, COST_POLICIES } from "@/lib/aiweaveConstants";
 
@@ -54,6 +54,7 @@ export default function AIDocumentReader() {
 
   const newChat=()=>{setActive(null);setMessages([]);setPrompt("");setFiles([]);setStatus("");};
   const openChat=async(id)=>{try{const c=await getConversation(id);setActive(c);setMessages(c.messages||[]);setStatus("");}catch(e){toast.error(e?.response?.data?.detail||"Could not open conversation");}};
+  const removeChat=async(id,title,e)=>{e?.stopPropagation();if(!id)return;if(!window.confirm(`Delete "${title||"this conversation"}"? This cannot be undone.`))return;try{await deleteConversation(id);if((active?.id||active?.conversation_id)===id)newChat();await refresh();toast.success("Conversation deleted.");}catch(e){toast.error(e?.response?.data?.detail||e?.message||"Could not delete conversation.");}};
 
   const send=async()=>{
     const text=prompt.trim();if(!text||running)return;
@@ -99,14 +100,45 @@ export default function AIDocumentReader() {
 
   return <div className="flex h-[calc(100vh-64px)] min-h-[650px] w-full min-w-0 overflow-hidden bg-white text-slate-900">
     {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
-      <div className="flex items-center gap-3 border-b px-4 py-4"><img src="/aiweave-icon.png" className="h-9 w-9 object-contain" alt="AIWeave"/><div><b>AIWeave</b><div className="text-[11px] text-slate-500">Multi-AI Workspace</div></div></div>
-      <div className="p-3"><button onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0D3B66] px-4 py-3 text-sm font-semibold text-white"><Plus size={16}/>New Chat</button></div>
-      <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Chats</div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2">
-        {conversations.filter(x=>!search||String(x.title||"").toLowerCase().includes(search.toLowerCase())).map(x=><button key={x.id||x.conversation_id} onClick={()=>openChat(x.id||x.conversation_id)} className={`mb-1 flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-white ${active?.id===(x.id||x.conversation_id)?"bg-white shadow-sm":""}`}><MessageSquare size={15} className="shrink-0 text-slate-400"/><span className="truncate">{x.title||"New conversation"}</span></button>)}
-        {!conversations.length&&<div className="px-3 py-8 text-center text-xs text-slate-400">Your recent chats will appear here.</div>}
+      <div className="border-b border-slate-200 p-3">
+        <button onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0D3B66] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a3155]">
+          <Plus size={16}/>New Chat
+        </button>
       </div>
-      <div className="border-t p-3"><div className="rounded-xl bg-white p-3 shadow-sm text-xs"><b className="block mb-2">AI Provider Status</b><div className="flex justify-between"><span>Healthy accounts</span><b>{stats?.healthyAccounts||0}</b></div><div className="flex justify-between"><span>Connected providers</span><b>{connected.length}</b></div><div className="flex justify-between"><span>Auto fallback</span><b className="text-emerald-600">ON</b></div></div><button onClick={()=>setSettings(true)} className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-white"><Settings size={15}/>Settings</button></div>
+      <div className="border-b border-slate-200 px-3 pb-3">
+        <div className="relative">
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-[#1F6FB2] focus:ring-2 focus:ring-[#1F6FB2]/10"/>
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-3 pb-2 pt-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Chat history</span>
+        {search&&<button onClick={()=>setSearch("")} className="text-[10px] text-slate-400 hover:text-slate-700">Clear</button>}
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+        {conversations.filter(x=>!search||String(x.title||"").toLowerCase().includes(search.toLowerCase())).map(x=>{
+          const id=x.id||x.conversation_id;
+          const selected=(active?.id||active?.conversation_id)===id;
+          return <div key={id} className={`group mb-1 flex items-center gap-1 rounded-lg transition ${selected?"bg-white shadow-sm":"hover:bg-white/80"}`}>
+            <button onClick={()=>openChat(id)} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm">
+              <MessageSquare size={15} className={`shrink-0 ${selected?"text-[#1F6FB2]":"text-slate-400"}`}/>
+              <span className="min-w-0 flex-1 truncate">{x.title||"New conversation"}</span>
+            </button>
+            <button onClick={e=>removeChat(id,x.title,e)} title="Delete conversation" aria-label={`Delete ${x.title||"conversation"}`} className="mr-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-red-50 hover:text-red-600 group-hover:flex">
+              <Trash2 size={14}/>
+            </button>
+          </div>;
+        })}
+        {!conversations.filter(x=>!search||String(x.title||"").toLowerCase().includes(search.toLowerCase())).length&&<div className="px-3 py-10 text-center text-xs text-slate-400">{search?"No chats match your search.":"No conversations yet."}</div>}
+      </div>
+      <div className="border-t p-3">
+        <div className="rounded-xl bg-white p-3 shadow-sm text-xs">
+          <b className="mb-2 block">AI Provider Status</b>
+          <div className="flex justify-between"><span>Healthy accounts</span><b>{stats?.healthyAccounts||0}</b></div>
+          <div className="flex justify-between"><span>Connected providers</span><b>{connected.length}</b></div>
+          <div className="flex justify-between"><span>Auto fallback</span><b className="text-emerald-600">ON</b></div>
+        </div>
+        <button onClick={()=>setSettings(true)} className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-white"><Settings size={15}/>Settings</button>
+      </div>
     </aside>}
 
     <main className="flex min-w-0 flex-1 flex-col">
@@ -128,7 +160,7 @@ export default function AIDocumentReader() {
               </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto pb-5">
-              {!messages.length?<div className="flex min-h-[55vh] flex-col items-center justify-center text-center"><div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0D3B66] text-white shadow-lg"><Sparkles size={28}/></div><h2 className="text-2xl font-semibold sm:text-3xl">What can AIWeave do for you?</h2><p className="mt-2 max-w-xl text-sm leading-6 text-slate-500">Give one instruction. AIWeave selects a connected model, preserves context, and continues automatically when an account or provider reaches a limit.</p><div className="mt-6 grid w-full max-w-2xl gap-2 sm:grid-cols-3">{["Analyse a document","Write production code","Prepare a compliance report"].map(x=><button key={x} onClick={()=>setPrompt(x)} className="rounded-xl border p-3 text-left text-xs font-medium hover:bg-slate-50">{x}</button>)}</div></div>
+              {!messages.length?<div className="flex min-h-[55vh] items-center justify-center"></div>
               :messages.map(m=><div key={m.id} className={`mb-7 flex ${m.role==="user"?"justify-end":"justify-start"}`}><div className={`${m.role==="user"?"max-w-[82%] rounded-2xl bg-[#0D3B66] px-4 py-3 text-white":"w-full max-w-[94%]"} min-w-0`}>{m.role==="assistant"&&<div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500"><Bot size={15}/> {m.providerName||"AIWeave"}{m.modelName&&<span className="font-normal text-slate-400">· {m.modelName}</span>}</div>}{m.role==="error"?<div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{m.content}</div>:<Text value={m.content}/>} {m.role==="assistant"&&<div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-400">{m.fallbackTrail?.length?<Bubble tone="bg-amber-50 text-amber-700">Auto fallback ×{m.fallbackTrail.length}</Bubble>:null}{m.tokens?<span>{m.tokens.toLocaleString()} tokens</span>:null}{m.latencyMs?<span>{(m.latencyMs/1000).toFixed(1)}s</span>:null}<button onClick={()=>navigator.clipboard?.writeText(m.content)}><Copy size={13}/></button></div>}</div></div>)}
               {running&&<div className="mb-6 flex items-center gap-3 text-sm text-slate-500"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/></span>{status}</div>}<div ref={endRef}/>
             </div>
