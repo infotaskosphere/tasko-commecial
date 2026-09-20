@@ -1638,44 +1638,10 @@ export default function AIDocumentReader() {
                         size="sm"
                         variant="outline"
                         onClick={() => {
-                          const auto = generateAutonomousDocAnalysis(item.filename);
-                          setDocResults((prev) => [
-                            ...prev,
-                            {
-                              filename: item.filename,
-                              document_type: auto.docType,
-                              analysis: auto.analysis,
-                              fallback_engaged: true,
-                            },
-                          ]);
-                          setDocErrors((prev) => prev.filter((_, i) => i !== idx));
-                          const newDoc = {
-                            document_id: `doc-${Date.now().toString(36)}`,
-                            filename: item.filename,
-                            document_type: auto.docType,
-                            vendor_name: auto.vendorName,
-                            created_at: new Date().toISOString(),
-                          };
-                          let existing = [];
-                          try {
-                            const st = localStorage.getItem("tasko_ai_workspace_docs");
-                            if (st) existing = JSON.parse(st);
-                          } catch {}
-                          const merged = [newDoc, ...existing];
-                          try {
-                            localStorage.setItem("tasko_ai_workspace_docs", JSON.stringify(merged));
-                          } catch {}
-                          setWorkspaceDocs(merged);
-                          setKnowledge({
-                            document_count: merged.length,
-                            knowledge_version: (knowledge?.knowledge_version || 1) + 1,
-                            last_updated: new Date().toISOString(),
-                          });
-                          toast.success(`Processed ${item.filename} via AIWeave Autonomous Engine.`);
+                          toast.info("Re-select the document and retry after the AIWeave backend/provider connection is restored.");
                         }}
-                        className="h-7 text-[11px] bg-white hover:bg-amber-100 text-amber-900 border-amber-300 gap-1 shrink-0"
                       >
-                        <Sparkles className="w-3 h-3 text-amber-700" /> Process via AIWeave
+                        Retry
                       </Button>
                     </div>
                   ))}
