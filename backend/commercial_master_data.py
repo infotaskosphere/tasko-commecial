@@ -250,15 +250,16 @@ async def list_company_users(current_user: User = Depends(get_current_user)):
             "platform_owner": True,
         }
     owner_emails = sorted(platform_owner_emails())
-    tenant_user_query = {
-        "company_id": str(company["id"]),
+    # User seats belong to the commercial license/customer, not only the
+    # currently selected legal company. _license_user_query also includes
+    # legacy users through every company attached to this customer.
+    tenant_user_query = await _license_user_query(license_doc, company)
+    tenant_user_query.update({
         "status": {"$ne": "deleted"},
         "role": {"$ne": "superadmin"},
         "is_internal_commercial_admin": {"$ne": True},
-        "license_id": {"$nin": ["platform-owner-license", ""]},
-        "commercial_customer_id": {"$nin": ["platform-owner", ""]},
         "email": {"$nin": owner_emails},
-    }
+    })
     users = await db.users.find(
         tenant_user_query,
         {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
@@ -755,7 +756,17 @@ async def delete_company_user(user_id: str, current_user: User = Depends(get_cur
 async def list_deleted_company_users(current_user: User = Depends(get_current_user)):
     license_doc, company = await _company_context(current_user)
     if is_platform_owner(current_user): raise HTTPException(status_code=403, detail="The platform owner is not a customer tenant.")
-    users = await db.users.find({"company_id": str(company["id"]), "status": "deleted", "role": {"$ne": "superadmin"}, "is_internal_commercial_admin": {"$ne": True}, "email": {"$nin": sorted(platform_owner_emails())}}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).sort("deleted_at", -1).to_list(2000)
+    deleted_query = await _license_user_query(license_doc, company)
+    deleted_query.update({
+        "status": "deleted",
+        "role": {"$ne": "superadmin"},
+        "is_internal_commercial_admin": {"$ne": True},
+        "email": {"$nin": sorted(platform_owner_emails())},
+    })
+    users = await db.users.find(
+        deleted_query,
+        {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
+    ).sort("deleted_at", -1).to_list(2000)
     return {"users": [_clean_user(u) for u in users], "count": len(users)}
 
 @router.post("/users/{user_id}/restore")
