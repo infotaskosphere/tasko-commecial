@@ -331,6 +331,17 @@ export const MOCK_COMPLIANCE = [
 export function handleMockRoute(method, url, data) {
   const normUrl = url.replace(/^\/api/, "").split("?")[0];
 
+  // AIWeave is server-authoritative. Do not simulate provider connections,
+  // credentials, executions, quota, or routing when the backend is unavailable.
+  if (normUrl.startsWith("/aiweave/")) {
+    return {
+      status: 503,
+      data: {
+        detail: "AIWeave backend is unavailable. Configure the commercial backend and retry.",
+      },
+    };
+  }
+
   const getActiveMockUser = () => {
     const licenses = getStoredMockLicenses();
     const activeLic = licenses.find((l) => l.id === MOCK_USER.license_id || l.customer_id === MOCK_USER.company_id) || licenses[0];
