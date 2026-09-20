@@ -36,6 +36,7 @@ from backend.dependencies import (
 from backend.models import User, DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY
 from backend.governance_core import ALL_ACTIONS
 from backend.dependencies import _normalize_permissions
+from backend.commercial_licensee_admin import LICENSE_MODULE_ALIASES
 
 router = APIRouter(tags=["Permission Governance"])
 
@@ -80,108 +81,6 @@ _MODULE_TO_PAGE_FLAGS = {
 _ALWAYS_ON_MODULES = set()
 
 
-
-_LICENSE_MODULE_ALIASES = {
-    "tasks": "taskosphere", "taskosphere": "taskosphere",
-    "invoicing": "finix", "accounting": "finix", "finix": "finix",
-    "hrms": "people_matrix", "people_matrix": "people_matrix", "people-matrix": "people_matrix",
-    "compliance": "compliance", "records": "records",
-    "proposals": "proposals", "client_proposals": "proposals", "client-proposals": "proposals",
-}
-
-
-def _is_commercial_tenant(user: User) -> bool:
-    return bool(
-        getattr(user, "company_id", None)
-        or getattr(user, "license_id", None)
-        or getattr(user, "commercial_customer_id", None)
-    )
-
-
-async def _licensed_modules_for_user(user: User) -> set[str]:
-    """Resolve the current active commercial license into canonical module IDs."""
-    if not _is_commercial_tenant(user):
-        return set(MODULE_HIERARCHY.keys())
-
-    company_id = str(getattr(user, "company_id", "") or "").strip()
-    if company_id:
-        company = await db.companies.find_one({"id": company_id}, {"_id": 0})
-        customer_id = str((company or {}).get("commercial_customer_id") or getattr(user, "commercial_customer_id", "") or company_id)
-        docs = await db.commercial_licenses.find({"customer_id": customer_id}, {"_id": 0}).sort("issued_at", -1).to_list(20)
-        for doc in docs:
-            if str(doc.get("status") or "").lower() != "active":
-                continue
-            raw_expiry = doc.get("expires_at")
-            if raw_expiry:
-                try:
-                    expiry = datetime.fromisoformat(str(raw_expiry).replace("Z", "+00:00"))
-                    if expiry.tzinfo is None:
-                        expiry = expiry.replace(tzinfo=timezone.utc)
-                    if expiry < datetime.now(timezone.utc):
-                        continue
-                except ValueError:
-                    continue
-            raw = doc.get("modules") or doc.get("licensed_modules") or []
-            resolved = {
-                _LICENSE_MODULE_ALIASES.get(
-                    str(value).strip().lower().replace("-", "_"),
-                    str(value).strip().lower().replace("-", "_"),
-                )
-                for value in raw
-            }
-            return {m for m in resolved if m in MODULE_HIERARCHY and m != "admin"}
-
-    raw = getattr(user, "licensed_modules", None) or []
-    resolved = {
-        _LICENSE_MODULE_ALIASES.get(
-            str(value).strip().lower().replace("-", "_"),
-            str(value).strip().lower().replace("-", "_"),
-        )
-        for value in raw
-    }
-    return {m for m in resolved if m in MODULE_HIERARCHY and m != "admin"}
-
-
-def _enforce_license_cap(permissions: dict, allowed_modules: set[str]) -> dict:
-    """Never allow Permission Matrix to grant a module outside the license."""
-    result = dict(permissions or {})
-    matrix = dict(result.get("governance_matrix") or {})
-    for module_id, module_def in MODULE_HIERARCHY.items():
-        if module_id == "admin" or module_id in allowed_modules:
-            continue
-        result[module_def["flag"]] = False
-        for page in module_def.get("pages", []):
-            result[page["flag"]] = False
-            matrix.pop(f"{module_id}.{page['flag']}", None)
-    result["governance_matrix"] = matrix
-    return result
-
-
-def _normalize_governance_matrix(permissions: dict) -> dict:
-    """Keep only declared actions for real module/page keys."""
-    result = dict(permissions or {})
-    raw = result.get("governance_matrix")
-    if not isinstance(raw, dict):
-        result["governance_matrix"] = {}
-        return result
-    clean = {}
-    for key, actions in raw.items():
-        if not isinstance(actions, list):
-            continue
-        try:
-            module_id, page_flag = str(key).split(".", 1)
-        except ValueError:
-            continue
-        module = MODULE_HIERARCHY.get(module_id)
-        page = next((p for p in (module or {}).get("pages", []) if p.get("flag") == page_flag), None)
-        if not page:
-            continue
-        declared = {str(a).strip().lower() for a in page.get("actions", [])}
-        clean[key] = [a for a in actions if str(a).strip().lower() in declared]
-    result["governance_matrix"] = clean
-    return result
-
-
 def _enforce_module_hierarchy(permissions: dict) -> dict:
     """
     Returns a copy of `permissions` with every page-level flag forced to
@@ -209,14 +108,39 @@ def _enforce_module_hierarchy(permissions: dict) -> dict:
 @router.get("/permission-governance/module-tree")
 async def get_module_hierarchy(current_user: User = Depends(get_current_user)):
     """
-    The 6 main permission modules and their nested pages (each page now also
+    The main permission modules and their nested pages (each page now also
     carries its declared `actions` — see backend/governance_core.py), for the
-    Users → Permissions → Modules tab to render. Available to any
-    authenticated user (read-only) so the permissions dialog can display it
-    consistently for whoever is viewing it.
+    Users → Permissions → Modules tab AND the Admin → Permission Matrix page
+    to render — both are driven by this single endpoint (via the shared
+    <AccessGovernancePanel/>), so they can never show a different set of
+    modules from one another. Available to any authenticated user (read-only)
+    so the permissions dialog can display it consistently for whoever is
+    viewing it.
+
+    Commercial licensee tenants (an admin account capped by an active
+    commercial license — see backend/commercial_module_guard.py, which
+    populates `current_user.licensed_modules` for that admin) only see the
+    modules their license actually includes here, so they can never see —
+    let alone toggle — a module their company hasn't purchased. The "admin"
+    entry is the tenant's own user/permission-management surface, not a
+    purchasable module, so it always stays visible to whoever can reach this
+    page. Internal/platform accounts (no active commercial license) are
+    unaffected and keep seeing every module, exactly as before.
     """
-    allowed_modules = await _licensed_modules_for_user(current_user)
-    return [{"module": key, **value} for key, value in MODULE_HIERARCHY.items() if key in allowed_modules]
+    tree = [{"module": key, **value} for key, value in MODULE_HIERARCHY.items()]
+    raw_licensed = getattr(current_user, "licensed_modules", None) or []
+    # `licensed_modules` on the hydrated user is the raw list stored on the
+    # license (which may use an alias such as "hrms" or "invoicing" instead
+    # of the canonical module key) — normalize it the same way the license
+    # guard itself does, so this filter can never drift from what actually
+    # gates the underlying pages.
+    licensed_modules = {
+        LICENSE_MODULE_ALIASES.get(str(m).strip().lower(), str(m).strip().lower())
+        for m in raw_licensed
+    }
+    if licensed_modules:
+        tree = [m for m in tree if m["module"] == "admin" or m["module"] in licensed_modules]
+    return tree
 
 
 @router.get("/permission-governance/action-catalog")
@@ -477,10 +401,7 @@ async def get_permissions(
         user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        normalized = _normalize_permissions(user)["permissions"]
-        normalized = _normalize_governance_matrix(normalized)
-        normalized = _enforce_license_cap(normalized, await _licensed_modules_for_user(current_user))
-        return normalized
+        return _normalize_permissions(user)["permissions"]
 
     # Any user can always fetch their OWN permissions
     if user_id == current_user.id:
@@ -503,10 +424,7 @@ async def get_permissions(
                 status_code=403,
                 detail="Managers can only view permissions of staff members",
             )
-        normalized = _normalize_permissions(target_user)["permissions"]
-        normalized = _normalize_governance_matrix(normalized)
-        normalized = _enforce_license_cap(normalized, await _licensed_modules_for_user(current_user))
-        return normalized
+        return _normalize_permissions(target_user)["permissions"]
 
     raise HTTPException(status_code=403, detail="Not allowed")
 
@@ -533,8 +451,6 @@ async def update_user_permissions(
         # Guarantee the module hierarchy holds even if the client sent a page
         # flag as True while its parent module flag is False.
         permissions = _enforce_module_hierarchy(permissions)
-        permissions = _normalize_governance_matrix(permissions)
-        permissions = _enforce_license_cap(permissions, await _licensed_modules_for_user(current_user))
         await db.users.update_one(
             {"id": user_id}, {"$set": {"permissions": permissions}}
         )
@@ -584,8 +500,6 @@ async def update_user_permissions(
         old_permissions = existing.get("permissions", {})
         # Same hierarchy guarantee as the admin path above.
         safe_permissions = _enforce_module_hierarchy(safe_permissions)
-        safe_permissions = _normalize_governance_matrix(safe_permissions)
-        safe_permissions = _enforce_license_cap(safe_permissions, await _licensed_modules_for_user(current_user))
         await db.users.update_one(
             {"id": user_id}, {"$set": {"permissions": safe_permissions}}
         )
@@ -648,8 +562,6 @@ async def sync_my_permissions(current_user: User = Depends(get_current_user)):
 
     if missing_keys:
         merged = {**stored_perms, **missing_keys}
-        merged = _normalize_governance_matrix(merged)
-        merged = _enforce_license_cap(merged, await _licensed_modules_for_user(current_user))
         await db.users.update_one(
             {"id": current_user.id}, {"$set": {"permissions": merged}}
         )
