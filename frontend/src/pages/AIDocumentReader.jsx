@@ -36,7 +36,7 @@ export default function AIDocumentReader() {
   const [routing,setRouting]=useState(null), [executions,setExecutions]=useState([]), [stats,setStats]=useState(null);
   const [provider,setProvider]=useState("auto"), [selectedModel,setSelectedModel]=useState("auto"), [capability,setCapability]=useState("chat");
   const [files,setFiles]=useState([]);
-  [modelSearch,setModelSearch]=useState(""), [auditSearch,setAuditSearch]=useState("");
+  const [modelSearch,setModelSearch]=useState(""), [auditSearch,setAuditSearch]=useState("");
   const [docFiles,setDocFiles]=useState([]), [docQuestion,setDocQuestion]=useState(""), [docAnswer,setDocAnswer]=useState(""), [docBusy,setDocBusy]=useState(false);
   const fileRef=useRef(null), docRef=useRef(null), endRef=useRef(null);
 
