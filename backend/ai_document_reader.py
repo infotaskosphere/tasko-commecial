@@ -6,7 +6,7 @@ async def _require_aiweave_access(current_user=Depends(get_current_user)):
     """AIWeave is an explicitly governed module. A license or admin role alone
     never unlocks it; Permission Matrix / Access Governance must grant the user."""
     permissions = get_user_permissions(current_user)
-    if not bool(permissions.get("can_view_aiweave", False)):
+    if not bool(permissions.get("can_access_aiweave", False)) or not bool(permissions.get("can_view_aiweave", False)):
         raise HTTPException(status_code=403, detail="AIWeave access has not been granted to this user.")
     return current_user
 
