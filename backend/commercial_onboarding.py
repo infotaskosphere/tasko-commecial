@@ -177,7 +177,7 @@ def _apply_license_entitlements(role: str, modules: List[str]) -> Dict[str, Any]
     selected = set(modules or [])
     for module_id, module_flag in MODULE_FLAG_BY_ID.items():
         allowed = module_id in selected
-        permissions[module_flag] = allowed
+        permissions[module_flag] = False if module_id == "aiweave" else allowed
         module_def = MODULE_HIERARCHY.get(module_id, {})
         for page in module_def.get("pages", []):
             permissions[page["flag"]] = bool(allowed and permissions.get(page["flag"], False))
