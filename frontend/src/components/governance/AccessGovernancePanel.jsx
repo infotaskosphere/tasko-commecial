@@ -224,20 +224,86 @@ export default function AccessGovernancePanel({
   const toggleModule = (mod, checked) => {
     setPermissions((prev) => {
       const next = { ...prev, [mod.flag]: checked };
-      // Cascade: turning a module off turns off every page inside it.
-      if (!checked) (mod.pages || []).forEach((p) => { next[p.flag] = false; });
+      const matrix = { ...(prev.governance_matrix || {}) };
+      if (!checked) {
+        // Module OFF is a hard revoke: page flags AND every action override
+        // beneath the module are removed together.
+        (mod.pages || []).forEach((p) => {
+          next[p.flag] = false;
+          delete matrix[`${mod.module}.${p.flag}`];
+        });
+      }
+      next.governance_matrix = matrix;
       return next;
     });
   };
 
-  const togglePage = (flag, checked) =>
-    setPermissions((prev) => ({ ...prev, [flag]: checked }));
+  const togglePage = (mod, page, checked) =>
+    setPermissions((prev) => {
+      const next = { ...prev, [page.flag]: checked };
+      const matrix = { ...(prev.governance_matrix || {}) };
+      const key = `${mod.module}.${page.flag}`;
+      if (!checked) {
+        delete matrix[key];
+      } else if (!Array.isArray(matrix[key])) {
+        // First explicit enable gets every declared action. The user can then
+        // remove individual action chips without affecting the page flag.
+        matrix[key] = [...(page.actions || [])];
+      }
+      next.governance_matrix = matrix;
+      return next;
+    });
+
+  const effectiveActions = (mod, page) => {
+    const key = `${mod.module}.${page.flag}`;
+    const explicit = permissions?.governance_matrix?.[key];
+    if (Array.isArray(explicit)) return new Set(explicit);
+    if (!permissions?.[page.flag]) return new Set();
+    // Legacy permission fallback: VIEW/EXPORT follow the page flag; write-like
+    // actions follow a matching can_manage_* flag when that flag exists.
+    const manageFlag = page.flag.startsWith('can_view_')
+      ? page.flag.replace('can_view_', 'can_manage_')
+      : null;
+    const manageOn = manageFlag && Object.prototype.hasOwnProperty.call(permissions || {}, manageFlag)
+      ? permissions[manageFlag] === true
+      : permissions[page.flag] === true;
+    return new Set((page.actions || []).filter((action) => {
+      if (['view', 'export'].includes(action)) return permissions[page.flag] === true;
+      if (['create', 'edit', 'delete', 'approve', 'print', 'share', 'update', 'upload'].includes(action)) return manageOn;
+      return false;
+    }));
+  };
+
+  const toggleAction = (mod, page, action) =>
+    setPermissions((prev) => {
+      const next = { ...prev };
+      const matrix = { ...(prev.governance_matrix || {}) };
+      const key = `${mod.module}.${page.flag}`;
+      const current = Array.isArray(matrix[key])
+        ? new Set(matrix[key])
+        : effectiveActions(mod, page);
+      if (current.has(action)) current.delete(action);
+      else current.add(action);
+      // A page with no action grants is still allowed to exist, but has no
+      // usable action. This is intentional and lets "View" itself be revoked
+      // independently from the page switch.
+      matrix[key] = Array.from(current);
+      next.governance_matrix = matrix;
+      return next;
+    });
 
   const bulkPages = (mod, pages, checked) =>
     setPermissions((prev) => {
       const next = { ...prev };
-      pages.forEach((p) => { next[p.flag] = checked; });
+      const matrix = { ...(prev.governance_matrix || {}) };
+      pages.forEach((p) => {
+        next[p.flag] = checked;
+        const key = `${mod.module}.${p.flag}`;
+        if (checked) matrix[key] = [...(p.actions || [])];
+        else delete matrix[key];
+      });
       if (checked) next[mod.flag] = true;
+      next.governance_matrix = matrix;
       return next;
     });
 
