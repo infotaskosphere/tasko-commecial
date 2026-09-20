@@ -10,6 +10,7 @@ export const MODULE_FLAGS = {
   records: "can_access_records",
   proposals: "can_access_proposals",
   people_matrix: "can_access_people_matrix",
+  aiweave: "can_access_aiweave",
   admin: null,
 };
 
@@ -23,6 +24,9 @@ export function useGovernance() {
   const perms = user?.permissions || {};
 
   const hasModuleAccess = (moduleKey) => {
+    if (moduleKey === "aiweave") {
+      return perms.can_access_aiweave === true && perms.can_view_aiweave === true;
+    }
     if (moduleKey === "admin") return isAdmin;
     const flag = MODULE_FLAGS[moduleKey];
     if (!flag) return false;
@@ -31,6 +35,7 @@ export function useGovernance() {
 
   const hasPageAccess = (moduleKey, pageFlag) => {
     if (!hasModuleAccess(moduleKey)) return false;
+    if (moduleKey === "aiweave") return pageFlag === "can_view_aiweave";
     if (isAdmin && !pageFlag) return true;
     if (hasPermission(pageFlag)) return true;
     return !!perms[pageFlag];
@@ -38,6 +43,7 @@ export function useGovernance() {
 
   const hasActionAccess = (moduleKey, pageFlag, action) => {
     if (!hasPageAccess(moduleKey, pageFlag)) return false;
+    if (moduleKey === "aiweave") return action === "view" || action === "create";
     if (isAdmin) return true;
 
     const matrixKey = `${moduleKey}.${pageFlag}`;
