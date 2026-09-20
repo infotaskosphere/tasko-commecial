@@ -49,6 +49,7 @@ import { moduleNote, pageNote, actionNote, isHighRisk } from '@/lib/permissionGu
 const MODULE_COLOR = {
   taskosphere: HUB_COLORS.mediumBlue,
   finix: '#7C3AED',
+  aiweave: '#2563EB',
   compliance: '#F59E0B',
   records: HUB_COLORS.emeraldGreen,
   proposals: '#DB2777',
