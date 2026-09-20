@@ -72,7 +72,7 @@ export default function PermissionMatrix() {
         <LoadingState label="Loading permission matrix…" />
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-5 items-start min-w-0">
-          <SectionCard icon={UsersIcon} title="Users" badge={filteredUsers.length} className="h-auto min-h-[150px] self-start w-full min-w-0 !overflow-visible">
+          <SectionCard icon={UsersIcon} title="Users" badge={filteredUsers.length} className="h-auto min-h-[150px] self-start w-full min-w-0 max-w-full !overflow-hidden">
             <div className="relative mb-3 w-full min-w-0">
               <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
               <Input
@@ -82,7 +82,7 @@ export default function PermissionMatrix() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <div className="w-full min-w-0 space-y-1 max-h-[64vh] min-h-[42px] overflow-y-auto overflow-x-hidden pr-1">
+            <div className="w-full min-w-0 max-w-full space-y-1 max-h-[64vh] min-h-[42px] overflow-y-auto overflow-x-hidden pr-1">
               {filteredUsers.length === 0 && (
                 <p className="text-xs text-slate-400 py-6 text-center">No users match “{search}”.</p>
               )}
@@ -113,7 +113,7 @@ export default function PermissionMatrix() {
             </div>
           </SectionCard>
 
-          <div className="w-full min-w-0 space-y-4">
+          <div className="w-full min-w-0 max-w-full space-y-4 overflow-hidden">
             {!selectedUserId ? (
               <SectionCard icon={KeyRound} title="Access Governance">
                 <EmptyState
