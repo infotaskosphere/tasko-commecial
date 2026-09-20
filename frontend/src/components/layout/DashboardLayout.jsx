@@ -140,8 +140,11 @@ const DashboardLayout = ({ children }) => {
   };
 
   useEffect(() => {
-    if (activeSectionId !== 'aiweave' && !sectionHasAccess(activeSectionId)) {
-      const permittedSection = LEFT_SECTIONS.find((id) => sectionHasAccess(id));
+    const activeSectionAllowed = activeSectionId === 'aiweave'
+      ? hasModuleAccess(user, 'aiweave')
+      : sectionHasAccess(activeSectionId);
+    if (!activeSectionAllowed) {
+      const permittedSection = LEFT_SECTIONS.find((id) => shouldShowSectionTab(id));
       const target = permittedSection ? SECTION_META[permittedSection]?.landingPath || '/dashboard' : '/dashboard';
       if (location.pathname !== target) navigate(target, { replace: true });
     }
