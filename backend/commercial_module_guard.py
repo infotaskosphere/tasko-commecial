@@ -618,6 +618,10 @@ def _selected_license_features(
                 "hrms",
                 "peoplematrix",
             },
+            "aiweave": {
+                "aiweave",
+                "ai-weave",
+            },
         }.get(
             module,
             {module},
