@@ -58,6 +58,48 @@ MODELS=[
  {"id":"llama3.3:70b","provider":"ollama","name":"Llama 3.3 70B (Local)","capabilities":["chat","reasoning","coding","document_analysis","structured_output"],"isLocal":True},
 ]
 DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":3,"maxTotalAttempts":5,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True}
+ENV_PROVIDER_KEYS={"openai":"AIWEAVE_OPENAI_API_KEY","gemini":"AIWEAVE_GEMINI_API_KEY","claude":"AIWEAVE_ANTHROPIC_API_KEY","grok":"AIWEAVE_XAI_API_KEY","kimi":"AIWEAVE_KIMI_API_KEY","deepseek":"AIWEAVE_DEEPSEEK_API_KEY","qwen":"AIWEAVE_QWEN_API_KEY","mistral":"AIWEAVE_MISTRAL_API_KEY","groq":"AIWEAVE_GROQ_API_KEY","openrouter":"AIWEAVE_OPENROUTER_API_KEY","together":"AIWEAVE_TOGETHER_API_KEY"}
+ENV_PROVIDER_IDENTITY={"openai":"AIWeave Server / OpenAI","gemini":"AIWeave Server / Gemini","claude":"AIWeave Server / Claude","grok":"AIWeave Server / Grok","kimi":"AIWeave Server / Kimi","deepseek":"AIWeave Server / DeepSeek","qwen":"AIWeave Server / Qwen","mistral":"AIWeave Server / Mistral","groq":"AIWeave Server / Groq","openrouter":"AIWeave Server / OpenRouter","together":"AIWeave Server / Together"}
+ENV_MAX_KEYS=10
+def env_provider_keys(provider):
+    base=ENV_PROVIDER_KEYS.get(provider)
+    if not base:return []
+    values=[]
+    for i in range(1,ENV_MAX_KEYS+1):
+        name=base if i==1 else f"{base}_{i}"
+        value=os.getenv(name,"").strip()
+        if value:values.append((i,value))
+    return values
+def env_account_id(provider,index,scope_id):
+    digest=hashlib.sha256(str(scope_id).encode()).hexdigest()[:12]
+    return f"env-{provider}-{index}-{digest}"
+async def ensure_env_accounts(user):
+    s=scope(user)
+    capabilities=list(CAPABILITIES-{"image_generation","agent_execution"})
+    configured=[]
+    for provider in ENV_PROVIDER_KEYS:
+        configured.extend((provider,index,key) for index,key in env_provider_keys(provider))
+    ollama_base=os.getenv("AIWEAVE_OLLAMA_BASE_URL","").strip()
+    if ollama_base:configured.append(("ollama",1,""))
+    for provider,index,key in configured:
+        aid=env_account_id(provider,index,s["scope_id"])
+        fingerprint=hashlib.sha256((provider+"|"+key+"|"+(ollama_base if provider=="ollama" else "")).encode()).hexdigest()
+        existing=await db.aiweave_provider_accounts.find_one({**s,"id":aid})
+        changed=not existing or existing.get("credential_fingerprint")!=fingerprint
+        base_url=ollama_base if provider=="ollama" else None
+        patch={"provider":provider,"name":ENV_PROVIDER_IDENTITY.get(provider,provider.title())+(f" #{index}" if index>1 else ""),"masked_identity":"Server-managed credential","credential_encrypted":enc(key),"credential_fingerprint":fingerprint,"source":"ENV","managed_by":"server","status":"CONNECTED","health":"HEALTHY","enabled":True,"capabilities":capabilities,"priority":index,"weight":100,"allowed_task_types":["*"],"allowed_users":["*"],"allowed_companies":[s["company_id"]] if s["company_id"] else [],"base_url":base_url,"last_error":None,"updated_at":now()}
+        if not existing:
+            doc={"id":aid,**s,**patch,"current_usage_tokens":0,"total_requests":0,"last_used":None,"last_checked":None,"daily_limit":0,"monthly_limit":0,"quota":{},"usage":{},"created_at":now()}
+            await db.aiweave_provider_accounts.insert_one(doc)
+        else:await db.aiweave_provider_accounts.update_one({**s,"id":aid},{"$set":patch})
+        model_count=await db.aiweave_provider_models.count_documents({**s,"provider":provider,"source":"ENV"})
+        if changed or model_count==0:
+            found=await discover({**patch,"id":aid,"provider":provider,"base_url":base_url},key)
+            if found:
+                await db.aiweave_provider_models.delete_many({**s,"provider":provider,"source":"ENV"})
+                await db.aiweave_provider_models.insert_many([{**m,**s,"source":"ENV"} for m in found[:500]])
+    return len(configured)
+
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def scope(user):
@@ -333,6 +375,7 @@ async def add_conversation_message(conversation_id:str,payload:ConversationMessa
 
 @router.get("/providers")
 async def list_providers(user=Depends(get_current_user)):
+    await ensure_env_accounts(user)
     s=scope(user);rows=await db.aiweave_provider_accounts.find(s,{"_id":0}).to_list(500);out=[]
     for p in PROVIDERS:
         a=[x for x in rows if x.get("provider")==p["id"]]
@@ -343,10 +386,12 @@ async def list_providers(user=Depends(get_current_user)):
 
 @router.get("/accounts")
 async def list_accounts(user=Depends(get_current_user)):
+    await ensure_env_accounts(user)
     rows=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500);return [safe(x) for x in rows]
 
 @router.post("/accounts/connect")
 async def connect(payload:Connect,user=Depends(require_admin)):
+    raise HTTPException(403,"AI provider credentials are server-managed. Configure them in the backend environment, not in the customer application.")
     p=PROVIDER_MAP.get(payload.providerId)
     if not p:raise HTTPException(400,"Unsupported AI provider.")
     if not p.get("adapter"):raise HTTPException(400,f"{p['name']} requires a dedicated provider integration; it is not simulated.")
@@ -404,6 +449,7 @@ async def remove(aid:str,user=Depends(require_admin)):
 
 @router.get("/models")
 async def models(user=Depends(get_current_user)):
+    await ensure_env_accounts(user)
     s=scope(user);found=await db.aiweave_provider_models.find(s,{"_id":0}).to_list(1000)
     out=[{**m,"availability":"catalog","lastVerified":None} for m in MODELS]
     for m in found:
@@ -427,6 +473,7 @@ async def executions(user=Depends(get_current_user)):
 
 @router.post("/execute")
 async def execute(payload:Execute,user=Depends(get_current_user)):
+    await ensure_env_accounts(user)
     if payload.requiredCapability not in CAPABILITIES: raise HTTPException(400,"Unsupported capability.")
     s=scope(user);cfg=await routing(user)
     accounts=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500)
@@ -488,6 +535,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
 
 @router.get("/stats")
 async def stats(user=Depends(get_current_user)):
+    await ensure_env_accounts(user)
     s=scope(user);a=await db.aiweave_provider_accounts.find(s,{"_id":0}).to_list(500);e=await db.aiweave_executions.find(s,{"_id":0}).to_list(500)
     return {"activeProvidersCount":len({x.get("provider") for x in a if x.get("status")=="CONNECTED" and x.get("enabled",True)}),
       "totalAccounts":len(a),"healthyAccounts":sum(x.get("status")=="CONNECTED" and x.get("health")=="HEALTHY" and x.get("enabled",True) for x in a),
