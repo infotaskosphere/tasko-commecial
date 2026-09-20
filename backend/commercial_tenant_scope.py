@@ -52,8 +52,18 @@ def _customer_query(name: str, query: Any) -> dict[str, Any]:
         return dict(query or {})
     result = dict(query or {})
     requested = result.get("commercial_customer_id")
-    if requested is not None and str(requested) != customer_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
+    if requested is not None:
+        # A scalar/equality value explicitly selecting another customer is
+        # cross-licensee access. Mongo operator dictionaries ($nin/$in/$ne,
+        # etc.) are ordinary filters and must NOT be treated as a customer-id
+        # selection; the mandatory scope_filter below still constrains the
+        # result to the authenticated customer.
+        if isinstance(requested, dict):
+            requested_eq = requested.get("$eq")
+            if requested_eq is not None and str(requested_eq) != customer_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
+        elif str(requested) != customer_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
     if name == "companies":
         scope_filter = {
             "$or": [
