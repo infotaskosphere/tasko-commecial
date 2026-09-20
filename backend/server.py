@@ -3332,14 +3332,22 @@ async def _scope_users_query_by_company(current_user: User, base_query: Optional
         if license_id and license_id != "platform-owner-license":
             scope_clauses.append({"license_id": license_id})
         if company_id:
-            scope_clauses.append({"company_id": company_id})
+            # Legacy fallback is allowed only for records that have not yet
+            # been stamped with another commercial customer/license.
+            scope_clauses.append({
+                "$and": [
+                    {"commercial_customer_id": {"$in": [None, ""]}},
+                    {"license_id": {"$in": [None, ""]}},
+                    {"company_id": company_id},
+                ]
+            })
 
         licensee_scope = {
             "$and": [
                 {"$or": scope_clauses},
                 {"email": {"$nin": owner_emails}},
-                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
-                {"license_id": {"$nin": ["", "platform-owner-license"]}},
+                {"commercial_customer_id": {"$nin": ["platform-owner"]}},
+                {"license_id": {"$nin": ["platform-owner-license"]}},
             ]
         }
         return {"$and": [base, licensee_scope]} if base else licensee_scope
