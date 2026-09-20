@@ -121,7 +121,10 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         module_allowed = module_id in licensed_modules
         module_flag = module_def.get("flag")
         if module_flag:
-            permissions[module_flag] = module_allowed
+            # AIWeave is licensed separately but never auto-granted to the
+            # tenant admin. The admin must explicitly enable the module AND
+            # page through Permission Matrix / Access Governance.
+            permissions[module_flag] = False if module_id == "aiweave" else module_allowed
 
         # The licensee admin is the identity the license was actually issued
         # to. Once a module is on the license, the admin gets every page of
