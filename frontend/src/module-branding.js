@@ -13,7 +13,7 @@ const MODULE_BRANDING = {
   compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
-  aiweave: { label: 'AIWeave', landingPath: '/ai-reader', lightLogo: '/aiweave-logo-lite.svg', darkLogo: '/aiweave-logo-dark.svg', collapsedLogo: '/aiweave-icon.svg', alt: 'AIWeave' },
+  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-logo-dark.png', alt: 'AIWeave' },
 };
 
 const FALLBACK = MODULE_BRANDING.core;
@@ -33,7 +33,7 @@ const getRouteModuleId = () => {
   if (path === '/client-proposals-dashboard' || path.startsWith('/leads/') || path === '/leads' || path.startsWith('/quotations/') || path === '/quotations' || path.startsWith('/client-discussion/') || path === '/client-discussion') return 'proposals';
   if (path === '/finix-dashboard' || path.startsWith('/invoicing') || path.startsWith('/purchase') || path.startsWith('/bank-accounts') || path.startsWith('/journal-entries')) return 'accounts';
   if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
-  if (path === '/ai-reader' || path.startsWith('/ai-reader/') || path === '/aiweave' || path.startsWith('/aiweave/')) return 'aiweave';
+  if (path === '/aiweave' || path.startsWith('/aiweave/')) return 'aiweave';
   return null;
 };
 
