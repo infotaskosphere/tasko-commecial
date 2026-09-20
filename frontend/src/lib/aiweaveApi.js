@@ -16,11 +16,17 @@ export const getModels = async () => (await api.get("/aiweave/models")).data;
 export const getRoutingConfig = async () => (await api.get("/aiweave/routing-config")).data;
 export const updateRoutingConfig = async (payload) => (await api.put("/aiweave/routing-config", payload)).data;
 export const getExecutionHistory = async () => (await api.get("/aiweave/executions")).data;
-export const executeTask = async (payload) => (await api.post("/aiweave/execute", payload)).data;
+export const executeTask = async (payload, config = {}) => (await api.post("/aiweave/execute", payload, config)).data;
 export const getStats = async () => (await api.get("/aiweave/stats")).data;
+
+export const listConversations = async () => (await api.get("/aiweave/conversations")).data;
+export const createConversation = async (payload = {}) => (await api.post("/aiweave/conversations", payload)).data;
+export const getConversation = async (conversationId) => (await api.get(`/aiweave/conversations/${encodeURIComponent(conversationId)}`)).data;
+export const deleteConversation = async (conversationId) => (await api.delete(`/aiweave/conversations/${encodeURIComponent(conversationId)}`)).data;
 
 export default {
   listProviders, listAccounts, connectAccount, testAccount, toggleAccount,
   updateAccount, deleteAccount, getModels, getRoutingConfig, updateRoutingConfig,
-  getExecutionHistory, executeTask, getStats,
+  getExecutionHistory, executeTask, getStats, listConversations, createConversation,
+  getConversation, deleteConversation,
 };
