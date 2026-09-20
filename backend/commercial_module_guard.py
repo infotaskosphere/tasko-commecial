@@ -716,9 +716,17 @@ def _permission_flag(
             # Management, while the persisted admin permissions and frontend
             # still expose the discussion page. Keep that legacy entitlement
             # coherent without opening the route for another module.
+            permissions = getattr(user, "permissions", None)
+            if hasattr(permissions, "model_dump"):
+                permissions = permissions.model_dump()
+            if not isinstance(permissions, dict):
+                permissions = {}
             if not (
                 flag == "can_view_client_discussion"
-                and "can_view_all_leads" in selected
+                and (
+                    "can_view_all_leads" in selected
+                    or permissions.get("can_view_all_leads") is True
+                )
             ):
                 return False
 
