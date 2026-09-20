@@ -30,6 +30,37 @@ def _admin_bypass(user: User) -> bool:
     """Only internal/platform admins bypass per-page governance."""
     return str(getattr(user, "role", "")).lower() == "admin" and not _is_commercial_admin(user)
 
+_LICENSE_MODULE_ALIASES = {
+    "tasks": "taskosphere", "taskosphere": "taskosphere",
+    "invoicing": "finix", "accounting": "finix", "finix": "finix",
+    "hrms": "people_matrix", "people_matrix": "people_matrix", "people-matrix": "people_matrix",
+    "compliance": "compliance", "records": "records",
+    "proposals": "proposals", "client_proposals": "proposals", "client-proposals": "proposals",
+}
+
+
+def _commercial_license_allows(user: User, module_key: str) -> bool:
+    if not (
+        getattr(user, "company_id", None)
+        or getattr(user, "license_id", None)
+        or getattr(user, "commercial_customer_id", None)
+        or getattr(user, "licensed_modules", None)
+    ):
+        return True
+    if module_key == "admin":
+        return getattr(user, "role", None) == "admin"
+    raw = getattr(user, "licensed_modules", None) or []
+    if not raw:
+        return False
+    resolved = {
+        _LICENSE_MODULE_ALIASES.get(
+            str(value).strip().lower().replace("-", "_"),
+            str(value).strip().lower().replace("-", "_"),
+        )
+        for value in raw
+    }
+    return module_key in resolved
+
 
 # =============================================================================
 # 1. MODULE ACCESS
@@ -40,6 +71,9 @@ def has_module_access(user: User, module_key: str) -> bool:
         return True
     if module_key == "admin":
         return getattr(user, "role", None) == "admin"
+
+    if not _commercial_license_allows(user, module_key):
+        return False
 
     module_def = MODULE_HIERARCHY.get(module_key)
     if not module_def:
