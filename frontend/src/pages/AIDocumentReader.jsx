@@ -177,96 +177,17 @@ export default function AIDocumentReader() {
     }
   }
 
-  // ── Document Intelligence Autonomous Analysis Engine ──────────
-  function generateAutonomousDocAnalysis(filename) {
-    const lower = (filename || "").toLowerCase();
-    let docType = "Enterprise Intelligence Document";
-    let vendorName = "Corporate Archive";
-    let analysis = "";
-
-    if (
-      lower.includes("blood") ||
-      lower.includes("flu") ||
-      lower.includes("viral") ||
-      lower.includes("report") ||
-      lower.includes("sample") ||
-      lower.includes("medical") ||
-      lower.includes("health") ||
-      lower.includes("lab") ||
-      lower.includes("clinic")
-    ) {
-      docType = "Diagnostic Pathology & Clinical Report";
-      vendorName = "Diagnostic Health Laboratory";
-      analysis = `【AIWeave Autonomous Document Intelligence Analysis】
-Document: ${filename}
-Category: Clinical Pathology & Diagnostic Blood Panel
-Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMINI_API_KEY)
-
-1. Hematological Markers & Biomarker Profile:
-   • Complete Blood Count (CBC): Lymphocyte & neutrophil ratio demonstrates standard reactive viral markers.
-   • Platelet & Erythrocyte Indices: Consistently within physiological reference intervals.
-   • Inflammatory Response: Mild reactive shift correlating with acute viral respiratory presentation.
-
-2. Diagnostic Correlation:
-   • Clinical presentation matches acute viral flu/influenza panel without secondary bacterial shifts.
-   • Hepatic and metabolic baseline thresholds verified within standard clinical tolerances.
-
-3. Statutory & Workspace Cross-Reference:
-   • Serialized, validated, and indexed into Company-Scoped Persistent AI Memory.
-   • Reference ID: DOC-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    } else if (
-      lower.includes("gst") ||
-      lower.includes("tax") ||
-      lower.includes("gstr") ||
-      lower.includes("invoice") ||
-      lower.includes("bill")
-    ) {
-      docType = "GST Tax Invoice / Statutory Return";
-      vendorName = "GST Network / Commercial Supplier";
-      analysis = `【AIWeave Autonomous Document Intelligence Analysis】
-Document: ${filename}
-Category: Statutory GST & Tax Reconciliation
-Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMINI_API_KEY)
-
-1. Statutory Tax Reconciliation:
-   • Party GSTIN validated against active commercial ledgers.
-   • Input Tax Credit (ITC) reconciliation matched with zero unallocated variance.
-   • HSN/SAC summary verified with statutory tax rates (CGST/SGST/IGST).
-
-2. Document Status:
-   • Verified and added to Company Intelligence Memory.`;
-    } else if (
-      lower.includes("roc") ||
-      lower.includes("mca") ||
-      lower.includes("balance") ||
-      lower.includes("audit") ||
-      lower.includes("dir") ||
-      lower.includes("mgt")
-    ) {
-      docType = "MCA ROC Corporate Return / Balance Sheet";
-      vendorName = "Ministry of Corporate Affairs";
-      analysis = `【AIWeave Autonomous Document Intelligence Analysis】
-Document: ${filename}
-Category: MCA ROC Compliance & Statutory Statement
-Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMINI_API_KEY)
-
-1. Corporate Governance & Filings:
-   • Balance sheet line items and director resolutions verified against master company records.
-   • Compliance health: Current with statutory filing schedules.`;
-    } else {
-      docType = "Enterprise Intelligence Document";
-      vendorName = "Company Document Archive";
-      analysis = `【AIWeave Autonomous Document Intelligence Analysis】
-Document: ${filename}
-Category: Enterprise Intelligence Document
-Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMINI_API_KEY)
-
-1. Document Synthesis:
-   • Extracted semantic entities, numerical records, and operational timestamps.
-   • Stored in persistent AI memory for cross-document queries and analysis.`;
-    }
-
-    return { docType, vendorName, analysis };
+  // ── Document Intelligence ─────────────────────────────────
+  // Document analysis is server-authoritative. The browser never fabricates
+  // extracted facts when the AI provider/backend is unavailable.
+  function buildUnavailableDocResult(filename, errorMessage) {
+    return {
+      filename,
+      document_type: "Pending AI Analysis",
+      analysis: `AIWeave could not complete server-side analysis for "${filename}". ${errorMessage || "Configure an authorized AI provider and retry."}`,
+      reused_memory: false,
+      fallback_engaged: false,
+    };
   }
 
   // Preserved Document Workspace Context
@@ -519,79 +440,30 @@ Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMI
       }));
     }
 
-    // Evaluate results and intercept missing GEMINI_API_KEY / server errors
+    // Keep server results authoritative. Never fabricate document contents,
+    // diagnoses, tax reconciliations, or extracted values in the browser.
     const finalResults = [...serverResults];
-    const unresolvedErrors = [];
-    const newDocsToSave = [];
+    const unresolvedErrors = [...serverErrors];
 
     for (const file of docFiles) {
-      // If server already succeeded for this file, keep it
       const existingSuccess = serverResults.find((r) => r.filename === file.name);
       if (existingSuccess) continue;
 
       const fileErr = serverErrors.find((e) => e.filename === file.name);
-      const isApiKeyOrServerIssue =
-        !fileErr ||
-        fileErr.error?.includes("GEMINI_API_KEY") ||
-        fileErr.error?.toLowerCase().includes("gemini") ||
-        fileErr.error?.toLowerCase().includes("api key") ||
-        fileErr.error?.includes("403") ||
-        fileErr.error?.includes("500") ||
-        fileErr.error?.includes("Network Error") ||
-        fileErr.error?.includes("failed");
-
-      if (isApiKeyOrServerIssue) {
-        // AIWeave Autonomous Multi-Provider Fallback is triggered!
-        const auto = generateAutonomousDocAnalysis(file.name);
-        finalResults.push({
-          filename: file.name,
-          document_type: auto.docType,
-          analysis: auto.analysis,
-          reused_memory: false,
-          fallback_engaged: true,
-        });
-
-        newDocsToSave.push({
-          document_id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`,
-          filename: file.name,
-          document_type: auto.docType,
-          vendor_name: auto.vendorName,
-          created_at: new Date().toISOString(),
-        });
-      } else {
-        unresolvedErrors.push(fileErr);
+      if (!fileErr) {
+        finalResults.push(buildUnavailableDocResult(
+          file.name,
+          "The server did not return an analysis result."
+        ));
       }
     }
 
-    // If autonomous fallback processed documents, update local workspace memory
-    if (newDocsToSave.length > 0) {
-      let existingDocs = [];
-      try {
-        const stored = localStorage.getItem("tasko_ai_workspace_docs");
-        if (stored) existingDocs = JSON.parse(stored);
-      } catch {}
-
-      const combined = [
-        ...newDocsToSave,
-        ...existingDocs.filter((d) => !newDocsToSave.some((n) => n.filename === d.filename)),
-      ];
-
-      try {
-        localStorage.setItem("tasko_ai_workspace_docs", JSON.stringify(combined));
-      } catch {}
-
-      setWorkspaceDocs(combined);
-      setKnowledge({
-        document_count: combined.length,
-        knowledge_version: (knowledge?.knowledge_version || 1) + 1,
-        last_updated: new Date().toISOString(),
-      });
-
-      toast.success(
-        `AIWeave Autonomous Fallback processed ${newDocsToSave.length} document(s) (bypassed missing server GEMINI_API_KEY).`
-      );
-    } else if (serverSucceeded && unresolvedErrors.length === 0) {
+    if (serverSucceeded && unresolvedErrors.length === 0) {
       toast.success(`${finalResults.length} document(s) processed and stored in AI memory.`);
+    } else if (!serverSucceeded) {
+      toast.error(
+        "AIWeave document analysis is unavailable. No fabricated analysis was created; fix the provider/backend connection and retry."
+      );
     }
 
     setDocResults(finalResults);
@@ -609,23 +481,15 @@ Engine: AIWeave Autonomous Multi-Provider Fallback (Bypassed missing server GEMI
       const { data } = await api.post("/ai/workspace/query", { question: q }, { timeout: 180000 });
       if (data?.answer) {
         setDocAnswer(data.answer);
+        setDocQueryLoading(false);
         return;
       }
     } catch (err) {
       console.warn("Remote AI query unavailable; routing through AIWeave memory locally", err);
     }
 
-    // AIWeave Local Memory Intelligence Synthesizer
-    const docs = workspaceDocs.length
-      ? workspaceDocs
-      : docResults.map((r) => ({ filename: r.filename, document_type: r.document_type }));
-
-    const docBulletList = docs.length
-      ? docs.map((d) => `• ${d.filename} (${d.document_type || "Document"})`).join("\n")
-      : "• Active Company Record Workspace";
-
     setDocAnswer(
-      `[AIWeave Intelligence across learned workspace memory]\nQuestion: "${q}"\n\nCross-referencing verified records in persistent memory:\n${docBulletList}\n\nKey Findings:\n1. Reconciled identifiers, clinical/statutory parameters, and chronological sequence across all active documents.\n2. Validated reference metrics with zero unallocated discrepancies against master company ledgers.\n3. Continuous AI memory updated for subsequent multi-document queries.`
+      "AIWeave could not obtain a server-side answer. No synthetic or fabricated document findings were generated. Please verify the configured AI provider and retry."
     );
     setDocQueryLoading(false);
   }
