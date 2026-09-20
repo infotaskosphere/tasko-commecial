@@ -2813,6 +2813,7 @@ export default function Users() {
   // Admin can manage any user's permissions.
   // Manager with can_manage_users can manage permissions for their team STAFF (not admin/manager).
   const canManagePermissions = isAdmin || (isManager && !!perms.can_manage_users);
+  const isCommercialAdmin = isAdmin && !!user?.company_id && !isPlatformOwner;
 
   // ── Main page tab (Users vs Identix) ─────────────────────────────────────
   const [mainTab, setMainTab] = useState('users'); // 'users' | 'identix' | 'password_resets' | 'salary'
@@ -2902,9 +2903,15 @@ export default function Users() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await api.get('/users');
+      // Licensed company admins use the canonical Commercial Master Data
+      // directory. It carries the same company/license user records consumed
+      // by Admin → Master Data, while the legacy /users route remains
+      // company-scoped for ordinary operational users.
+      const res = isCommercialAdmin
+        ? await api.get('/commercial-master-data/users')
+        : await api.get('/users');
       const raw = res.data;
-      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+      const list = Array.isArray(raw) ? raw : (raw?.users || raw?.data || []);
       const filtered = isPlatformOwner ? list.filter((u) => {
         const isCommercialLicensee = (
           (u.commercial_customer_id && u.commercial_customer_id !== 'platform-owner') ||
@@ -2914,7 +2921,7 @@ export default function Users() {
       }) : list;
       setUsers(filtered);
     } catch { toast.error('Failed to fetch users'); }
-  }, [isPlatformOwner]);
+  }, [isPlatformOwner, isCommercialAdmin]);
 
   const fetchClients = useCallback(async () => {
     try {
@@ -3103,7 +3110,11 @@ export default function Users() {
           ...(isAdmin && formData.password.trim() && { password: formData.password.trim() }),
           ...(isAdmin && { monthly_salary: formData.monthly_salary !== '' ? Number(formData.monthly_salary) : null }),
         };
-        await api.put(`/users/${selectedUser.id}`, payload);
+        if (isCommercialAdmin) {
+          await api.put(`/commercial-master-data/users/${selectedUser.id}`, payload);
+        } else {
+          await api.put(`/users/${selectedUser.id}`, payload);
+        }
         if (selectedUser.id === user?.id) await refreshUser();
         toast.success('✓ User updated successfully');
       } else {
