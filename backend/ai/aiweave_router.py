@@ -281,7 +281,6 @@ async def create_aiweave_indexes():
         await db.aiweave_conversations.create_index([("scope_type",1),("scope_id",1),("updated_at",-1)])
         await db.aiweave_conversations.create_index("conversation_id",unique=True)
         await db.aiweave_conversations.create_index([("scope_type",1),("scope_id",1),("pinned",1),("updated_at",-1)])
-    try:
         await db.aiweave_provider_accounts.create_index([("scope_type",1),("scope_id",1),("provider",1),("status",1)])
         await db.aiweave_provider_accounts.create_index("id",unique=True)
         await db.aiweave_provider_models.create_index([("scope_type",1),("scope_id",1),("provider",1),("id",1)])
