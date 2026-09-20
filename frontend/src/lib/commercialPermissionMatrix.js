@@ -26,7 +26,7 @@ export const PAGE_MATRIX = Object.freeze([
 
 const normalize = (value) => String(value || "").trim().toLowerCase().replace(/-/g, "_").replace(/\s+/g, "_");
 
-export function isPlatformOwner(user) { if (!user) return false; const email = String(user.email || "").trim().toLowerCase(); const id = String(user.id || "").trim(); return email === PLATFORM_OWNER_EMAIL || id === "usr-admin-01" || id === "saas-bootstrap-admin"; }
+export function isPlatformOwner(user) { if (!user) return false; const email = String(user.email || "").trim().toLowerCase(); const id = String(user.id || "").trim(); const companyId = String(user.company_id || user.company?.id || "").trim().toLowerCase(); return email === PLATFORM_OWNER_EMAIL || id === "usr-admin-01" || id === "saas-bootstrap-admin" || companyId === "platform-owner-48fe785fdd75127f"; }
 
 export function normalizeModules(user) {
   const sources = [user?.licensed_modules, user?.modules, user?.company?.licensed_modules, user?.company?.modules, user?.license?.modules, user?.subscription?.modules];
