@@ -88,6 +88,7 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_client_discussion', '/client-discussion'],
   ],
   aiweave: [
+    ['can_view_aiweave', '/aiweave'],
     ['can_view_aiweave', '/ai-reader'],
   ],
   peopleMatrix: [
