@@ -41,7 +41,6 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_reminders', '/reminders'],
     ['can_view_action_center', '/action-center'],
     ['can_view_client_visits', '/visits'],
-    ['can_view_ai_document_reader', '/ai-reader'],
     ['can_view_client_portal', '/client-portal-manager'],
     ['can_reset_client_passwords', '/client-portal-manager/password'],
     ['can_reset_client_passwords', '/client-portal-manager/reset'],
@@ -86,6 +85,9 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_all_leads', '/leads'],
     ['can_create_quotations', '/quotations'],
     ['can_view_client_discussion', '/client-discussion'],
+  ],
+  aiweave: [
+    ['can_view_aiweave', '/ai-reader'],
   ],
   aiweave: [
     ['can_view_aiweave', '/ai-reader'],
