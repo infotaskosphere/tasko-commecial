@@ -294,6 +294,9 @@ async def list_platform_company_users(
     user_query: Dict[str, Any] = {
         "$and": [
             {"status": {"$ne": "deleted"}},
+            {"role": {"$ne": "superadmin"}},
+            {"is_internal_commercial_admin": {"$ne": True}},
+            {"email": {"$nin": sorted(platform_owner_emails())}},
             {"$or": [
                 {"company_id": comp_id},
                 *([{"commercial_customer_id": cust_id}] if cust_id else []),
@@ -529,9 +532,11 @@ async def delete_platform_company_user(
     if not existing:
         raise HTTPException(status_code=404, detail="Company user not found.")
 
-    await db.users.delete_one({"id": user_id})
-    await create_audit_log(current_user, "DELETE_PLATFORM_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing))
-    return {"message": "User deleted successfully", "user_id": user_id}
+    now = _now()
+    update = {"status": "deleted", "is_active": False, "deleted_at": now, "deleted_by": current_user.id}
+    await db.users.update_one({"id": user_id}, {"$set": update})
+    await create_audit_log(current_user, "DELETE_PLATFORM_COMPANY_USER", "company_master_users", user_id, old_data=_clean_user(existing), new_data=update)
+    return {"message": "User moved to Deleted Users", "user_id": user_id, "status": "deleted"}
 
 
 @router.post("/users", status_code=201)
