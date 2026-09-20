@@ -23,6 +23,7 @@ const MODULE_HOME = [
   ['can_access_records', '/records-dashboard'],
   ['can_access_proposals', '/client-proposals-dashboard'],
   ['can_access_people_matrix', '/people-matrix'],
+  ['can_access_aiweave', '/ai-reader'],
 ];
 
 // Commercial licenses select pages independently from the parent module.
