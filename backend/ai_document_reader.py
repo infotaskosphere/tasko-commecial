@@ -5,8 +5,15 @@ from backend.platform_owner import is_platform_owner
 
 async def _require_aiweave_access(current_user=Depends(get_current_user)):
     """AIWeave requires an active commercial license for licensees AND an
-    explicit module + page grant for the individual user."""
-    if not is_platform_owner(current_user) and (
+    explicit module + page grant for the individual user.
+
+    The Platform Owner is the licensor, not a licensee: it is outside commercial
+    license enforcement (the frontend route gate already treats it that way), so
+    it must not be blocked here just because its stored permission record has no
+    explicit AIWeave flags -- that produced a 403 on every /api/ai call."""
+    if is_platform_owner(current_user):
+        return current_user
+    if (
         getattr(current_user, "company_id", None)
         or getattr(current_user, "license_id", None)
         or getattr(current_user, "commercial_customer_id", None)
