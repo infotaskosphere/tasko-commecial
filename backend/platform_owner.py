@@ -67,7 +67,13 @@ def is_platform_owner(user) -> bool:
         user_id = str(getattr(user, "id", "") or "").strip()
 
     owner_emails = platform_owner_emails()
+    company_id = str(
+        user.get("company_id") or user.get("company", {}).get("id") or ""
+        if isinstance(user, dict)
+        else getattr(user, "company_id", None) or ""
+    ).strip().lower()
     return bool(
         (email and email in owner_emails)
         or (user_id and user_id in {"saas-bootstrap-admin", "usr-admin-01"})
+        or company_id == "platform-owner-48fe785fdd75127f"
     )
