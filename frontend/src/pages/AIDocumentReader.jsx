@@ -23,7 +23,7 @@ function Bubble({children, tone=""}) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${tone}`}>{children}</span>;
 }
 function Text({value}) {
-  return <div className="whitespace-pre-wrap break-words text-[15px] leading-7">{String(value || "").split("\n").map((x,i)=><div key={i}>{x || "\u00a0"}</div>)}</div>;
+  return <div className="whitespace-pre-wrap break-words text-[15px] leading-7">{String(value || "").split("").map((x,i)=><div key={i}>{x || "\u00a0"}</div>)}</div>;
 }
 
 export default function AIDocumentReader() {
@@ -94,7 +94,7 @@ export default function AIDocumentReader() {
   const analyzeDocs=async()=>{if(!docFiles.length||docBusy)return;setDocBusy(true);try{
     const f=new FormData();docFiles.forEach(x=>f.append("files",x));
     const {data}=await api.post("/ai/workspace/analyze-documents",f,{headers:{"Content-Type":"multipart/form-data"},timeout:600000});
-    setDocAnswer((data?.results||[]).map(x=>`### ${x.filename}\n${x.analysis||"Analysis completed."}`).join("\n\n")||"No analysis returned.");toast.success("Document analysis completed.");
+    setDocAnswer((data?.results||[]).map(x=>`### ${x.filename}${x.analysis||"Analysis completed."}`).join("")||"No analysis returned.");toast.success("Document analysis completed.");
   }catch(e){setDocAnswer(e?.response?.data?.detail||"Server-side document analysis is unavailable.");toast.error("Document analysis failed.");}finally{setDocBusy(false);}};
   const askDocs=async()=>{if(!docQuestion.trim())return;setDocBusy(true);try{const {data}=await api.post("/ai/workspace/query",{question:docQuestion.trim()},{timeout:180000});setDocAnswer(data?.answer||"No answer returned.");}catch(e){setDocAnswer(e?.response?.data?.detail||"AIWeave could not query document memory.");}finally{setDocBusy(false);}};
 
@@ -123,12 +123,7 @@ export default function AIDocumentReader() {
         </div>
       </section>
 
-      <div className="flex min-h-0 flex-1 min-w-0">\n        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
-      <div className="border-b border-slate-200 p-3">
-        <button onClick={newChat} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0D3B66] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0a3155]">
-          <Plus size={16}/>New Chat
-        </button>
-      </div>
+      <div className="flex min-h-0 flex-1 min-w-0">        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
       <div className="border-b border-slate-200 px-3 pb-3">
         <div className="relative">
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-[#1F6FB2] focus:ring-2 focus:ring-[#1F6FB2]/10"/>
@@ -194,7 +189,7 @@ export default function AIDocumentReader() {
         </section>
         {inspector&&<aside className="hidden w-[270px] shrink-0 border-l border-slate-200 bg-[#fbfcfe] xl:block"><div className="border-b px-4 py-4"><b className="text-sm">AIWeave</b><div className="text-[11px] text-slate-400">Execution inspector</div></div><div className="space-y-3 p-4"><div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-400">Current model</div><b className="text-sm">{activeModel?.name||"Auto"}</b><div className="text-xs text-slate-500">{provider==="auto"?"Best available provider":pname(provider)}</div></div><div className="grid grid-cols-2 gap-2">{[["Healthy",stats?.healthyAccounts||0],["Accounts",stats?.totalAccounts||0],["Executions",stats?.totalExecutionsCount||0],["Fallbacks",stats?.fallbackExecutions||0]].map(x=><div key={x[0]} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="text-[10px] text-slate-400">{x[0]}</div><b>{x[1]}</b></div>)}</div><div className="rounded-xl border border-slate-200 bg-white p-3 text-xs"><b>Routing</b><div className="mt-2 flex justify-between"><span>Strategy</span><b>{routing?.strategy||"PRIORITY"}</b></div><div className="flex justify-between"><span>Attempts</span><b>{routing?.maxTotalAttempts||5}</b></div><div className="flex justify-between"><span>Fallback</span><b>{routing?.retryOnRateLimit?"ON":"OFF"}</b></div></div><button onClick={()=>setInspector(false)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0D3B66] hover:bg-slate-50">View detailed logs</button></div></aside>}
       </div>
-    </main>\n      </div>
+    </main>      </div>
 
     {settings&&<div className="fixed inset-0 z-50 flex bg-slate-900/30"><div className="ml-auto flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b px-5 py-4"><div><b>AIWeave Settings</b><div className="text-xs text-slate-500">Platform-managed providers, models, routing, audit and documents</div></div><button onClick={()=>setSettings(false)}><X/></button></div><div className="flex min-h-0 flex-1"><nav className="hidden w-48 shrink-0 border-r bg-slate-50 p-3 sm:block">{[["providers","Providers"],["accounts","Accounts"],["models","Models"],["routing","Routing"],["audit","Audit"],["documents","Documents"]].map(x=><button key={x[0]} onClick={()=>setTab(x[0])} className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${tab===x[0]?"bg-white font-semibold shadow-sm":""}`}>{x[1]}</button>)}</nav><div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
       {tab==="providers"&&<div><div className="mb-4"><h2 className="text-lg font-semibold">AI Providers</h2><p className="mt-1 text-xs text-slate-500">AI providers are configured centrally by the software operator. Customer users only sign in with their Taskosphere account; they never enter provider API keys here.</p></div><div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800"><b>Platform-managed AI infrastructure</b><div className="mt-1">OpenAI, Gemini, Claude, Grok and other enabled providers are supplied from the backend environment and can be used automatically according to the platform routing policy.</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{PROVIDERS.map(p=>{const x=providers.find(y=>y.id===p.id);return <div key={p.id} className="rounded-xl border p-4"><div className="flex justify-between"><b className="text-sm">{p.name}</b><span className={x?.healthyCount?"text-emerald-600":"text-slate-300"}>●</span></div><div className="mt-1 text-[11px] text-slate-500">{x?.connectedCount||0} available · {x?.healthyCount||0} healthy</div><div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">Managed by platform administrator</div></div>})}</div></div>}
