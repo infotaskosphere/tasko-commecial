@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Upload, FileText, Loader2, Sparkles, X, Brain, Search, RefreshCw, CheckCircle2, AlertTriangle } from "lucide-react";
+import useDark from "@/hooks/useDark";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ const FILE_ICONS = {
 };
 
 export default function AIDocumentReader() {
+  const isDark = useDark();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
@@ -128,13 +130,17 @@ export default function AIDocumentReader() {
       >
         <div className="px-5 py-4 md:px-6 md:py-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 shrink-0 border border-white/30 bg-white/10 flex items-center justify-center">
-              <Sparkles className="w-5 h-5" />
+            <div className="w-[170px] sm:w-[205px] md:w-[235px] h-12 shrink-0 flex items-center">
+              <img
+                src={isDark ? "/aiweave-logo-dark.png" : "/aiweave-logo-lite.png"}
+                alt="AIWeave"
+                className="max-h-12 max-w-full object-contain"
+              />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xl md:text-2xl font-semibold tracking-tight">AI Document Reader</h1>
+              <h1 className="text-xl md:text-2xl font-semibold tracking-tight">AIWeave</h1>
               <p className="text-sm text-blue-100 mt-0.5">
-                Read, connect and remember information across every document you upload.
+                Unified AI workspace for document intelligence, analysis and shared AI workflows.
               </p>
             </div>
           </div>
