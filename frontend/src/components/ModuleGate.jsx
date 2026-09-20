@@ -141,6 +141,17 @@ function ModuleGate({ module, children }) {
   const flag = MODULE_FLAGS[module];
 
   if (!user) return <Navigate to="/login" replace />;
+
+  // AIWeave is deliberately excluded from the normal admin/platform-owner
+  // bypass. It must have an explicit module + page grant.
+  if (module === 'aiweave') {
+    const aiGranted =
+      user?.permissions?.can_access_aiweave === true &&
+      user?.permissions?.can_view_aiweave === true;
+    if (!aiGranted) return <NoModuleAccess />;
+    return children;
+  }
+
   if (matrixIsPlatformOwner(user) || isPlatformOwner) return children;
 
   // firstAccessiblePath() answers "/login" when the account has no entitled page
