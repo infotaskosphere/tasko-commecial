@@ -673,7 +673,11 @@ def _permission_flag(
             permissions = getattr(user, "permissions", None)
             if hasattr(permissions, "model_dump"):
                 permissions = permissions.model_dump()
-            return isinstance(permissions, dict) and permissions.get(flag, False) is True
+            return (
+                isinstance(permissions, dict)
+                and permissions.get("can_access_aiweave", False) is True
+                and permissions.get("can_view_aiweave", False) is True
+            )
 
         if is_admin:
             return True
