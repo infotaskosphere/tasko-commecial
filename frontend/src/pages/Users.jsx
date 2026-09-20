@@ -137,7 +137,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_download_reports: true, can_view_selected_users_reports: true,
       can_view_todo_dashboard: true, can_edit_clients: true, can_use_chat: true,
       can_view_dashboard: true, can_view_reminders: true, can_view_action_center: true,
-      can_view_client_visits: true, can_view_aiweave: true,
+      can_view_client_visits: true, can_view_aiweave: false,
       can_view_all_leads: true, can_manage_settings: true, can_assign_clients: true,
       can_view_staff_rankings: true, can_delete_data: true, can_delete_tasks: true,
       can_connect_email: true, can_view_own_data: true, can_create_quotations: true,
@@ -199,7 +199,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own + Team)
       can_view_action_center: true,   // Action Center → VIEW (Own + Team)
       can_view_client_visits: true,   // Client Visits → VIEW (Own + Team)
-      can_view_aiweave: true, // AIWeave → VIEW (Own + Team)
+      can_view_aiweave: false, // AIWeave → VIEW (Own + Team)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
@@ -271,7 +271,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
       can_view_reminders: true,       // Reminders → VIEW (Own)
       can_view_action_center: true,   // Action Center → VIEW (Own)
       can_view_client_visits: true,   // Client Visits → VIEW (Own)
-      can_view_aiweave: true, // AIWeave → VIEW (Own)
+      can_view_aiweave: false, // AIWeave → VIEW (Own)
       can_use_chat: false,            // admin-granted only
       can_view_staff_rankings: false, // admin-granted only
       can_delete_data: false,         // admin-granted only
