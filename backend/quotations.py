@@ -25,6 +25,7 @@ from backend.dependencies import (
     _get_perm,
 )
 from backend.models import User
+from backend.platform_owner import is_platform_owner
 from backend.pincode_lookup import get_state_from_pincode
 
 try:
