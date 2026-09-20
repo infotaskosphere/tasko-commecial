@@ -157,16 +157,23 @@ def _scope_user_query(query: Any) -> dict[str, Any]:
             "$and": [
                 {
                     "$or": [
+                        # Current commercial records: exact customer ownership.
                         {"commercial_customer_id": customer_id},
-                        # Legacy users created before commercial_customer_id
-                        # existed are still visible only inside this user's
-                        # authenticated legal company.
-                        {"company_id": company_id},
+                        # Legacy records: only records that do not yet carry a
+                        # customer id may fall back to the authenticated
+                        # company. A record already stamped to another
+                        # customer can never match through company_id.
+                        {
+                            "$and": [
+                                {"commercial_customer_id": {"$in": [None, ""]}},
+                                {"company_id": company_id},
+                            ]
+                        },
                     ]
                 },
                 {"email": {"$nin": sorted(owner_emails)}},
-                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
-                {"license_id": {"$nin": ["platform-owner-license", ""]}},
+                {"commercial_customer_id": {"$nin": ["platform-owner"]}},
+                {"license_id": {"$nin": ["platform-owner-license"]}},
             ]
         }
         return {"$and": [base, customer_scope]} if base else customer_scope
