@@ -24,6 +24,7 @@ from fastapi import HTTPException, status
 
 from backend.platform_owner import platform_owner_emails
 from backend.tenant_runtime import TenantAwareCollection, authenticated_company_id, in_platform_owner_context
+from backend.commercial_tenant_scope import authenticated_customer_id
 
 _INSTALLED = "_commercial_user_company_scope_installed"
 _PRE_AUTH_CALLERS = frozenset({
@@ -137,6 +138,40 @@ def _scope_user_query(query: Any) -> dict[str, Any]:
 
     company_id = _user_company_id()
     base = dict(query or {})
+
+    # Commercial licensees are customer-scoped, not merely company-scoped.
+    # This prevents a legacy/shared company_id from ever becoming a bridge
+    # between Licensee A, Licensee B and the Platform Owner.
+    customer_id = str(authenticated_customer_id() or "").strip()
+    if customer_id:
+        requested_customer = base.get("commercial_customer_id")
+        if requested_customer is not None and not isinstance(requested_customer, dict):
+            if str(requested_customer) != customer_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cross-licensee user access is not permitted.",
+                )
+
+        owner_emails = _owner_emails()
+        customer_scope = {
+            "$and": [
+                {
+                    "$or": [
+                        {"commercial_customer_id": customer_id},
+                        # Legacy users created before commercial_customer_id
+                        # existed are still visible only inside this user's
+                        # authenticated legal company.
+                        {"company_id": company_id},
+                    ]
+                },
+                {"email": {"$nin": sorted(owner_emails)}},
+                {"commercial_customer_id": {"$nin": [None, "", "platform-owner"]}},
+                {"license_id": {"$nin": ["platform-owner-license", ""]}},
+            ]
+        }
+        return {"$and": [base, customer_scope]} if base else customer_scope
+
+    # Non-commercial/internal accounts remain strictly company-scoped.
     requested = base.get("company_id")
     if requested is not None and str(requested) != company_id:
         raise HTTPException(
