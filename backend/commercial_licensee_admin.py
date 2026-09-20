@@ -34,6 +34,8 @@ LICENSE_MODULE_ALIASES = {
     "proposals": "proposals",
     "client_proposals": "proposals",
     "client-proposals": "proposals",
+    "aiweave": "aiweave",
+    "ai-weave": "aiweave",
 }
 
 # These legacy permissions are still consumed by older pages/components. They
@@ -132,6 +134,12 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         if module_allowed:
             selected = {str(page.get("flag")).strip() for page in module_def.get("pages", []) or [] if page.get("flag")}
         else:
+            selected = set()
+        # AIWeave is intentionally different from the other modules: purchasing
+        # the module creates the license entitlement, but NEVER creates a user
+        # permission. Even the licensee administrator must be explicitly granted
+        # AIWeave through Permission Matrix / Access Governance.
+        if module_id == "aiweave":
             selected = set()
         for page in module_def.get("pages", []) or []:
             flag = page.get("flag")
