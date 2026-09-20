@@ -36,6 +36,7 @@ _LICENSE_MODULE_ALIASES = {
     "hrms": "people_matrix", "people_matrix": "people_matrix", "people-matrix": "people_matrix",
     "compliance": "compliance", "records": "records",
     "proposals": "proposals", "client_proposals": "proposals", "client-proposals": "proposals",
+    "aiweave": "aiweave", "ai-weave": "aiweave",
 }
 
 
