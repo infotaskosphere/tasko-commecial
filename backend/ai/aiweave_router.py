@@ -114,13 +114,16 @@ async def get_account(aid,user):
 
 class PError(Exception):
     def __init__(self,kind,msg):self.kind,self.msg=kind,msg;super().__init__(msg)
-def classify(code):
+def classify(code, message=""):
+    text=str(message or "").lower()
+    if any(x in text for x in ("quota","token limit","tokens exhausted","context window","usage limit","insufficient quota")):
+        return "TOKEN_EXHAUSTED" if "token" in text else "QUOTA_EXHAUSTED"
     if code in (401,403):return "AUTH_REQUIRED"
     if code==429:return "RATE_LIMITED"
     if code in (408,409,425,502,503,504):return "RETRYABLE_ACCOUNT_FAILURE"
     if code==413:return "CAPACITY_EXHAUSTED"
-    if 400<=code<500:return "NON_RETRYABLE_ACCOUNT_FAILURE"
     if code>=500:return "PROVIDER_UNAVAILABLE"
+    if 400<=code<500:return "NON_RETRYABLE_ACCOUNT_FAILURE"
     return "SUCCESS"
 async def req(method,url,headers=None,params=None,json=None,timeout=30):
     async with httpx.AsyncClient(timeout=timeout) as c:return await c.request(method,url,headers=headers,params=params,json=json)
@@ -134,7 +137,8 @@ def err(resp):
 async def openai_call(provider,key,model,prompt,timeout):
     r=await req("POST",BASES[provider]+"/chat/completions",{"Authorization":f"Bearer {key}","Content-Type":"application/json"},
                 json={"model":model,"messages":[{"role":"user","content":prompt}],"temperature":0.2},timeout=timeout)
-    if r.status_code!=200:raise PError(classify(r.status_code),err(r))
+    if r.status_code!=200:
+        msg=err(r);raise PError(classify(r.status_code,msg),msg)
     d=r.json();m=((d.get("choices") or [{}])[0]).get("message") or {};u=d.get("usage") or {}
     return {"output":str(m.get("content") or ""),"input_tokens":int(u.get("prompt_tokens",0) or 0),"output_tokens":int(u.get("completion_tokens",0) or 0),"provider_request_id":d.get("id")}
 
@@ -142,7 +146,8 @@ async def gemini_call(key,model,prompt,timeout):
     r=await req("POST",f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                 {"Content-Type":"application/json"},{"key":key},
                 {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.2}},timeout)
-    if r.status_code!=200:raise PError(classify(r.status_code),err(r))
+    if r.status_code!=200:
+        msg=err(r);raise PError(classify(r.status_code,msg),msg)
     d=r.json();parts=(((d.get("candidates") or [{}])[0]).get("content") or {}).get("parts") or [];u=d.get("usageMetadata") or {}
     return {"output":"".join(str(x.get("text") or "") for x in parts if isinstance(x,dict)),"input_tokens":int(u.get("promptTokenCount",0) or 0),"output_tokens":int(u.get("candidatesTokenCount",0) or 0),"provider_request_id":None}
 
@@ -214,9 +219,10 @@ def rank(rows,strategy):
     if strategy=="ROUND_ROBIN":return sorted(rows,key=lambda a:(a.get("last_used") or "",int(a.get("priority",1))))
     return sorted(rows,key=lambda a:(int(a.get("priority",1)), -int(a.get("weight",100))))
 def provider_order(cfg,requested):
-    if requested and requested!="auto":return [requested]
+    default_order=["openai","gemini","claude","grok","kimi","deepseek","qwen","mistral","groq","openrouter","together"]
     x=cfg.get("preferredProvider")
-    out=[x] if x and x!="auto" else ["openai","gemini","claude","grok","kimi","deepseek","qwen","mistral","groq","openrouter","together"]
+    first=requested if requested and requested!="auto" else (x if x and x!="auto" else None)
+    out=([first] if first else [])+[p for p in default_order if p!=first]
     if cfg.get("allowLocalFallback") and "ollama" not in out:out.append("ollama")
     return out
 def model_for(provider,preferred,cap,cfg,discovered):
