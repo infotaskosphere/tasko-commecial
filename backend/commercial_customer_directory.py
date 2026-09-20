@@ -18,10 +18,11 @@ def _feature_flags(module_id: str) -> List[str]:
 async def update_commercial_customer(customer_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     _require_platform_owner(current_user); customer = await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0})
     if not customer: raise HTTPException(status_code=404, detail="Commercial customer was not found.")
-    company_name = str(payload.get("company_name") or "").strip(); email = str(payload.get("email") or "").strip().lower()
+    company_name = str(payload.get("company_name") or "").strip(); admin_name = str(payload.get("admin_name") or customer.get("admin_name") or "").strip(); email = str(payload.get("email") or "").strip().lower()
     if not company_name: raise HTTPException(status_code=400, detail="Company name is required.")
+    if not admin_name: raise HTTPException(status_code=400, detail="Admin Name is required.")
     if not email: raise HTTPException(status_code=400, detail="Email is required.")
-    update = {"company_name": company_name, "contact_name": str(payload.get("contact_name") or "").strip(), "email": email, "phone": str(payload.get("phone") or "").strip(), "gstin": str(payload.get("gstin") or "").strip().upper(), "address": str(payload.get("address") or "").strip(), "gst_address": str(payload.get("gst_address") or "").strip(), "city": str(payload.get("city") or "").strip(), "state": str(payload.get("state") or "").strip(), "pincode": str(payload.get("pincode") or "").strip(), "updated_at": datetime.now(timezone.utc).isoformat()}
+    update = {"company_name": company_name, "admin_name": admin_name, "contact_name": str(payload.get("contact_name") or "").strip(), "email": email, "phone": str(payload.get("phone") or "").strip(), "gstin": str(payload.get("gstin") or "").strip().upper(), "address": str(payload.get("address") or "").strip(), "gst_address": str(payload.get("gst_address") or "").strip(), "city": str(payload.get("city") or "").strip(), "state": str(payload.get("state") or "").strip(), "pincode": str(payload.get("pincode") or "").strip(), "updated_at": datetime.now(timezone.utc).isoformat()}
     await db.commercial_license_customers.update_one({"id": str(customer_id)}, {"$set": update})
     await db.companies.update_many({"commercial_customer_id": str(customer_id), "source": "commercial-license"}, {"$set": {"name": company_name, "company_name": company_name, "email": email, "phone": update["phone"], "gstin": update["gstin"], "address": update["address"], "gst_address": update["gst_address"], "city": update["city"], "state": update["state"], "pincode": update["pincode"], "updated_at": update["updated_at"]}})
     return _public(await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0}) or {})
@@ -50,7 +51,7 @@ async def update_commercial_license(license_id: str, payload: Dict[str, Any], cu
         if not selected: raise HTTPException(status_code=400, detail=f"Select at least one feature in {module_id}.")
         selected_features[module_id] = selected
     selected_features = normalize_dashboard_feature_selection(selected_features)
-    stamp = datetime.now(timezone.utc).isoformat(); updates = {"modules": modules, "selected_features": selected_features, "licensed_modules": modules, "last_event_at": stamp}
+    stamp = datetime.now(timezone.utc).isoformat(); updates = {"modules": modules, "selected_features": selected_features, "licensed_modules": modules, "customer_name": str(customer.get("admin_name") or customer.get("company_name") or license_doc.get("customer_name") or ""), "admin_name": str(customer.get("admin_name") or ""), "last_event_at": stamp}
     if "max_users" in payload: updates["max_users"] = max(1, int(payload.get("max_users") or 1))
     if "max_installations" in payload: updates["max_installations"] = max(1, int(payload.get("max_installations") or 1))
     await db.commercial_licenses.update_one({"id": str(license_id)}, {"$set": updates})
