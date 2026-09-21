@@ -57,7 +57,7 @@ MODELS=[
  {"id":"qwen2.5-coder:32b","provider":"ollama","name":"Qwen 2.5 Coder 32B (Local)","capabilities":["coding","debugging","tool_calling","structured_output"],"isLocal":True},
  {"id":"llama3.3:70b","provider":"ollama","name":"Llama 3.3 70B (Local)","capabilities":["chat","reasoning","coding","document_analysis","structured_output"],"isLocal":True},
 ]
-DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":3,"maxTotalAttempts":5,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True}
+DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":10,"maxTotalAttempts":12,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True,"routingVersion":2}
 ENV_PROVIDER_KEYS={"openai":"AIWEAVE_OPENAI_API_KEY","gemini":"AIWEAVE_GEMINI_API_KEY","claude":"AIWEAVE_ANTHROPIC_API_KEY","grok":"AIWEAVE_XAI_API_KEY","kimi":"AIWEAVE_KIMI_API_KEY","deepseek":"AIWEAVE_DEEPSEEK_API_KEY","qwen":"AIWEAVE_QWEN_API_KEY","mistral":"AIWEAVE_MISTRAL_API_KEY","groq":"AIWEAVE_GROQ_API_KEY","openrouter":"AIWEAVE_OPENROUTER_API_KEY","together":"AIWEAVE_TOGETHER_API_KEY"}
 ENV_PROVIDER_IDENTITY={"openai":"AIWeave Server / OpenAI","gemini":"AIWeave Server / Gemini","claude":"AIWeave Server / Claude","grok":"AIWeave Server / Grok","kimi":"AIWeave Server / Kimi","deepseek":"AIWeave Server / DeepSeek","qwen":"AIWeave Server / Qwen","mistral":"AIWeave Server / Mistral","groq":"AIWeave Server / Groq","openrouter":"AIWeave Server / OpenRouter","together":"AIWeave Server / Together"}
 ENV_MAX_KEYS=10
@@ -186,7 +186,7 @@ async def openai_call(provider,key,model,prompt,timeout):
 
 async def gemini_call(key,model,prompt,timeout):
     r=await req("POST",f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                {"Content-Type":"application/json"},{"key":key},
+                {"Content-Type":"application/json","x-goog-api-key":key},
                 {"contents":[{"role":"user","parts":[{"text":prompt}]}],"generationConfig":{"temperature":0.2}},timeout)
     if r.status_code!=200:
         msg=err(r);raise PError(classify(r.status_code,msg),msg)
@@ -216,7 +216,7 @@ async def test_provider(row,key):
     if p=="ollama":
         r=await req("GET",(row.get("base_url") or "http://127.0.0.1:11434").rstrip("/")+"/api/tags",timeout=10)
     elif p=="gemini":
-        r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",params={"key":key,"pageSize":"1"},timeout=15)
+        r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",headers={"x-goog-api-key":key},params={"pageSize":"1"},timeout=15)
     elif p=="claude":
         r=await req("GET","https://api.anthropic.com/v1/models",
                     {"x-api-key":key,"anthropic-version":"2023-06-01"},timeout=15)
@@ -235,9 +235,9 @@ async def discover(row,key):
             if r.status_code!=200:return []
             return [{"id":str(x.get("id")),"provider":p,"name":str(x.get("id")),"capabilities":[],"availability":"discovered","lastVerified":now()} for x in r.json().get("data",[]) if x.get("id")]
         if p=="gemini":
-            r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",params={"key":key,"pageSize":"1000"},timeout=20)
+            r=await req("GET","https://generativelanguage.googleapis.com/v1beta/models",headers={"x-goog-api-key":key},params={"pageSize":"1000"},timeout=20)
             if r.status_code!=200:return []
-            return [{"id":str(x.get("name","")).replace("models/",""),"provider":p,"name":x.get("displayName") or x.get("name"),"capabilities":[],"availability":"discovered","lastVerified":now()} for x in r.json().get("models",[]) if x.get("name")]
+            return [{"id":str(x.get("name","")).replace("models/",""),"provider":p,"name":x.get("displayName") or x.get("name"),"capabilities":[],"supportedGenerationMethods":x.get("supportedGenerationMethods") or [],"inputTokenLimit":x.get("inputTokenLimit"),"outputTokenLimit":x.get("outputTokenLimit"),"availability":"discovered","lastVerified":now()} for x in r.json().get("models",[]) if x.get("name")]
         if p=="claude":
             r=await req("GET","https://api.anthropic.com/v1/models",headers={"x-api-key":key,"anthropic-version":"2023-06-01"},timeout=20)
             if r.status_code!=200:return []
@@ -274,20 +274,50 @@ def model_for(provider,preferred,cap,cfg,discovered):
     # catalog is descriptive UI metadata and is never treated as proof of
     # availability.
     c=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
+    if provider=="gemini":
+        # Gemini exposes many model families from the same catalog. Only
+        # models advertising generateContent are valid for this adapter.
+        supported=[m for m in c if not m.get("supportedGenerationMethods") or "generateContent" in m.get("supportedGenerationMethods",[])]
+        if supported:c=supported
     if preferred and preferred!="auto":
         exact=next((m for m in c if m.get("id")==preferred),None)
         if exact:return exact
         # When the requested model is unavailable/exhausted, fallback may use
         # another eligible model on the same provider or the next provider.
     if not c:return None
+
+    def score(m):
+        mid=str(m.get("id") or "").lower()
+        score=0
+        # Prefer current/stable model IDs over preview/experimental/deprecated
+        # aliases when the provider exposes lifecycle metadata.
+        if any(x in mid for x in ("preview","experimental","exp-","deprecated","legacy","retired")):score-=100
+        if provider=="gemini":
+            if mid=="gemini-3.8-flash":score+=40
+            if "flash" in mid:score+=10
+        elif provider=="claude":
+            if mid in {"claude-fable-5","claude-opus-5","claude-sonnet-5","claude-haiku-4-5"}:score+=40
+        if provider in {"openai","grok","kimi","deepseek","qwen","mistral","groq","openrouter","together"}:
+            if mid in {"auto","latest"}:score+=5
+        score+=min(int(m.get("created") or 0),9999999999)//100000000
+        return score
+
+    ranked=sorted(c,key=score,reverse=True)
     if cfg.get("costPolicy")=="FREE_FIRST":
-        # Provider discovery does not currently attach an isFree flag. Do not
-        # treat "unknown cost" as "no model"; use a discovered model when no
-        # explicitly free model is known.
-        return next((m for m in c if m.get("isFree")),c[0])
-    return c[0]
+        free=[m for m in ranked if m.get("isFree")]
+        return free[0] if free else ranked[0]
+    return ranked[0]
 async def routing(user):
-    s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});return {**DEFAULT_ROUTING,**(r or {})}
+    s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});merged={**DEFAULT_ROUTING,**(r or {})}
+    # One-time migration of the original 3-provider / 5-total-attempt defaults.
+    # This keeps existing tenants from remaining artificially capped after the
+    # fallback policy is upgraded, while preserving any later explicit settings.
+    if r and int(r.get("routingVersion",0) or 0)<2:
+        if int(r.get("maxProviderAttempts",3) or 3)==3:merged["maxProviderAttempts"]=10
+        if int(r.get("maxTotalAttempts",5) or 5)==5:merged["maxTotalAttempts"]=12
+        merged["routingVersion"]=2
+        await db.aiweave_routing_rules.update_one(s,{"$set":{**s,**merged}},upsert=True)
+    return merged
 async def touch(a,ok,kind=None,latency=None,inp=0,out=0,error=None):
     usage=a.get("usage") or {};patch={"current_usage_tokens":int(a.get("current_usage_tokens",0) or 0)+inp+out,"total_requests":int(a.get("total_requests",0) or 0)+1,
       "last_used":now(),"last_checked":now(),"last_error":None if ok else (error or a.get("last_error")),
@@ -485,7 +515,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     s=scope(user);cfg=await routing(user)
     accounts=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500)
     discovered=await db.aiweave_provider_models.find(s,{"_id":0}).to_list(1000)
-    maxa=int(cfg.get("maxAccountAttempts",3));maxp=int(cfg.get("maxProviderAttempts",3));maxt=int(cfg.get("maxTotalAttempts",5));timeout=float(cfg.get("timeoutMs",60000))/1000
+    ordered_providers=provider_order(cfg,payload.preferredProvider);maxa=max(1,int(cfg.get("maxAccountAttempts",3)));maxp=min(len(ordered_providers),max(1,int(cfg.get("maxProviderAttempts",len(ordered_providers)))));maxt=min(15,max(1,int(cfg.get("maxTotalAttempts",12))));timeout=float(cfg.get("timeoutMs",60000))/1000
     trail=[];attempts=0;provider_attempts=0;chosen=None;chosen_model=None;result=None;started=time.perf_counter()
     # Preserve conversation context across every provider fallback.
     context_messages=[m for m in (payload.messages or []) if isinstance(m,dict) and m.get("role") in {"system","user","assistant"} and m.get("content")]
@@ -495,7 +525,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     execution_prompt=payload.prompt
     if context_text:
         execution_prompt=f"Conversation context:\n{context_text}\n\nCURRENT USER REQUEST:\n{payload.prompt}"
-    for pid in provider_order(cfg,payload.preferredProvider):
+    for pid in ordered_providers:
         if provider_attempts>=maxp or attempts>=maxt: break
         provider_attempts+=1;provider_seen=0
         for a in rank([x for x in accounts if x.get("provider")==pid],str(cfg.get("strategy","PRIORITY"))):
@@ -516,6 +546,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                 await touch(a,True,latency=int((time.perf_counter()-t)*1000),inp=int(result.get("input_tokens",0) or 0),out=int(result.get("output_tokens",0) or 0));break
             except PError as e:
                 await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
+                logger.warning("AIWeave provider attempt failed provider=%s model=%s kind=%s detail=%s",pid,model.get("id"),e.kind,str(e.msg)[:300])
                 trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
             except httpx.TimeoutException as e:
                 kind="TIMEOUT";msg="Provider request timed out."
@@ -527,7 +558,9 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                 trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
         if result is not None: break
     if not result or not chosen or not chosen_model:
-        raise HTTPException(503,"AIWeave could not complete this request because no configured AI provider is currently available.")
+        attempted="; ".join(f"{x.get(\"provider\")}:{x.get(\"model\") or \"no-model\"}:{x.get(\"status\")}" for x in trail[-10:])
+        logger.warning("AIWeave exhausted provider fallback attempts=%s providers=%s",attempts,attempted or "none")
+        raise HTTPException(503,"AIWeave could not complete this request because no configured AI provider is currently available. Provider fallback exhausted all eligible attempts.")
     inp=int(result.get("input_tokens",0) or 0);out=int(result.get("output_tokens",0) or 0);eid=f"exec-{uuid.uuid4().hex[:12]}"
     record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
     await db.aiweave_executions.insert_one({**s,**record})
