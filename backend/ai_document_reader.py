@@ -92,62 +92,29 @@ def _get_gemini_model():
         )
 
 
-async def _generate_text_with_fallback(prompt: str):
-    """Try multiple Gemini models, then Groq, so one model quota cannot abort the job."""
-    key = _gemini_key()
-    errors = []
-    gemini_models = [
-        (os.environ.get("GEMINI_DOCUMENT_MODEL") or "gemini-3.8-flash").strip(),
-        "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash",
-        "gemini-3.5-flash-lite", "gemini-3.1-flash-lite",
-        "gemini-2.5-flash", "gemini-2.5-flash-lite",
-    ]
-    seen = set()
-    import google.generativeai as genai
-    genai.configure(api_key=key)
-    for model_name in gemini_models:
-        if not model_name or model_name in seen:
-            continue
-        seen.add(model_name)
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = await model.generate_content_async(prompt)
-            output = getattr(response, "text", None)
-            if output:
-                return output, {"provider": "gemini", "model": model_name}
-            errors.append(f"gemini/{model_name}: empty response")
-        except Exception as exc:
-            errors.append(f"gemini/{model_name}: {str(exc)[:240]}")
-            continue
+async def _generate_text_with_fallback(prompt: str, current_user):
+    """
+    Delegate document text analysis to the same AIWeave routing engine used by
+    normal chat. This is important: document analysis must honor provider,
+    account, model, quota and fallback rules instead of using one hard-coded
+    Gemini credential/model.
+    """
+    from backend.ai.aiweave_router import Execute, execute
 
-    groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
-    if groq_key:
-        import httpx
-        seen_groq = set()
-        for model_name in [
-            (os.environ.get("GROQ_DOCUMENT_MODEL") or "openai/gpt-oss-120b").strip(),
-            "openai/gpt-oss-20b",
-        ]:
-            if not model_name or model_name in seen_groq:
-                continue
-            seen_groq.add(model_name)
-            try:
-                async with httpx.AsyncClient(timeout=120) as client:
-                    resp = await client.post(
-                        "https://api.groq.com/openai/v1/chat/completions",
-                        headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
-                        json={"model": model_name, "messages": [{"role": "user", "content": prompt}], "temperature": 0.1},
-                    )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    output = (((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-                    if output:
-                        return output, {"provider": "groq", "model": model_name}
-                errors.append(f"groq/{model_name}: HTTP {resp.status_code} {resp.text[:180]}")
-            except Exception as exc:
-                errors.append(f"groq/{model_name}: {str(exc)[:240]}")
-
-    raise HTTPException(status_code=503, detail="Document AI fallback exhausted. " + " | ".join(errors[-8:]))
+    result = await execute(
+        Execute(
+            prompt=prompt,
+            taskType="document_analysis",
+            requiredCapability="document_analysis",
+            preferredProvider="auto",
+            preferredModel="auto",
+        ),
+        current_user,
+    )
+    return result.get("output", ""), {
+        "provider": result.get("provider"),
+        "model": result.get("model"),
+    }
 
 
 # ── Provider selection ────────────────────────────────────────────────────────
@@ -356,7 +323,7 @@ async def analyze_document(
                 "4. Actionable insights or observations\n\n"
                 f"{text_content[:40000]}"
             )
-            analysis, _provider_used = await _generate_text_with_fallback(prompt)
+            analysis, _provider_used = await _generate_text_with_fallback(prompt, current_user)
             return {"filename": filename, "analysis": analysis, "provider": _provider_used.get("provider"), "model": _provider_used.get("model")}
 
         # ── Excel (.xls) → Gemini ─────────────────────────────────────────────────
