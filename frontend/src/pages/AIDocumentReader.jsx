@@ -124,12 +124,12 @@ export default function AIDocumentReader() {
       </section>
 
       <div className="mt-4 flex min-h-0 flex-1 min-w-0">        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
-      <div className="border-b border-slate-200 px-3 pb-3">
-        <div className="relative">
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-[#1F6FB2] focus:ring-2 focus:ring-[#1F6FB2]/10"/>
+      <div className="px-3 pt-3 pb-2">
+        <div className="relative rounded-xl border border-slate-200 bg-white shadow-sm transition focus-within:border-[#1F6FB2] focus-within:ring-2 focus-within:ring-[#1F6FB2]/10">
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border-0 bg-transparent px-3 py-2.5 text-xs outline-none"/>
         </div>
       </div>
-      <div className="flex items-center justify-between px-3 pb-2 pt-3">
+      <div className="flex items-center justify-between border-t border-slate-200 px-3 pb-2 pt-3">
         <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Chat history</span>
         {search&&<button onClick={()=>setSearch("")} className="text-[10px] text-slate-400 hover:text-slate-700">Clear</button>}
       </div>
