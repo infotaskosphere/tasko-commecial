@@ -23,7 +23,7 @@ function Bubble({children, tone=""}) {
   return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${tone}`}>{children}</span>;
 }
 function Text({value}) {
-  return <div className="whitespace-pre-wrap break-words text-[15px] leading-7">{String(value || "").split("").map((x,i)=><div key={i}>{x || "\u00a0"}</div>)}</div>;
+  return <div className="whitespace-pre-wrap break-words text-[15px] leading-7">{String(value || "")}</div>;
 }
 
 export default function AIDocumentReader() {
