@@ -276,6 +276,13 @@ def model_candidates(provider,preferred,cap,cfg,discovered):
     if provider=="gemini":
         supported=[m for m in candidates if not m.get("supportedGenerationMethods") or "generateContent" in m.get("supportedGenerationMethods",[])]
         if supported:candidates=supported
+
+    # Discovery is advisory. If /models is temporarily unavailable, do not
+    # turn a healthy credential into MODEL_UNAVAILABLE. Use the maintained
+    # capability catalog and let the real request validate the model.
+    if not candidates:
+        candidates=[dict(m) for m in MODELS if m.get("provider")==provider and cap in (m.get("capabilities") or [])]
+
     if preferred and preferred!="auto":
         exact=[m for m in candidates if m.get("id")==preferred]
         candidates=exact+[m for m in candidates if m.get("id")!=preferred]
@@ -575,7 +582,10 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     if not result or not chosen or not chosen_model:
         attempted="; ".join(str(x.get("provider") or "unknown")+":"+str(x.get("model") or "no-model")+":"+str(x.get("status") or "unknown") for x in trail[-10:])
         logger.warning("AIWeave exhausted provider fallback attempts=%s providers=%s",attempts,attempted or "none")
-        raise HTTPException(503,"AIWeave could not complete this request because no configured AI provider is currently available. Provider fallback exhausted all eligible attempts.")
+        detail="AIWeave could not complete this request because no configured AI provider is currently available."
+        if attempted:
+            detail += " Fallback trail: " + attempted
+        raise HTTPException(503,detail)
     inp=int(result.get("input_tokens",0) or 0);out=int(result.get("output_tokens",0) or 0);eid=f"exec-{uuid.uuid4().hex[:12]}"
     record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
     await db.aiweave_executions.insert_one({**s,**record})
