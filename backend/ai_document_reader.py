@@ -84,7 +84,7 @@ def _get_gemini_model():
     try:
         import google.generativeai as genai
         genai.configure(api_key=key)
-        return genai.GenerativeModel("gemini-2.0-flash")
+        return genai.GenerativeModel((os.environ.get("GEMINI_DOCUMENT_MODEL") or "gemini-3.8-flash").strip())
     except ImportError:
         raise HTTPException(
             status_code=500,
@@ -99,7 +99,8 @@ def _provider() -> str:
         return "gemini"
     if p == "groq":
         return "groq"
-    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+    if (os.environ.get("AIWEAVE_GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") or
+            os.environ.get("GOOGLE_API_KEY") or os.environ.get("GOOGLE_AI_STUDIO_API_KEY")):
         return "gemini"
     return "groq"
 
@@ -117,7 +118,7 @@ async def _gemini_vision(image_b64: str, mime_type: str, prompt: str) -> str:
     key = _gemini_key()
     if not key:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server.")
-    model = (os.environ.get("GEMINI_VISION_MODEL") or "gemini-2.5-flash").strip()
+    model = (os.environ.get("GEMINI_VISION_MODEL") or "gemini-3.8-flash").strip()
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {
         "contents": [{
