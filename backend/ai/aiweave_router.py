@@ -270,15 +270,22 @@ def provider_order(cfg,requested):
     if cfg.get("allowLocalFallback") and "ollama" not in out:out.append("ollama")
     return out
 def model_for(provider,preferred,cap,cfg,discovered):
-    # Execution uses provider-discovered models only. The static catalog is
-    # descriptive UI metadata and is never treated as proof of availability.
+    # Execution uses provider-discovered models when available. The static
+    # catalog is descriptive UI metadata and is never treated as proof of
+    # availability.
     c=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
     if preferred and preferred!="auto":
         exact=next((m for m in c if m.get("id")==preferred),None)
         if exact:return exact
         # When the requested model is unavailable/exhausted, fallback may use
-        # another eligible model on the next provider instead of terminating.
-    return next((m for m in c if m.get("isFree")),None) if cfg.get("costPolicy")=="FREE_FIRST" else (c[0] if c else None)
+        # another eligible model on the same provider or the next provider.
+    if not c:return None
+    if cfg.get("costPolicy")=="FREE_FIRST":
+        # Provider discovery does not currently attach an isFree flag. Do not
+        # treat "unknown cost" as "no model"; use a discovered model when no
+        # explicitly free model is known.
+        return next((m for m in c if m.get("isFree")),c[0])
+    return c[0]
 async def routing(user):
     s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});return {**DEFAULT_ROUTING,**(r or {})}
 async def touch(a,ok,kind=None,latency=None,inp=0,out=0,error=None):
