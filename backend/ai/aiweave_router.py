@@ -57,7 +57,7 @@ MODELS=[
  {"id":"qwen2.5-coder:32b","provider":"ollama","name":"Qwen 2.5 Coder 32B (Local)","capabilities":["coding","debugging","tool_calling","structured_output"],"isLocal":True},
  {"id":"llama3.3:70b","provider":"ollama","name":"Llama 3.3 70B (Local)","capabilities":["chat","reasoning","coding","document_analysis","structured_output"],"isLocal":True},
 ]
-DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":10,"maxTotalAttempts":12,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True,"routingVersion":2}
+DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":12,"maxTotalAttempts":30,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True,"routingVersion":3}
 ENV_PROVIDER_KEYS={"openai":"AIWEAVE_OPENAI_API_KEY","gemini":"AIWEAVE_GEMINI_API_KEY","claude":"AIWEAVE_ANTHROPIC_API_KEY","grok":"AIWEAVE_XAI_API_KEY","kimi":"AIWEAVE_KIMI_API_KEY","deepseek":"AIWEAVE_DEEPSEEK_API_KEY","qwen":"AIWEAVE_QWEN_API_KEY","mistral":"AIWEAVE_MISTRAL_API_KEY","groq":"AIWEAVE_GROQ_API_KEY","openrouter":"AIWEAVE_OPENROUTER_API_KEY","together":"AIWEAVE_TOGETHER_API_KEY"}
 ENV_PROVIDER_IDENTITY={"openai":"AIWeave Server / OpenAI","gemini":"AIWeave Server / Gemini","claude":"AIWeave Server / Claude","grok":"AIWeave Server / Grok","kimi":"AIWeave Server / Kimi","deepseek":"AIWeave Server / DeepSeek","qwen":"AIWeave Server / Qwen","mistral":"AIWeave Server / Mistral","groq":"AIWeave Server / Groq","openrouter":"AIWeave Server / OpenRouter","together":"AIWeave Server / Together"}
 ENV_MAX_KEYS=10
@@ -317,10 +317,23 @@ async def routing(user):
     # One-time migration of the original 3-provider / 5-total-attempt defaults.
     # This keeps existing tenants from remaining artificially capped after the
     # fallback policy is upgraded, while preserving any later explicit settings.
+    needs_persist=False
     if r and int(r.get("routingVersion",0) or 0)<2:
         if int(r.get("maxProviderAttempts",3) or 3)==3:merged["maxProviderAttempts"]=10
         if int(r.get("maxTotalAttempts",5) or 5)==5:merged["maxTotalAttempts"]=12
-        merged["routingVersion"]=2
+        merged["routingVersion"]=2;needs_persist=True
+    # v3: a single mis-configured or exhausted account (auth/config failure)
+    # was burning through most of the shared attempt budget by cycling
+    # through up to 5 models on that same broken account before the router
+    # ever moved on to the next account/provider. That starved genuinely
+    # healthy, connected providers of a chance to run at all. Raise the
+    # shared budget so every connected provider still gets a real shot,
+    # paired with the per-account fix in execute() below.
+    if int(merged.get("routingVersion",0) or 0)<3:
+        if int(merged.get("maxProviderAttempts",10) or 10)==10:merged["maxProviderAttempts"]=12
+        if int(merged.get("maxTotalAttempts",12) or 12)==12:merged["maxTotalAttempts"]=30
+        merged["routingVersion"]=3;needs_persist=True
+    if needs_persist:
         await db.aiweave_routing_rules.update_one(s,{"$set":{**s,**merged}},upsert=True)
     return merged
 async def touch(a,ok,kind=None,latency=None,inp=0,out=0,error=None):
@@ -548,7 +561,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
             models=model_candidates(pid,payload.preferredModel,payload.requiredCapability,cfg,discovered)
             if not models:
                 trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":"MODEL_UNAVAILABLE","reason":"No compatible discovered model is available."});continue
-            for model in models[:5]:
+            for model in models[:2]:
                 if attempts>=maxt: break
                 attempts+=1;t=time.perf_counter()
                 if payload.mockSimulateExhaustion:
@@ -563,9 +576,18 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                     await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
                     logger.warning("AIWeave provider attempt failed provider=%s model=%s kind=%s detail=%s",pid,model.get("id"),e.kind,str(e.msg)[:300])
                     trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
-                    # Quota/capacity/model failures should immediately try the
-                    # next model on the same provider before moving providers.
-                    if e.kind not in {"RATE_LIMITED","CAPACITY_EXHAUSTED","TOKEN_EXHAUSTED","NON_RETRYABLE_ACCOUNT_FAILURE"}:
+                    # Only a genuinely per-model failure (that model specifically
+                    # is out of capacity/quota) justifies trying another model on
+                    # this same account. NON_RETRYABLE_ACCOUNT_FAILURE and
+                    # AUTH_REQUIRED mean the *credential/config* is broken, not
+                    # the model - retrying with a different model id on the same
+                    # broken account just burns the shared attempt budget and
+                    # was previously starving other, genuinely healthy providers
+                    # (openai/gemini/claude alone could consume the entire
+                    # fallback budget before grok/kimi/deepseek/qwen/mistral/
+                    # groq/openrouter/together/ollama ever got a turn). Break
+                    # out to the next account/provider immediately instead.
+                    if e.kind not in {"RATE_LIMITED","CAPACITY_EXHAUSTED","TOKEN_EXHAUSTED"}:
                         break
                 except httpx.TimeoutException as e:
                     kind="TIMEOUT";msg="Provider request timed out."
