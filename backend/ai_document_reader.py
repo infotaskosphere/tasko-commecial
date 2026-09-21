@@ -66,11 +66,20 @@ async def _groq_vision_batched_pages(
 
 # ── Gemini client (PDF text, Excel, CSV) ─────────────────────────────────────
 def _get_gemini_model():
-    key = os.environ.get("GEMINI_API_KEY", "")
+    # AIWeave stores platform-managed Gemini credentials under
+    # AIWEAVE_GEMINI_API_KEY. Keep the document reader compatible with the
+    # legacy GEMINI_API_KEY / GOOGLE_API_KEY names as well.
+    key = (
+        os.environ.get("AIWEAVE_GEMINI_API_KEY")
+        or os.environ.get("GEMINI_API_KEY")
+        or os.environ.get("GOOGLE_API_KEY")
+        or os.environ.get("GOOGLE_AI_STUDIO_API_KEY")
+        or ""
+    ).strip()
     if not key:
         raise HTTPException(
             status_code=500,
-            detail="GEMINI_API_KEY is not configured on the server."
+            detail="Gemini API key is not configured on the server."
         )
     try:
         import google.generativeai as genai
