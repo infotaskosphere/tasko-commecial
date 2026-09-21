@@ -269,44 +269,42 @@ def provider_order(cfg,requested):
     out=([first] if first else [])+[p for p in default_order if p!=first]
     if cfg.get("allowLocalFallback") and "ollama" not in out:out.append("ollama")
     return out
-def model_for(provider,preferred,cap,cfg,discovered):
-    # Execution uses provider-discovered models when available. The static
-    # catalog is descriptive UI metadata and is never treated as proof of
-    # availability.
-    c=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
+def model_candidates(provider,preferred,cap,cfg,discovered):
+    # Return an ordered list so quota/capacity exhaustion can move to another
+    # model before abandoning the provider entirely.
+    candidates=[m for m in discovered if m.get("provider")==provider and (not m.get("capabilities") or cap in m.get("capabilities",[]))]
     if provider=="gemini":
-        # Gemini exposes many model families from the same catalog. Only
-        # models advertising generateContent are valid for this adapter.
-        supported=[m for m in c if not m.get("supportedGenerationMethods") or "generateContent" in m.get("supportedGenerationMethods",[])]
-        if supported:c=supported
+        supported=[m for m in candidates if not m.get("supportedGenerationMethods") or "generateContent" in m.get("supportedGenerationMethods",[])]
+        if supported:candidates=supported
     if preferred and preferred!="auto":
-        exact=next((m for m in c if m.get("id")==preferred),None)
-        if exact:return exact
-        # When the requested model is unavailable/exhausted, fallback may use
-        # another eligible model on the same provider or the next provider.
-    if not c:return None
+        exact=[m for m in candidates if m.get("id")==preferred]
+        candidates=exact+[m for m in candidates if m.get("id")!=preferred]
+    if not candidates:return []
 
     def score(m):
         mid=str(m.get("id") or "").lower()
-        score=0
-        # Prefer current/stable model IDs over preview/experimental/deprecated
-        # aliases when the provider exposes lifecycle metadata.
-        if any(x in mid for x in ("preview","experimental","exp-","deprecated","legacy","retired")):score-=100
+        value=0
+        if any(x in mid for x in ("preview","experimental","exp-","deprecated","legacy","retired")):value-=100
         if provider=="gemini":
-            if mid=="gemini-3.8-flash":score+=40
-            if "flash" in mid:score+=10
+            if mid=="gemini-3.8-flash":value+=40
+            if "flash" in mid:value+=10
         elif provider=="claude":
-            if mid in {"claude-fable-5","claude-opus-5","claude-sonnet-5","claude-haiku-4-5"}:score+=40
+            if mid in {"claude-fable-5","claude-opus-5","claude-sonnet-5","claude-haiku-4-5"}:value+=40
         if provider in {"openai","grok","kimi","deepseek","qwen","mistral","groq","openrouter","together"}:
-            if mid in {"auto","latest"}:score+=5
-        score+=min(int(m.get("created") or 0),9999999999)//100000000
-        return score
+            if mid in {"auto","latest"}:value+=5
+        value+=min(int(m.get("created") or 0),9999999999)//100000000
+        return value
 
-    ranked=sorted(c,key=score,reverse=True)
+    ranked=sorted(candidates,key=score,reverse=True)
     if cfg.get("costPolicy")=="FREE_FIRST":
         free=[m for m in ranked if m.get("isFree")]
-        return free[0] if free else ranked[0]
-    return ranked[0]
+        return free+[m for m in ranked if not m.get("isFree")]
+    return ranked
+
+def model_for(provider,preferred,cap,cfg,discovered):
+    candidates=model_candidates(provider,preferred,cap,cfg,discovered)
+    return candidates[0] if candidates else None
+
 async def routing(user):
     s=scope(user);r=await db.aiweave_routing_rules.find_one(s,{"_id":0});merged={**DEFAULT_ROUTING,**(r or {})}
     # One-time migration of the original 3-provider / 5-total-attempt defaults.
@@ -540,30 +538,39 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
             if attempts>=maxt or provider_seen>=maxa: break
             if not eligible(a,payload): continue
             provider_seen+=1
-            model=model_for(pid,payload.preferredModel,payload.requiredCapability,cfg,discovered)
-            if not model:
+            models=model_candidates(pid,payload.preferredModel,payload.requiredCapability,cfg,discovered)
+            if not models:
                 trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":"MODEL_UNAVAILABLE","reason":"No compatible discovered model is available."});continue
-            attempts+=1;t=time.perf_counter()
-            if payload.mockSimulateExhaustion:
-                e=PError("TOKEN_EXHAUSTED","Simulated token/quota exhaustion for fallback testing.")
-                await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
-                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
-                continue
-            try:
-                result=await execute_adapter(a,model["id"],execution_prompt,timeout);chosen=a;chosen_model=model
-                await touch(a,True,latency=int((time.perf_counter()-t)*1000),inp=int(result.get("input_tokens",0) or 0),out=int(result.get("output_tokens",0) or 0));break
-            except PError as e:
-                await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
-                logger.warning("AIWeave provider attempt failed provider=%s model=%s kind=%s detail=%s",pid,model.get("id"),e.kind,str(e.msg)[:300])
-                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
-            except httpx.TimeoutException as e:
-                kind="TIMEOUT";msg="Provider request timed out."
-                await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
-                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
-            except Exception as e:
-                kind="NETWORK_ERROR" if isinstance(e,(httpx.NetworkError,httpx.ConnectError)) else "UNKNOWN_ERROR";msg=str(e)[:500] or "Provider execution failed."
-                await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
-                trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+            for model in models[:5]:
+                if attempts>=maxt: break
+                attempts+=1;t=time.perf_counter()
+                if payload.mockSimulateExhaustion:
+                    e=PError("TOKEN_EXHAUSTED","Simulated token/quota exhaustion for fallback testing.")
+                    await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+                    continue
+                try:
+                    result=await execute_adapter(a,model["id"],execution_prompt,timeout);chosen=a;chosen_model=model
+                    await touch(a,True,latency=int((time.perf_counter()-t)*1000),inp=int(result.get("input_tokens",0) or 0),out=int(result.get("output_tokens",0) or 0));break
+                except PError as e:
+                    await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
+                    logger.warning("AIWeave provider attempt failed provider=%s model=%s kind=%s detail=%s",pid,model.get("id"),e.kind,str(e.msg)[:300])
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+                    # Quota/capacity/model failures should immediately try the
+                    # next model on the same provider before moving providers.
+                    if e.kind not in {"RATE_LIMITED","CAPACITY_EXHAUSTED","TOKEN_EXHAUSTED","NON_RETRYABLE_ACCOUNT_FAILURE"}:
+                        break
+                except httpx.TimeoutException as e:
+                    kind="TIMEOUT";msg="Provider request timed out."
+                    await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+                    break
+                except Exception as e:
+                    kind="NETWORK_ERROR" if isinstance(e,(httpx.NetworkError,httpx.ConnectError)) else "UNKNOWN_ERROR";msg=str(e)[:500] or "Provider execution failed."
+                    await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+                    break
+            if result is not None: break
         if result is not None: break
     if not result or not chosen or not chosen_model:
         attempted="; ".join(str(x.get("provider") or "unknown")+":"+str(x.get("model") or "no-model")+":"+str(x.get("status") or "unknown") for x in trail[-10:])
