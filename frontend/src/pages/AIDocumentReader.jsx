@@ -58,16 +58,37 @@ export default function AIDocumentReader() {
 
   const send=async()=>{
     const text=prompt.trim();if(!text||running)return;
+    const attachedFiles=[...files];
     const userMsg={id:`u-${Date.now()}`,role:"user",content:text,created_at:new Date().toISOString()};
     setMessages(x=>[...x,userMsg]);setPrompt("");setRunning(true);
     try{
       let conv=active;
       if(!conv){conv=await createConversation({title:text.slice(0,80)});setActive(conv);}
+      let documentContext="";
+      if(attachedFiles.length){
+        setStatus(`Reading ${attachedFiles.length} uploaded document${attachedFiles.length===1?"":"s"}...`);
+        const form=new FormData();
+        attachedFiles.forEach(file=>form.append("files",file));
+        const response=await api.post("/ai/workspace/analyze-documents",form,{headers:{"Content-Type":"multipart/form-data"},timeout:600000});
+        const data=response?.data||{};
+        const results=Array.isArray(data.results)?data.results:[];
+        const errors=Array.isArray(data.errors)?data.errors:[];
+        if(!results.length){
+          const detail=errors.map(x=>x?.filename?`${x.filename}: ${x.error||"document processing failed"}`:x?.error).filter(Boolean).join(" | ");
+          throw new Error(detail||"The uploaded document could not be read.");
+        }
+        documentContext=results.map(x=>{
+          const analysis=String(x?.analysis||"").trim();
+          return `DOCUMENT: ${x?.filename||"Uploaded document"}\\nDOCUMENT TYPE: ${x?.document_type||"Unknown"}\\nEXTRACTED ANALYSIS:\\n${analysis.slice(0,14000)}`;
+        }).join("\\n\\n--- DOCUMENT BOUNDARY ---\\n\\n").slice(0,60000);
+        if(errors.length)toast.warning(`${errors.length} document${errors.length===1?"":"s"} could not be processed.`);
+      }
       setStatus(selectedModel==="auto"?"AIWeave Auto is selecting the best available model...":`Using ${activeModel?.name||selectedModel}...`);
       const result=await executeTask({
         prompt:text,messages:[...messages,userMsg].slice(-30).map(x=>({role:x.role,content:x.content})),
-        conversationId:conv.id||conv.conversation_id,taskType:capability,requiredCapability:capability,
-        preferredProvider:provider,preferredModel:selectedModel,files:files.map(x=>({name:x.name,type:x.type,size:x.size}))
+        conversationId:conv.id||conv.conversation_id,taskType:capability,requiredCapability:attachedFiles.length?"document_analysis":capability,
+        preferredProvider:provider,preferredModel:selectedModel,documentContext,
+        files:attachedFiles.map(x=>({name:x.name,type:x.type,size:x.size}))
       });
       const assistant={id:`a-${Date.now()}`,role:"assistant",content:result.output||"The model completed without returning text.",
         created_at:new Date().toISOString(),providerName:result.providerName,modelName:result.modelName||result.model,
