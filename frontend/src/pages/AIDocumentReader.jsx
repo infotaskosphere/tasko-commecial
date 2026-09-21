@@ -123,7 +123,7 @@ export default function AIDocumentReader() {
         </div>
       </section>
 
-      <div className="flex min-h-0 flex-1 min-w-0">        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
+      <div className="mt-4 flex min-h-0 flex-1 min-w-0">        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
       <div className="border-b border-slate-200 px-3 pb-3">
         <div className="relative">
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs outline-none transition focus:border-[#1F6FB2] focus:ring-2 focus:ring-[#1F6FB2]/10"/>
