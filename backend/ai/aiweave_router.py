@@ -558,7 +558,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                 trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
         if result is not None: break
     if not result or not chosen or not chosen_model:
-        attempted="; ".join(f"{x.get('provider')}:{x.get('model') or 'no-model'}:{x.get('status')}" for x in trail[-10:])
+        attempted="; ".join(str(x.get("provider") or "unknown")+":"+str(x.get("model") or "no-model")+":"+str(x.get("status") or "unknown") for x in trail[-10:])
         logger.warning("AIWeave exhausted provider fallback attempts=%s providers=%s",attempts,attempted or "none")
         raise HTTPException(503,"AIWeave could not complete this request because no configured AI provider is currently available. Provider fallback exhausted all eligible attempts.")
     inp=int(result.get("input_tokens",0) or 0);out=int(result.get("output_tokens",0) or 0);eid=f"exec-{uuid.uuid4().hex[:12]}"
