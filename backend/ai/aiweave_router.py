@@ -356,6 +356,7 @@ class Execute(BaseModel):
     conversationId:Optional[str]=None
     messages:List[Dict[str,Any]]=Field(default_factory=list)
     files:List[Dict[str,Any]]=Field(default_factory=list)
+    documentContext:str=Field(default="",max_length=60000)
     mockSimulateExhaustion:bool=False
 
 class ConversationCreate(BaseModel):
@@ -525,6 +526,13 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     execution_prompt=payload.prompt
     if context_text:
         execution_prompt=f"Conversation context:\n{context_text}\n\nCURRENT USER REQUEST:\n{payload.prompt}"
+    if payload.documentContext.strip():
+        execution_prompt=(
+            "Uploaded document evidence follows. Answer the current user request using this evidence. "
+            "Do not claim to have read anything that is not present in the supplied evidence. "
+            "If the evidence is insufficient, say so clearly.\n\n"
+            f"{payload.documentContext.strip()}\n\nCURRENT USER REQUEST:\n{payload.prompt}"
+        )
     for pid in ordered_providers:
         if provider_attempts>=maxp or attempts>=maxt: break
         provider_attempts+=1;provider_seen=0
