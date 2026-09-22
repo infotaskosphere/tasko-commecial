@@ -2534,20 +2534,6 @@ def build_compliance_checklist(company: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     add("PAS-6", "Reconciliation of Share Capital Audit Report (unlisted companies with dematerialised shares)", "Within 60 days of half-year end", "Half-Yearly", applicable=not is_opc and not is_section8)
 
-    # Approved notification-derived rules are additive. They never silently replace the
-    # statutory checklist; a professional-approved notification may add a new review/form
-    # item with its source retained for traceability.
-    for rule in await _approved_notification_rules():
-        forms = rule.get("forms") or ([] if not rule.get("form") else [rule.get("form")])
-        items.append({
-            "form": forms[0] if forms else "Legal Update",
-            "particulars": rule.get("title") or "Notification-derived compliance update",
-            "due_date_rule": rule.get("effective_date") or rule.get("notification_effective_date") or "Review source notification",
-            "frequency": "Event-based",
-            "applicable": True,
-            "notes": f"Approved from Notifications: {rule.get('notification_title') or rule.get('notification_id')}. Review the source before filing.",
-            "source_notification_id": rule.get("notification_id"),
-        })
     return items
 
 
@@ -2557,6 +2543,19 @@ async def get_compliance_checklist(company_id: str, current_user: User = Depends
     if not company:
         raise HTTPException(404, "Company not found")
     checklist = build_compliance_checklist(company)
+    # Approved notification-derived rules are additive and are evaluated here,
+    # outside the synchronous base-rule builder.
+    for rule in await _approved_notification_rules():
+        forms = rule.get("forms") or ([] if not rule.get("form") else [rule.get("form")])
+        checklist.append({
+            "form": forms[0] if forms else "Legal Update",
+            "particulars": rule.get("title") or "Notification-derived compliance update",
+            "due_date_rule": rule.get("effective_date") or rule.get("notification_effective_date") or "Review source notification",
+            "frequency": "Event-based",
+            "applicable": True,
+            "notes": f"Approved from Notifications: {rule.get('notification_title') or rule.get('notification_id')}. Review the source before filing.",
+            "source_notification_id": rule.get("notification_id"),
+        })
     is_llp = _is_llp(company)
     return {
         "company_name": company.get("company_name"),
