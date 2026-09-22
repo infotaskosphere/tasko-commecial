@@ -2053,6 +2053,264 @@ async def create_share_certificate(
     return {"certificate": certificate}
 
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# LEGAL NOTIFICATIONS / UPDATE DOCUMENTS
+# ─────────────────────────────────────────────────────────────────────────
+# Notifications are intentionally stored as a versioned legal-update inbox.
+# Uploads are extracted and converted into proposed rule changes, but NEVER
+# become active compliance rules automatically. A CS/Admin reviewer must
+# approve an extracted rule before the applicability engine consumes it.
+NOTIFICATIONS = db.roc_notifications
+NOTIFICATION_MAX_INLINE_BYTES = 12 * 1024 * 1024
+
+NOTIFICATION_ALLOWED_EXT = (".pdf", ".docx", ".txt", ".csv", ".xlsx", ".xlsm", ".xls")
+
+
+def _extract_notification_text(filename: str, raw: bytes) -> str:
+    """Extract readable text from legal update documents without executing macros."""
+    name = (filename or "").lower()
+    try:
+        if name.endswith(".pdf"):
+            import pdfplumber
+            parts = []
+            with pdfplumber.open(io.BytesIO(raw)) as pdf:
+                for page in pdf.pages:
+                    parts.append(page.extract_text() or "")
+            return "\n".join(parts)
+        if name.endswith(".docx"):
+            from docx import Document
+            doc = Document(io.BytesIO(raw))
+            parts = [p.text for p in doc.paragraphs if p.text]
+            for table in doc.tables:
+                for row in table.rows:
+                    parts.append(" | ".join(cell.text for cell in row.cells))
+            return "\n".join(parts)
+        if name.endswith((".xlsx", ".xlsm", ".xls")):
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True, keep_vba=name.endswith(".xlsm"))
+            parts = []
+            for ws in wb.worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    values = [str(v).strip() for v in row if v is not None and str(v).strip()]
+                    if values:
+                        parts.append(" | ".join(values))
+            wb.close()
+            return "\n".join(parts)
+        return raw.decode("utf-8", errors="ignore")
+    except Exception as exc:
+        logger.warning("roc_sphere notification extraction failed for %s: %s", filename, exc)
+        return ""
+
+
+def _analyse_notification(filename: str, raw_text: str) -> Dict[str, Any]:
+    """Best-effort extraction of legal-update metadata.
+
+    This deliberately produces *proposed* changes only. Legal interpretation
+    remains reviewable by the professional before activation.
+    """
+    text = raw_text or ""
+    lower = text.lower()
+    forms = []
+    for form in ("AOC-4", "MGT-7", "MGT-7A", "ADT-1", "DIR-12", "PAS-3", "SH-7", "MGT-14",
+                 "DPT-3", "MSME-1", "PAS-6", "CHG-1", "CHG-4", "INC-22", "CSR-1", "CSR-2",
+                 "DIR-3 KYC", "Form 11", "Form 8", "Form 3", "Form 4"):
+        if re.search(re.escape(form).replace(r"\ ", r"\s*"), text, re.I):
+            forms.append(form)
+
+    sections = sorted(set(re.findall(r"\b(?:section|sec\.?|s\.)\s*([0-9]{1,3}[A-Z]?)", text, re.I)))
+    notification_no = None
+    for pattern in (
+        r"\b(?:G\.S\.R\.|S\.O\.|F\.No\.?|General Circular(?: No\.?)?|Circular(?: No\.?)?)\s*[:#-]?\s*([A-Z0-9./()_-]+)",
+        r"\bNotification\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Z0-9./()_-]+)",
+    ):
+        m = re.search(pattern, text, re.I)
+        if m:
+            notification_no = m.group(1).strip()
+            break
+
+    effective_date = None
+    date_patterns = (
+        r"(?:with effect from|effective from|shall come into force on|comes into force on|applicable from)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})",
+        r"(?:dated|date)\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
+    )
+    for pattern in date_patterns:
+        m = re.search(pattern, text, re.I)
+        if m:
+            effective_date = m.group(1)
+            break
+
+    authority = "MCA" if any(k in lower for k in ("ministry of corporate affairs", "mca21", "mca v3", "mca ")) else "Other"
+    if "institute of company secretaries" in lower or "icsi" in lower:
+        authority = "ICSI"
+
+    title = (text.strip().splitlines()[0].strip() if text.strip() else filename)[:300]
+    proposed = [{
+        "id": _uid(),
+        "kind": "review",
+        "title": f"Review update affecting {', '.join(forms) if forms else 'ROC compliance'}",
+        "forms": forms,
+        "sections": sections,
+        "effective_date": effective_date,
+        "instruction": "Review the uploaded source and approve/edit the rule before it becomes active.",
+    }]
+    if any(k in lower for k in ("amendment", "substituted", "omitted", "inserted", "revised", "replaced", "relaxation", "extension")):
+        proposed.append({
+            "id": _uid(),
+            "kind": "rule-change",
+            "title": "Potential amendment / revised requirement detected",
+            "forms": forms,
+            "sections": sections,
+            "effective_date": effective_date,
+            "instruction": "Compare the source document with the existing rule before activation.",
+        })
+
+    return {
+        "title": title,
+        "authority": authority,
+        "notification_number": notification_no,
+        "effective_date": effective_date,
+        "affected_forms": forms,
+        "affected_sections": sections,
+        "proposed_rule_updates": proposed,
+    }
+
+
+@router.get("/notifications")
+async def list_roc_notifications(current_user: User = Depends(VIEW)):
+    docs = []
+    cursor = NOTIFICATIONS.find({}).sort("uploaded_at", -1)
+    async for doc in cursor:
+        doc.pop("_id", None)
+        if doc.get("file_base64"):
+            doc["file_base64"] = None
+            doc["file_available"] = True
+        else:
+            doc["file_available"] = False
+        docs.append(doc)
+    return docs
+
+
+@router.post("/notifications/upload")
+async def upload_roc_notification(
+    file: UploadFile = File(...),
+    current_user: User = Depends(CREATE),
+):
+    filename = (file.filename or "").strip()
+    if not filename:
+        raise HTTPException(400, "Notification document filename is required")
+    if not filename.lower().endswith(NOTIFICATION_ALLOWED_EXT):
+        raise HTTPException(400, "Supported notification documents: PDF, DOCX, TXT, CSV, XLSX, XLSM, XLS")
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "Uploaded notification document is empty")
+    if len(raw) > NOTIFICATION_MAX_INLINE_BYTES:
+        raise HTTPException(413, "Notification document is larger than 12 MB. Please upload a smaller copy.")
+
+    extracted_text = _extract_notification_text(filename, raw)
+    if not extracted_text.strip():
+        raise HTTPException(422, "The uploaded notification could not be read. Please upload a text-readable document.")
+
+    analysis = _analyse_notification(filename, extracted_text)
+    now = _now()
+    doc = {
+        "id": _uid(),
+        "filename": filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size_bytes": len(raw),
+        "uploaded_at": now,
+        "uploaded_by": _who(current_user),
+        "authority": analysis["authority"],
+        "title": analysis["title"],
+        "notification_number": analysis["notification_number"],
+        "effective_date": analysis["effective_date"],
+        "affected_forms": analysis["affected_forms"],
+        "affected_sections": analysis["affected_sections"],
+        "proposed_rule_updates": analysis["proposed_rule_updates"],
+        "status": "under_review",
+        "extracted_text": extracted_text[:500000],
+        "file_base64": __import__("base64").b64encode(raw).decode("ascii"),
+        "reviewed_by": None,
+        "reviewed_at": None,
+    }
+    await NOTIFICATIONS.insert_one(doc)
+    result = {k: v for k, v in doc.items() if k != "file_base64"}
+    result["file_available"] = True
+    result["text_length"] = len(extracted_text)
+    return result
+
+
+@router.get("/notifications/{notification_id}")
+async def get_roc_notification(notification_id: str, current_user: User = Depends(VIEW)):
+    doc = await NOTIFICATIONS.find_one({"id": notification_id})
+    if not doc:
+        raise HTTPException(404, "Notification not found")
+    doc.pop("_id", None)
+    doc["file_available"] = bool(doc.get("file_base64"))
+    doc["file_base64"] = None
+    return doc
+
+
+@router.get("/notifications/{notification_id}/download")
+async def download_roc_notification(notification_id: str, current_user: User = Depends(VIEW)):
+    doc = await NOTIFICATIONS.find_one({"id": notification_id})
+    if not doc:
+        raise HTTPException(404, "Notification not found")
+    encoded = doc.get("file_base64")
+    if not encoded:
+        raise HTTPException(404, "Original notification file is not available")
+    import base64
+    return Response(
+        content=base64.b64decode(encoded),
+        media_type=doc.get("content_type") or "application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{doc.get("filename") or "notification"}"'},
+    )
+
+
+@router.post("/notifications/{notification_id}/approve")
+async def approve_roc_notification(notification_id: str, payload: Dict[str, Any] = None, current_user: User = Depends(EDIT)):
+    doc = await NOTIFICATIONS.find_one({"id": notification_id})
+    if not doc:
+        raise HTTPException(404, "Notification not found")
+    updates = (payload or {}).get("rule_updates") or doc.get("proposed_rule_updates") or []
+    now = _now()
+    await NOTIFICATIONS.update_one({"id": notification_id}, {"$set": {
+        "status": "approved",
+        "active_rule_updates": updates,
+        "reviewed_by": _who(current_user),
+        "reviewed_at": now,
+        "updated_at": now,
+    }})
+    return {"approved": True, "notification_id": notification_id, "active_rule_updates": updates}
+
+
+@router.post("/notifications/{notification_id}/reject")
+async def reject_roc_notification(notification_id: str, current_user: User = Depends(EDIT)):
+    doc = await NOTIFICATIONS.find_one({"id": notification_id})
+    if not doc:
+        raise HTTPException(404, "Notification not found")
+    now = _now()
+    await NOTIFICATIONS.update_one({"id": notification_id}, {"$set": {
+        "status": "rejected",
+        "reviewed_by": _who(current_user),
+        "reviewed_at": now,
+        "updated_at": now,
+    }})
+    return {"rejected": True, "notification_id": notification_id}
+
+
+async def _approved_notification_rules() -> List[Dict[str, Any]]:
+    rules: List[Dict[str, Any]] = []
+    cursor = NOTIFICATIONS.find({"status": "approved"})
+    async for doc in cursor:
+        for rule in doc.get("active_rule_updates") or []:
+            item = dict(rule)
+            item["notification_id"] = doc.get("id")
+            item["notification_title"] = doc.get("title")
+            item["notification_effective_date"] = doc.get("effective_date")
+            rules.append(item)
+    return rules
+
 # ─────────────────────────────────────────────────────────────────────────
 # COMPLIANCE CHECKLIST ENGINE
 # ─────────────────────────────────────────────────────────────────────────
@@ -2181,6 +2439,20 @@ def build_compliance_checklist(company: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     add("PAS-6", "Reconciliation of Share Capital Audit Report (unlisted companies with dematerialised shares)", "Within 60 days of half-year end", "Half-Yearly", applicable=not is_opc and not is_section8)
 
+    # Approved notification-derived rules are additive. They never silently replace the
+    # statutory checklist; a professional-approved notification may add a new review/form
+    # item with its source retained for traceability.
+    for rule in await _approved_notification_rules():
+        forms = rule.get("forms") or ([] if not rule.get("form") else [rule.get("form")])
+        items.append({
+            "form": forms[0] if forms else "Legal Update",
+            "particulars": rule.get("title") or "Notification-derived compliance update",
+            "due_date_rule": rule.get("effective_date") or rule.get("notification_effective_date") or "Review source notification",
+            "frequency": "Event-based",
+            "applicable": True,
+            "notes": f"Approved from Notifications: {rule.get('notification_title') or rule.get('notification_id')}. Review the source before filing.",
+            "source_notification_id": rule.get("notification_id"),
+        })
     return items
 
 
