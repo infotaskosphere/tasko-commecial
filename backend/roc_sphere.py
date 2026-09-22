@@ -2280,6 +2280,8 @@ async def list_roc_notifications(current_user: User = Depends(VIEW)):
             doc["file_available"] = True
         else:
             doc["file_available"] = False
+        doc["extracted_text_preview"] = (doc.get("extracted_text") or "")[:2500]
+        doc["extracted_text"] = None
         docs.append(doc)
     return docs
 
