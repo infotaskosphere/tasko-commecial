@@ -3093,7 +3093,7 @@ const ClientDetailPopup = React.memo(({ selectedClient, detailDialogOpen, setDet
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 h-8 px-4 rounded-xl text-xs font-semibold transition-all flex-shrink-0 ${
+              className={`flex items-center gap-1.5 h-8 px-4 rounded-none text-xs font-semibold transition-all flex-shrink-0 ${
                 activeTab === tab.key
                   ? 'text-white shadow-sm'
                   : isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-500 hover:bg-slate-100'
