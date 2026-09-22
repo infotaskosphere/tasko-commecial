@@ -10034,7 +10034,7 @@ async def _scrape_zaubacorp(query: str) -> dict:
 
                 picked = _zaubacorp_pick_row(soup, q, is_cin, is_llpin)
                 if picked:
-                    _, detail_url, matched_name = picked
+                    company_identifier, detail_url, matched_name = picked
                     break
             except Exception as exc:
                 logger.debug(f"zaubacorp search error ({param}) for {q!r}: {exc}")
@@ -10063,6 +10063,15 @@ async def _scrape_zaubacorp(query: str) -> dict:
                 summary_text = ds.get_text(" ", strip=True)
 
             parsed = _parse_zaubacorp_summary(summary_text, company_name)
+            # The search result itself carries the canonical CIN/LLPIN in its
+            # first column. Preserve it even when the detail-page summary is
+            # incomplete or its SEO text changes.
+            if company_identifier:
+                identifier = str(company_identifier).strip().upper()
+                if _CIN_RE.match(identifier):
+                    parsed["cin"] = identifier
+                elif _LLPIN_RE.match(identifier):
+                    parsed["llpin"] = identifier
             parsed["company_name"] = company_name
             parsed["detail_url"] = detail_url
 
