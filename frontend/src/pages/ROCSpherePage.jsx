@@ -385,7 +385,7 @@ export default function ROCSpherePage() {
 
               {/* Tabs */}
               <div className={`rounded-xl border ${card} overflow-hidden`}>
-                {/* Two fixed tab rows: no horizontal scroll. Seven equal slots per row keeps the desktop layout balanced. */}
+                {/* Responsive tab rows: fixed grid slots prevent horizontal overflow across desktop and smaller screens. */}
                 <div className={`border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
                   {Array.from({ length: Math.ceil(TABS.length / 6) }, (_, i) => TABS.slice(i * 6, i * 6 + 6)).map((row, rowIndex) => (
                     <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 ${rowIndex < Math.ceil(TABS.length / 6) - 1 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
@@ -485,10 +485,10 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied, meet
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Failed to load Record History');
     } finally { setLoading(false); }
-  }, [company.id]);
+  }, [company.id, meetingTypeFilter]);
   useEffect(() => { load(); }, [load]);
 
-  const openNew = () => { setEditingId(null); setForm({ ...blank, venue: company.registered_office_address || 'Registered Office' }); setShowForm(true); };
+  const openNew = () => { setEditingId(null); setForm({ ...blank, meeting_type: meetingTypeFilter || 'board', venue: company.registered_office_address || 'Registered Office' }); setShowForm(true); };
   const openEdit = (r) => {
     setEditingId(r.id);
     setForm({ ...blank, ...r, attendance: r.attendance || [], leave_of_absence: r.leave_of_absence || [], agenda_items: r.agenda_items || [], resolutions_passed: r.resolutions_passed || [], special_business: r.special_business || [], attachments: r.attachments || [] });
