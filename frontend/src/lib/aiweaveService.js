@@ -27,6 +27,15 @@ export const aiweaveService = {
     fallbackExecutions: 0,
     freeModelsCount: INITIAL_MODELS.filter((m) => m.isFree).length,
     totalModelsCount: INITIAL_MODELS.length,
+    // Kept in sync with GET /aiweave/stats so any UI reading this offline
+    // stub (before the real API responds) doesn't hit undefined fields.
+    freeAccountsCount: 0,
+    paidAccountsCount: 0,
+    unknownTierAccountsCount: 0,
+    freeAccountsResting: 0,
+    freeTierTokensUsedToday: 0,
+    freeExecutionsCount: 0,
+    freeExecutionShare: null,
   }),
 };
 
