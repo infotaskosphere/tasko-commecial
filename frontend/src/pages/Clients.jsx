@@ -5015,7 +5015,7 @@ export default function Clients() {
           company_name: d.company_name || p.company_name,
           client_type: d.client_type || p.client_type,
           date_of_incorporation: d.date_of_incorporation || p.date_of_incorporation || '',
-          cin: d.cin || p.cin || '',
+          cin: d.cin || d.cin_number || d.corporate_identity_number || p.cin || '',
           address: d.address || p.address || '',
           city: d.city || p.city || '',
           state: d.state || p.state || '',
@@ -6694,8 +6694,8 @@ export default function Clients() {
                                 email: d.email || p.email,
                                 pan: d.pan || p.pan,
                                 gst_pin: d.gst_pin || d.pin || p.gst_pin,
-                                cin: isLLP ? '' : (d.cin || p.cin || ''),
-                                llpin: isLLP ? (d.llpin || d.cin || p.llpin || '') : '',
+                                cin: isLLP ? '' : (d.cin || d.cin_number || d.corporate_identity_number || p.cin || ''),
+                                llpin: isLLP ? (d.llpin || d.llpin_number || d.cin || p.llpin || '') : '',
                                 mca_fetch_date: masterDate,
                                 mca_registration_number: d.registration_number || p.mca_registration_number || '',
                                 mca_roc_name: d.roc_name || d.roc || p.mca_roc_name || '',
@@ -6731,7 +6731,7 @@ export default function Clients() {
                               setMcaFetching(false);
                             }
                           }}
-                          className="h-11 px-5 rounded-xl text-sm font-medium text-white flex items-center gap-2 flex-shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="h-11 px-5 rounded-none text-sm font-medium text-white flex items-center gap-2 flex-shrink-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                           style={{ background: mcaFetching ? '#94a3b8' : 'linear-gradient(135deg, #4F46E5, #7C3AED)' }}
                         >
                           {mcaFetching ? (
