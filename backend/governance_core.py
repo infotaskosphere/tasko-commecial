@@ -111,6 +111,15 @@ def has_page_access(user: User, module_key: str, page_flag: str) -> bool:
     if not page_flag:
         return False
 
+    # Commercial customer administrators receive every page inside a module
+    # that is present on their active commercial license. This mirrors the
+    # licensee-admin contract used by the commercial entitlement layer and is
+    # important for governed routers whose require_page() dependency captured
+    # the base authentication dependency before the runtime entitlement shim
+    # was installed. Unlicensed modules still fail at has_module_access().
+    if _is_commercial_admin(user):
+        return True
+
     perms = get_user_permissions(user)
 
     # Backward compatibility: Client Discussion was introduced after the
