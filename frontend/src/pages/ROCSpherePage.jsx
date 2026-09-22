@@ -109,6 +109,11 @@ const TABS = [
   { key: 'masterdata', label: 'Master Data', icon: DatabaseZap },
   { key: 'directors', label: 'Directors & Shareholders', icon: UsersIcon },
   { key: 'statutory', label: 'Statutory Registers', icon: BookOpen },
+  { key: 'boardmeetings', label: 'Board Meetings', icon: CalendarDays },
+  { key: 'egm', label: 'EGM', icon: UsersRound },
+  { key: 'sharetransfer', label: 'Share Transfer', icon: ArrowLeftRight },
+  { key: 'sharecertificates', label: 'Share Certificates', icon: BadgeCheck },
+  { key: 'transferregister', label: 'Share Transfer Register', icon: BookOpen },
   { key: 'resolution', label: 'Board Resolution', icon: Gavel },
   { key: 'notice', label: 'Notice of Meeting', icon: ScrollText },
   { key: 'minutes', label: 'Minutes of Meeting', icon: NotebookPen },
@@ -116,6 +121,7 @@ const TABS = [
   { key: 'checklist', label: 'Compliance Checklist', icon: ClipboardList },
   { key: 'applicable', label: 'Applicable Compliances', icon: ListChecks },
   { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
+  { key: 'uploads', label: 'Annual Filing Uploads', icon: Upload },
   { key: 'documents', label: 'Document Vault', icon: ScrollText },
   { key: 'cspractice', label: 'CS Practice Automation', icon: Zap },
   { key: 'notifications', label: 'Notifications', icon: Bell },
@@ -371,7 +377,7 @@ export default function ROCSpherePage() {
                   <button onClick={deleteCompany} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
                     <Trash2 size={13} /> Remove
                   </button>
-                  <button onClick={() => setTab('upload')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
+                  <button onClick={() => setTab('uploads')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
                     <Upload size={13} /> Upload ROC Forms
                   </button>
                 </div>
@@ -381,8 +387,8 @@ export default function ROCSpherePage() {
               <div className={`rounded-xl border ${card} overflow-hidden`}>
                 {/* Two fixed tab rows: no horizontal scroll. Seven equal slots per row keeps the desktop layout balanced. */}
                 <div className={`border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-                  {[TABS.slice(0, 7), TABS.slice(7)].map((row, rowIndex) => (
-                    <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 ${rowIndex === 0 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
+                  {Array.from({ length: Math.ceil(TABS.length / 6) }, (_, i) => TABS.slice(i * 6, i * 6 + 6)).map((row, rowIndex) => (
+                    <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 ${rowIndex < Math.ceil(TABS.length / 6) - 1 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
                       {row.map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.key;
@@ -394,7 +400,7 @@ export default function ROCSpherePage() {
                           </button>
                         );
                       })}
-                      {row.length < 7 && <div aria-hidden="true" className="hidden lg:block" />}
+                      {row.length < 6 && <div aria-hidden="true" className="hidden lg:block" />}
                     </div>
                   ))}
                 </div>
@@ -403,17 +409,23 @@ export default function ROCSpherePage() {
                   {tab === 'masterdata' && <MasterDataTab company={company} isDark={isDark} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'directors' && <DirectorsTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
                   {tab === 'statutory' && <StatutoryRecordsTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  {tab === 'boardmeetings' && <RecordHistoryTab company={company} meetingTypeFilter="board" titleOverride="Board Meetings" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  {tab === 'egm' && <RecordHistoryTab company={company} meetingTypeFilter="egm" titleOverride="EGM" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  {tab === 'sharetransfer' && <StatutoryRecordsTab company={company} initialMode="transfer" titleOverride="Share Transfer" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  {tab === 'sharecertificates' && <StatutoryRecordsTab company={company} initialMode="certificate" titleOverride="Share Certificates" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  {tab === 'transferregister' && <ShareTransferRegisterTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'history' && <RecordHistoryTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
+                  {tab === 'uploads' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'filing' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'documents' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'cspractice' && <CSPracticeAutomationTab company={company} plan={csPlan} tasks={csTasks} users={csUsers} loading={csLoading} isDark={isDark} input={input} text={text} muted={muted} onRefresh={(fy) => loadCSPractice(company.id, fy)} />}
                   {tab === 'notifications' && <NotificationsTab isDark={isDark} input={input} text={text} muted={muted} />}
-                  {tab === 'upload' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
+                  
                 </div>
               </div>
             </>
@@ -443,7 +455,7 @@ export default function ROCSpherePage() {
 /* ═══════════════════════════════════════════════════════════════════════
  * Filing Desk / Document Vault
  * ═══════════════════════════════════════════════════════════════════════ */
-function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
+function RecordHistoryTab({ company, isDark, input, text, muted, onApplied, meetingTypeFilter = null, titleOverride = null }) {
   const blank = {
     meeting_type: 'board', meeting_number: '', meeting_date: '', meeting_time: '11:00 AM', notice_date: '', venue: company.registered_office_address || 'Registered Office',
     mode: 'Physical', chairman: '', quorum_present: true, attendance: [], members_present_count: '', members_entitled_count: '', leave_of_absence: [],
@@ -467,7 +479,8 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
     setLoading(true);
     try {
       const { data } = await api.get(`/roc-sphere/companies/${company.id}/record-history`);
-      setRecords(data.records || []);
+      const allRecords = data.records || [];
+      setRecords(meetingTypeFilter ? allRecords.filter((r) => r.meeting_type === meetingTypeFilter) : allRecords);
       setSummary(data.summary || {});
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Failed to load Record History');
@@ -519,7 +532,7 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
   return <div className="space-y-4">
     <div className={`rounded-xl border p-4 ${card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h3 className={`font-semibold ${text}`}>Record History</h3><p className={`text-xs mt-1 ${muted}`}>Permanent meeting register for Board Meetings, AGMs, EGMs and other secretarial records. Entries remain available for future MGT-7 / MGT-7A preparation.</p></div>
+        <div><h3 className={`font-semibold ${text}`}>{titleOverride || 'Record History'}</h3><p className={`text-xs mt-1 ${muted}`}>Permanent meeting register for Board Meetings, AGMs, EGMs and other secretarial records. Entries remain available for future MGT-7 / MGT-7A preparation.</p></div>
         <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold"><Plus size={13}/> Add Meeting Record</button>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
@@ -748,7 +761,7 @@ function NotificationsTab({ isDark, input, text, muted }) {
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 <button onClick={() => setExpanded(expanded === n.id ? null : n.id)} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Details</button>
-                {n.file_available && <button onClick={() => window.open(`/api/roc-sphere/notifications/${n.id}/download`, '_blank')} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Download</button>}
+                {n.file_available && <button onClick={async () => { try { const res = await api.get(`/roc-sphere/notifications/${n.id}/download`, { responseType: 'blob' }); triggerBlobDownload(res.data, n.filename || 'notification'); } catch (e) { toast.error(await parseBlobError(e) || 'Download failed'); } }} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Download</button>}
                 {n.status !== 'approved' && <button disabled={busyId === n.id} onClick={() => review(n.id,'approve')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px]">Approve</button>}
                 {n.status !== 'rejected' && <button disabled={busyId === n.id} onClick={() => review(n.id,'reject')} className="px-2.5 py-1.5 rounded-lg bg-slate-700 text-white text-[10px]">Reject</button>}
               </div>
@@ -1306,8 +1319,52 @@ function DirectorsTab({ company, isDark, onSave, input, text, muted }) {
  * Statutory registers — transfer register, SH-4 and share certificates
  * ═══════════════════════════════════════════════════════════════════════ */
 
-function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied }) {
-  const [mode, setMode] = useState('transfer');
+function ShareTransferRegisterTab({ company, isDark, text, muted }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: d } = await api.get(`/roc-sphere/companies/${company.id}/statutory-records`);
+      setData(d);
+    } catch (e) { toast.error('Failed to load Share Transfer Register'); }
+    finally { setLoading(false); }
+  }, [company.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const download = async () => {
+    try {
+      const res = await api.get(`/roc-sphere/companies/${company.id}/generate/share-transfer-register`, { responseType: 'blob' });
+      triggerBlobDownload(res.data, `Share_Transfer_Register_${company.company_name.replace(/\s+/g, '_')}.docx`);
+      toast.success('Share Transfer Register downloaded');
+    } catch (e) { toast.error(await parseBlobError(e) || 'Download failed'); }
+  };
+
+  const rows = data?.share_transfers || [];
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-xl border p-4 ${cardStyle(isDark)}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className={`text-sm font-semibold ${text}`}>Share Transfer Register</h3>
+            <p className={`text-xs mt-1 ${muted}`}>Central register of approved/reviewed share transfers. These records remain available to annual-return preparation.</p>
+          </div>
+          <button onClick={download} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold"><Download size={13}/> Download Register</button>
+        </div>
+      </div>
+      <div className={`rounded-xl border overflow-hidden ${cardStyle(isDark)}`}>
+        {loading ? <div className={`p-8 text-center ${muted}`}>Loading…</div> : rows.length === 0 ? <div className={`p-8 text-center ${muted}`}>No share transfers recorded.</div> : (
+          <div className="overflow-x-auto"><table className="w-full text-[11px]"><thead className={isDark ? 'bg-slate-900' : 'bg-slate-100'}><tr>{['Date','Transferor','Transferee','Folio','Certificate','Distinctive Nos.','Shares','Consideration','SH-4 Status','Board Approval'].map(h => <th key={h} className={`text-left px-3 py-2 ${muted}`}>{h}</th>)}</tr></thead>
+            <tbody>{rows.map(r => <tr key={r.id} className={`border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}><td className={`px-3 py-2 ${muted}`}>{r.transfer_date || '—'}</td><td className={`px-3 py-2 ${text}`}>{r.transferor_name || '—'}</td><td className={`px-3 py-2 ${text}`}>{r.transferee_name || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.transferor_folio_no || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.share_certificate_no || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.distinctive_from || '—'} → {r.distinctive_to || '—'}</td><td className={`px-3 py-2 ${muted}`}>{Number(r.number_of_shares || 0).toLocaleString('en-IN')}</td><td className={`px-3 py-2 ${muted}`}>{Number(r.consideration || 0).toLocaleString('en-IN')}</td><td className={`px-3 py-2 ${muted}`}>{r.sh4_status || 'Pending review'}</td><td className={`px-3 py-2 ${muted}`}>{r.board_resolution_date || '—'}</td></tr>)}</tbody>
+          </table></div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied, initialMode = 'transfer', titleOverride = null }) {
+  const [mode, setMode] = useState(initialMode);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [data, setData] = useState(null);
@@ -1400,7 +1457,7 @@ function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied })
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className={`text-sm font-semibold ${text}`}>Statutory registers & instruments</h3>
+          <h3 className={`text-sm font-semibold ${text}`}>{titleOverride || 'Statutory registers & instruments'}</h3>
           <p className={`text-xs ${muted} mt-1`}>Record reviewed transfers, keep holdings aligned, and prepare SH-4 / share certificate drafts.</p>
         </div>
         <button onClick={() => download(`/roc-sphere/companies/${company.id}/generate/share-transfer-register`, `Share_Transfer_Register_${company.company_name.replace(/\s+/g, '_')}.docx`)} disabled={generating}
