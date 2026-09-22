@@ -1232,6 +1232,21 @@ class ClientBase(BaseModel):
     llpin: Optional[str] = None         # LLP Identification Number
     proprietor_name: Optional[str] = None  # Proprietor's full name (Proprietor client type)
     mca_fetch_date: Optional[str] = None  # ISO date when MCA data was last fetched
+    # Extended MCA Company Master Data
+    mca_registration_number: Optional[str] = None
+    mca_roc_name: Optional[str] = None
+    mca_rd_name: Optional[str] = None
+    mca_company_category: Optional[str] = None
+    mca_company_subcategory: Optional[str] = None
+    mca_listed: Optional[bool] = None
+    mca_active_compliance: Optional[str] = None
+    mca_authorized_capital: Optional[Any] = None
+    mca_paid_up_capital: Optional[Any] = None
+    mca_last_agm_date: Optional[str] = None
+    mca_balance_sheet_date: Optional[str] = None
+    mca_books_address: Optional[str] = None
+    mca_charges: List[Dict[str, Any]] = Field(default_factory=list)
+    mca_loan_details: List[Dict[str, Any]] = Field(default_factory=list)
     # ── ITR Client fields ──────────────────────────────────────────────────────
     is_itr_client: Optional[bool] = False   # True when this client is an ITR-only client
     itr_data: Optional[Dict[str, Any]] = None  # JSON blob: itr_type, AY, filing_status, income, etc.
@@ -1248,6 +1263,9 @@ class ClientBase(BaseModel):
                 "tally_ledger_name", "tally_group", "website", "msme_number",
                 "gst_address", "gst_city", "gst_state", "gst_pin",
                 "cin", "llpin", "proprietor_name", "mca_fetch_date",
+                "mca_registration_number", "mca_roc_name", "mca_rd_name",
+                "mca_company_category", "mca_company_subcategory", "mca_active_compliance",
+                "mca_last_agm_date", "mca_balance_sheet_date", "mca_books_address",
             ]
             for field in nullable_fields:
                 if field in data and data[field] == "":
