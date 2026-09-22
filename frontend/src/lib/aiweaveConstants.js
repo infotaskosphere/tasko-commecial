@@ -66,6 +66,16 @@ export const ROUTING_STRATEGIES = [
   {id:"WEIGHTED",label:"Weighted Distribution",description:"Use configured account weights."},
   {id:"CUSTOM",label:"Custom Rule Policy",description:"Administrator-defined routing."},
 ];
+// Mirrors the backend's per-account cost_tier (backend/ai/aiweave_router.py).
+// "Free" is a property of a specific connected credential/plan, not of a
+// provider or model in general, so this is only used to label an account in
+// the UI - the routing decision itself always comes from the server.
+export const COST_TIERS = [
+  {id:"FREE",label:"Free tier",description:"This credential's free quota is used before any paid one."},
+  {id:"PAID",label:"Paid",description:"Billed usage; only used once free-tier accounts are exhausted under Free/Low-Cost First."},
+  {id:"UNKNOWN",label:"Unknown",description:"Cost tier not yet confirmed by an administrator."},
+];
+
 export const COST_POLICIES = [
   {id:"FREE_FIRST",label:"Free / Low-Cost First",description:"Prefer legitimate free/low-cost options when capable."},
   {id:"LOWEST_COST",label:"Lowest Cost",description:"Prefer the lowest configured cost."},
