@@ -2054,6 +2054,99 @@ async def create_share_certificate(
 
 
 
+
+# ─────────────────────────────────────────────────────────────────────────
+# BOARD RESOLUTION SPECIMEN LIBRARY
+# ─────────────────────────────────────────────────────────────────────────
+# These are structured drafting templates derived from the specimen-resolution
+# portions of the uploaded ICSI Company Law & Practice material. They are
+# intentionally editable and are not presented as certified legal advice.
+BOARD_RESOLUTION_TEMPLATES = [
+    {
+        "key": "additional-director",
+        "category": "Directors",
+        "title": "Appointment of Additional Director — Section 161",
+        "resolution_text": "RESOLVED THAT pursuant to the provisions of Section 161 of the Companies Act, 2013 and other applicable provisions, if any, [DIRECTOR NAME] (DIN: [DIN]), who has signified consent to act as a director, be and is hereby appointed as an Additional Director of the Company with effect from [DATE], to hold office up to the date of the ensuing Annual General Meeting.\n\nRESOLVED FURTHER THAT the Directors of the Company be and are hereby authorised to do all acts, deeds, matters and things and to file the necessary e-form(s) with the Registrar of Companies.",
+    },
+    {
+        "key": "director-resignation",
+        "category": "Directors",
+        "title": "Acceptance of Director Resignation",
+        "resolution_text": "RESOLVED THAT the resignation of [DIRECTOR NAME] (DIN: [DIN]) from the directorship of the Company be and is hereby accepted with effect from [DATE].\n\nRESOLVED FURTHER THAT the Board places on record its appreciation for the assistance and guidance provided by [DIRECTOR NAME] during the tenure as Director.\n\nRESOLVED FURTHER THAT any Director of the Company be and is hereby authorised to do all such acts and deeds as may be necessary to give effect to the above resolution.",
+    },
+    {
+        "key": "first-directors",
+        "category": "Directors",
+        "title": "Appointment / Recording of First Directors",
+        "resolution_text": "RESOLVED THAT the persons whose names are given below and who are identified as the first Directors of the Company under the Articles of Association be and are hereby recorded as constituting the Board of Directors of the Company:\n1. [DIRECTOR NAME] (DIN: [DIN])\n2. [DIRECTOR NAME] (DIN: [DIN])\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to make the necessary entries in the Register of Directors and Key Managerial Personnel and their shareholding and to complete the applicable statutory filings.",
+    },
+    {
+        "key": "private-placement-allotment",
+        "category": "Share Capital",
+        "title": "Private Placement / Allotment of Equity Shares",
+        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013 and the applicable rules, consent of the Board be and is hereby accorded for allotment of [NUMBER] Equity Shares of Rs. [FACE VALUE] each to [ALLOTTEE NAME], for an aggregate consideration of Rs. [AMOUNT], on the terms placed before the Board.\n\nRESOLVED FURTHER THAT the said Equity Shares shall rank pari passu with the existing Equity Shares of the Company in all respects.\n\nRESOLVED FURTHER THAT any Director of the Company be and is hereby authorised to file the Return of Allotment in Form PAS-3 or such other applicable form and to do all acts necessary to give effect to this resolution.\n\nRESOLVED FURTHER THAT the Share Certificate for the shares allotted be issued in accordance with the applicable provisions and necessary entries be made in the Register of Members.",
+    },
+    {
+        "key": "share-transfer",
+        "category": "Share Transfer",
+        "title": "Approval / Registration of Transfer of Shares",
+        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013, the Articles of Association of the Company and subject to the transfer instrument and supporting documents being in order, approval be and is hereby accorded for registration of transfer of [NUMBER] Equity Shares of the Company from [TRANSFEROR NAME] to [TRANSFEREE NAME], as per the details placed before the Board.\n\nRESOLVED FURTHER THAT the Register of Members and other statutory records be updated accordingly and the necessary share certificate / endorsement be issued in accordance with law.",
+    },
+    {
+        "key": "bank-account",
+        "category": "General Corporate",
+        "title": "Opening / Operation of Bank Account",
+        "resolution_text": "RESOLVED THAT a current / bank account in the name of [COMPANY NAME] be opened with [BANK NAME] at [BRANCH], and that [AUTHORISED SIGNATORY] be and is hereby authorised to operate the account in accordance with the mandate approved by the Board.\n\nRESOLVED FURTHER THAT the authorised signatories be and are hereby empowered to sign, execute and submit all applications, declarations, forms and documents required by the bank.",
+    },
+    {
+        "key": "borrowing",
+        "category": "Borrowing",
+        "title": "Borrowing / Banking Facility",
+        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, consent of the Board be and is hereby accorded to avail the borrowing / banking facility of Rs. [AMOUNT] from [LENDER / BANK] on the terms placed before the Board.\n\nRESOLVED FURTHER THAT [AUTHORISED DIRECTOR] be and is hereby authorised to negotiate, finalise, execute and deliver the facility documents and to do all acts, deeds and things necessary in connection with the facility.",
+    },
+    {
+        "key": "section-186-loan",
+        "category": "Loans / Investments",
+        "title": "Loan / Guarantee / Security / Investment — Section 186 Review",
+        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013, including Section 186 where applicable, and subject to the necessary approvals and limits, the Company be and is hereby authorised to provide [LOAN / GUARANTEE / SECURITY / INVESTMENT] of up to Rs. [AMOUNT] in favour of [RECIPIENT / BODY CORPORATE] for the purpose placed before the Board.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby empowered to execute the relevant documents and complete the statutory and regulatory requirements.",
+    },
+    {
+        "key": "charge-creation",
+        "category": "Charges",
+        "title": "Creation of Charge / Security",
+        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, the creation of charge / security in favour of [LENDER] over the assets described in the facility documents for securing the borrowing of Rs. [AMOUNT] be and is hereby approved.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to execute the charge documents and make the necessary filings with the Registrar of Companies.",
+    },
+    {
+        "key": "auditor-appointment",
+        "category": "Auditor",
+        "title": "Auditor Appointment / Reappointment",
+        "resolution_text": "RESOLVED THAT subject to the approval / appointment requirements applicable to the Company, [AUDITOR / FIRM NAME], Chartered Accountants, Firm Registration No. [FRN], be and is hereby appointed / recommended for appointment as Statutory Auditor of the Company from [DATE] to [DATE], on such remuneration as may be approved in accordance with law.\n\nRESOLVED FURTHER THAT the authorised Director / Company Secretary be and is hereby authorised to complete the necessary statutory filing and related documentation.",
+    },
+    {
+        "key": "registered-office",
+        "category": "Registered Office",
+        "title": "Change of Registered Office",
+        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013, the Articles of Association and the approvals required, the registered office of the Company be shifted from [OLD ADDRESS] to [NEW ADDRESS] with effect from [DATE].\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to file the applicable form(s) with the Registrar of Companies and make all consequential changes in the statutory records.",
+    },
+    {
+        "key": "moa-capital",
+        "category": "MOA / AOA",
+        "title": "Alteration / Increase of Authorised Share Capital",
+        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, the authorised share capital of the Company be increased from Rs. [OLD CAPITAL] divided into [OLD SHARES] shares to Rs. [NEW CAPITAL] divided into [NEW SHARES] shares of Rs. [FACE VALUE] each, by creation of additional shares ranking pari passu with the existing shares.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to complete the required alteration of the capital clause and statutory filings.",
+    },
+    {
+        "key": "authorised-signatory-roc",
+        "category": "ROC Filings",
+        "title": "Authorisation for MCA / ROC Filing",
+        "resolution_text": "RESOLVED THAT [AUTHORISED PERSON] be and is hereby authorised to prepare, sign, submit and file the applicable forms, returns, attachments and documents with the Registrar of Companies / Ministry of Corporate Affairs and to do all acts, deeds and things necessary to give effect to the decisions of the Board.",
+    },
+]
+
+
+@router.get("/board-resolution-templates")
+async def get_board_resolution_templates(current_user: User = Depends(VIEW)):
+    return BOARD_RESOLUTION_TEMPLATES
+
 # ─────────────────────────────────────────────────────────────────────────
 # LEGAL NOTIFICATIONS / UPDATE DOCUMENTS
 # ─────────────────────────────────────────────────────────────────────────
