@@ -9,7 +9,7 @@ import {
   Download, FileText, Search, RefreshCw, Save, CheckCircle2, Upload,
   ClipboardList, Gavel, NotebookPen, ChevronRight, AlertTriangle, Info,
   ScrollText, Pencil, DatabaseZap, ListChecks, FileSpreadsheet, FileUp,
-  BookOpen, ArrowLeftRight, BadgeCheck, CalendarDays, Zap, UsersRound, Clock3, History,
+  BookOpen, ArrowLeftRight, BadgeCheck, CalendarDays, Zap, UsersRound, Clock3, History, Bell,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
@@ -118,6 +118,7 @@ const TABS = [
   { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
   { key: 'documents', label: 'Document Vault', icon: ScrollText },
   { key: 'cspractice', label: 'CS Practice Automation', icon: Zap },
+  { key: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 export default function ROCSpherePage() {
@@ -411,6 +412,7 @@ export default function ROCSpherePage() {
                   {tab === 'filing' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'documents' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'cspractice' && <CSPracticeAutomationTab company={company} plan={csPlan} tasks={csTasks} users={csUsers} loading={csLoading} isDark={isDark} input={input} text={text} muted={muted} onRefresh={(fy) => loadCSPractice(company.id, fy)} />}
+                  {tab === 'notifications' && <NotificationsTab isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'upload' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                 </div>
               </div>
@@ -649,6 +651,136 @@ function FilingDeskTab({ company, prep, docs, loading, isDark, text, muted, onRe
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Legal Notifications / Update Documents
+ * ═══════════════════════════════════════════════════════════════════════ */
+function NotificationsTab({ isDark, input, text, muted }) {
+  const [notifications, setNotifications] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get('/roc-sphere/notifications');
+      setNotifications(data || []);
+    } catch (e) { toast.error('Unable to load legal notifications'); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const upload = async () => {
+    if (!files.length) { toast.error('Select at least one notification/update document'); return; }
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append('file', file);
+        await api.post('/roc-sphere/notifications/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      }
+      setFiles([]);
+      toast.success('Update document(s) uploaded and analysed');
+      await load();
+    } catch (e) { toast.error(await parseBlobError(e) || 'Notification upload failed'); }
+    finally { setUploading(false); }
+  };
+
+  const review = async (id, action) => {
+    setBusyId(id);
+    try {
+      await api.post(`/roc-sphere/notifications/${id}/${action}`);
+      toast.success(action === 'approve' ? 'Notification rule update approved' : 'Notification marked rejected');
+      await load();
+    } catch (e) { toast.error(await parseBlobError(e) || 'Could not update notification'); }
+    finally { setBusyId(null); }
+  };
+
+  const statusClass = (s) => s === 'approved'
+    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
+    : s === 'rejected'
+      ? 'text-red-700 bg-red-50 border-red-200'
+      : 'text-amber-700 bg-amber-50 border-amber-200';
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl border p-4 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-gradient-to-br from-blue-50 to-white border-blue-100'}`}>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h3 className={`font-bold ${text}`}>Notifications & Legal Updates</h3>
+            <p className={`text-xs mt-1 ${muted}`}>Upload MCA/ICSI notifications, circulars, amendments and other legal update documents. ROC Sphere reads them, identifies affected forms/sections and creates proposed rule updates for professional review.</p>
+          </div>
+          <button onClick={load} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold"><RefreshCw size={13}/> Refresh</button>
+        </div>
+      </div>
+
+      <div className={`rounded-xl border p-4 ${cardStyle(isDark)}`}>
+        <div className="flex flex-col md:flex-row md:items-end gap-3">
+          <div className="flex-1">
+            <label className={`text-xs font-semibold ${text} mb-1 block`}>Upload Update Documents</label>
+            <input type="file" multiple accept=".pdf,.docx,.txt,.csv,.xlsx,.xlsm,.xls" className={`text-xs ${muted}`} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
+            <p className={`text-[10px] mt-1 ${muted}`}>PDF/DOCX/XLSX/TXT/CSV/XLSM/XLS, up to 12 MB per document.</p>
+          </div>
+          <button onClick={upload} disabled={uploading || !files.length} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-60">
+            {uploading ? 'Reading documents…' : 'Upload & Read'}
+          </button>
+        </div>
+        {!!files.length && <p className={`text-[10px] mt-2 ${muted}`}>{files.length} document(s) selected</p>}
+      </div>
+
+      <div className="space-y-2">
+        {notifications.length === 0 ? (
+          <div className={`rounded-xl border p-8 text-center ${cardStyle(isDark)} ${muted}`}>
+            <Bell size={25} className="mx-auto mb-2 opacity-50"/>
+            <p className="text-sm font-semibold">No legal update documents uploaded</p>
+            <p className="text-xs mt-1">Upload your first MCA/ICSI notification or circular above.</p>
+          </div>
+        ) : notifications.map((n) => (
+          <div key={n.id} className={`rounded-xl border overflow-hidden ${cardStyle(isDark)}`}>
+            <div className="p-4 flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h4 className={`text-sm font-semibold ${text}`}>{n.title || n.filename}</h4>
+                  <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold ${statusClass(n.status)}`}>{(n.status || 'under_review').replace('_',' ')}</span>
+                </div>
+                <p className={`text-[10px] mt-1 ${muted}`}>{n.filename} · {n.authority || 'Other'} · {n.effective_date || 'Effective date not extracted'} · {n.affected_forms?.join(', ') || 'No forms detected'}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button onClick={() => setExpanded(expanded === n.id ? null : n.id)} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Details</button>
+                {n.file_available && <button onClick={() => window.open(`/api/roc-sphere/notifications/${n.id}/download`, '_blank')} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Download</button>}
+                {n.status !== 'approved' && <button disabled={busyId === n.id} onClick={() => review(n.id,'approve')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px]">Approve</button>}
+                {n.status !== 'rejected' && <button disabled={busyId === n.id} onClick={() => review(n.id,'reject')} className="px-2.5 py-1.5 rounded-lg bg-slate-700 text-white text-[10px]">Reject</button>}
+              </div>
+            </div>
+            {expanded === n.id && (
+              <div className={`border-t p-4 space-y-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+                <div className="grid md:grid-cols-4 gap-3 text-[10px]">
+                  <div><span className={muted}>Notification no.</span><p className={text}>{n.notification_number || '—'}</p></div>
+                  <div><span className={muted}>Effective date</span><p className={text}>{n.effective_date || '—'}</p></div>
+                  <div><span className={muted}>Sections</span><p className={text}>{n.affected_sections?.join(', ') || '—'}</p></div>
+                  <div><span className={muted}>Forms</span><p className={text}>{n.affected_forms?.join(', ') || '—'}</p></div>
+                </div>
+                <div>
+                  <p className={`text-xs font-semibold ${text} mb-1`}>Proposed updates</p>
+                  {(n.proposed_rule_updates || []).map((r) => <div key={r.id} className={`rounded-lg border p-2 mb-1 text-[10px] ${isDark ? 'border-slate-700' : 'border-slate-200'}`}><b>{r.title}</b><div className={muted}>{r.instruction}</div></div>)}
+                </div>
+                <div>
+                  <p className={`text-xs font-semibold ${text} mb-1`}>Extracted source text</p>
+                  <pre className={`max-h-64 overflow-auto whitespace-pre-wrap text-[10px] leading-4 rounded-lg p-3 ${isDark ? 'bg-slate-950 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}>{n.extracted_text_preview || 'Source text stored on server.'}</pre>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className={`rounded-lg border p-3 text-[10px] ${isDark ? 'border-amber-900/50 bg-amber-950/20 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+        <b>Update safeguard:</b> uploaded documents are analysed into proposed rules. They do not silently change the legal engine. Approve only after checking the notification/circular against the current MCA/ICSI source and the company's facts.
+      </div>
+    </div>
+  );
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════
  * CS Practice Automation
@@ -1402,6 +1534,8 @@ function ResolutionListEditor({ items, setItems, input, muted }) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 function ResolutionTab({ company, isDark, input, text, muted }) {
+  const [templates, setTemplates] = useState([]);
+  const [templateKey, setTemplateKey] = useState('');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
   const [venue, setVenue] = useState('Registered Office of the Company');
@@ -1410,29 +1544,66 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
   const [resolutions, setResolutions] = useState([{ particulars: '', resolution_text: '', proposed_by: '', seconded_by: '' }]);
   const [generating, setGenerating] = useState(false);
 
+  useEffect(() => {
+    api.get('/roc-sphere/board-resolution-templates').then(({data}) => {
+      setTemplates(data || []);
+      if (data?.length) setTemplateKey(data[0].key);
+    }).catch(() => toast.error('Unable to load Board Resolution templates'));
+  }, []);
+
+  const applyTemplate = (key) => {
+    const t = templates.find((x) => x.key === key);
+    if (!t) return;
+    setResolutions([{
+      particulars: t.title,
+      resolution_text: t.resolution_text
+        .replaceAll('[COMPANY NAME]', company.company_name || '')
+        .replaceAll('[CIN]', company.cin || '')
+        .replaceAll('[DIRECTOR NAME]', company.directors?.[0]?.name || '')
+        .replaceAll('[DIN]', company.directors?.[0]?.din || '')
+        .replaceAll('[REGISTERED OFFICE]', company.registered_office_address || 'Registered Office'),
+      proposed_by: '',
+      seconded_by: '',
+    }]);
+  };
+
+  useEffect(() => {
+    if (templateKey) applyTemplate(templateKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateKey, templates.length]);
+
   const generate = async () => {
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
     if (!resolutions.length || !resolutions[0].resolution_text) { toast.error('Add at least one resolution'); return; }
     setGenerating(true);
     try {
-      const payload = {
-        meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
-        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
-        resolutions,
-      };
+      const payload = { meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean), resolutions };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/board-resolution`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Board_Resolution_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Board Resolution generated');
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Generation failed');
-    } finally {
-      setGenerating(false);
-    }
+    } finally { setGenerating(false); }
   };
 
   return (
     <div className="space-y-4">
-      <p className={`text-xs ${muted}`}>Drafts a certified-true-copy style Board Resolution (Companies Act, 2013 / SS-1 format) — review before circulation or filing.</p>
+      <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-slate-50'}`}>
+        <p className={`text-xs font-semibold ${text}`}>ICSI Specimen Resolution Library</p>
+        <p className={`text-[11px] mt-1 ${muted}`}>Templates are based on the specimen-resolution sections in the uploaded Company Law & Practice material. Review the current Act, Rules, Articles and notification updates before use.</p>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <label className={`text-xs font-medium ${muted} mb-1 block`}>Specimen / Resolution Type</label>
+          <select className={input} value={templateKey} onChange={(e) => setTemplateKey(e.target.value)}>
+            {templates.map((t) => <option key={t.key} value={t.key}>{t.category} — {t.title}</option>)}
+          </select>
+        </div>
+        <div className="flex items-end">
+          <button onClick={() => applyTemplate(templateKey)} className="px-3 py-2 rounded-lg bg-slate-700 text-white text-xs">Load Specimen Format</button>
+        </div>
+      </div>
       <div className="grid sm:grid-cols-3 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} /></div>
@@ -1449,10 +1620,6 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
     </div>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
- * Notice of Meeting tab
- * ═══════════════════════════════════════════════════════════════════════ */
 
 function NoticeTab({ company, isDark, input, text, muted }) {
   const [meetingType, setMeetingType] = useState('board');
