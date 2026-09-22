@@ -10095,19 +10095,22 @@ async def fetch_mca_details(
     is_cin = bool(_CIN_RE.match(q_upper))
     is_llpin = bool(_LLPIN_RE.match(q_upper))
 
-    # ── 1. quickcompany.in ───────────────────────────────────────────────────
+    # ── Multi-source company master lookup ────────────────────────────────────
+    # Do not return the first result: QuickCompany can contain the company name
+    # while Zauba contains the CIN/address/incorporation date. Merge every
+    # available source so the Client form receives a complete master record.
+    source_results: list[dict] = []
     try:
         result = await _scrape_quickcompany(q)
         if result and (result.get("company_name") or result.get("cin")):
-            return result
+            source_results.append(result)
     except Exception as exc:
         logger.warning(f"quickcompany scrape failed: {exc}")
 
-    # ── 2. zaubacorp.com ─────────────────────────────────────────────────────
     try:
         result = await _scrape_zaubacorp(q)
         if result and (result.get("company_name") or result.get("cin")):
-            return result
+            source_results.append(result)
     except Exception as exc:
         logger.warning(f"zaubacorp scrape failed: {exc}")
 
@@ -10146,7 +10149,7 @@ async def fetch_mca_details(
                         except Exception:
                             doi = str(raw_doi)
                     raw_class = r.get("COMPANY_CLASS") or r.get("company_class") or ""
-                    return {
+                    source_results.append({
                         "company_name": r.get("COMPANY_NAME")
                         or r.get("company_name")
                         or "",
@@ -10172,9 +10175,41 @@ async def fetch_mca_details(
                         "paid_up_capital": r.get("PAIDUP_CAPITAL_IN_INR") or "",
                         "mca_fetch_date": _date.today().isoformat(),
                         "source": "data.gov.in",
-                    }
+                    })
         except Exception as exc:
             logger.warning(f"data.gov.in fallback failed: {exc}")
+
+    if source_results:
+        # Field-level merge: retain the first non-empty value, but prefer
+        # authoritative/structured values when a later source provides them.
+        merged: dict = {}
+        preferred_fields = {
+            "cin", "llpin", "date_of_incorporation", "address", "city", "state",
+            "pin", "email", "company_status", "authorized_capital",
+            "paid_up_capital", "roc", "roc_name", "registration_number",
+            "rd_name", "last_agm_date", "balance_sheet_date", "company_category",
+            "company_subcategory", "listed", "active_compliance", "charges",
+            "directors",
+        }
+        for item in source_results:
+            for key, value in item.items():
+                if value in (None, "", [], {}):
+                    continue
+                if key not in merged or merged.get(key) in (None, "", [], {}):
+                    merged[key] = value
+                elif key in preferred_fields and key in ("cin", "llpin", "date_of_incorporation", "address", "city", "state", "pin", "roc", "roc_name", "registration_number", "last_agm_date", "balance_sheet_date"):
+                    merged[key] = value
+
+        # Normalise common aliases expected by the client form.
+        if not merged.get("cin") and is_cin:
+            merged["cin"] = q_upper
+        if not merged.get("llpin") and is_llpin:
+            merged["llpin"] = q_upper
+        if not merged.get("client_type"):
+            merged["client_type"] = _detect_entity_type_from_name(merged.get("company_name", ""))
+        merged["mca_fetch_date"] = datetime.now(timezone.utc).date().isoformat()
+        merged["source"] = " + ".join(dict.fromkeys(str(x.get("source")) for x in source_results if x.get("source")))
+        return merged
 
     raise HTTPException(
         status_code=404,
@@ -10561,12 +10596,63 @@ def _parse_mca_pdf(pdf_bytes: bytes) -> dict:
                         }
                     )
 
+    # ── Additional MCA master-data fields ───────────────────────────────────
+    def _line_val_any(*labels):
+        for label in labels:
+            value = _line_val(label)
+            if value:
+                return value
+        return ""
+
+    roc_name = _line_val_any("ROC (name and office)", "ROC Name")
+    registration_number = _line_val_any("Registration Number")
+    rd_name = _line_val_any("RD (name and Region)", "RD Name")
+    active_compliance = _line_val_any("ACTIVE compliance")
+    subcategory = _line_val_any("Subcategory of the Company", "Company Subcategory", "Company SubCategory")
+    listed_raw = _line_val_any("Listed in Stock Exchange(s) (Y/N)", "Listed in Stock Exchange")
+    authorized_capital = _line_val_any("Authorised Capital (Rs)", "Authorized Capital (Rs)")
+    paid_up_capital = _line_val_any("Paid up Capital (Rs)", "Paid-up Capital (Rs)")
+    last_agm_date = _line_val_any("Date of last AGM", "Last AGM Date")
+    balance_sheet_date = _line_val_any("Date of Balance Sheet", "Balance Sheet Date")
+    books_address = _line_val_any("Address at which the books of account are to be maintained")
+
+    # Charge register. The sample supplied by the user correctly shows
+    # "No Records Found"; in that case keep an empty list instead of inventing
+    # a loan/charge.
+    charges = []
+    charge_start = None
+    for i, line in enumerate(lines):
+        if re.search(r"Index of Charges", line, re.IGNORECASE):
+            charge_start = i + 1
+            break
+    if charge_start is not None:
+        charge_text = "\n".join(lines[charge_start:])
+        if not re.search(r"No Records Found", charge_text, re.IGNORECASE):
+            charge_headers = re.compile(r"(charge|sr\.?\s*no|amount|date|holder|asset|status)", re.I)
+            for j in range(charge_start, min(len(lines), charge_start + 40)):
+                row = lines[j].strip()
+                if row and charge_headers.search(row):
+                    charges.append({"raw": row})
+            # Deduplicate raw rows.
+            seen_charge = set()
+            charges = [x for x in charges if not (x["raw"] in seen_charge or seen_charge.add(x["raw"]))]
+
+    # Parse dates for master-data dates when present.
+    def _master_date(value):
+        if not value or value in ("-", "nan"):
+            return ""
+        try:
+            return date_parser.parse(value, dayfirst=True).strftime("%Y-%m-%d")
+        except Exception:
+            return value
+
     return {
         "company_name": company_name,
-        "cin": cin or llpin,
+        "cin": cin or "",
         "llpin": llpin,
         "client_type": client_type,
         "company_category": company_category,
+        "company_subcategory": subcategory,
         "email": email,
         "phone": "",
         "date_of_incorporation": date_of_incorporation,
@@ -10575,6 +10661,18 @@ def _parse_mca_pdf(pdf_bytes: bytes) -> dict:
         "state": state,
         "pin": pin,
         "company_status": company_status,
+        "roc": roc_name,
+        "roc_name": roc_name,
+        "registration_number": registration_number,
+        "rd_name": rd_name,
+        "active_compliance": active_compliance,
+        "listed": str(listed_raw).strip().lower() in ("yes", "y", "true", "1"),
+        "authorized_capital": authorized_capital,
+        "paid_up_capital": paid_up_capital,
+        "last_agm_date": _master_date(last_agm_date),
+        "balance_sheet_date": _master_date(balance_sheet_date),
+        "books_address": books_address,
+        "charges": charges,
         "directors": directors,
         "pan": "",
         "raw": {},
@@ -12115,6 +12213,22 @@ async def create_client(
             "cin",
             "llpin",
             "mca_fetch_date",
+            "date_of_incorporation",
+            "pincode",
+            "mca_registration_number",
+            "mca_roc_name",
+            "mca_rd_name",
+            "mca_company_category",
+            "mca_company_subcategory",
+            "mca_listed",
+            "mca_active_compliance",
+            "mca_authorized_capital",
+            "mca_paid_up_capital",
+            "mca_last_agm_date",
+            "mca_balance_sheet_date",
+            "mca_books_address",
+            "mca_charges",
+            "mca_loan_details",
             "is_itr_client",
             "itr_data",
         ):
@@ -12621,6 +12735,21 @@ async def update_client(
         "cin",
         "llpin",
         "mca_fetch_date",
+        "pincode",
+        "mca_registration_number",
+        "mca_roc_name",
+        "mca_rd_name",
+        "mca_company_category",
+        "mca_company_subcategory",
+        "mca_listed",
+        "mca_active_compliance",
+        "mca_authorized_capital",
+        "mca_paid_up_capital",
+        "mca_last_agm_date",
+        "mca_balance_sheet_date",
+        "mca_books_address",
+        "mca_charges",
+        "mca_loan_details",
         # ITR Client
         "is_itr_client",
         "itr_data",
