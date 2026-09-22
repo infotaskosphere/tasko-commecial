@@ -4975,12 +4975,81 @@ export default function Clients() {
     // MCA / ROC fields
     cin: '',
     llpin: '',
+    date_of_incorporation: '',
     mca_fetch_date: '',
+    mca_registration_number: '',
+    mca_roc_name: '',
+    mca_rd_name: '',
+    mca_company_category: '',
+    mca_company_subcategory: '',
+    mca_listed: null,
+    mca_active_compliance: '',
+    mca_authorized_capital: '',
+    mca_paid_up_capital: '',
+    mca_last_agm_date: '',
+    mca_balance_sheet_date: '',
+    mca_books_address: '',
+    mca_charges: [],
+    mca_loan_details: [],
   });
   const [formErrors, setFormErrors]     = useState({});
   const [contactErrors, setContactErrors] = useState([]);
   const [mcaFetching, setMcaFetching]   = useState(false);
   const [mcaQuery, setMcaQuery]         = useState('');
+
+  // Automatically load the company master record for corporate clients.
+  // Existing records with mca_fetch_date are not repeatedly scraped.
+  useEffect(() => {
+    const corporateTypes = ['pvt_ltd', 'public_ltd', 'section_8'];
+    if (!corporateTypes.includes(formData.client_type) || editingClient || formData.mca_fetch_date) return;
+    const name = (formData.company_name || '').trim();
+    if (name.length < 5) return;
+    const timer = setTimeout(async () => {
+      setMcaQuery(name);
+      setMcaFetching(true);
+      try {
+        const { data: d } = await api.get('/clients/fetch-mca-details', { params: { query: name } });
+        if (!d) return;
+        setFormData(p => ({
+          ...p,
+          company_name: d.company_name || p.company_name,
+          client_type: d.client_type || p.client_type,
+          date_of_incorporation: d.date_of_incorporation || p.date_of_incorporation || '',
+          cin: d.cin || p.cin || '',
+          address: d.address || p.address || '',
+          city: d.city || p.city || '',
+          state: d.state || p.state || '',
+          pincode: d.pin || p.pincode || '',
+          email: d.email || p.email || '',
+          pan: d.pan || p.pan || '',
+          mca_fetch_date: d.mca_fetch_date || new Date().toISOString().slice(0, 10),
+          mca_registration_number: d.registration_number || p.mca_registration_number || '',
+          mca_roc_name: d.roc_name || d.roc || p.mca_roc_name || '',
+          mca_rd_name: d.rd_name || p.mca_rd_name || '',
+          mca_company_category: d.company_category || p.mca_company_category || '',
+          mca_company_subcategory: d.company_subcategory || p.mca_company_subcategory || '',
+          mca_listed: typeof d.listed === 'boolean' ? d.listed : p.mca_listed,
+          mca_active_compliance: d.active_compliance || p.mca_active_compliance || '',
+          mca_authorized_capital: d.authorized_capital || p.mca_authorized_capital || '',
+          mca_paid_up_capital: d.paid_up_capital || p.mca_paid_up_capital || '',
+          mca_last_agm_date: d.last_agm_date || p.mca_last_agm_date || '',
+          mca_balance_sheet_date: d.balance_sheet_date || p.mca_balance_sheet_date || '',
+          mca_books_address: d.books_address || p.mca_books_address || '',
+          mca_charges: Array.isArray(d.charges) ? d.charges : (p.mca_charges || []),
+          mca_loan_details: Array.isArray(d.loan_details) ? d.loan_details : (p.mca_loan_details || []),
+          contact_persons: d.directors?.length
+            ? d.directors.map(dir => ({ name: dir.name || '', designation: dir.designation || 'Director', din: dir.din || '', email: '', phone: '', birthday: '' }))
+            : p.contact_persons,
+        }));
+        toast.success('Company master data auto-filled');
+      } catch (_) {
+        // External company lookup failure must not block manual client creation.
+      } finally {
+        setMcaFetching(false);
+      }
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [formData.client_type, formData.company_name, editingClient, formData.mca_fetch_date]);
 
   // ── Minimize/restore: shrink the Add/Edit Client form to the global dock so
   // it can be resumed later (e.g. after checking something on another page).
@@ -5538,7 +5607,22 @@ export default function Clients() {
         cin:             formData.cin?.trim().toUpperCase()   || null,
         llpin:           formData.llpin?.trim().toUpperCase() || null,
         proprietor_name: formData.proprietor_name?.trim()     || null,
-        mca_fetch_date:  formData.mca_fetch_date              || null,
+        mca_fetch_date: formData.mca_fetch_date || null,
+        date_of_incorporation: formData.date_of_incorporation || null,
+        mca_registration_number: formData.mca_registration_number || null,
+        mca_roc_name: formData.mca_roc_name || null,
+        mca_rd_name: formData.mca_rd_name || null,
+        mca_company_category: formData.mca_company_category || null,
+        mca_company_subcategory: formData.mca_company_subcategory || null,
+        mca_listed: typeof formData.mca_listed === 'boolean' ? formData.mca_listed : null,
+        mca_active_compliance: formData.mca_active_compliance || null,
+        mca_authorized_capital: formData.mca_authorized_capital || null,
+        mca_paid_up_capital: formData.mca_paid_up_capital || null,
+        mca_last_agm_date: formData.mca_last_agm_date || null,
+        mca_balance_sheet_date: formData.mca_balance_sheet_date || null,
+        mca_books_address: formData.mca_books_address || null,
+        mca_charges: Array.isArray(formData.mca_charges) ? formData.mca_charges : [],
+        mca_loan_details: Array.isArray(formData.mca_loan_details) ? formData.mca_loan_details : [],
       };
       if (!editingClient) {
         // Duplicate check: flag only when GSTIN matches (same tax entity),
@@ -5653,7 +5737,7 @@ export default function Clients() {
 
   const resetForm = useCallback(() => {
     setAddressTab('primary');
-    setFormData({ company_name: '', client_type: 'proprietor', client_type_other: '', contact_persons: [{ name: '', email: '', phone: '', designation: '', birthday: '', din: '' }], email: '', phone: '', birthday: '', address: '', city: '', state: '', pincode: '', services: [], dsc_details: [], assignments: [{ ...EMPTY_ASSIGNMENT }], notes: '', status: 'active', referred_by: '', auditor: '', gstin: '', pan: '', gst_treatment: 'regular', place_of_supply: '', default_payment_terms: 'Due on receipt', credit_limit: '', opening_balance: '', opening_balance_type: 'Dr', tally_ledger_name: '', tally_group: 'Sundry Debtors', website: '', msme_number: '', gst_address: '', gst_city: '', gst_state: '', gst_pin: '', cin: '', llpin: '', proprietor_name: '', mca_fetch_date: '' });
+    setFormData({ company_name: '', client_type: 'proprietor', client_type_other: '', contact_persons: [{ name: '', email: '', phone: '', designation: '', birthday: '', din: '' }], email: '', phone: '', birthday: '', address: '', city: '', state: '', pincode: '', services: [], dsc_details: [], assignments: [{ ...EMPTY_ASSIGNMENT }], notes: '', status: 'active', referred_by: '', auditor: '', gstin: '', pan: '', gst_treatment: 'regular', place_of_supply: '', default_payment_terms: 'Due on receipt', credit_limit: '', opening_balance: '', opening_balance_type: 'Dr', tally_ledger_name: '', tally_group: 'Sundry Debtors', website: '', msme_number: '', gst_address: '', gst_city: '', gst_state: '', gst_pin: '', cin: '', llpin: '', proprietor_name: '', date_of_incorporation: '', mca_fetch_date: '', mca_registration_number: '', mca_roc_name: '', mca_rd_name: '', mca_company_category: '', mca_company_subcategory: '', mca_listed: null, mca_active_compliance: '', mca_authorized_capital: '', mca_paid_up_capital: '', mca_last_agm_date: '', mca_balance_sheet_date: '', mca_books_address: '', mca_charges: [], mca_loan_details: [] });
     setOtherService(''); setEditingClient(null); setFormErrors({}); setContactErrors([]); setReferrerInput(''); setReferrerSelectValue(''); setAuditorInput(''); setAuditorSelectValue('');
     setSmartImportFiles({ gst: null, udyam: null, mca: null });
     setSmartImportError('');
@@ -6502,6 +6586,20 @@ export default function Clients() {
                                     notes:             parsed.notes || '',
                                     contact_persons:   contacts,
                                     gst_treatment:     'regular',
+                                    date_of_incorporation: parsed.date_of_incorporation || '',
+                                    mca_registration_number: parsed.registration_number || '',
+                                    mca_roc_name: parsed.roc || '',
+                                    mca_rd_name: parsed.rd_name || '',
+                                    mca_company_category: parsed.company_category || '',
+                                    mca_company_subcategory: parsed.company_subcategory || '',
+                                    mca_listed: typeof parsed.listed === 'boolean' ? parsed.listed : null,
+                                    mca_active_compliance: parsed.active_compliance || '',
+                                    mca_authorized_capital: parsed.authorized_capital || '',
+                                    mca_paid_up_capital: parsed.paid_up_capital || '',
+                                    mca_last_agm_date: parsed.last_agm_date || '',
+                                    mca_balance_sheet_date: parsed.balance_sheet_date || '',
+                                    mca_books_address: parsed.books_address || '',
+                                    mca_charges: parsed.charges || [],
                                   }));
                                   setSmartImportFiles({ gst: null, udyam: null, mca: null });
                                   toast.success(`Data extracted from ${parsed.doc_types_found?.join(' + ')}! Review form and save.`, { duration: 5000 });
@@ -6576,41 +6674,58 @@ export default function Clients() {
                           type="button"
                           disabled={mcaFetching || mcaQuery.trim().length < 3}
                           onClick={async () => {
-                            const q = mcaQuery.trim();
+                            const q = (mcaQuery.trim() || formData.company_name.trim());
                             if (!q) return;
                             setMcaFetching(true);
                             try {
                               const res = await api.get('/clients/fetch-mca-details', { params: { query: q } });
-                              const d = res.data;
+                              const d = res.data || {};
                               const isLLP = (d.client_type === 'llp') || /llp/i.test(d.company_name || '');
+                              const masterDate = d.mca_fetch_date || new Date().toISOString().slice(0, 10);
                               setFormData(p => ({
                                 ...p,
-                                company_name:          d.company_name          || p.company_name,
-                                client_type:           d.client_type           || p.client_type,
-                                date_of_incorporation: d.date_of_incorporation || p.date_of_incorporation,
-                                address:               d.address               || p.address,
-                                city:                  d.city                  || p.city,
-                                state:                 d.state                 || p.state,
-                                email:                 d.email                 || p.email,
-                                pan:                   d.pan                   || p.pan,
-                                gst_pin:               d.gst_pin               || p.gst_pin,
-                                cin:                   isLLP ? '' : (d.cin     || p.cin   || ''),
-                                llpin:                 isLLP ? (d.cin          || p.llpin || '') : '',
-                                mca_fetch_date:        d.mca_fetch_date        || new Date().toISOString().slice(0, 10),
-                                contact_persons:       d.directors?.length
+                                company_name: d.company_name || p.company_name,
+                                client_type: d.client_type || p.client_type,
+                                date_of_incorporation: d.date_of_incorporation || p.date_of_incorporation || '',
+                                address: d.address || p.address,
+                                city: d.city || p.city,
+                                state: d.state || p.state,
+                                pincode: d.pin || p.pincode || '',
+                                email: d.email || p.email,
+                                pan: d.pan || p.pan,
+                                gst_pin: d.gst_pin || d.pin || p.gst_pin,
+                                cin: isLLP ? '' : (d.cin || p.cin || ''),
+                                llpin: isLLP ? (d.llpin || d.cin || p.llpin || '') : '',
+                                mca_fetch_date: masterDate,
+                                mca_registration_number: d.registration_number || p.mca_registration_number || '',
+                                mca_roc_name: d.roc_name || d.roc || p.mca_roc_name || '',
+                                mca_rd_name: d.rd_name || p.mca_rd_name || '',
+                                mca_company_category: d.company_category || p.mca_company_category || '',
+                                mca_company_subcategory: d.company_subcategory || p.mca_company_subcategory || '',
+                                mca_listed: typeof d.listed === 'boolean' ? d.listed : p.mca_listed,
+                                mca_active_compliance: d.active_compliance || p.mca_active_compliance || '',
+                                mca_authorized_capital: d.authorized_capital || p.mca_authorized_capital || '',
+                                mca_paid_up_capital: d.paid_up_capital || p.mca_paid_up_capital || '',
+                                mca_last_agm_date: d.last_agm_date || p.mca_last_agm_date || '',
+                                mca_balance_sheet_date: d.balance_sheet_date || p.mca_balance_sheet_date || '',
+                                mca_books_address: d.books_address || p.mca_books_address || '',
+                                mca_charges: Array.isArray(d.charges) ? d.charges : (p.mca_charges || []),
+                                mca_loan_details: Array.isArray(d.loan_details) ? d.loan_details : (p.mca_loan_details || []),
+                                contact_persons: d.directors?.length
                                   ? d.directors.map(dir => ({
-                                      name:        dir.name        || '',
+                                      name: dir.name || '',
                                       designation: dir.designation || 'Director',
-                                      din:         dir.din         || '',
-                                      email:       '',
-                                      phone:       '',
-                                      birthday:    '',
+                                      din: dir.din || '',
+                                      email: '',
+                                      phone: '',
+                                      birthday: '',
                                     }))
                                   : p.contact_persons,
                               }));
-                              toast.success(`Company details fetched${d.source ? ' from ' + d.source : ''}`);
+                              setMcaQuery(q);
+                              toast.success('Company master data loaded' + (d.source ? ' · ' + d.source : ''));
                             } catch (err) {
-                              const msg = err?.response?.data?.detail || err?.message || 'Could not fetch company details. Try a different name or CIN.';
+                              const msg = err?.response?.data?.detail || err?.message || 'Could not fetch company master data. Try the exact company name or CIN.';
                               toast.error(msg);
                             } finally {
                               setMcaFetching(false);
@@ -6675,10 +6790,18 @@ export default function Clients() {
                         <Input data-field-error={formErrors.phone ? true : undefined} className={fieldCls(formErrors.phone)} value={formData.phone} onChange={e => { setFormData(p => ({ ...p, phone: e.target.value })); if (formErrors.phone) setFormErrors(prev => ({ ...prev, phone: undefined })); }} />
                         {formErrors.phone && <p className="text-red-500 text-xs mt-1">{formErrors.phone}</p>}
                       </div>
-                      <div>
-                        <label className={labelCls}>Date of Incorporation</label>
-                        <Input className={`h-11 focus:border-blue-400 rounded-xl text-sm ${isDark ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-white border-slate-200'}`} type="date" value={formData.birthday} onChange={e => setFormData(p => ({ ...p, birthday: e.target.value }))} />
-                      </div>
+                      {['pvt_ltd', 'public_ltd', 'section_8'].includes(formData.client_type) && (
+                        <div>
+                          <label className={labelCls}>Date of Incorporation</label>
+                          <Input className={`h-11 focus:border-blue-400 rounded-xl text-sm ${isDark ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-white border-slate-200'}`} type="date" value={formData.date_of_incorporation || ''} onChange={e => setFormData(p => ({ ...p, date_of_incorporation: e.target.value }))} />
+                        </div>
+                      )}
+                      {formData.client_type === 'proprietor' && (
+                        <div>
+                          <label className={labelCls}>Date of Birth</label>
+                          <Input className={`h-11 focus:border-blue-400 rounded-xl text-sm ${isDark ? 'bg-slate-700 border-slate-600 text-slate-100' : 'bg-white border-slate-200'}`} type="date" value={formData.birthday || ''} onChange={e => setFormData(p => ({ ...p, birthday: e.target.value }))} />
+                        </div>
+                      )}
                       <div>
                         <label className={labelCls}>Referred By</label>
                         <EditableDropdown
@@ -6884,6 +7007,49 @@ export default function Clients() {
                           formData.gst_address was empty — removed to fix the double row. */}
                     </div>
                   </div>
+                  {/* MCA / ROC Company Master Data */}
+                  {['pvt_ltd', 'public_ltd', 'section_8', 'llp'].includes(formData.client_type) && (
+                    <div className={`border rounded-2xl p-6 ${isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50/60 border-slate-100'}`}>
+                      <div className="flex items-start justify-between gap-3 mb-5">
+                        <SectionHeading icon={<Building2 className="h-4 w-4" />} title="MCA / ROC Company Master Data" subtitle="Structured company master data used by ROC Sphere and annual compliance workflows" isDark={isDark} />
+                        {formData.mca_fetch_date && <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">Master data loaded · {formData.mca_fetch_date}</span>}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {[
+                          ['CIN', formData.cin], ['Registration Number', formData.mca_registration_number],
+                          ['ROC', formData.mca_roc_name], ['RD / Region', formData.mca_rd_name],
+                          ['Company Category', formData.mca_company_category], ['Subcategory', formData.mca_company_subcategory],
+                          ['Authorised Capital', formData.mca_authorized_capital], ['Paid-up Capital', formData.mca_paid_up_capital],
+                          ['Last AGM', formData.mca_last_agm_date], ['Balance Sheet Date', formData.mca_balance_sheet_date],
+                          ['Listed', formData.mca_listed === null ? '' : (formData.mca_listed ? 'Yes' : 'No')],
+                          ['ACTIVE Compliance', formData.mca_active_compliance],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <label className={labelCls}>{label}</label>
+                            <Input className={fieldCls(false)} value={value ?? ''} onChange={e => {
+                              const map = {'CIN':'cin','Registration Number':'mca_registration_number','ROC':'mca_roc_name','RD / Region':'mca_rd_name','Company Category':'mca_company_category','Subcategory':'mca_company_subcategory','Authorised Capital':'mca_authorized_capital','Paid-up Capital':'mca_paid_up_capital','Last AGM':'mca_last_agm_date','Balance Sheet Date':'mca_balance_sheet_date','ACTIVE Compliance':'mca_active_compliance'};
+                              if (label === 'Listed') setFormData(p => ({ ...p, mca_listed: e.target.value.toLowerCase() === 'yes' }));
+                              else setFormData(p => ({ ...p, [map[label]]: e.target.value }));
+                            }} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-4">
+                        <label className={labelCls}>Address at which books of account are maintained</label>
+                        <Input className={fieldCls(false)} value={formData.mca_books_address || ''} onChange={e => setFormData(p => ({ ...p, mca_books_address: e.target.value }))} />
+                      </div>
+                      <div className="mt-4 grid md:grid-cols-2 gap-4">
+                        <div className={`rounded-xl border p-4 ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-white'}`}>
+                          <div className="flex items-center justify-between mb-2"><p className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Charges Created</p><span className="text-[10px] text-slate-400">{formData.mca_charges?.length || 0} record(s)</span></div>
+                          {formData.mca_charges?.length ? <div className="space-y-2">{formData.mca_charges.map((charge, i) => <div key={i} className="rounded-lg border p-2 text-[10px] text-slate-500">{charge.raw || Object.entries(charge).filter(([k]) => k !== 'raw').map(([k,v]) => k + ': ' + v).join(' · ')}</div>)}</div> : <p className="text-[11px] text-slate-400">No charge records found in the loaded master data.</p>}
+                        </div>
+                        <div className={`rounded-xl border p-4 ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-white'}`}>
+                          <div className="flex items-center justify-between mb-2"><p className={`text-xs font-bold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Loans / Borrowings</p><span className="text-[10px] text-slate-400">{formData.mca_loan_details?.length || 0} record(s)</span></div>
+                          {formData.mca_loan_details?.length ? <div className="space-y-2">{formData.mca_loan_details.map((loan, i) => <div key={i} className="rounded-lg border p-2 text-[10px] text-slate-500">{loan.raw || Object.entries(loan).map(([k,v]) => k + ': ' + v).join(' · ')}</div>)}</div> : <p className="text-[11px] text-slate-400">No loan details are present in the loaded master-data source.</p>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {/* Contact Persons */}
                   <div className={`border rounded-2xl p-6 ${isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50/60 border-slate-100'}`}>
                     <div className="flex items-center justify-between mb-5">
