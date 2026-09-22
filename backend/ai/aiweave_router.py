@@ -1,6 +1,6 @@
 from __future__ import annotations
 import base64, hashlib, logging, os, time, uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -31,6 +31,54 @@ PROVIDERS = [
 ]
 PROVIDER_MAP={p["id"]:p for p in PROVIDERS}
 CAPABILITIES={"chat","reasoning","coding","debugging","vision","document_analysis","image_generation","tool_calling","agent_execution","long_context","structured_output"}
+
+# --- Cost-tier aware routing -------------------------------------------------
+# "Free" is a property of a specific credential/plan, not of a provider or a
+# model - two different accounts on the same provider can be one free and one
+# paid. So cost tier is tracked per ACCOUNT ("cost_tier": FREE/PAID/UNKNOWN,
+# admin-editable via PATCH /accounts/{id}), and this hint table only supplies
+# a sensible *default* the first time a server-managed (ENV) credential is
+# discovered. Admins can always override it, and it is never used to make a
+# provider unreachable - it only changes attempt ORDER when costPolicy is
+# FREE_FIRST, so every free token available across every connected provider
+# is used before a single paid request is ever sent.
+COST_TIERS = {"FREE", "PAID", "UNKNOWN"}
+TYPICAL_FREE_TIER_HINT = {
+    "gemini": "FREE",      # Google AI Studio keys ship with a free daily quota
+    "groq": "FREE",        # Groq's hosted API is currently free to use
+    "ollama": "FREE",      # local inference has no per-token provider cost
+    "openrouter": "UNKNOWN",  # some individual models are free, the account itself may be billed
+    "together": "UNKNOWN", "deepseek": "UNKNOWN", "qwen": "UNKNOWN", "mistral": "UNKNOWN", "kimi": "UNKNOWN",
+    "openai": "PAID", "claude": "PAID", "grok": "PAID",
+}
+def cost_rank(a):
+    return {"FREE":0,"UNKNOWN":1,"PAID":2}.get(str(a.get("cost_tier") or "UNKNOWN").upper(),1)
+def today(): return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def this_month(): return datetime.now(timezone.utc).strftime("%Y-%m")
+def next_utc_midnight_iso():
+    n=datetime.now(timezone.utc)
+    return (n+timedelta(days=1)).replace(hour=0,minute=0,second=0,microsecond=0).isoformat()
+def window_usage(a):
+    """Daily/monthly counters are only valid for the current window; a stale
+    reset marker means the window already rolled over and usage is 0, so an
+    exhausted free account automatically becomes eligible again without a
+    background cron job."""
+    d = int(a.get("daily_usage_tokens",0) or 0) if a.get("daily_reset_at")==today() else 0
+    dr = int(a.get("daily_requests",0) or 0) if a.get("daily_reset_at")==today() else 0
+    m = int(a.get("monthly_usage_tokens",0) or 0) if a.get("monthly_reset_at")==this_month() else 0
+    mr = int(a.get("monthly_requests",0) or 0) if a.get("monthly_reset_at")==this_month() else 0
+    return d,dr,m,mr
+def quota_available(a):
+    cd=a.get("cooldown_until")
+    if cd:
+        try:
+            if datetime.fromisoformat(cd)>datetime.now(timezone.utc):return False
+        except Exception:pass
+    d,_,m,_=window_usage(a)
+    daily_limit=int(a.get("daily_limit") or 0);monthly_limit=int(a.get("monthly_limit") or 0)
+    if daily_limit and d>=daily_limit:return False
+    if monthly_limit and m>=monthly_limit:return False
+    return True
 BASES={
  "openai":"https://api.openai.com/v1","grok":"https://api.x.ai/v1","kimi":"https://api.moonshot.ai/v1",
  "deepseek":"https://api.deepseek.com/v1","qwen":"https://dashscope.aliyuncs.com/compatible-mode/v1",
@@ -54,8 +102,8 @@ MODELS=[
  {"id":"llama-3.3-70b","provider":"llama","name":"Llama 3.3 70B","capabilities":["chat","reasoning","coding","document_analysis","structured_output"]},
  {"id":"llama-3.3-70b-versatile","provider":"groq","name":"Llama 3.3 70B Versatile","capabilities":["chat","reasoning","coding","document_analysis","tool_calling","structured_output"]},
  {"id":"openrouter/auto","provider":"openrouter","name":"OpenRouter Auto","capabilities":["chat","reasoning","coding","vision","document_analysis","tool_calling"]},
- {"id":"qwen2.5-coder:32b","provider":"ollama","name":"Qwen 2.5 Coder 32B (Local)","capabilities":["coding","debugging","tool_calling","structured_output"],"isLocal":True},
- {"id":"llama3.3:70b","provider":"ollama","name":"Llama 3.3 70B (Local)","capabilities":["chat","reasoning","coding","document_analysis","structured_output"],"isLocal":True},
+ {"id":"qwen2.5-coder:32b","provider":"ollama","name":"Qwen 2.5 Coder 32B (Local)","capabilities":["coding","debugging","tool_calling","structured_output"],"isLocal":True,"isFree":True},
+ {"id":"llama3.3:70b","provider":"ollama","name":"Llama 3.3 70B (Local)","capabilities":["chat","reasoning","coding","document_analysis","structured_output"],"isLocal":True,"isFree":True},
 ]
 DEFAULT_ROUTING={"strategy":"PRIORITY","preferredProvider":"auto","preferredModel":"auto","costPolicy":"FREE_FIRST","allowLocalFallback":True,"maxAccountAttempts":3,"maxProviderAttempts":12,"maxTotalAttempts":30,"retryOnRateLimit":True,"retryOnCapacityExhausted":True,"timeoutMs":60000,"companyIsolationEnabled":True,"routingVersion":3}
 ENV_PROVIDER_KEYS={"openai":"AIWEAVE_OPENAI_API_KEY","gemini":"AIWEAVE_GEMINI_API_KEY","claude":"AIWEAVE_ANTHROPIC_API_KEY","grok":"AIWEAVE_XAI_API_KEY","kimi":"AIWEAVE_KIMI_API_KEY","deepseek":"AIWEAVE_DEEPSEEK_API_KEY","qwen":"AIWEAVE_QWEN_API_KEY","mistral":"AIWEAVE_MISTRAL_API_KEY","groq":"AIWEAVE_GROQ_API_KEY","openrouter":"AIWEAVE_OPENROUTER_API_KEY","together":"AIWEAVE_TOGETHER_API_KEY"}
@@ -89,9 +137,18 @@ async def ensure_env_accounts(user):
         base_url=ollama_base if provider=="ollama" else None
         patch={"provider":provider,"name":ENV_PROVIDER_IDENTITY.get(provider,provider.title())+(f" #{index}" if index>1 else ""),"masked_identity":"Server-managed credential","credential_encrypted":enc(key),"credential_fingerprint":fingerprint,"source":"ENV","managed_by":"server","status":"CONNECTED","health":"HEALTHY","enabled":True,"capabilities":capabilities,"priority":index,"weight":100,"allowed_task_types":["*"],"allowed_users":["*"],"allowed_companies":[s["company_id"]] if s["company_id"] else [],"base_url":base_url,"last_error":None,"updated_at":now()}
         if not existing:
-            doc={"id":aid,**s,**patch,"current_usage_tokens":0,"total_requests":0,"last_used":None,"last_checked":None,"daily_limit":0,"monthly_limit":0,"quota":{},"usage":{},"created_at":now()}
+            doc={"id":aid,**s,**patch,"cost_tier":TYPICAL_FREE_TIER_HINT.get(provider,"UNKNOWN"),
+                 "current_usage_tokens":0,"total_requests":0,"last_used":None,"last_checked":None,
+                 "daily_limit":0,"monthly_limit":0,
+                 "daily_usage_tokens":0,"daily_requests":0,"daily_reset_at":today(),
+                 "monthly_usage_tokens":0,"monthly_requests":0,"monthly_reset_at":this_month(),
+                 "cooldown_until":None,"quota":{},"usage":{},"created_at":now()}
             await db.aiweave_provider_accounts.insert_one(doc)
-        else:await db.aiweave_provider_accounts.update_one({**s,"id":aid},{"$set":patch})
+        else:
+            # Never clobber an admin's own cost-tier / limit choices for an
+            # already-known credential - only the connection status fields
+            # returned by discovery are refreshed here.
+            await db.aiweave_provider_accounts.update_one({**s,"id":aid},{"$set":patch})
         model_count=await db.aiweave_provider_models.count_documents({**s,"provider":provider,"source":"ENV"})
         if changed or model_count==0:
             found=await discover({**patch,"id":aid,"provider":provider,"base_url":base_url},key)
@@ -136,6 +193,7 @@ def mask(s):
         a,b=s.split("@",1);return f"{a[:1]}{'*'*min(5,max(1,len(a)-1))}@{b}"
     return "***" if len(s)<7 else s[:2]+"*"*(len(s)-4)+s[-2:]
 def safe(a):
+    d,dr,m,mr=window_usage(a)
     return {"id":str(a.get("id") or a.get("_id")),"provider":a.get("provider"),"name":a.get("name"),
             "maskedIdentity":a.get("masked_identity"),"status":a.get("status"),"health":a.get("health"),
             "capabilities":a.get("capabilities") or [],"priority":int(a.get("priority",1)),
@@ -145,7 +203,11 @@ def safe(a):
             "monthlyLimit":a.get("monthly_limit"),"currentUsageTokens":int(a.get("current_usage_tokens",0) or 0),
             "totalRequests":int(a.get("total_requests",0) or 0),"lastUsed":a.get("last_used"),
             "lastChecked":a.get("last_checked"),"lastError":a.get("last_error"),"quota":a.get("quota") or {},
-            "usage":a.get("usage") or {}}
+            "usage":a.get("usage") or {},
+            "costTier":str(a.get("cost_tier") or "UNKNOWN").upper(),
+            "cooldownUntil":a.get("cooldown_until"),
+            "dailyUsageTokens":d,"dailyRequests":dr,"monthlyUsageTokens":m,"monthlyRequests":mr,
+            "quotaAvailable":quota_available(a)}
 def account_query(user):
     s=scope(user);uid=str(getattr(user,"id","") or "")
     return {**s,"$or":[{"allowed_users":{"$in":["*",uid]}},{"allowed_companies":{"$in":["*",s["company_id"] or ""]}}]}
@@ -252,21 +314,38 @@ async def discover(row,key):
 def eligible(a,payload):
     if not a.get("enabled",True) or a.get("status") in {"DISABLED","DISCONNECTED","AUTH_REQUIRED","UNHEALTHY","RATE_LIMITED","CAPACITY_EXHAUSTED","ERROR"}:return False
     if a.get("health") not in {"HEALTHY","DEGRADED"}:return False
+    if not quota_available(a):return False
     allowed=a.get("allowed_task_types") or ["*"]
     if "*" not in allowed and payload.taskType not in allowed:return False
     caps=a.get("capabilities") or []
     return payload.requiredCapability in caps if caps else False
-def rank(rows,strategy):
-    if strategy=="LEAST_USED":return sorted(rows,key=lambda a:(int(a.get("current_usage_tokens",0) or 0),int(a.get("total_requests",0) or 0)))
-    if strategy=="HEALTH_FIRST":return sorted(rows,key=lambda a:(0 if a.get("health")=="HEALTHY" else 1,int(a.get("priority",1))))
-    if strategy=="WEIGHTED":return sorted(rows,key=lambda a:(-int(a.get("weight",100)),int(a.get("priority",1))))
-    if strategy=="ROUND_ROBIN":return sorted(rows,key=lambda a:(a.get("last_used") or "",int(a.get("priority",1))))
-    return sorted(rows,key=lambda a:(int(a.get("priority",1)), -int(a.get("weight",100))))
-def provider_order(cfg,requested):
+def rank(rows,strategy,cost_policy="FREE_FIRST"):
+    if strategy=="LEAST_USED":ordered=sorted(rows,key=lambda a:(int(a.get("current_usage_tokens",0) or 0),int(a.get("total_requests",0) or 0)))
+    elif strategy=="HEALTH_FIRST":ordered=sorted(rows,key=lambda a:(0 if a.get("health")=="HEALTHY" else 1,int(a.get("priority",1))))
+    elif strategy=="WEIGHTED":ordered=sorted(rows,key=lambda a:(-int(a.get("weight",100)),int(a.get("priority",1))))
+    elif strategy=="ROUND_ROBIN":ordered=sorted(rows,key=lambda a:(a.get("last_used") or "",int(a.get("priority",1))))
+    else:ordered=sorted(rows,key=lambda a:(int(a.get("priority",1)), -int(a.get("weight",100))))
+    if cost_policy=="FREE_FIRST":
+        # Stable sort: within each cost tier the strategy's own order above is preserved.
+        ordered=sorted(ordered,key=cost_rank)
+    return ordered
+def provider_order(cfg,requested,accounts=None):
     default_order=["openai","gemini","claude","grok","kimi","deepseek","qwen","mistral","groq","openrouter","together"]
     x=cfg.get("preferredProvider")
     first=requested if requested and requested!="auto" else (x if x and x!="auto" else None)
-    out=([first] if first else [])+[p for p in default_order if p!=first]
+    rest=[p for p in default_order if p!=first]
+    if str(cfg.get("costPolicy","FREE_FIRST"))=="FREE_FIRST":
+        by_provider={}
+        for a in (accounts or []):by_provider.setdefault(a.get("provider"),[]).append(a)
+        def best_tier(pid):
+            rows=by_provider.get(pid) or []
+            return min((cost_rank(a) for a in rows),default=1)
+        # A provider that currently has at least one FREE account jumps ahead
+        # of providers that only have PAID/unknown ones, so free capacity
+        # across the whole fleet is drained before any paid provider is ever
+        # tried. Ties fall back to the original priority ordering.
+        rest=sorted(rest,key=lambda pid:(best_tier(pid),default_order.index(pid)))
+    out=([first] if first else [])+rest
     if cfg.get("allowLocalFallback") and "ollama" not in out:out.append("ollama")
     return out
 def model_candidates(provider,preferred,cap,cfg,discovered):
@@ -337,11 +416,26 @@ async def routing(user):
         await db.aiweave_routing_rules.update_one(s,{"$set":{**s,**merged}},upsert=True)
     return merged
 async def touch(a,ok,kind=None,latency=None,inp=0,out=0,error=None):
-    usage=a.get("usage") or {};patch={"current_usage_tokens":int(a.get("current_usage_tokens",0) or 0)+inp+out,"total_requests":int(a.get("total_requests",0) or 0)+1,
+    usage=a.get("usage") or {};tok=inp+out
+    d,dr,m,mr=window_usage(a)
+    patch={"current_usage_tokens":int(a.get("current_usage_tokens",0) or 0)+tok,"total_requests":int(a.get("total_requests",0) or 0)+1,
+      "daily_usage_tokens":d+tok,"daily_requests":dr+1,"daily_reset_at":today(),
+      "monthly_usage_tokens":m+tok,"monthly_requests":mr+1,"monthly_reset_at":this_month(),
       "last_used":now(),"last_checked":now(),"last_error":None if ok else (error or a.get("last_error")),
       "health":"HEALTHY" if ok else ("DEGRADED" if kind in {"RATE_LIMITED","RETRYABLE_ACCOUNT_FAILURE"} else "UNHEALTHY"),
       "status":"CONNECTED" if ok else (kind if kind in {"RATE_LIMITED","CAPACITY_EXHAUSTED","AUTH_REQUIRED"} else "ERROR"),
       "usage":{**usage,"last_latency_ms":latency,"last_input_tokens":inp,"last_output_tokens":out}}
+    if ok:
+        patch["cooldown_until"]=None
+    elif kind in {"TOKEN_EXHAUSTED","QUOTA_EXHAUSTED","CAPACITY_EXHAUSTED"}:
+        # The provider itself confirmed this credential is out of quota.
+        # Rest it until the next UTC day instead of re-attempting (and
+        # failing) on every subsequent request - that wastes a fallback
+        # attempt and adds latency for no benefit, and it lets a genuinely
+        # free/healthy account further down the list get the traffic
+        # immediately instead. It automatically becomes eligible again once
+        # the cooldown passes, without any manual intervention.
+        patch["cooldown_until"]=next_utc_midnight_iso()
     await db.aiweave_provider_accounts.update_one({"id":a["id"]},{"$set":patch})
 async def execute_adapter(a,model,prompt,timeout):
     key=dec(a.get("credential_encrypted",""));p=a["provider"];ad=PROVIDER_MAP[p]["adapter"]
@@ -355,11 +449,12 @@ class Connect(BaseModel):
     providerId:str;name:str=Field(min_length=1,max_length=120);identity:str=Field(min_length=1,max_length=240)
     credentialSecret:str=Field(default="",max_length=20000);priority:int=Field(default=1,ge=1,le=1000);weight:int=Field(default=100,ge=1,le=100)
     dailyLimit:int=Field(default=0,ge=0);monthlyLimit:int=Field(default=0,ge=0);baseUrl:Optional[str]=Field(default=None,max_length=500)
-    capabilities:List[str]=Field(default_factory=list)
+    capabilities:List[str]=Field(default_factory=list);costTier:str=Field(default="UNKNOWN")
 class AccountUpdate(BaseModel):
     priority:Optional[int]=Field(default=None,ge=1,le=1000);weight:Optional[int]=Field(default=None,ge=1,le=100)
     enabled:Optional[bool]=None;allowedTaskTypes:Optional[List[str]]=None;allowedUsers:Optional[List[str]]=None
     allowedCompanies:Optional[List[str]]=None;dailyLimit:Optional[int]=Field(default=None,ge=0);monthlyLimit:Optional[int]=Field(default=None,ge=0)
+    costTier:Optional[str]=None
 class RoutingUpdate(BaseModel):
     strategy:Optional[str]=None;preferredProvider:Optional[str]=None;preferredModel:Optional[str]=None;costPolicy:Optional[str]=None
     allowLocalFallback:Optional[bool]=None;maxAccountAttempts:Optional[int]=Field(default=None,ge=1,le=10)
@@ -452,11 +547,14 @@ async def connect(payload:Connect,user=Depends(require_admin)):
     if not p:raise HTTPException(400,"Unsupported AI provider.")
     if not p.get("adapter"):raise HTTPException(400,f"{p['name']} requires a dedicated provider integration; it is not simulated.")
     if not payload.credentialSecret and not p.get("is_local"):raise HTTPException(400,"Provider API credential is required.")
+    cost_tier=str(payload.costTier or "UNKNOWN").upper()
+    if cost_tier not in COST_TIERS:raise HTTPException(400,"costTier must be one of FREE, PAID, UNKNOWN.")
     s=scope(user);caps=[x for x in payload.capabilities if x in CAPABILITIES] or list(CAPABILITIES-{"image_generation","agent_execution"})
     row={"id":f"acc-{p['id']}-{uuid.uuid4().hex[:12]}",**s,"provider":p["id"],"name":payload.name.strip(),"masked_identity":mask(payload.identity),
          "credential_encrypted":enc(payload.credentialSecret),"status":"PENDING","health":"UNKNOWN","capabilities":caps,"priority":payload.priority,"weight":payload.weight,
          "enabled":True,"allowed_task_types":["*"],"allowed_users":["*"],"allowed_companies":[s["company_id"]] if s["company_id"] else [],
-         "daily_limit":payload.dailyLimit,"monthly_limit":payload.monthlyLimit,"current_usage_tokens":0,"total_requests":0,"last_used":None,
+         "cost_tier":cost_tier,"daily_limit":payload.dailyLimit,"monthly_limit":payload.monthlyLimit,"current_usage_tokens":0,"total_requests":0,"last_used":None,
+         "daily_usage_tokens":0,"daily_requests":0,"daily_reset_at":today(),"monthly_usage_tokens":0,"monthly_requests":0,"monthly_reset_at":this_month(),"cooldown_until":None,
          "last_checked":None,"last_error":None,"quota":{},"usage":{},"base_url":payload.baseUrl if p["id"]=="ollama" else None,"created_at":now(),"updated_at":now()}
     try:
         result=await test_provider(row,payload.credentialSecret)
@@ -491,8 +589,11 @@ async def toggle(aid:str,user=Depends(require_admin)):
 
 @router.patch("/accounts/{aid}")
 async def update(aid:str,payload:AccountUpdate,user=Depends(require_admin)):
-    row=await get_account(aid,user);m={"priority":"priority","weight":"weight","enabled":"enabled","allowedTaskTypes":"allowed_task_types","allowedUsers":"allowed_users","allowedCompanies":"allowed_companies","dailyLimit":"daily_limit","monthlyLimit":"monthly_limit"}
+    row=await get_account(aid,user);m={"priority":"priority","weight":"weight","enabled":"enabled","allowedTaskTypes":"allowed_task_types","allowedUsers":"allowed_users","allowedCompanies":"allowed_companies","dailyLimit":"daily_limit","monthlyLimit":"monthly_limit","costTier":"cost_tier"}
     patch={m[k]:v for k,v in payload.model_dump(exclude_none=True).items() if k in m}
+    if "cost_tier" in patch:
+        patch["cost_tier"]=str(patch["cost_tier"]).upper()
+        if patch["cost_tier"] not in COST_TIERS:raise HTTPException(400,"costTier must be one of FREE, PAID, UNKNOWN.")
     if "enabled" in patch:patch["status"]="CONNECTED" if patch["enabled"] else "DISABLED"
     patch["updated_at"]=now();await db.aiweave_provider_accounts.update_one({"id":aid},{"$set":patch});row.update(patch);return safe(row)
 
@@ -534,7 +635,8 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     s=scope(user);cfg=await routing(user)
     accounts=await db.aiweave_provider_accounts.find(account_query(user),{"_id":0}).to_list(500)
     discovered=await db.aiweave_provider_models.find(s,{"_id":0}).to_list(1000)
-    ordered_providers=provider_order(cfg,payload.preferredProvider);maxa=max(1,int(cfg.get("maxAccountAttempts",3)));maxp=min(len(ordered_providers),max(1,int(cfg.get("maxProviderAttempts",len(ordered_providers)))));maxt=min(15,max(1,int(cfg.get("maxTotalAttempts",12))));timeout=float(cfg.get("timeoutMs",60000))/1000
+    ordered_providers=provider_order(cfg,payload.preferredProvider,accounts);maxa=max(1,int(cfg.get("maxAccountAttempts",3)));maxp=min(len(ordered_providers),max(1,int(cfg.get("maxProviderAttempts",len(ordered_providers)))));maxt=min(15,max(1,int(cfg.get("maxTotalAttempts",12))));timeout=float(cfg.get("timeoutMs",60000))/1000
+    cost_policy=str(cfg.get("costPolicy","FREE_FIRST"))
     trail=[];attempts=0;provider_attempts=0;chosen=None;chosen_model=None;result=None;started=time.perf_counter()
     # Preserve conversation context across every provider fallback.
     context_messages=[m for m in (payload.messages or []) if isinstance(m,dict) and m.get("role") in {"system","user","assistant"} and m.get("content")]
@@ -554,20 +656,20 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     for pid in ordered_providers:
         if provider_attempts>=maxp or attempts>=maxt: break
         provider_attempts+=1;provider_seen=0
-        for a in rank([x for x in accounts if x.get("provider")==pid],str(cfg.get("strategy","PRIORITY"))):
+        for a in rank([x for x in accounts if x.get("provider")==pid],str(cfg.get("strategy","PRIORITY")),cost_policy):
             if attempts>=maxt or provider_seen>=maxa: break
             if not eligible(a,payload): continue
             provider_seen+=1
             models=model_candidates(pid,payload.preferredModel,payload.requiredCapability,cfg,discovered)
             if not models:
-                trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"status":"MODEL_UNAVAILABLE","reason":"No compatible discovered model is available."});continue
+                trail.append({"attempt":attempts+1,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"costTier":a.get("cost_tier"),"status":"MODEL_UNAVAILABLE","reason":"No compatible discovered model is available."});continue
             for model in models[:2]:
                 if attempts>=maxt: break
                 attempts+=1;t=time.perf_counter()
                 if payload.mockSimulateExhaustion:
                     e=PError("TOKEN_EXHAUSTED","Simulated token/quota exhaustion for fallback testing.")
                     await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
-                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"costTier":a.get("cost_tier"),"model":model["id"],"status":e.kind,"reason":e.msg})
                     continue
                 try:
                     result=await execute_adapter(a,model["id"],execution_prompt,timeout);chosen=a;chosen_model=model
@@ -575,7 +677,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                 except PError as e:
                     await touch(a,False,e.kind,latency=int((time.perf_counter()-t)*1000),error=e.msg)
                     logger.warning("AIWeave provider attempt failed provider=%s model=%s kind=%s detail=%s",pid,model.get("id"),e.kind,str(e.msg)[:300])
-                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":e.kind,"reason":e.msg})
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"costTier":a.get("cost_tier"),"model":model["id"],"status":e.kind,"reason":e.msg})
                     # Only a genuinely per-model failure (that model specifically
                     # is out of capacity/quota) justifies trying another model on
                     # this same account. NON_RETRYABLE_ACCOUNT_FAILURE and
@@ -592,12 +694,12 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
                 except httpx.TimeoutException as e:
                     kind="TIMEOUT";msg="Provider request timed out."
                     await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
-                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"costTier":a.get("cost_tier"),"model":model["id"],"status":kind,"reason":msg})
                     break
                 except Exception as e:
                     kind="NETWORK_ERROR" if isinstance(e,(httpx.NetworkError,httpx.ConnectError)) else "UNKNOWN_ERROR";msg=str(e)[:500] or "Provider execution failed."
                     await touch(a,False,kind,latency=int((time.perf_counter()-t)*1000),error=msg)
-                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"model":model["id"],"status":kind,"reason":msg})
+                    trail.append({"attempt":attempts,"provider":pid,"accountId":a.get("id"),"accountName":a.get("name"),"costTier":a.get("cost_tier"),"model":model["id"],"status":kind,"reason":msg})
                     break
             if result is not None: break
         if result is not None: break
@@ -609,7 +711,7 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
             detail += " Fallback trail: " + attempted
         raise HTTPException(503,detail)
     inp=int(result.get("input_tokens",0) or 0);out=int(result.get("output_tokens",0) or 0);eid=f"exec-{uuid.uuid4().hex[:12]}"
-    record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
+    record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"costTier":str(chosen.get("cost_tier") or "UNKNOWN").upper(),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"costPolicy":cost_policy,"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
     await db.aiweave_executions.insert_one({**s,**record})
     if payload.conversationId:
         conv=await db.aiweave_conversations.find_one({**s,"conversation_id":payload.conversationId})
@@ -624,8 +726,16 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
 async def stats(user=Depends(get_current_user)):
     await ensure_env_accounts(user)
     s=scope(user);a=await db.aiweave_provider_accounts.find(s,{"_id":0}).to_list(500);e=await db.aiweave_executions.find(s,{"_id":0}).to_list(500)
+    free_accounts=[x for x in a if str(x.get("cost_tier") or "UNKNOWN").upper()=="FREE"]
+    paid_accounts=[x for x in a if str(x.get("cost_tier") or "UNKNOWN").upper()=="PAID"]
+    free_daily_used=sum(window_usage(x)[0] for x in free_accounts)
+    free_executions=sum(str((x.get("costTier") or "")).upper()=="FREE" for x in e)
     return {"activeProvidersCount":len({x.get("provider") for x in a if x.get("status")=="CONNECTED" and x.get("enabled",True)}),
       "totalAccounts":len(a),"healthyAccounts":sum(x.get("status")=="CONNECTED" and x.get("health")=="HEALTHY" and x.get("enabled",True) for x in a),
-      "exhaustedAccounts":sum(x.get("status") in {"CAPACITY_EXHAUSTED","RATE_LIMITED"} for x in a),
+      "exhaustedAccounts":sum(x.get("status") in {"CAPACITY_EXHAUSTED","RATE_LIMITED"} or bool(x.get("cooldown_until")) for x in a),
       "totalTokensTracked":sum(int(x.get("current_usage_tokens",0) or 0) for x in a),"totalExecutionsCount":len(e),
-      "fallbackExecutions":sum(bool(x.get("fallbackTrail")) for x in e),"freeModelsCount":sum(bool(x.get("isFree")) for x in MODELS),"totalModelsCount":len(MODELS)}
+      "fallbackExecutions":sum(bool(x.get("fallbackTrail")) for x in e),"freeModelsCount":sum(bool(x.get("isFree")) for x in MODELS),"totalModelsCount":len(MODELS),
+      "freeAccountsCount":len(free_accounts),"paidAccountsCount":len(paid_accounts),"unknownTierAccountsCount":len(a)-len(free_accounts)-len(paid_accounts),
+      "freeAccountsResting":sum(bool(x.get("cooldown_until")) for x in free_accounts),
+      "freeTierTokensUsedToday":free_daily_used,"freeExecutionsCount":free_executions,
+      "freeExecutionShare":round(free_executions/len(e),4) if e else None}
