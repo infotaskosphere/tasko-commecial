@@ -492,6 +492,7 @@ MEETING_DRAFT_TEMPLATES = [
 
 class BoardResolutionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_legal_basis: Optional[str] = None
     template_key: Optional[str] = None
     template_values: Dict[str, Any] = Field(default_factory=dict)
     custom_topic: Optional[str] = None
@@ -505,6 +506,7 @@ class BoardResolutionRequest(BaseModel):
 
 class MeetingNoticeRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_legal_basis: Optional[str] = None
     template_key: Optional[str] = None
     template_values: Dict[str, Any] = Field(default_factory=dict)
     custom_topic: Optional[str] = None
@@ -519,6 +521,7 @@ class MeetingNoticeRequest(BaseModel):
 
 class MinutesRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_legal_basis: Optional[str] = None
     template_key: Optional[str] = None
     template_values: Dict[str, Any] = Field(default_factory=dict)
     custom_topic: Optional[str] = None
@@ -3278,6 +3281,9 @@ def build_board_resolution_doc(company: Dict[str, Any], req: BoardResolutionRequ
     _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
     d.add_paragraph()
     _heading(d, "EXTRACT OF MINUTES / CERTIFIED TRUE COPY OF RESOLUTION(S)", size=13)
+    if getattr(req, "template_legal_basis", None):
+        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
+        d.add_paragraph()
     _para(
         d,
         f"Passed at the meeting of the {body_label} held on "
@@ -3339,6 +3345,8 @@ def build_notice_doc(company: Dict[str, Any], req: MeetingNoticeRequest, prepare
     _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
     d.add_paragraph()
     _heading(d, label, size=13, underline=True)
+    if getattr(req, "template_legal_basis", None):
+        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
     _para(d, f"Notice dated: {_fmt_date(req.notice_date or datetime.now())}")
     d.add_paragraph()
     if req.meeting_type == "board":
@@ -3407,6 +3415,8 @@ def build_minutes_doc(company: Dict[str, Any], req: MinutesRequest, prepared_by:
     _para(d, f"LLPIN: {company.get('cin') or '—'}" if is_llp else f"CIN: {company.get('cin') or '—'}", center=True)
     d.add_paragraph()
     _heading(d, label, size=13, underline=True)
+    if getattr(req, "template_legal_basis", None):
+        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
     _para(d, f"Held on {_fmt_date(req.meeting_date)} at {req.meeting_time} at {req.venue}.")
     d.add_paragraph()
     if req.meeting_type == "board":
@@ -3717,6 +3727,15 @@ def _resolve_meeting_template(template_key: Optional[str], values: Dict[str, Any
 
 @router.post("/companies/{company_id}/generate/board-resolution")
 async def generate_board_resolution(company_id: str, req: BoardResolutionRequest, current_user: User = Depends(VIEW)):
+    resolved = _resolve_meeting_template(req.template_key, req.template_values, req.custom_topic)
+    if resolved:
+        req = req.model_copy(update={
+            "template_legal_basis": resolved.get("legal_basis"),
+            "resolutions": [
+                *req.resolutions,
+                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
+            ],
+        })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
@@ -3731,6 +3750,16 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
 
 @router.post("/companies/{company_id}/generate/notice")
 async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_user: User = Depends(VIEW)):
+    resolved = _resolve_meeting_template(req.template_key, req.template_values, req.custom_topic)
+    if resolved:
+        req = req.model_copy(update={
+            "template_legal_basis": resolved.get("legal_basis"),
+            "agenda_items": [*req.agenda_items, resolved.get("agenda") or ""],
+            "special_business": [
+                *req.special_business,
+                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
+            ],
+        })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
@@ -3745,6 +3774,15 @@ async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_us
 
 @router.post("/companies/{company_id}/generate/minutes")
 async def generate_minutes(company_id: str, req: MinutesRequest, current_user: User = Depends(VIEW)):
+    resolved = _resolve_meeting_template(req.template_key, req.template_values, req.custom_topic)
+    if resolved:
+        req = req.model_copy(update={
+            "template_legal_basis": resolved.get("legal_basis"),
+            "resolutions": [
+                *req.resolutions,
+                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
+            ],
+        })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
