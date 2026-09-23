@@ -99,6 +99,7 @@ const emptyCompanyForm = () => ({
   annual_return_data: {},
   audit_report_data: {},
   board_report_data: {},
+  adt1_data: {},
   share_transfers: [],
   share_certificates: [],
   notes: '',
@@ -903,6 +904,42 @@ function MasterTab({ company, isDark, onSave, input, text, muted }) {
           ))}
         </div>
       </div>
+
+      {company.adt1_data && Object.keys(company.adt1_data).length > 0 && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className={`text-xs font-semibold ${muted}`}>ADT-1 Auditor Appointment Data</p>
+            <span className={`text-[10px] ${muted}`}>Read from filed Form ADT-1</span>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-3">
+            {[
+              ['auditor_name', 'Auditor'],
+              ['membership_no', 'Membership No.'],
+              ['auditor_pan', 'Auditor PAN'],
+              ['appointed_from', 'Appointment From'],
+              ['appointed_till', 'Appointment Till'],
+              ['financial_year_count', 'Financial Years'],
+              ['agm_date', 'AGM Date'],
+              ['appointment_date', 'Appointment Date'],
+              ['filing_srn', 'ADT-1 SRN'],
+              ['filing_date', 'Filing Date'],
+              ['signatory_din', 'Signing DIN'],
+            ].map(([k, label]) => company.adt1_data[k] !== undefined && company.adt1_data[k] !== null && company.adt1_data[k] !== '' ? (
+              <div key={k}>
+                <p className={`text-xs ${muted}`}>{label}</p>
+                <p className={`text-sm ${text}`}>{String(company.adt1_data[k])}</p>
+              </div>
+            ) : null)}
+          </div>
+          {company.adt1_data.auditor_address && (
+            <div className="mt-2">
+              <p className={`text-xs ${muted}`}>Auditor Address</p>
+              <p className={`text-sm ${text}`}>{company.adt1_data.auditor_address}</p>
+            </div>
+          )}
+          <p className={`text-[11px] ${muted} mt-2`}>Appointment, tenure and filing particulars are retained separately from the compact auditor master card.</p>
+        </div>
+      )}
 
       {company.financial_data && Object.keys(company.financial_data).length > 0 && (
         <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
@@ -1852,7 +1889,7 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
       <p className={`text-xs ${muted}`}>
         Three separate lanes, so a form is only ever read against the year it's actually for: the{' '}
         <strong>Directors &amp; Shareholders register comes only from MGT-7 / MGT-7A</strong>,{' '}
-        <strong>financial data and the Statutory Auditor come only from AOC-4</strong>, and each lane below rejects
+        <strong>financial data comes from AOC-4, while auditor appointment data is read from ADT-1 (and auditor details from AOC-4 where present)</strong>, and each lane below rejects
         a form that doesn't belong to it — wrong form type, or a filing year that doesn't match what that lane
         expects for today's date. Applied details are saved in both ROC Company Master and the linked Client
         record, and feed straight into the Compliance Checklist and Applicable Compliances tabs.{' '}
