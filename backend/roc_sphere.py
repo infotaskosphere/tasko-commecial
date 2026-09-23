@@ -658,7 +658,18 @@ ROC_FORM_RECOGNIZED = (
     ("pas-3", r"pas[- ]?3"),
     ("mgt-14", r"mgt[- ]?14"),
     ("dpt-3", r"dpt[- ]?3"),
+    ("msme-1", r"msme[- ]?1\b"),
 )
+
+# Forms treated as "annual filing forms of the previous year" in the
+# Guided Filing wizard's Step 2 (ADT-1 / AOC-4 / MGT-7 / MGT-7A — the
+# forms filed once, after the AGM, for the year just closed).
+GUIDED_STEP_ANNUAL_FORM_TYPES = {"adt-1", "aoc-4", "aoc-2", "mgt-7", "mgt-7a", "mgt-7a-attachment", "mgt-14"}
+# Forms treated as "forms filed during the year" in Step 3 — periodic /
+# event-based returns filed through the year rather than at year-close.
+GUIDED_STEP_INYEAR_FORM_TYPES = {"dpt-3", "msme-1", "dir-12", "inc-22", "pas-3"}
+# Forms treated as "audit reports" in Step 4.
+GUIDED_STEP_AUDIT_FORM_TYPES = {"auditor-report", "board-report"}
 
 # Forms whose MCA-prescribed content includes the statutory Director/
 # Signatory register and the shareholder/member register.
@@ -674,6 +685,27 @@ FINANCIAL_DATA_FIELDS = (
     "profit_before_tax", "profit_after_tax", "net_worth", "share_capital",
     "reserves_and_surplus", "balance_sheet_total", "turnover",
 )
+
+# Human-readable labels for FINANCIAL_DATA_FIELDS, used by the AOC-4 draft
+# builder below (mirrors the frontend's FINANCIAL_DATA_LABELS).
+FINANCIAL_DATA_LABELS_BACKEND = (
+    ("period_from", "Period From"),
+    ("period_to", "Period To"),
+    ("total_income", "Total Income (Rs.)"),
+    ("total_expenses", "Total Expenses (Rs.)"),
+    ("profit_before_tax", "Profit Before Tax (Rs.)"),
+    ("profit_after_tax", "Profit / (Loss) After Tax (Rs.)"),
+    ("net_worth", "Net Worth (Rs.)"),
+    ("share_capital", "Share Capital (Rs.)"),
+    ("reserves_and_surplus", "Reserves & Surplus (Rs.)"),
+    ("balance_sheet_total", "Balance Sheet Total (Rs.)"),
+    ("turnover", "Turnover (Rs.)"),
+)
+
+CATEGORY_LABELS_BACKEND = {
+    "private": "Private Limited", "public": "Public Limited", "opc": "One Person Company",
+    "section_8": "Section 8 Company", "llp": "LLP",
+}
 
 
 def _identify_roc_form_type(filename: str, text: str) -> str:
@@ -3276,6 +3308,198 @@ def build_checklist_doc(company: Dict[str, Any], checklist: List[Dict[str, Any]]
     return buf.getvalue()
 
 
+def build_aoc4_draft_doc(company: Dict[str, Any], prepared_by: str) -> bytes:
+    """Working draft of Form AOC-4 (Filing of Financial Statements), built
+    only from the financial_data / auditor blocks — both of which are only
+    ever populated from an uploaded AOC-4 (see FINANCIAL_SOURCE_TYPE above).
+    This is a drafting aid summarising what would go into e-Form AOC-4 on
+    the MCA V3 portal, not a substitute for filing on the portal itself."""
+    fin = company.get("financial_data") or {}
+    auditor = company.get("auditor") or {}
+    is_llp = _is_llp(company)
+    d = _base_doc()
+    name = company.get("company_name", "").upper()
+    _heading(d, name, size=16)
+    _para(d, f"CIN: {company.get('cin') or '—'}" if not is_llp else f"LLPIN: {company.get('cin') or '—'}", center=True)
+    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
+    d.add_paragraph()
+    _heading(d, "DRAFT WORKING PAPER — FORM AOC-4", size=13, underline=True)
+    _para(d, "Filing of Financial Statements and other documents with the Registrar", center=True)
+    _para(d, f"Financial Year ended: {fin.get('period_to') or '—'}", center=True)
+    d.add_paragraph()
+
+    _heading(d, "Part A — Company & Filing Particulars", size=12, center=False, underline=True)
+    table = d.add_table(rows=0, cols=2)
+    table.style = "Table Grid"
+    for label, value in [
+        ("Company Name", company.get("company_name") or "—"),
+        ("CIN / LLPIN", company.get("cin") or "—"),
+        ("Category of Company", CATEGORY_LABELS_BACKEND.get(company.get("category"), company.get("category") or "—")),
+        ("Period From", fin.get("period_from") or "—"),
+        ("Period To", fin.get("period_to") or "—"),
+        ("Date of AGM", company.get("last_agm_date") or "—"),
+    ]:
+        row = table.add_row().cells
+        row[0].text, row[1].text = label, str(value)
+    d.add_paragraph()
+
+    _heading(d, "Part B — Financial Statement Figures (Rs.)", size=12, center=False, underline=True)
+    fin_table = d.add_table(rows=0, cols=2)
+    fin_table.style = "Table Grid"
+    for key, label in FINANCIAL_DATA_LABELS_BACKEND:
+        row = fin_table.add_row().cells
+        row[0].text = label
+        val = fin.get(key)
+        row[1].text = f"{_num(val):,.0f}" if val not in (None, "") else "—"
+    d.add_paragraph()
+
+    _heading(d, "Part C — Statutory Auditor Details", size=12, center=False, underline=True)
+    aud_table = d.add_table(rows=0, cols=2)
+    aud_table.style = "Table Grid"
+    for label, value in [
+        ("Auditor / Firm Name", auditor.get("name") or "—"),
+        ("Firm Registration No.", auditor.get("firm_reg_no") or "—"),
+        ("Membership No.", auditor.get("membership_no") or "—"),
+        ("Appointed From", auditor.get("appointed_from") or "—"),
+        ("Appointed Till", auditor.get("appointed_till") or "—"),
+    ]:
+        row = aud_table.add_row().cells
+        row[0].text, row[1].text = label, str(value)
+
+    board_report = company.get("board_report_data") or {}
+    audit_report = company.get("audit_report_data") or {}
+    if board_report or audit_report:
+        d.add_paragraph()
+        _heading(d, "Part D — Board's Report / Auditor's Report Disclosures", size=12, center=False, underline=True)
+        for label, block in [("Board's Report", board_report), ("Auditor's Report", audit_report)]:
+            if block:
+                _para(d, label, bold=True)
+                _para(d, " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in block.items()) or "—")
+
+    missing = [label for key, label in FINANCIAL_DATA_LABELS_BACKEND if fin.get(key) in (None, "")]
+    d.add_paragraph()
+    if missing:
+        _para(d, "Fields still missing (upload/re-upload AOC-4 to fill): " + ", ".join(missing), italic=True)
+    _para(d, "This is a working draft assembled from uploaded AOC-4 data for internal review before e-filing on the "
+             "MCA V3 portal. Verify every figure against the audited financial statements and Board's/Auditor's "
+             "Report before filing; this document does not itself constitute the e-Form.", italic=True)
+    _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
+
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
+def build_mgt7_draft_doc(company: Dict[str, Any], prepared_by: str) -> bytes:
+    """Working draft of Form MGT-7 / MGT-7A (Annual Return), built only from
+    the annual_return_data block, the Directors & Shareholders register and
+    record_history — all of which are only ever populated from an uploaded
+    MGT-7/MGT-7A (or, for meetings, the Board Meetings/EGM registers)."""
+    mgt = company.get("annual_return_data") or {}
+    directors = company.get("directors") or company.get("designated_partners") or company.get("partners") or []
+    shareholders = company.get("shareholders") or []
+    is_llp = _is_llp(company)
+    is_small = None if is_llp else _is_small_company(company)
+    is_opc = company.get("category") == "opc"
+    form_name = "FORM MGT-7A (Abridged Annual Return)" if (is_small or is_opc) else "FORM MGT-7 (Annual Return)"
+    history = _record_history_summary(company)
+
+    d = _base_doc()
+    name = company.get("company_name", "").upper()
+    _heading(d, name, size=16)
+    _para(d, f"CIN: {company.get('cin') or '—'}" if not is_llp else f"LLPIN: {company.get('cin') or '—'}", center=True)
+    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
+    d.add_paragraph()
+    _heading(d, f"DRAFT WORKING PAPER — {form_name}", size=13, underline=True)
+    _para(d, f"Financial Year ended: {mgt.get('period_to') or (company.get('financial_data') or {}).get('period_to') or '—'}", center=True)
+    d.add_paragraph()
+
+    _heading(d, "Part A — Registration & Other Details", size=12, center=False, underline=True)
+    reg_table = d.add_table(rows=0, cols=2)
+    reg_table.style = "Table Grid"
+    for label, value in [
+        ("Company Name", company.get("company_name") or "—"),
+        ("CIN / LLPIN", company.get("cin") or "—"),
+        ("Category", CATEGORY_LABELS_BACKEND.get(company.get("category"), company.get("category") or "—")),
+        ("Date of AGM", company.get("last_agm_date") or (history.get("latest_agm") or {}).get("meeting_date") or "—"),
+        ("Board Meetings held in the year", str(history.get("board_meetings", 0))),
+        ("EGMs held in the year", str(history.get("egms", 0))),
+    ]:
+        row = reg_table.add_row().cells
+        row[0].text, row[1].text = label, str(value)
+    d.add_paragraph()
+
+    _heading(d, "Part B — Principal Financial Indicators", size=12, center=False, underline=True)
+    fin_table = d.add_table(rows=0, cols=2)
+    fin_table.style = "Table Grid"
+    for label, value in [
+        ("Turnover (Rs.)", mgt.get("turnover")),
+        ("Net Worth (Rs.)", mgt.get("net_worth")),
+        ("Share Capital (Rs.)", company.get("paid_up_capital")),
+        ("Authorized Capital (Rs.)", company.get("authorized_capital")),
+    ]:
+        row = fin_table.add_row().cells
+        row[0].text = label
+        row[1].text = f"{_num(value):,.0f}" if value not in (None, "") else "—"
+    d.add_paragraph()
+
+    people_label = "Designated Partners" if is_llp else "Directors"
+    _heading(d, f"Part C — {people_label}", size=12, center=False, underline=True)
+    p_table = d.add_table(rows=1, cols=3)
+    p_table.style = "Table Grid"
+    hdr = p_table.rows[0].cells
+    for i, h in enumerate(["Name", "DIN/DPIN", "Designation"]):
+        hdr[i].text = ""
+        hdr[i].paragraphs[0].add_run(h).bold = True
+    for p in directors:
+        row = p_table.add_row().cells
+        row[0].text = p.get("name", "—")
+        row[1].text = p.get("din") or p.get("dpin") or "—"
+        row[2].text = p.get("designation") or "—"
+    if not directors:
+        row = p_table.add_row().cells
+        row[0].text = "No directors/partners on file — upload MGT-7/MGT-7A to populate this register."
+    d.add_paragraph()
+
+    if not is_llp:
+        _heading(d, "Part D — Shareholding Pattern", size=12, center=False, underline=True)
+        s_table = d.add_table(rows=1, cols=4)
+        s_table.style = "Table Grid"
+        hdr = s_table.rows[0].cells
+        for i, h in enumerate(["Name of Member", "Class of Shares", "No. of Shares Held", "% Holding"]):
+            hdr[i].text = ""
+            hdr[i].paragraphs[0].add_run(h).bold = True
+        total_shares = sum(_num(s.get("shares_held")) for s in shareholders) or 1
+        for s in shareholders:
+            row = s_table.add_row().cells
+            pct = s.get("percentage")
+            if pct is None:
+                pct = round(_num(s.get("shares_held")) / total_shares * 100, 2)
+            row[0].text = s.get("name", "—")
+            row[1].text = s.get("class_of_shares") or "Equity"
+            row[2].text = f"{_num(s.get('shares_held')):,.0f}"
+            row[3].text = f"{pct}%"
+        if not shareholders:
+            row = s_table.add_row().cells
+            row[0].text = "No shareholders on file — upload MGT-7/MGT-7A (and its shareholder attachment) to populate this register."
+        d.add_paragraph()
+
+    extra = {k: v for k, v in mgt.items() if k not in {"turnover", "net_worth", "period_to", "period_from"} and v not in (None, "")}
+    if extra:
+        _heading(d, "Part E — Other Annual Return Particulars", size=12, center=False, underline=True)
+        _para(d, " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in extra.items()))
+        d.add_paragraph()
+
+    _para(d, "This is a working draft assembled from uploaded MGT-7/MGT-7A data, the Directors & Shareholders "
+             "register and the Board Meetings/EGM registers, for internal review before e-filing on the MCA V3 "
+             "portal. Verify every entry before filing; this document does not itself constitute the e-Form.", italic=True)
+    _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
+
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
 def _docx_response(content: bytes, filename: str) -> Response:
     return Response(
         content=content,
@@ -3412,6 +3636,42 @@ async def generate_checklist_doc(company_id: str, current_user: User = Depends(V
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Compliance_Checklist_{_safe(company.get('company_name'))}.docx"
     await _log_doc(company_id, "checklist", fname, current_user)
+    return _docx_response(content, fname)
+
+
+@router.get("/companies/{company_id}/generate/aoc-4")
+async def generate_aoc4_draft(company_id: str, current_user: User = Depends(VIEW)):
+    """Draft working paper for Form AOC-4, built from financial_data/auditor
+    (populated only from uploaded AOC-4s — see FINANCIAL_SOURCE_TYPE)."""
+    company = await COMPANIES.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(404, "Company not found")
+    try:
+        content = build_aoc4_draft_doc(company, _who(current_user))
+    except ImportError as e:
+        raise HTTPException(500, f"Document generator not installed on the server: {e}")
+    fname = f"AOC-4_Draft_{_safe(company.get('company_name'))}.docx"
+    await _log_doc(company_id, "aoc4_draft", fname, current_user)
+    return _docx_response(content, fname)
+
+
+@router.get("/companies/{company_id}/generate/mgt-7")
+async def generate_mgt7_draft(company_id: str, current_user: User = Depends(VIEW)):
+    """Draft working paper for Form MGT-7 / MGT-7A (Small Companies and
+    OPCs get the abridged MGT-7A automatically), built from
+    annual_return_data (populated only from uploaded MGT-7/MGT-7A), the
+    Directors & Shareholders register and the meeting registers."""
+    company = await COMPANIES.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(404, "Company not found")
+    try:
+        content = build_mgt7_draft_doc(company, _who(current_user))
+    except ImportError as e:
+        raise HTTPException(500, f"Document generator not installed on the server: {e}")
+    is_llp = _is_llp(company)
+    is_abridged = (not is_llp) and (_is_small_company(company) or company.get("category") == "opc")
+    fname = f"{'MGT-7A' if is_abridged else 'MGT-7'}_Draft_{_safe(company.get('company_name'))}.docx"
+    await _log_doc(company_id, "mgt7_draft", fname, current_user)
     return _docx_response(content, fname)
 
 
