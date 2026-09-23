@@ -3003,7 +3003,7 @@ async def get_record_history(company_id: str, current_user: User = Depends(VIEW)
                 "venue": company.get("registered_office_address"), "mode": None, "chairman": None,
                 "quorum_present": True, "attendance": [], "members_present_count": None,
                 "members_entitled_count": None, "leave_of_absence": [], "agenda_items": [],
-                "resolutions_passed": [], "special_business": [], "minutes_date": meeting_date if doc_type.startswith("minutes_") else None,
+                "resolutions_passed": [], "resolution_items": [], "occasion": None, "special_business": [], "minutes_date": meeting_date if doc_type.startswith("minutes_") else None,
                 "minutes_signed_date": None, "adjourned": False, "adjourned_to": None,
                 "auditor_attended": None, "secretarial_notes": "Recovered from previously generated ROC document.",
                 "attachments": [], "status": "Generated", "remarks": "", "created_at": _now().isoformat(),
@@ -3018,6 +3018,21 @@ async def get_record_history(company_id: str, current_user: User = Depends(VIEW)
                 "generated_by": doc.get("generated_by"),
             })
             match["generated_documents"] = generated
+    for record in records:
+        if not record.get("occasion"):
+            items = record.get("resolution_items") or []
+            if items and items[0].get("particulars"):
+                record["occasion"] = items[0].get("particulars")
+            elif record.get("resolutions_passed"):
+                record["occasion"] = "Resolution / Business recorded in meeting"
+            elif record.get("agenda_items"):
+                record["occasion"] = record["agenda_items"][0]
+        if not record.get("resolution_items") and record.get("resolutions_passed"):
+            record["resolution_items"] = [
+                {"particulars": record.get("occasion") or f"Resolution {i + 1}", "resolution_text": value, "proposed_by": None, "seconded_by": None}
+                for i, value in enumerate(record.get("resolutions_passed") or [])
+            ]
+
     records.sort(key=lambda r: str(r.get("meeting_date") or ""), reverse=True)
     return {"company_id": company_id, "records": records, "summary": _record_history_summary({**company, "record_history": records})}
 
@@ -4219,6 +4234,7 @@ async def _upsert_generated_meeting_record(
     doc: Dict[str, Any],
     agenda_items: Optional[List[str]] = None,
     resolutions: Optional[List[ResolutionItem]] = None,
+    occasion_label: Optional[str] = None,
 ):
     """Persist generated meeting documents in the company's secretarial register."""
     company = await COMPANIES.find_one({"id": company_id}, {"record_history": 1})
@@ -4251,6 +4267,8 @@ async def _upsert_generated_meeting_record(
             "leave_of_absence": [],
             "agenda_items": [],
             "resolutions_passed": [],
+            "resolution_items": [],
+            "occasion": None,
             "special_business": [],
             "minutes_date": meeting_date if doc.get("doc_type") == f"minutes_{meeting_type}" else None,
             "minutes_signed_date": None,
@@ -4272,6 +4290,23 @@ async def _upsert_generated_meeting_record(
     if resolutions:
         resolution_texts = [r.resolution_text for r in resolutions if r.resolution_text]
         match["resolutions_passed"] = list(dict.fromkeys([*(match.get("resolutions_passed") or []), *resolution_texts]))
+        resolution_items = [
+            {
+                "particulars": r.particulars,
+                "resolution_text": r.resolution_text,
+                "proposed_by": r.proposed_by,
+                "seconded_by": r.seconded_by,
+                "draft_key": getattr(r, "draft_key", None),
+            }
+            for r in resolutions
+            if r.resolution_text or r.particulars
+        ]
+        if resolution_items:
+            match["resolution_items"] = resolution_items
+            if not match.get("occasion") or occasion_label:
+                match["occasion"] = occasion_label or resolution_items[0].get("particulars")
+    if occasion_label:
+        match["occasion"] = occasion_label
     if doc.get("doc_type") == f"minutes_{meeting_type}":
         match["minutes_date"] = meeting_date
 
@@ -4348,7 +4383,7 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Board_Resolution_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
     doc = await _log_doc(company_id, "board_resolution", fname, current_user, content)
-    await _upsert_generated_meeting_record(company_id, "board", req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
+    await _upsert_generated_meeting_record(company_id, "board", req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions, occasion_label=(resolved.get("label") if resolved else (req.resolutions[0].particulars if req.resolutions else None)))
     return _docx_response(content, fname)
 
 
@@ -4373,7 +4408,7 @@ async def generate_general_meeting_resolution(company_id: str, req: GeneralMeeti
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"General_Meeting_Resolution_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
     doc = await _log_doc(company_id, f"general_resolution_{req.meeting_type}", fname, current_user, content)
-    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
+    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions, occasion_label=(resolved.get("label") if resolved else (req.resolutions[0].particulars if req.resolutions else None)))
     return _docx_response(content, fname)
 
 
@@ -4400,7 +4435,7 @@ async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_us
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Notice_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
     doc = await _log_doc(company_id, f"notice_{req.meeting_type}", fname, current_user, content)
-    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, agenda_items=req.agenda_items, resolutions=req.special_business)
+    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, agenda_items=req.agenda_items, resolutions=req.special_business, occasion_label=(resolved.get("label") if resolved else (req.special_business[0].particulars if req.special_business else None)))
     return _docx_response(content, fname)
 
 
