@@ -712,6 +712,7 @@ class MeetingNoticeRequest(BaseModel):
     template_key: Optional[str] = None
     template_values: Dict[str, Any] = Field(default_factory=dict)
     custom_topic: Optional[str] = None
+    selected_record_id: Optional[str] = None
     meeting_type: str = "board"      # board | agm | egm
     meeting_date: str
     meeting_time: Optional[str] = "11:00 AM"
@@ -3842,74 +3843,136 @@ def build_notice_doc(company: Dict[str, Any], req: MeetingNoticeRequest, prepare
     return buf.getvalue()
 
 
-def build_minutes_doc(company: Dict[str, Any], req: MinutesRequest, prepared_by: str) -> bytes:
+def build_minutes_doc(company: Dict[str, Any], req: MinutesRequest, prepared_by: str, source_record: Optional[Dict[str, Any]] = None) -> bytes:
     d = _base_doc()
     name = company.get("company_name", "").upper()
     is_llp = _is_llp(company)
+    record = source_record or {}
+
     if is_llp:
         label = {
             "board": "MINUTES OF THE MEETING OF THE DESIGNATED PARTNERS",
             "agm": "MINUTES OF THE MEETING OF THE PARTNERS",
-            "egm": "MINUTES OF THE MEETING OF THE PARTNERS (EXTRA-ORDINARY)",
+            "egm": "MINUTES OF THE EXTRA-ORDINARY MEETING OF THE PARTNERS",
         }.get(req.meeting_type, "MINUTES OF MEETING")
+        present_label = "Designated Partners Present"
+        absent_label = "Designated Partners Absent / Leave of Absence"
+        attendee_label = "Other Partners / Attendees"
     else:
         label = {
             "board": "MINUTES OF THE MEETING OF THE BOARD OF DIRECTORS",
             "agm": "MINUTES OF THE ANNUAL GENERAL MEETING",
             "egm": "MINUTES OF THE EXTRA-ORDINARY GENERAL MEETING",
         }.get(req.meeting_type, "MINUTES OF MEETING")
-    present_label = "Designated Partners Present" if is_llp else "Directors Present"
-    absent_label = "Designated Partners Absent (Leave of Absence granted)" if is_llp else "Directors Absent (Leave of Absence granted)"
-    other_label = "Other Partners / Attendees Present" if is_llp else "Members / Attendees Present"
+        present_label = "Directors Present" if req.meeting_type == "board" else "Members / Directors Present"
+        absent_label = "Directors Absent / Leave of Absence"
+        attendee_label = "Members / Attendees Present"
+
+    # Prefer the selected persistent record, then the request values.
+    meeting_date = record.get("meeting_date") or req.meeting_date
+    meeting_time = record.get("meeting_time") or req.meeting_time or "11:00 AM"
+    venue = record.get("venue") or req.venue or company.get("registered_office_address") or "Registered Office"
+    chairman = record.get("chairman") or req.chairman
+    attendance = record.get("attendance") or []
+    present = req.directors_present or [a.get("name") for a in attendance if a.get("status") == "Present" and a.get("name")]
+    absent = req.directors_absent or [a.get("name") for a in attendance if a.get("status") != "Present" and a.get("name")]
+    other = req.attendees_other or []
+    agenda_items = record.get("agenda_items") or []
+    resolutions = req.resolutions or [
+        ResolutionItem(particulars=f"Item {i + 1}", resolution_text=x)
+        for i, x in enumerate(record.get("resolutions_passed") or [])
+    ]
+    special_business = record.get("special_business") or []
+    discussion_notes = req.discussion_notes or record.get("secretarial_notes") or ""
+
     _heading(d, name, size=16)
-    _para(d, f"LLPIN: {company.get('cin') or '—'}" if is_llp else f"CIN: {company.get('cin') or '—'}", center=True)
+    _para(d, f"{'LLPIN' if is_llp else 'CIN'}: {company.get('cin') or '—'}", center=True)
+    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
     d.add_paragraph()
     _heading(d, label, size=13, underline=True)
+    _para(d, f"Held on {_fmt_date(meeting_date)} from {meeting_time or '—'} at {venue}.")
     if getattr(req, "template_legal_basis", None):
-        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
-    _para(d, f"Held on {_fmt_date(req.meeting_date)} at {req.meeting_time} at {req.venue}.")
+        _para(d, f"Drafting basis: {req.template_legal_basis}", italic=True)
     d.add_paragraph()
-    if req.meeting_type == "board":
-        _para(d, f"{present_label}: " + (", ".join(req.directors_present) or "—"))
-        if req.directors_absent:
-            _para(d, f"{absent_label}: " + ", ".join(req.directors_absent))
+
+    _para(d, "PRESENT:", bold=True)
+    if present:
+        for person in present:
+            _para(d, f"{person}" + (" — Director" if not is_llp and req.meeting_type == "board" else ""))
     else:
-        _para(d, f"{present_label}: " + (", ".join(req.directors_present) or "—"))
-        if req.attendees_other:
-            _para(d, f"{other_label}: " + ", ".join(req.attendees_other))
-    if req.chairman:
-        _para(d, f"{req.chairman} chaired the meeting.")
-    _para(
-        d,
-        "Quorum was confirmed to be present."
-        if req.quorum_present else
-        ("NOTE: Quorum was NOT present — meeting stands adjourned as per the LLP Agreement." if is_llp
-         else "NOTE: Quorum was NOT present — meeting stands adjourned as per Companies Act / AoA provisions.")
-    )
-    d.add_paragraph()
+        _para(d, "—")
+    if absent:
+        _para(d, f"{absent_label}: " + ", ".join(absent))
+    if other:
+        _para(d, f"{attendee_label}: " + ", ".join(other))
+    if chairman:
+        _para(d, "CHAIRMAN", bold=True)
+        _para(d, f"{chairman} took the Chair and conducted the Meeting.")
+    else:
+        _para(d, "CHAIRMAN", bold=True)
+        _para(d, "The Chairman took the Chair and conducted the Meeting.")
 
-    if req.discussion_notes:
-        _para(d, "DISCUSSION:", bold=True)
-        _para(d, req.discussion_notes)
-        d.add_paragraph()
+    if req.meeting_type != "board":
+        _para(d, "QUORUM", bold=True)
+        _para(d, "Quorum was present at the commencement of the Meeting and while the business was transacted.")
+        _para(d, "With the consent of the Members present, the Notice convening the Meeting was taken as read.")
 
-    if req.resolutions:
-        _para(d, "RESOLUTIONS PASSED:", bold=True)
-        for i, r in enumerate(req.resolutions, 1):
+    if req.meeting_type == "board":
+        _para(d, "LEAVE OF ABSENCE", bold=True)
+        _para(d, f"Leave of absence was granted to {', '.join(absent)}." if absent else "No leave of absence was recorded.")
+        _para(d, "QUORUM", bold=True)
+        _para(d, "The business before the Meeting was taken up after establishing that the requisite quorum was present.")
+        _para(d, "MINUTES / PREVIOUS PROCEEDINGS", bold=True)
+        _para(d, "The Minutes of the previous Board Meeting, as circulated, were noted by the Board and signed by the Chairman.")
+        _para(d, "COMMITTEE / CIRCULATION MATTERS", bold=True)
+        _para(d, "The Minutes of relevant Committee Meetings and any resolution passed by circulation since the previous Meeting, where applicable, were noted and taken on record.")
+
+    if agenda_items:
+        _para(d, "BUSINESS TRANSACTED", bold=True)
+        for i, item in enumerate(agenda_items, 1):
+            _para(d, f"{i}. {item}", bold=True)
+            _para(d, "The Chairman placed the item before the Meeting and the same was discussed and considered.")
+
+    if special_business:
+        _para(d, "SPECIAL BUSINESS", bold=True)
+        for i, item in enumerate(special_business, 1):
+            _para(d, f"{i}. {item}", bold=True)
+            _para(d, "The Chairman placed the item before the Meeting and the same was discussed and considered.")
+
+    if discussion_notes:
+        _para(d, "DISCUSSION / DELIBERATIONS", bold=True)
+        _para(d, discussion_notes)
+
+    if resolutions:
+        _para(d, "RESOLUTIONS PASSED / DECISIONS TAKEN", bold=True)
+        for i, r in enumerate(resolutions, 1):
             _para(d, f"{i}. {r.particulars}", bold=True)
-            _para(d, f'"RESOLVED THAT {r.resolution_text.strip().rstrip(".")}."')
-            d.add_paragraph()
+            _para(d, f'The following resolution was proposed and seconded as applicable and was considered by the Meeting:')
+            _para(d, f'“RESOLVED THAT {r.resolution_text.strip().rstrip(".")}.”')
+            if r.proposed_by or r.seconded_by:
+                bits = []
+                if r.proposed_by:
+                    bits.append(f"Proposed by: {r.proposed_by}")
+                if r.seconded_by:
+                    bits.append(f"Seconded by: {r.seconded_by}")
+                _para(d, " | ".join(bits), italic=True)
+            if req.meeting_type in {"agm", "egm"}:
+                _para(d, "The Chairman invited the Members to raise any queries or seek clarifications. The resolution was thereafter put to vote and declared carried by the requisite majority, subject to the actual voting record.")
+            else:
+                _para(d, "The resolution was considered by the Directors and was passed / noted as applicable, subject to the actual proceedings and dissent, if any.")
 
-    _para(d, "There being no other business, the meeting concluded with a vote of thanks to the Chair.")
+    _para(d, "CLOSE OF THE MEETING", bold=True)
+    _para(d, "There being no other business to transact, the Meeting concluded with a vote of thanks to the Chair.")
     d.add_paragraph()
+    _para(d, f"Date: {_fmt_date(meeting_date)}")
+    _para(d, f"Place: {venue}")
     d.add_paragraph()
-    _para(d, "Designated Partner" if is_llp else "Chairman", bold=True)
+    _para(d, "CHAIRMAN", bold=True)
     _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
 
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
-
 
 def build_shareholders_doc(company: Dict[str, Any], prepared_by: str) -> bytes:
     d = _base_doc()
@@ -4355,8 +4418,17 @@ async def generate_minutes(company_id: str, req: MinutesRequest, current_user: U
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
+    if req.selected_record_id and not any(r.get("id") == req.selected_record_id for r in (company.get("record_history") or [])):
+        raise HTTPException(404, "Selected meeting record not found")
     try:
-        content = build_minutes_doc(company, req, _who(current_user))
+        source_record = None
+        if req.selected_record_id:
+            source_record = next((r for r in (company.get("record_history") or []) if r.get("id") == req.selected_record_id), None)
+            if source_record is None:
+                raise HTTPException(404, "Selected meeting record not found")
+            if source_record.get("meeting_type") != req.meeting_type:
+                raise HTTPException(400, "Selected meeting record type does not match the Minutes meeting type")
+        content = build_minutes_doc(company, req, _who(current_user), source_record=source_record)
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Minutes_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
