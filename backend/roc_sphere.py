@@ -3731,10 +3731,10 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
     if resolved:
         req = req.model_copy(update={
             "template_legal_basis": resolved.get("legal_basis"),
-            "resolutions": [
-                *req.resolutions,
-                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
-            ],
+            "resolutions": (
+                req.resolutions if any(r.resolution_text for r in req.resolutions)
+                else [ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")]
+            ),
         })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
@@ -3754,11 +3754,13 @@ async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_us
     if resolved:
         req = req.model_copy(update={
             "template_legal_basis": resolved.get("legal_basis"),
-            "agenda_items": [*req.agenda_items, resolved.get("agenda") or ""],
-            "special_business": [
-                *req.special_business,
-                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
-            ],
+            "agenda_items": (
+                req.agenda_items if req.agenda_items else [resolved.get("agenda") or ""]
+            ),
+            "special_business": (
+                req.special_business if req.special_business
+                else [ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")]
+            ),
         })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
