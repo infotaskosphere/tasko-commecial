@@ -84,86 +84,423 @@ function SectionEditor({ section, patchData, patchStyle }) {
 
 export default function WebsiteBuilder() {
   const [config, setConfig] = useState(clone(DEFAULT_BUILDER));
-  const [identity, setIdentity] = useState({ site_name: "Taskosphere", site_tagline: "One platform for tasks, finance, compliance and people.", logo_url: "/logo.png", footer_company: "Taskosphere", footer_text: "A configurable commercial business operating system.", footer_copyright: "© 2026 Taskosphere. All rights reserved." });
+  const [identity, setIdentity] = useState({
+    site_name: "Taskosphere",
+    site_tagline: "One platform for tasks, finance, compliance and people.",
+    logo_url: "/logo.png",
+    footer_company: "Taskosphere",
+    footer_text: "A configurable commercial business operating system.",
+    footer_copyright: "© 2026 Taskosphere. All rights reserved."
+  });
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
   const [selectedId, setSelectedId] = useState("hero");
-  const [leftTab, setLeftTab] = useState("pages");
-  const [rightTab, setRightTab] = useState("section");
+  const [activeTool, setActiveTool] = useState("pages");
   const [preview, setPreview] = useState("desktop");
   const [dragId, setDragId] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [mobilePanel, setMobilePanel] = useState(null);
+  const [showWelcome, setShowWelcome] = useState(true);
 
   const page = useMemo(() => config.pages.find((p) => p.id === config.activePageId) || config.pages[0], [config]);
-  const selected = page?.sections.find((s) => s.id === selectedId) || page?.sections[0];
+  const selected = page?.sections.find((x) => x.id === selectedId) || page?.sections[0];
 
-  const commit = (next) => { setHistory((h) => [...h.slice(-39), clone(config)]); setFuture([]); setConfig(next); };
-  const updatePage = (mutator) => { const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); if (!p) return; mutator(p); commit(next); };
-  const patchSection = (patch, meta = {}) => updatePage((p) => { const s = p.sections.find((x) => x.id === selectedId); if (!s) return; Object.assign(s, meta); s.data = { ...(s.data || {}), ...patch }; });
-  const patchStyle = (patch) => updatePage((p) => { const s = p.sections.find((x) => x.id === selectedId); if (!s) return; s.style = { ...(s.style || {}), ...patch }; });
+  const commit = (next) => {
+    setHistory((h) => [...h.slice(-39), clone(config)]);
+    setFuture([]);
+    setConfig(next);
+  };
+  const updatePage = (mutator) => {
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    if (!p) return;
+    mutator(p);
+    commit(next);
+  };
+  const patchSection = (patch, meta = {}) => updatePage((p) => {
+    const item = p.sections.find((x) => x.id === selectedId);
+    if (!item) return;
+    Object.assign(item, meta);
+    item.data = { ...(item.data || {}), ...patch };
+  });
+  const patchStyle = (patch) => updatePage((p) => {
+    const item = p.sections.find((x) => x.id === selectedId);
+    if (!item) return;
+    item.style = { ...(item.style || {}), ...patch };
+  });
 
-  const addSection = (type) => { const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); const id = uid(type); p.sections.push({ id, type, title: SECTION_TYPES.find((x) => x[0] === type)?.[1] || type, visible: true, data: fieldFor(type) }); commit(next); setSelectedId(id); setRightTab("section"); setMobilePanel(null); };
-  const deleteSection = (id) => { if (page.sections.length <= 1) return toast.error("A page must contain at least one section."); const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); p.sections = p.sections.filter((s) => s.id !== id); commit(next); setSelectedId(p.sections[Math.max(0, p.sections.length - 1)]?.id); };
-  const duplicateSection = (id) => { const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); const i = p.sections.findIndex((s) => s.id === id); if (i < 0) return; const copy = clone(p.sections[i]); copy.id = uid(copy.type); copy.title = `${copy.title || copy.type} Copy`; p.sections.splice(i + 1, 0, copy); commit(next); setSelectedId(copy.id); };
-  const moveSection = (id, dir) => { const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); const i = p.sections.findIndex((s) => s.id === id), j = i + dir; if (j < 0 || j >= p.sections.length) return; [p.sections[i], p.sections[j]] = [p.sections[j], p.sections[i]]; commit(next); };
-  const dropSection = (targetId) => { if (!dragId || dragId === targetId) return; const next = clone(config); const p = next.pages.find((x) => x.id === next.activePageId); const from = p.sections.findIndex((s) => s.id === dragId), to = p.sections.findIndex((s) => s.id === targetId); if (from < 0 || to < 0) return; const [item] = p.sections.splice(from, 1); p.sections.splice(to, 0, item); commit(next); setDragId(null); };
+  const addSection = (type) => {
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    if (!p) return;
+    const id = uid(type);
+    p.sections.push({
+      id,
+      type,
+      title: SECTION_TYPES.find((x) => x[0] === type)?.[1] || type,
+      visible: true,
+      layout: "default",
+      data: fieldFor(type)
+    });
+    commit(next);
+    setSelectedId(id);
+    setActiveTool("modules");
+    setMobilePanel(null);
+  };
+  const deleteSection = (id) => {
+    if (page.sections.length <= 1) return toast.error("Keep at least one section on the page.");
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    p.sections = p.sections.filter((x) => x.id !== id);
+    commit(next);
+    setSelectedId(p.sections[Math.max(0, p.sections.length - 1)]?.id);
+  };
+  const duplicateSection = (id) => {
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    const i = p.sections.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    const copy = clone(p.sections[i]);
+    copy.id = uid(copy.type);
+    copy.title = `${copy.title || copy.type} Copy`;
+    p.sections.splice(i + 1, 0, copy);
+    commit(next);
+    setSelectedId(copy.id);
+  };
+  const moveSection = (id, dir) => {
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    const i = p.sections.findIndex((x) => x.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= p.sections.length) return;
+    [p.sections[i], p.sections[j]] = [p.sections[j], p.sections[i]];
+    commit(next);
+  };
+  const dropSection = (targetId) => {
+    if (!dragId || dragId === targetId) return;
+    const next = clone(config);
+    const p = next.pages.find((x) => x.id === next.activePageId);
+    const from = p.sections.findIndex((x) => x.id === dragId);
+    const to = p.sections.findIndex((x) => x.id === targetId);
+    if (from < 0 || to < 0) return;
+    const [item] = p.sections.splice(from, 1);
+    p.sections.splice(to, 0, item);
+    commit(next);
+    setDragId(null);
+  };
 
-  const addPage = () => { const id = uid("page"); const next = clone(config); next.pages.push({ id, name: "New Page", slug: `/${id.replace("page_", "page-")}`, visible: true, sections: [{ id: uid("hero"), type: "hero", title: "Hero", visible: true, layout: "split", data: fieldFor("hero") }] }); next.activePageId = id; commit(next); setSelectedId(next.pages[next.pages.length - 1].sections[0].id); setLeftTab("pages"); };
-  const renamePage = (id) => { const p = config.pages.find((x) => x.id === id); const name = window.prompt("Page name", p?.name || "Page"); if (!name?.trim()) return; const next = clone(config); next.pages.find((x) => x.id === id).name = name.trim(); commit(next); };
-  const duplicatePage = (id) => { const source = config.pages.find((x) => x.id === id); if (!source) return; const next = clone(config); const copy = clone(source); copy.id = uid("page"); copy.name = `${source.name} Copy`; copy.slug = `${source.slug}-copy`; copy.sections = copy.sections.map((s) => ({ ...s, id: uid(s.type) })); next.pages.push(copy); next.activePageId = copy.id; commit(next); setSelectedId(copy.sections[0]?.id); };
-  const deletePage = (id) => { if (config.pages.length <= 1) return toast.error("Your website must have at least one page."); const next = clone(config); next.pages = next.pages.filter((p) => p.id !== id); if (next.activePageId === id) next.activePageId = next.pages[0].id; commit(next); setSelectedId(next.pages[0]?.sections[0]?.id); };
-  const setActivePage = (id) => { const p = config.pages.find((x) => x.id === id); if (!p) return; const next = clone(config); next.activePageId = id; commit(next); setSelectedId(p.sections[0]?.id); };
+  const addPage = () => {
+    const id = uid("page");
+    const next = clone(config);
+    const firstSection = { id: uid("hero"), type: "hero", title: "Hero", visible: true, layout: "split", data: fieldFor("hero") };
+    next.pages.push({ id, name: "New Page", slug: `/${id.replace("page_", "page-")}`, visible: true, sections: [firstSection] });
+    next.activePageId = id;
+    commit(next);
+    setSelectedId(firstSection.id);
+    setActiveTool("pages");
+  };
+  const renamePage = (id) => {
+    const p = config.pages.find((x) => x.id === id);
+    const name = window.prompt("Give this page a simple name", p?.name || "Page");
+    if (!name?.trim()) return;
+    const next = clone(config);
+    next.pages.find((x) => x.id === id).name = name.trim();
+    commit(next);
+  };
+  const duplicatePage = (id) => {
+    const source = config.pages.find((x) => x.id === id);
+    if (!source) return;
+    const next = clone(config);
+    const copy = clone(source);
+    copy.id = uid("page");
+    copy.name = `${source.name} Copy`;
+    copy.slug = `${source.slug}-copy`;
+    copy.sections = copy.sections.map((x) => ({ ...x, id: uid(x.type) }));
+    next.pages.push(copy);
+    next.activePageId = copy.id;
+    commit(next);
+    setSelectedId(copy.sections[0]?.id);
+  };
+  const deletePage = (id) => {
+    if (config.pages.length <= 1) return toast.error("Your website must have at least one page.");
+    const next = clone(config);
+    next.pages = next.pages.filter((x) => x.id !== id);
+    if (next.activePageId === id) next.activePageId = next.pages[0].id;
+    commit(next);
+    setSelectedId(next.pages[0]?.sections[0]?.id);
+  };
+  const setActivePage = (id) => {
+    const p = config.pages.find((x) => x.id === id);
+    if (!p) return;
+    const next = clone(config);
+    next.activePageId = id;
+    commit(next);
+    setSelectedId(p.sections[0]?.id);
+  };
 
-  const undo = () => { if (!history.length) return; const h = [...history]; const previous = h.pop(); setFuture((f) => [clone(config), ...f.slice(0, 39)]); setHistory(h); setConfig(previous); };
-  const redo = () => { if (!future.length) return; const f = [...future]; const next = f.shift(); setHistory((h) => [...h.slice(-39), clone(config)]); setFuture(f); setConfig(next); };
+  const undo = () => {
+    if (!history.length) return;
+    const h = [...history];
+    const previous = h.pop();
+    setFuture((f) => [clone(config), ...f.slice(0, 39)]);
+    setHistory(h);
+    setConfig(previous);
+  };
+  const redo = () => {
+    if (!future.length) return;
+    const f = [...future];
+    const next = f.shift();
+    setHistory((h) => [...h.slice(-39), clone(config)]);
+    setFuture(f);
+    setConfig(next);
+  };
 
-  useEffect(() => { let alive = true; (async () => { try { const saved = await getAdminWebsiteConfig(); if (!alive) return; if (saved?.builder?.pages?.length) setConfig({ ...clone(DEFAULT_BUILDER), ...saved.builder, global: { ...DEFAULT_BUILDER.global, ...saved.builder.global, design: { ...DEFAULT_BUILDER.global.design, ...saved.builder.global?.design }, header: { ...DEFAULT_BUILDER.global.header, ...saved.builder.global?.header }, footer: { ...DEFAULT_BUILDER.global.footer, ...saved.builder.global?.footer } }, pages: saved.builder.pages }); if (saved) setIdentity((x) => ({ ...x, site_name: saved.site_name || x.site_name, site_tagline: saved.site_tagline || x.site_tagline, logo_url: saved.logo_url || x.logo_url, footer_company: saved.footer_company || x.footer_company, footer_text: saved.footer_text || x.footer_text, footer_copyright: saved.footer_copyright || x.footer_copyright })); } catch { toast.error("Unable to load Website Studio"); } finally { if (alive) setLoaded(true); } })(); return () => { alive = false; }; }, []);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const saved = await getAdminWebsiteConfig();
+        if (!alive) return;
+        if (saved?.builder?.pages?.length) {
+          setConfig({
+            ...clone(DEFAULT_BUILDER),
+            ...saved.builder,
+            global: {
+              ...DEFAULT_BUILDER.global,
+              ...saved.builder.global,
+              design: { ...DEFAULT_BUILDER.global.design, ...saved.builder.global?.design },
+              header: { ...DEFAULT_BUILDER.global.header, ...saved.builder.global?.header },
+              footer: { ...DEFAULT_BUILDER.global.footer, ...saved.builder.global?.footer }
+            },
+            pages: saved.builder.pages
+          });
+        }
+        if (saved) {
+          setIdentity((x) => ({
+            ...x,
+            site_name: saved.site_name || x.site_name,
+            site_tagline: saved.site_tagline || x.site_tagline,
+            logo_url: saved.logo_url || x.logo_url,
+            footer_company: saved.footer_company || x.footer_company,
+            footer_text: saved.footer_text || x.footer_text,
+            footer_copyright: saved.footer_copyright || x.footer_copyright
+          }));
+        }
+      } catch {
+        toast.error("Unable to load Website Studio");
+      } finally {
+        if (alive) setLoaded(true);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
-  const save = async () => { setSaving(true); try { const saved = await saveWebsiteConfig({ ...identity, primary_color: config.global.design.primary, accent_color: config.global.design.accent, builder: config }); if (saved?.builder?.pages?.length) setConfig((c) => ({ ...c, ...saved.builder })); toast.success("Website saved successfully"); } catch (error) { toast.error(error?.response?.data?.detail || "Unable to save website"); } finally { setSaving(false); } };
-  const reset = async () => { if (!window.confirm("Reset the website to the default template?")) return; try { const data = await resetWebsiteConfig(); setConfig(clone(DEFAULT_BUILDER)); setHistory([]); setFuture([]); setSelectedId("hero"); if (data) setIdentity((x) => ({ ...x, site_name: data.site_name || x.site_name, site_tagline: data.site_tagline || x.site_tagline, logo_url: data.logo_url || x.logo_url })); toast.success("Website reset"); } catch { toast.error("Unable to reset website"); } };
-  const applyPalette = (p) => { const next = clone(config); next.global.design.primary = p[1]; next.global.design.accent = p[2]; next.global.design.background = p[3]; next.global.design.text = p[4]; commit(next); };
+  const save = async () => {
+    setSaving(true);
+    try {
+      const saved = await saveWebsiteConfig({
+        ...identity,
+        primary_color: config.global.design.primary,
+        accent_color: config.global.design.accent,
+        builder: config
+      });
+      if (saved?.builder?.pages?.length) setConfig((c) => ({ ...c, ...saved.builder }));
+      toast.success("Website saved successfully");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Unable to save website");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = async () => {
+    if (!window.confirm("Reset the website to the default template?")) return;
+    try {
+      const data = await resetWebsiteConfig();
+      setConfig(clone(DEFAULT_BUILDER));
+      setHistory([]);
+      setFuture([]);
+      setSelectedId("hero");
+      if (data) setIdentity((x) => ({ ...x, site_name: data.site_name || x.site_name, site_tagline: data.site_tagline || x.site_tagline, logo_url: data.logo_url || x.logo_url }));
+      toast.success("Website reset");
+    } catch {
+      toast.error("Unable to reset website");
+    }
+  };
+
+  const applyPalette = (p) => {
+    const next = clone(config);
+    next.global.design.primary = p[1];
+    next.global.design.accent = p[2];
+    next.global.design.background = p[3];
+    next.global.design.text = p[4];
+    commit(next);
+  };
   const setIdentityField = (key, value) => setIdentity((x) => ({ ...x, [key]: value }));
+  const sectionLabel = (type) => SECTION_TYPES.find((x) => x[0] === type)?.[1] || type;
+  const sectionDescription = {
+    hero: "Large opening area with headline and buttons.",
+    features: "Show your products, services or capabilities.",
+    text: "Add simple information, policies or company content.",
+    pricing: "Display plans, packages or commercial options.",
+    imageText: "Tell a story using text beside an image.",
+    image: "Place a large image or banner.",
+    gallery: "Show several photos in a clean gallery.",
+    video: "Embed a YouTube, Vimeo or MP4 video.",
+    testimonials: "Add customer or client feedback.",
+    faq: "Answer common questions.",
+    form: "Collect enquiries from visitors.",
+    cta: "Finish a page with a clear action.",
+    divider: "Add visual separation between sections."
+  };
 
-  if (!loaded) return <div className="flex min-h-screen items-center justify-center bg-slate-100 text-sm text-slate-500">Loading Website Studio…</div>;
+  const moduleGroups = [
+    { title: "Content", types: ["hero", "text", "imageText", "image", "gallery"] },
+    { title: "Business", types: ["features", "pricing", "testimonials", "faq", "form", "cta"] },
+    { title: "Media", types: ["video", "divider"] }
+  ];
 
-  const leftNav = [["pages", LayoutGrid, "Pages"], ["design", Palette, "Design"], ["settings", Settings2, "Settings"]];
-  const selectedPage = page || config.pages[0];
+  if (!loaded) {
+    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">Loading Website Studio…</div>;
+  }
 
-  return <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-[#f5f6f8] text-slate-900">
-    <header className="z-50 flex h-[60px] shrink-0 items-center border-b border-slate-200 bg-white px-3 shadow-sm sm:px-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-950 text-white"><Globe2 size={18}/></div><div className="min-w-0"><div className="truncate text-sm font-extrabold">Website Studio</div><div className="hidden truncate text-[11px] text-slate-400 sm:block">{identity.site_name} · {selectedPage.name}</div></div></div>
-      <div className="flex items-center gap-1 sm:gap-2"><button type="button" disabled={!history.length} onClick={undo} title="Undo" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><Undo2 size={17}/></button><button type="button" disabled={!future.length} onClick={redo} title="Redo" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><Redo2 size={17}/></button><a href="/" target="_blank" rel="noreferrer" className="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 sm:inline-flex"><Eye size={14} className="mr-1.5"/> Preview</a><button type="button" onClick={save} disabled={saving} className="rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-60"><Save size={14} className="mr-1.5 inline"/>{saving ? "Saving…" : "Save"}</button></div>
+  const tools = [
+    ["pages", LayoutGrid, "Pages", "Create pages and control your site structure"],
+    ["modules", Plus, "Modules", "Add or rearrange website blocks"],
+    ["design", Palette, "Design", "Change colors, fonts and overall style"],
+    ["settings", Settings2, "Settings", "Logo, website name, footer and options"]
+  ];
+
+  const renderToolPanel = () => {
+    if (activeTool === "pages") {
+      return <div className="space-y-4 p-4">
+        <div className="flex items-center justify-between">
+          <div><h2 className="text-sm font-extrabold text-slate-900">Your pages</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Think of each page as one screen of your website.</p></div>
+          <button type="button" onClick={addPage} className="inline-flex items-center gap-1.5 bg-blue-600 px-3 py-2 text-[11px] font-bold text-white hover:bg-blue-700"><Plus size={14}/> New page</button>
+        </div>
+        <div className="space-y-2">
+          {config.pages.map((p) => <div key={p.id} className={`group border ${p.id === config.activePageId ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+            <button type="button" onClick={() => setActivePage(p.id)} className="flex w-full min-w-0 items-center gap-3 px-3 py-3 text-left">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center text-xs font-extrabold ${p.id === config.activePageId ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{p.name.slice(0, 1).toUpperCase()}</div>
+              <div className="min-w-0 flex-1"><div className="truncate text-xs font-bold text-slate-800">{p.name}</div><div className="truncate text-[10px] text-slate-400">{p.slug}</div></div>
+              {p.id === config.activePageId && <Check size={15} className="shrink-0 text-blue-600"/>}
+            </button>
+            <div className="flex items-center gap-3 border-t border-slate-100 px-3 py-2 opacity-0 transition group-hover:opacity-100">
+              <button type="button" onClick={() => renamePage(p.id)} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Rename</button>
+              <button type="button" onClick={() => duplicatePage(p.id)} className="text-[10px] font-bold text-slate-500 hover:text-blue-600">Duplicate</button>
+              <button type="button" onClick={() => deletePage(p.id)} className="ml-auto text-[10px] font-bold text-red-500">Delete</button>
+            </div>
+          </div>)}
+        </div>
+        <div className="border border-dashed border-slate-300 bg-slate-50 p-3 text-[11px] leading-5 text-slate-500"><b className="text-slate-700">Simple rule:</b> Pages are for major areas like Home, About, Services and Contact.</div>
+      </div>;
+    }
+    if (activeTool === "modules") {
+      return <div className="space-y-4 p-4">
+        <div><h2 className="text-sm font-extrabold text-slate-900">Website modules</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Click a module to add it. You can edit everything after adding it.</p></div>
+        {moduleGroups.map((group) => <div key={group.title}><div className="mb-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-slate-400">{group.title}</div><div className="space-y-2">{group.types.map((type) => <button key={type} type="button" onClick={() => addSection(type)} className="flex w-full items-center gap-3 border border-slate-200 bg-white px-3 py-3 text-left hover:border-blue-300 hover:bg-blue-50/40">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center bg-blue-50 text-blue-600"><Plus size={15}/></div>
+          <div className="min-w-0 flex-1"><div className="text-xs font-bold text-slate-800">{sectionLabel(type)}</div><div className="mt-0.5 text-[10px] leading-4 text-slate-500">{sectionDescription[type]}</div></div>
+        </button>)}</div></div>)}
+        <div className="border border-blue-100 bg-blue-50 p-3 text-[11px] leading-5 text-blue-800">You do not need to know HTML or code. Add a module, select it in the preview, and edit the fields on the right.</div>
+      </div>;
+    }
+    if (activeTool === "design") {
+      return <div className="space-y-5 p-4">
+        <div><h2 className="text-sm font-extrabold text-slate-900">Website design</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Choose a ready-made look or adjust individual colors.</p></div>
+        <div><div className="mb-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-slate-400">Quick themes</div><div className="grid grid-cols-2 gap-2">{palettes.map((p) => <button key={p[0]} type="button" onClick={() => applyPalette(p)} className="border border-slate-200 bg-white p-2 text-left hover:border-blue-400"><div className="mb-2 flex gap-1"><span className="h-6 flex-1" style={{background:p[1]}}/><span className="h-6 w-7" style={{background:p[2]}}/></div><span className="text-[10px] font-bold text-slate-700">{p[0]}</span></button>)}</div></div>
+        <div className="space-y-3 border-t border-slate-100 pt-4">
+          <ColorField label="Primary color" value={config.global.design.primary} onChange={(v) => { const n=clone(config); n.global.design.primary=v; commit(n); }}/>
+          <ColorField label="Accent color" value={config.global.design.accent} onChange={(v) => { const n=clone(config); n.global.design.accent=v; commit(n); }}/>
+          <ColorField label="Page background" value={config.global.design.background} onChange={(v) => { const n=clone(config); n.global.design.background=v; commit(n); }}/>
+          <ColorField label="Text color" value={config.global.design.text} onChange={(v) => { const n=clone(config); n.global.design.text=v; commit(n); }}/>
+          <label className="block"><span className="mb-1.5 block text-[11px] font-semibold text-slate-600">Website width</span><select value={config.global.design.width || "wide"} onChange={(e) => { const n=clone(config); n.global.design.width=e.target.value; commit(n); }} className="h-10 w-full rounded-none border border-slate-300 bg-white px-3 text-sm"><option value="wide">Wide</option><option value="compact">Compact</option><option value="full">Full width</option></select></label>
+        </div>
+        <div className="border border-emerald-100 bg-emerald-50 p-3 text-[11px] leading-5 text-emerald-800"><b>Tip:</b> Start with a theme. Only change individual colors if you need your own brand palette.</div>
+      </div>;
+    }
+    return <div className="space-y-5 p-4">
+      <div><h2 className="text-sm font-extrabold text-slate-900">Website settings</h2><p className="mt-1 text-[11px] leading-5 text-slate-500">Basic information visitors see across your website.</p></div>
+      <TextField label="Website name" value={identity.site_name} onChange={(v) => setIdentityField("site_name", v)}/>
+      <TextField label="Short tagline" value={identity.site_tagline} onChange={(v) => setIdentityField("site_tagline", v)}/>
+      <UploadField label="Website logo" value={identity.logo_url} onChange={(v) => setIdentityField("logo_url", v)}/>
+      <div className="border-t border-slate-100 pt-4"><div className="mb-3 text-[10px] font-extrabold uppercase tracking-[.14em] text-slate-400">Footer</div><div className="space-y-3"><TextField label="Company name" value={identity.footer_company} onChange={(v) => setIdentityField("footer_company", v)}/><TextField label="Footer description" value={identity.footer_text} area onChange={(v) => setIdentityField("footer_text", v)}/><TextField label="Copyright" value={identity.footer_copyright} onChange={(v) => setIdentityField("footer_copyright", v)}/></div></div>
+      <button type="button" onClick={reset} className="w-full border border-red-200 bg-red-50 px-3 py-2.5 text-xs font-bold text-red-600 hover:bg-red-100">Reset to default website</button>
+    </div>;
+  };
+
+  if (!page) return null;
+
+  return <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-slate-100 text-slate-900">
+    <header className="z-50 flex min-h-[64px] shrink-0 items-center border-b border-slate-200 bg-white px-3 sm:px-5">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center bg-[#0D3B66] text-white"><Globe2 size={18}/></div>
+        <div className="min-w-0"><div className="text-sm font-extrabold">Website Studio</div><div className="truncate text-[11px] text-slate-400">{identity.site_name} · {page.name}</div></div>
+      </div>
+      <div className="hidden items-center gap-2 lg:flex">
+        <div className="flex items-center border border-slate-200 bg-slate-50 p-0.5">
+          <button type="button" onClick={undo} disabled={!history.length} className="px-2.5 py-1.5 text-[11px] font-bold text-slate-500 disabled:opacity-30">Undo</button>
+          <button type="button" onClick={redo} disabled={!future.length} className="border-l border-slate-200 px-2.5 py-1.5 text-[11px] font-bold text-slate-500 disabled:opacity-30">Redo</button>
+        </div>
+        {["desktop","tablet","mobile"].map((mode) => <button key={mode} type="button" onClick={() => setPreview(mode)} className={`border px-2.5 py-1.5 text-[11px] font-bold ${preview===mode ? "border-blue-300 bg-blue-50 text-blue-700" : "border-slate-200 bg-white text-slate-500"}`}>{mode[0].toUpperCase()+mode.slice(1)}</button>)}
+        <a href="/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-50"><Eye size={14}/> Preview site</a>
+        <button type="button" onClick={save} disabled={saving} className="inline-flex items-center gap-1.5 bg-emerald-600 px-4 py-2 text-[11px] font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"><Save size={14}/>{saving ? "Saving…" : "Save changes"}</button>
+      </div>
+      <div className="flex items-center gap-1 lg:hidden"><button type="button" onClick={save} disabled={saving} className="bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white">{saving ? "Saving…" : "Save"}</button></div>
     </header>
 
+    {showWelcome && <div className="z-40 flex shrink-0 items-center gap-3 border-b border-blue-100 bg-blue-50 px-4 py-2.5 text-[11px] text-blue-900">
+      <div className="flex h-6 w-6 shrink-0 items-center justify-center bg-blue-600 text-white"><Check size={13}/></div>
+      <div className="min-w-0 flex-1"><b>Build your website in 4 simple steps:</b> choose a page → add modules → edit the selected module → save.</div>
+      <button type="button" onClick={() => setShowWelcome(false)} className="shrink-0 px-2 py-1 font-bold text-blue-600 hover:bg-blue-100">Got it</button>
+    </div>}
+
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <aside className="hidden w-[74px] shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
-        <div className="flex flex-1 flex-col items-center gap-1 py-3">{leftNav.map(([id, Icon, label]) => <button key={id} type="button" onClick={() => { setLeftTab(id); setRightTab(id === "design" ? "design" : id === "settings" ? "settings" : "section"); }} className={`flex w-[62px] flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[10px] font-bold transition ${leftTab === id ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50"}`}><Icon size={19}/>{label}</button>)}</div>
+      <aside className="hidden w-[82px] shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
+        <div className="border-b border-slate-100 px-2 py-3 text-center text-[9px] font-extrabold uppercase tracking-[.12em] text-slate-400">Build</div>
+        <div className="flex-1 space-y-1 p-2">{tools.map(([id, Icon, label]) => <button key={id} type="button" onClick={() => setActiveTool(id)} className={`flex w-full flex-col items-center gap-1 border px-1 py-2.5 text-[9px] font-bold ${activeTool===id ? "border-blue-200 bg-blue-50 text-blue-700" : "border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50"}`}><Icon size={18}/>{label}</button>)}</div>
+        <div className="border-t border-slate-100 p-2"><button type="button" onClick={() => { setActiveTool("modules"); setMobilePanel("add"); }} className="flex w-full flex-col items-center gap-1 border border-dashed border-slate-300 py-2 text-[9px] font-bold text-blue-600"><Plus size={17}/>Add</button></div>
       </aside>
 
-      {leftTab === "pages" && <aside className="hidden w-[250px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white lg:block">
-        <div className="border-b border-slate-100 p-4"><div className="flex items-center justify-between"><div><div className="text-sm font-extrabold">Pages</div><div className="mt-0.5 text-[11px] text-slate-400">Manage your site structure</div></div><button type="button" onClick={addPage} className="rounded-lg bg-blue-600 p-2 text-white shadow-sm" title="Add page"><Plus size={16}/></button></div></div>
-        <div className="space-y-1 p-2">{config.pages.map((p) => <div key={p.id} className={`group rounded-xl border ${p.id === config.activePageId ? "border-blue-200 bg-blue-50" : "border-transparent hover:border-slate-200 hover:bg-slate-50"}`}><button type="button" onClick={() => setActivePage(p.id)} className="flex w-full min-w-0 items-center gap-2 px-3 py-2.5 text-left"><GripVertical size={14} className="shrink-0 text-slate-300"/><div className="min-w-0 flex-1"><div className="truncate text-xs font-bold">{p.name}</div><div className="truncate text-[10px] text-slate-400">{p.slug}</div></div>{p.id === config.activePageId && <Check size={14} className="shrink-0 text-blue-600"/>}</button><div className="hidden items-center gap-1 border-t border-slate-100 px-3 py-1.5 group-hover:flex"><button type="button" onClick={() => renamePage(p.id)} className="text-[10px] font-bold text-slate-500">Rename</button><button type="button" onClick={() => duplicatePage(p.id)} className="ml-auto text-slate-400" title="Duplicate"><Copy size={13}/></button><button type="button" onClick={() => deletePage(p.id)} className="text-red-400" title="Delete"><Trash2 size={13}/></button></div></div>)}</div>
-        <button type="button" onClick={addPage} className="mx-3 mt-2 flex w-[calc(100%-24px)] items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs font-bold text-blue-600"><Plus size={14}/> Add New Page</button>
-      </aside>}
+      <aside className="hidden w-[270px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white lg:block">{renderToolPanel()}</aside>
 
-      <main className="min-w-0 flex-1 overflow-hidden bg-[#eef0f3]">
+      <main className="min-w-0 flex-1 overflow-hidden bg-[#e9edf2]">
         <div className="flex h-full min-h-0 flex-col">
-          <div className="flex min-h-[52px] shrink-0 items-center justify-center gap-1 border-b border-slate-200 bg-white px-2">
-            {[['desktop', Monitor, 'Desktop'], ['tablet', Tablet, 'Tablet'], ['mobile', Smartphone, 'Mobile']].map(([k, Icon, label]) => <button key={k} type="button" onClick={() => setPreview(k)} className={`rounded-lg px-3 py-2 text-xs font-bold ${preview === k ? "bg-slate-100 text-slate-900" : "text-slate-400 hover:bg-slate-50"}`}><Icon size={15} className="mr-1.5 inline"/>{label}</button>)}
+          <div className="flex min-h-[50px] shrink-0 items-center justify-between border-b border-slate-200 bg-white px-3 sm:px-5">
+            <div className="min-w-0"><div className="truncate text-xs font-extrabold text-slate-700">{page.name}</div><div className="truncate text-[10px] text-slate-400">{page.slug} · {page.sections.length} modules</div></div>
+            <div className="text-[10px] font-semibold text-slate-400">Click any module in the preview to edit it</div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-5"><div className={`mx-auto overflow-hidden bg-white shadow-xl transition-all ${preview === "desktop" ? "w-full max-w-[1280px]" : preview === "tablet" ? "w-[768px] max-w-full" : "w-[390px] max-w-full"}`}><WebsiteRenderer builder={config} identity={identity} editor selectedSectionId={selectedId} onSelectSection={(id) => { if (id) { setSelectedId(id); setRightTab("section"); } }} /></div></div>
+          <div className="min-h-0 flex-1 overflow-auto p-2 sm:p-5">
+            <div className={`mx-auto overflow-hidden bg-white shadow-xl transition-all ${preview==="desktop" ? "w-full max-w-[1280px]" : preview==="tablet" ? "w-[768px] max-w-full" : "w-[390px] max-w-full"}`}>
+              <WebsiteRenderer builder={config} identity={identity} editor selectedSectionId={selectedId} onSelectSection={(id) => { if (id) { setSelectedId(id); setActiveTool("modules"); } }} />
+            </div>
+          </div>
         </div>
       </main>
 
-      <aside className="hidden w-[330px] shrink-0 overflow-y-auto border-l border-slate-200 bg-white xl:block">
-        {leftTab === "design" || rightTab === "design" ? <div className="p-4"><div className="mb-5"><div className="text-sm font-extrabold">Design</div><div className="mt-1 text-xs text-slate-400">Change the look of your entire website</div></div><div className="mb-5"><div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">Themes</div><div className="grid grid-cols-2 gap-2">{palettes.map((p) => <button key={p[0]} type="button" onClick={() => applyPalette(p)} className="rounded-xl border border-slate-200 p-2 text-left hover:border-blue-400"><div className="mb-2 flex gap-1"><span className="h-5 flex-1 rounded" style={{ background: p[1] }}/><span className="h-5 w-7 rounded" style={{ background: p[2] }}/></div><span className="text-[10px] font-bold">{p[0]}</span></button>)}</div></div><div className="space-y-4"><ColorField label="Primary color" value={config.global.design.primary} onChange={(v) => { const n = clone(config); n.global.design.primary = v; commit(n); }}/><ColorField label="Accent color" value={config.global.design.accent} onChange={(v) => { const n = clone(config); n.global.design.accent = v; commit(n); }}/><ColorField label="Page background" value={config.global.design.background} onChange={(v) => { const n = clone(config); n.global.design.background = v; commit(n); }}/><ColorField label="Text color" value={config.global.design.text} onChange={(v) => { const n = clone(config); n.global.design.text = v; commit(n); }}/><select value={config.global.design.width || "wide"} onChange={(e) => { const n = clone(config); n.global.design.width = e.target.value; commit(n); }} className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"><option value="wide">Wide content</option><option value="compact">Compact content</option><option value="full">Full width</option></select></div></div> : leftTab === "settings" || rightTab === "settings" ? <div className="space-y-4 p-4"><div><div className="text-sm font-extrabold">Website settings</div><div className="mt-1 text-xs text-slate-400">Global identity and footer</div></div><TextField label="Website name" value={identity.site_name} onChange={(v) => setIdentityField("site_name", v)}/><TextField label="Tagline" value={identity.site_tagline} onChange={(v) => setIdentityField("site_tagline", v)}/><UploadField label="Logo" value={identity.logo_url} onChange={(v) => setIdentityField("logo_url", v)}/><TextField label="Footer company" value={identity.footer_company} onChange={(v) => setIdentityField("footer_company", v)}/><TextField label="Footer text" value={identity.footer_text} onChange={(v) => setIdentityField("footer_text", v)}/><TextField label="Copyright" value={identity.footer_copyright} onChange={(v) => setIdentityField("footer_copyright", v)}/><button type="button" onClick={reset} className="w-full rounded-lg border border-red-100 px-3 py-2.5 text-xs font-bold text-red-600 hover:bg-red-50">Reset website</button></div> : <div className="p-4"><div className="mb-4 flex items-center justify-between"><div><div className="text-sm font-extrabold">Section</div><div className="mt-1 truncate text-xs text-slate-400">{selected?.title || selected?.type}</div></div><button type="button" onClick={() => duplicateSection(selected?.id)} className="rounded-lg border border-slate-200 p-2 text-slate-500" title="Duplicate"><Copy size={14}/></button></div>{selected && <><SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/><div className="mt-5 grid grid-cols-4 gap-1 border-t border-slate-100 pt-4"><button type="button" onClick={() => moveSection(selected.id, -1)} className="rounded-lg border p-2 text-slate-500" title="Move up"><ArrowUp size={14} className="mx-auto"/></button><button type="button" onClick={() => moveSection(selected.id, 1)} className="rounded-lg border p-2 text-slate-500" title="Move down"><ArrowDown size={14} className="mx-auto"/></button><button type="button" onClick={() => patchSection({}, { visible: selected.visible === false })} className="rounded-lg border p-2 text-slate-500" title="Show/hide">{selected.visible === false ? <Eye size={14} className="mx-auto"/> : <EyeOff size={14} className="mx-auto"/>}</button><button type="button" onClick={() => deleteSection(selected.id)} className="rounded-lg border border-red-100 p-2 text-red-500" title="Delete"><Trash2 size={14} className="mx-auto"/></button></div></>}</div>}
+      <aside className="hidden w-[350px] shrink-0 overflow-y-auto border-l border-slate-200 bg-white xl:block">
+        {selected ? <div className="p-4">
+          <div className="mb-4 border-b border-slate-100 pb-4">
+            <div className="flex items-center justify-between gap-3"><div className="min-w-0"><div className="text-[10px] font-extrabold uppercase tracking-[.14em] text-blue-600">Selected module</div><div className="mt-1 truncate text-sm font-extrabold text-slate-900">{selected.title || sectionLabel(selected.type)}</div></div><button type="button" onClick={() => duplicateSection(selected.id)} className="border border-slate-200 p-2 text-slate-500 hover:bg-slate-50" title="Duplicate module"><Copy size={14}/></button></div>
+            <div className="mt-3 flex items-center gap-2"><button type="button" onClick={() => patchSection({}, { visible: selected.visible === false })} className="flex-1 border border-slate-200 px-2 py-2 text-[10px] font-bold text-slate-600">{selected.visible === false ? "Show module" : "Hide module"}</button><button type="button" onClick={() => deleteSection(selected.id)} className="border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-bold text-red-600">Delete</button></div>
+          </div>
+          <SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/>
+          <div className="mt-5 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4"><button type="button" onClick={() => moveSection(selected.id,-1)} className="border border-slate-200 px-2 py-2 text-[10px] font-bold text-slate-600">Move up</button><button type="button" onClick={() => moveSection(selected.id,1)} className="border border-slate-200 px-2 py-2 text-[10px] font-bold text-slate-600">Move down</button></div>
+        </div> : <div className="p-5 text-xs text-slate-500">Select a module in the preview to edit it.</div>}
       </aside>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-slate-200 bg-white/95 p-2 backdrop-blur md:hidden"><button type="button" onClick={() => setMobilePanel("pages")} className="flex flex-1 flex-col items-center gap-1 py-1 text-[10px] font-bold text-slate-600"><LayoutGrid size={18}/>Pages</button><button type="button" onClick={() => setMobilePanel("add")} className="flex flex-1 flex-col items-center gap-1 py-1 text-[10px] font-bold text-blue-600"><Plus size={18}/>Add</button><button type="button" onClick={() => setMobilePanel("design")} className="flex flex-1 flex-col items-center gap-1 py-1 text-[10px] font-bold text-slate-600"><Palette size={18}/>Design</button><button type="button" onClick={() => setMobilePanel("section")} className="flex flex-1 flex-col items-center gap-1 py-1 text-[10px] font-bold text-slate-600"><Type size={18}/>Edit</button></div>
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex border-t border-slate-200 bg-white p-1.5 md:hidden">
+        {[["pages",LayoutGrid,"Pages"],["modules",Plus,"Modules"],["design",Palette,"Design"],["settings",Settings2,"Settings"]].map(([id,Icon,label]) => <button key={id} type="button" onClick={() => setMobilePanel(id)} className={`flex flex-1 flex-col items-center gap-0.5 py-1 text-[9px] font-bold ${activeTool===id ? "text-blue-600" : "text-slate-500"}`}><Icon size={17}/>{label}</button>)}
+        <button type="button" onClick={() => { setSelectedId(selected?.id); setMobilePanel("section"); }} className="flex flex-1 flex-col items-center gap-0.5 py-1 text-[9px] font-bold text-emerald-600"><Type size={17}/>Edit</button>
+      </div>
 
-      {mobilePanel && <div className="fixed inset-0 z-[60] bg-black/30 md:hidden" onClick={() => setMobilePanel(null)}><div className="absolute inset-x-0 bottom-0 max-h-[82vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}><div className="mb-4 flex items-center justify-between"><div className="text-sm font-extrabold">{mobilePanel === "pages" ? "Pages" : mobilePanel === "add" ? "Add Section" : mobilePanel === "design" ? "Design" : "Edit Section"}</div><button type="button" onClick={() => setMobilePanel(null)}><X size={18}/></button></div>{mobilePanel === "pages" && <div className="space-y-2">{config.pages.map((p) => <button key={p.id} type="button" onClick={() => { setActivePage(p.id); setMobilePanel(null); }} className={`flex w-full items-center justify-between rounded-xl border p-3 text-left ${p.id === config.activePageId ? "border-blue-300 bg-blue-50" : "border-slate-200"}`}><span><span className="block text-sm font-bold">{p.name}</span><span className="text-xs text-slate-400">{p.slug}</span></span>{p.id === config.activePageId && <Check size={16} className="text-blue-600"/>}</button>)}<button type="button" onClick={() => { addPage(); setMobilePanel(null); }} className="w-full rounded-xl border border-dashed p-3 text-sm font-bold text-blue-600"><Plus size={16} className="mr-1 inline"/> Add New Page</button></div>}{mobilePanel === "add" && <div className="grid grid-cols-2 gap-2">{SECTION_TYPES.map(([type, label]) => <button key={type} type="button" onClick={() => addSection(type)} className="rounded-xl border border-slate-200 p-3 text-left text-xs font-bold"><Plus size={14} className="mb-2 text-blue-600"/>{label}</button>)}</div>}{mobilePanel === "design" && <div className="space-y-4"><div className="grid grid-cols-2 gap-2">{palettes.map((p) => <button key={p[0]} type="button" onClick={() => applyPalette(p)} className="rounded-xl border p-2 text-left"><div className="mb-2 flex gap-1"><span className="h-5 flex-1 rounded" style={{ background: p[1] }}/><span className="h-5 w-7 rounded" style={{ background: p[2] }}/></div><span className="text-[10px] font-bold">{p[0]}</span></button>)}</div><ColorField label="Primary" value={config.global.design.primary} onChange={(v) => { const n = clone(config); n.global.design.primary = v; commit(n); }}/><ColorField label="Accent" value={config.global.design.accent} onChange={(v) => { const n = clone(config); n.global.design.accent = v; commit(n); }}/></div>}{mobilePanel === "section" && selected && <SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/>}</div></div>}
+      {mobilePanel && <div className="fixed inset-0 z-[60] bg-slate-950/35 md:hidden" onClick={() => setMobilePanel(null)}>
+        <div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3"><div className="text-sm font-extrabold text-slate-900">{mobilePanel === "section" ? "Edit module" : tools.find((x) => x[0] === mobilePanel)?.[2]}</div><button type="button" onClick={() => setMobilePanel(null)} className="p-1 text-slate-500"><X size={18}/></button></div>
+          {mobilePanel === "section" ? (selected ? <SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/> : <div className="text-xs text-slate-500">Select a module first.</div>) : renderToolPanel()}
+        </div>
+      </div>
     </div>
   </div>;
 }
