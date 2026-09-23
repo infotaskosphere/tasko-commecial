@@ -1733,6 +1733,68 @@ function ResolutionListEditor({ items, setItems, input, muted }) {
  * Board Resolution tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
+function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, muted, title }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await api.get(`/roc-sphere/companies/${company.id}/documents`);
+        if (!alive) return;
+        setDocs((data || []).filter((d) => {
+          if (meetingType === 'board' && docType === 'board_resolution') return d.doc_type === 'board_resolution';
+          return d.doc_type === `${docType}_${meetingType}`;
+        }));
+      } catch { if (alive) setDocs([]); }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [company.id, meetingType, docType]);
+
+  const download = async (doc) => {
+    try {
+      const res = await api.get(`/roc-sphere/companies/${company.id}/documents/${doc.id}/download`, { responseType: 'blob' });
+      triggerBlobDownload(res.data, doc.filename || 'ROC_Document.docx');
+    } catch (e) { toast.error(await parseBlobError(e) || 'Could not download document'); }
+  };
+
+  const label = (d) => d.doc_type === 'board_resolution' ? 'Board Resolution' :
+    d.doc_type === 'notice_board' ? 'Board Meeting Notice' :
+    d.doc_type === 'notice_agm' ? 'AGM Notice' :
+    d.doc_type === 'notice_egm' ? 'EGM Notice' :
+    d.doc_type === 'minutes_board' ? 'Board Minutes' :
+    d.doc_type === 'minutes_agm' ? 'AGM Minutes' :
+    d.doc_type === 'minutes_egm' ? 'EGM Minutes' : d.doc_type;
+
+  return (
+    <div className={`rounded-xl border p-4 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-white'}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h4 className={`text-sm font-semibold ${text}`}>{title}</h4>
+          <p className={`text-[10px] mt-0.5 ${muted}`}>Previously generated documents are listed here and remain linked to the company's meeting register.</p>
+        </div>
+        <span className="px-2 py-1 rounded-full bg-blue-50 text-[#0D3B66] text-[10px] font-semibold">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
+      </div>
+      {loading ? <div className={`py-5 text-center ${muted}`}>Loading…</div> :
+       docs.length === 0 ? <div className={`py-5 text-center text-xs ${muted}`}>No generated {title.toLowerCase()} documents yet.</div> :
+       <div className="space-y-2">
+         {docs.map((doc) => (
+           <div key={doc.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${isDark ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+             <FileSpreadsheet size={15} className="text-blue-700 shrink-0"/>
+             <div className="min-w-0 flex-1">
+               <div className={`text-xs font-medium ${text} truncate`}>{label(doc)}</div>
+               <div className={`text-[10px] ${muted}`}>{doc.filename} · {doc.generated_at ? new Date(doc.generated_at).toLocaleDateString('en-IN') : ''}</div>
+             </div>
+             <button onClick={() => download(doc)} disabled={doc.downloadable === false} className="px-2.5 py-1.5 rounded border text-[10px] font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 disabled:opacity-40">Download</button>
+           </div>
+         ))}
+       </div>}
+    </div>
+  );
+}
+
 function ResolutionTab({ company, isDark, input, text, muted }) {
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
@@ -1791,6 +1853,7 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Board Resolution (.docx)
       </button>
+      <MeetingDocumentsCard company={company} meetingType="board" docType="board_resolution" isDark={isDark} text={text} muted={muted} title="Past Board Resolutions" />
     </div>
   );
 }
@@ -1853,6 +1916,7 @@ function NoticeTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Notice (.docx)
       </button>
+      <MeetingDocumentsCard company={company} meetingType={meetingType} docType="notice" isDark={isDark} text={text} muted={muted} title="Past Notices of Meeting" />
     </div>
   );
 }
@@ -1920,6 +1984,7 @@ function MinutesTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Minutes (.docx)
       </button>
+      <MeetingDocumentsCard company={company} meetingType={meetingType} docType="minutes" isDark={isDark} text={text} muted={muted} title="Past Minutes of Meeting" />
     </div>
   );
 }
