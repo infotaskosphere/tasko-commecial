@@ -9,7 +9,7 @@ import {
   Download, FileText, Search, RefreshCw, Save, CheckCircle2, Upload,
   ClipboardList, Gavel, NotebookPen, ChevronRight, AlertTriangle, Info,
   ScrollText, Pencil, DatabaseZap, ListChecks, FileSpreadsheet, FileUp,
-  BookOpen, ArrowLeftRight, BadgeCheck, CalendarDays, Zap, UsersRound, Clock3, History, Bell,
+  BookOpen, ArrowLeftRight, BadgeCheck, CalendarDays, Zap, UsersRound, Clock3, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
@@ -109,11 +109,6 @@ const TABS = [
   { key: 'masterdata', label: 'Master Data', icon: DatabaseZap },
   { key: 'directors', label: 'Directors & Shareholders', icon: UsersIcon },
   { key: 'statutory', label: 'Statutory Registers', icon: BookOpen },
-  { key: 'boardmeetings', label: 'Board Meetings', icon: CalendarDays },
-  { key: 'egm', label: 'EGM', icon: UsersRound },
-  { key: 'sharetransfer', label: 'Share Transfer', icon: ArrowLeftRight },
-  { key: 'sharecertificates', label: 'Share Certificates', icon: BadgeCheck },
-  { key: 'transferregister', label: 'Share Transfer Register', icon: BookOpen },
   { key: 'resolution', label: 'Board Resolution', icon: Gavel },
   { key: 'notice', label: 'Notice of Meeting', icon: ScrollText },
   { key: 'minutes', label: 'Minutes of Meeting', icon: NotebookPen },
@@ -121,10 +116,8 @@ const TABS = [
   { key: 'checklist', label: 'Compliance Checklist', icon: ClipboardList },
   { key: 'applicable', label: 'Applicable Compliances', icon: ListChecks },
   { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
-  { key: 'uploads', label: 'Annual Filing Uploads', icon: Upload },
   { key: 'documents', label: 'Document Vault', icon: ScrollText },
   { key: 'cspractice', label: 'CS Practice Automation', icon: Zap },
-  { key: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 export default function ROCSpherePage() {
@@ -136,7 +129,6 @@ export default function ROCSpherePage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('master');
   const [showNewCompany, setShowNewCompany] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
   const [search, setSearch] = useState('');
   const [companyTypeFilter, setCompanyTypeFilter] = useState('all');
   const [syncing, setSyncing] = useState(false);
@@ -347,7 +339,7 @@ export default function ROCSpherePage() {
           ) : (
             <div className="space-y-1 max-h-[60vh] overflow-y-auto">
               {filteredCompanies.map((c) => (
-                <button key={c.id} onClick={() => { setSelectedId(c.id); setShowWizard(true); }}
+                <button key={c.id} onClick={() => setSelectedId(c.id)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition
                     ${selectedId === c.id ? 'bg-blue-600 text-white' : isDark ? 'hover:bg-slate-700/60 text-slate-200' : 'hover:bg-slate-100 text-slate-700'}`}>
                   <span className="truncate">
@@ -378,7 +370,7 @@ export default function ROCSpherePage() {
                   <button onClick={deleteCompany} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
                     <Trash2 size={13} /> Remove
                   </button>
-                  <button onClick={() => setTab('uploads')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
+                  <button onClick={() => setTab('upload')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
                     <Upload size={13} /> Upload ROC Forms
                   </button>
                 </div>
@@ -386,10 +378,10 @@ export default function ROCSpherePage() {
 
               {/* Tabs */}
               <div className={`rounded-xl border ${card} overflow-hidden`}>
-                {/* Responsive tab rows: fixed grid slots prevent horizontal overflow across desktop and smaller screens. */}
+                {/* Two fixed tab rows: no horizontal scroll. Seven equal slots per row keeps the desktop layout balanced. */}
                 <div className={`border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-                  {Array.from({ length: Math.ceil(TABS.length / 6) }, (_, i) => TABS.slice(i * 6, i * 6 + 6)).map((row, rowIndex) => (
-                    <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 ${rowIndex < Math.ceil(TABS.length / 6) - 1 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
+                  {[TABS.slice(0, 7), TABS.slice(7)].map((row, rowIndex) => (
+                    <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 ${rowIndex === 0 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
                       {row.map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.key;
@@ -401,7 +393,7 @@ export default function ROCSpherePage() {
                           </button>
                         );
                       })}
-                      {row.length < 6 && <div aria-hidden="true" className="hidden lg:block" />}
+                      {row.length < 7 && <div aria-hidden="true" className="hidden lg:block" />}
                     </div>
                   ))}
                 </div>
@@ -410,38 +402,22 @@ export default function ROCSpherePage() {
                   {tab === 'masterdata' && <MasterDataTab company={company} isDark={isDark} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'directors' && <DirectorsTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
                   {tab === 'statutory' && <StatutoryRecordsTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'boardmeetings' && <RecordHistoryTab company={company} meetingTypeFilter="board" titleOverride="Board Meetings" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'egm' && <RecordHistoryTab company={company} meetingTypeFilter="egm" titleOverride="EGM" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'sharetransfer' && <StatutoryRecordsTab company={company} initialMode="transfer" titleOverride="Share Transfer" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'sharecertificates' && <StatutoryRecordsTab company={company} initialMode="certificate" titleOverride="Share Certificates" isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'transferregister' && <ShareTransferRegisterTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'history' && <RecordHistoryTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
-                  {tab === 'uploads' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'filing' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'documents' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
                   {tab === 'cspractice' && <CSPracticeAutomationTab company={company} plan={csPlan} tasks={csTasks} users={csUsers} loading={csLoading} isDark={isDark} input={input} text={text} muted={muted} onRefresh={(fy) => loadCSPractice(company.id, fy)} />}
-                  {tab === 'notifications' && <NotificationsTab isDark={isDark} input={input} text={text} muted={muted} />}
-                  
+                  {tab === 'upload' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                 </div>
               </div>
             </>
           )}
         </div>
       </div>
-
-      {showWizard && company && (
-        <GuidedFilingWizard
-          company={company} isDark={isDark} text={text} muted={muted}
-          onClose={() => setShowWizard(false)}
-          onApplied={() => loadOne(company.id)}
-          onGoToTab={(t) => setTab(t)}
-        />
-      )}
 
       {showNewCompany && (
         <NewCompanyModal
@@ -465,7 +441,7 @@ export default function ROCSpherePage() {
 /* ═══════════════════════════════════════════════════════════════════════
  * Filing Desk / Document Vault
  * ═══════════════════════════════════════════════════════════════════════ */
-function RecordHistoryTab({ company, isDark, input, text, muted, onApplied, meetingTypeFilter = null, titleOverride = null }) {
+function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
   const blank = {
     meeting_type: 'board', meeting_number: '', meeting_date: '', meeting_time: '11:00 AM', notice_date: '', venue: company.registered_office_address || 'Registered Office',
     mode: 'Physical', chairman: '', quorum_present: true, attendance: [], members_present_count: '', members_entitled_count: '', leave_of_absence: [],
@@ -489,16 +465,15 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied, meet
     setLoading(true);
     try {
       const { data } = await api.get(`/roc-sphere/companies/${company.id}/record-history`);
-      const allRecords = data.records || [];
-      setRecords(meetingTypeFilter ? allRecords.filter((r) => r.meeting_type === meetingTypeFilter) : allRecords);
+      setRecords(data.records || []);
       setSummary(data.summary || {});
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Failed to load Record History');
     } finally { setLoading(false); }
-  }, [company.id, meetingTypeFilter]);
+  }, [company.id]);
   useEffect(() => { load(); }, [load]);
 
-  const openNew = () => { setEditingId(null); setForm({ ...blank, meeting_type: meetingTypeFilter || 'board', venue: company.registered_office_address || 'Registered Office' }); setShowForm(true); };
+  const openNew = () => { setEditingId(null); setForm({ ...blank, venue: company.registered_office_address || 'Registered Office' }); setShowForm(true); };
   const openEdit = (r) => {
     setEditingId(r.id);
     setForm({ ...blank, ...r, attendance: r.attendance || [], leave_of_absence: r.leave_of_absence || [], agenda_items: r.agenda_items || [], resolutions_passed: r.resolutions_passed || [], special_business: r.special_business || [], attachments: r.attachments || [] });
@@ -542,7 +517,7 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied, meet
   return <div className="space-y-4">
     <div className={`rounded-xl border p-4 ${card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h3 className={`font-semibold ${text}`}>{titleOverride || 'Record History'}</h3><p className={`text-xs mt-1 ${muted}`}>Permanent meeting register for Board Meetings, AGMs, EGMs and other secretarial records. Entries remain available for future MGT-7 / MGT-7A preparation.</p></div>
+        <div><h3 className={`font-semibold ${text}`}>Record History</h3><p className={`text-xs mt-1 ${muted}`}>Permanent meeting register for Board Meetings, AGMs, EGMs and other secretarial records. Entries remain available for future MGT-7 / MGT-7A preparation.</p></div>
         <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold"><Plus size={13}/> Add Meeting Record</button>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
@@ -676,136 +651,6 @@ function FilingDeskTab({ company, prep, docs, loading, isDark, text, muted, onRe
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Legal Notifications / Update Documents
- * ═══════════════════════════════════════════════════════════════════════ */
-function NotificationsTab({ isDark, input, text, muted }) {
-  const [notifications, setNotifications] = useState([]);
-  const [files, setFiles] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [busyId, setBusyId] = useState(null);
-  const [expanded, setExpanded] = useState(null);
-
-  const load = useCallback(async () => {
-    try {
-      const { data } = await api.get('/roc-sphere/notifications');
-      setNotifications(data || []);
-    } catch (e) { toast.error('Unable to load legal notifications'); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const upload = async () => {
-    if (!files.length) { toast.error('Select at least one notification/update document'); return; }
-    setUploading(true);
-    try {
-      for (const file of files) {
-        const fd = new FormData();
-        fd.append('file', file);
-        await api.post('/roc-sphere/notifications/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      }
-      setFiles([]);
-      toast.success('Update document(s) uploaded and analysed');
-      await load();
-    } catch (e) { toast.error(await parseBlobError(e) || 'Notification upload failed'); }
-    finally { setUploading(false); }
-  };
-
-  const review = async (id, action) => {
-    setBusyId(id);
-    try {
-      await api.post(`/roc-sphere/notifications/${id}/${action}`);
-      toast.success(action === 'approve' ? 'Notification rule update approved' : 'Notification marked rejected');
-      await load();
-    } catch (e) { toast.error(await parseBlobError(e) || 'Could not update notification'); }
-    finally { setBusyId(null); }
-  };
-
-  const statusClass = (s) => s === 'approved'
-    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-    : s === 'rejected'
-      ? 'text-red-700 bg-red-50 border-red-200'
-      : 'text-amber-700 bg-amber-50 border-amber-200';
-
-  return (
-    <div className="space-y-4">
-      <div className={`rounded-2xl border p-4 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-gradient-to-br from-blue-50 to-white border-blue-100'}`}>
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div>
-            <h3 className={`font-bold ${text}`}>Notifications & Legal Updates</h3>
-            <p className={`text-xs mt-1 ${muted}`}>Upload MCA/ICSI notifications, circulars, amendments and other legal update documents. ROC Sphere reads them, identifies affected forms/sections and creates proposed rule updates for professional review.</p>
-          </div>
-          <button onClick={load} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-semibold"><RefreshCw size={13}/> Refresh</button>
-        </div>
-      </div>
-
-      <div className={`rounded-xl border p-4 ${cardStyle(isDark)}`}>
-        <div className="flex flex-col md:flex-row md:items-end gap-3">
-          <div className="flex-1">
-            <label className={`text-xs font-semibold ${text} mb-1 block`}>Upload Update Documents</label>
-            <input type="file" multiple accept=".pdf,.docx,.txt,.csv,.xlsx,.xlsm,.xls" className={`text-xs ${muted}`} onChange={(e) => setFiles(Array.from(e.target.files || []))} />
-            <p className={`text-[10px] mt-1 ${muted}`}>PDF/DOCX/XLSX/TXT/CSV/XLSM/XLS, up to 12 MB per document.</p>
-          </div>
-          <button onClick={upload} disabled={uploading || !files.length} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-60">
-            {uploading ? 'Reading documents…' : 'Upload & Read'}
-          </button>
-        </div>
-        {!!files.length && <p className={`text-[10px] mt-2 ${muted}`}>{files.length} document(s) selected</p>}
-      </div>
-
-      <div className="space-y-2">
-        {notifications.length === 0 ? (
-          <div className={`rounded-xl border p-8 text-center ${cardStyle(isDark)} ${muted}`}>
-            <Bell size={25} className="mx-auto mb-2 opacity-50"/>
-            <p className="text-sm font-semibold">No legal update documents uploaded</p>
-            <p className="text-xs mt-1">Upload your first MCA/ICSI notification or circular above.</p>
-          </div>
-        ) : notifications.map((n) => (
-          <div key={n.id} className={`rounded-xl border overflow-hidden ${cardStyle(isDark)}`}>
-            <div className="p-4 flex flex-col lg:flex-row lg:items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h4 className={`text-sm font-semibold ${text}`}>{n.title || n.filename}</h4>
-                  <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold ${statusClass(n.status)}`}>{(n.status || 'under_review').replace('_',' ')}</span>
-                </div>
-                <p className={`text-[10px] mt-1 ${muted}`}>{n.filename} · {n.authority || 'Other'} · {n.effective_date || 'Effective date not extracted'} · {n.affected_forms?.join(', ') || 'No forms detected'}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button onClick={() => setExpanded(expanded === n.id ? null : n.id)} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Details</button>
-                {n.file_available && <button onClick={async () => { try { const res = await api.get(`/roc-sphere/notifications/${n.id}/download`, { responseType: 'blob' }); triggerBlobDownload(res.data, n.filename || 'notification'); } catch (e) { toast.error(await parseBlobError(e) || 'Download failed'); } }} className="px-2.5 py-1.5 rounded-lg border text-[10px]">Download</button>}
-                {n.status !== 'approved' && <button disabled={busyId === n.id} onClick={() => review(n.id,'approve')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px]">Approve</button>}
-                {n.status !== 'rejected' && <button disabled={busyId === n.id} onClick={() => review(n.id,'reject')} className="px-2.5 py-1.5 rounded-lg bg-slate-700 text-white text-[10px]">Reject</button>}
-              </div>
-            </div>
-            {expanded === n.id && (
-              <div className={`border-t p-4 space-y-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
-                <div className="grid md:grid-cols-4 gap-3 text-[10px]">
-                  <div><span className={muted}>Notification no.</span><p className={text}>{n.notification_number || '—'}</p></div>
-                  <div><span className={muted}>Effective date</span><p className={text}>{n.effective_date || '—'}</p></div>
-                  <div><span className={muted}>Sections</span><p className={text}>{n.affected_sections?.join(', ') || '—'}</p></div>
-                  <div><span className={muted}>Forms</span><p className={text}>{n.affected_forms?.join(', ') || '—'}</p></div>
-                </div>
-                <div>
-                  <p className={`text-xs font-semibold ${text} mb-1`}>Proposed updates</p>
-                  {(n.proposed_rule_updates || []).map((r) => <div key={r.id} className={`rounded-lg border p-2 mb-1 text-[10px] ${isDark ? 'border-slate-700' : 'border-slate-200'}`}><b>{r.title}</b><div className={muted}>{r.instruction}</div></div>)}
-                </div>
-                <div>
-                  <p className={`text-xs font-semibold ${text} mb-1`}>Extracted source text</p>
-                  <pre className={`max-h-64 overflow-auto whitespace-pre-wrap text-[10px] leading-4 rounded-lg p-3 ${isDark ? 'bg-slate-950 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}>{n.extracted_text_preview || 'Source text stored on server.'}</pre>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className={`rounded-lg border p-3 text-[10px] ${isDark ? 'border-amber-900/50 bg-amber-950/20 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-        <b>Update safeguard:</b> uploaded documents are analysed into proposed rules. They do not silently change the legal engine. Approve only after checking the notification/circular against the current MCA/ICSI source and the company's facts.
-      </div>
-    </div>
-  );
-}
-
-
-/* ═══════════════════════════════════════════════════════════════════════
  * CS Practice Automation
  * ═══════════════════════════════════════════════════════════════════════ */
 function CSPracticeAutomationTab({ company, plan, tasks, users, loading, isDark, input, text, muted, onRefresh }) {
@@ -910,399 +755,6 @@ function CSPracticeAutomationTab({ company, plan, tasks, users, loading, isDark,
 function cardStyle(isDark) {
   return isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200';
 }
-
-/* ═══════════════════════════════════════════════════════════════════════
- * Company Master Data popup — fires by default whenever a company is
- * selected. Step 1 (mandatory-first, but skippable) always asks for the
- * latest MCA Company/LLP Master Data export; if the files picked look
- * identical to what's already on file it asks for confirmation instead
- * of silently re-applying stale data. From there it branches into either
- * Board's Report & AGM documents or Annual Filing Forms, then optionally
- * in-year forms, applicable compliances, and AOC-4/MGT-7/MGT-7A drafts.
- * Every step reuses the same extraction endpoints as the Master Data /
- * Upload ROC Forms tabs, so anything applied here shows up there too.
- * ═══════════════════════════════════════════════════════════════════════ */
-
-const WIZARD_STEPS = [
-  { key: 'masterdata', title: 'Company Master Data', subtitle: 'Latest MCA Company/LLP Master Data export' },
-  { key: 'branch', title: 'What would you like to upload next?', subtitle: "Board's Report & AGM documents, or this year's Annual Filing Forms" },
-  { key: 'inyear', title: 'Forms Filed During the Year', subtitle: 'DPT-3, MSME-1 and other event-based forms' },
-  { key: 'compliance', title: 'Applicable Compliances', subtitle: 'Auto-computed from everything uploaded so far' },
-  { key: 'draft', title: 'Draft AOC-4 & MGT-7/MGT-7A', subtitle: 'Download working papers for review' },
-];
-
-// name+size signature of a file list, used to detect "this is the same
-// file(s) I uploaded last time" without needing to re-hash/re-upload.
-function fileSig(files) {
-  return files.map((f) => `${f.name}:${f.size}`).sort().join('|');
-}
-
-function WizardFileDropzone({ files, setFiles, isDark, muted, text, accept }) {
-  const pickFiles = (list) => {
-    const picked = Array.from(list || []);
-    if (!picked.length) return;
-    setFiles((prev) => {
-      const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
-      const merged = [...prev];
-      for (const f of picked) {
-        const key = `${f.name}:${f.size}`;
-        if (!seen.has(key)) { merged.push(f); seen.add(key); }
-      }
-      return merged;
-    });
-  };
-  const removeFile = (i) => setFiles((prev) => prev.filter((_, x) => x !== i));
-  return (
-    <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
-      <input type="file" multiple accept={accept}
-        onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
-        className={`text-xs ${muted}`} />
-      <p className={`text-[11px] ${muted} mt-1`}>You can open the file picker more than once to add files from different folders — earlier selections are kept.</p>
-      {!!files.length && (
-        <div className="mt-2 space-y-1">
-          {files.map((f, i) => (
-            <div key={`${f.name}:${f.size}:${i}`} className="flex items-center justify-between text-xs">
-              <span className={`flex items-center gap-1.5 ${text}`}><FileText size={12} /> {f.name}</span>
-              <button onClick={() => removeFile(i)} className="text-red-500"><X size={13} /></button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceType = 'roc', onApplied }) {
-  const [files, setFiles] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
-
-  const upload = async () => {
-    if (!files.length) { toast.error('Choose at least one file first'); return; }
-    setBusy(true);
-    try {
-      const fd = new FormData();
-      files.forEach((f) => fd.append('files', f));
-      if (sourceType === 'roc') {
-        fd.append('source_type', 'roc');
-        fd.append('apply', 'true');
-        const { data } = await api.post(`/roc-sphere/companies/${company.id}/upload-master-data`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setResult(data);
-        if (data.applied) { toast.success('Uploaded and applied to Company Master'); onApplied(); }
-        else toast.error(data.message || 'Could not extract fields — you can continue and fix this later');
-      } else {
-        const { data } = await api.post(`/roc-sphere/companies/${company.id}/master-data/fetch`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        setResult(data);
-        if (data.applied) { toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`); onApplied(); }
-        else toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
-      }
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Upload failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className={`text-xs ${muted}`}>{hint}</p>
-      <WizardFileDropzone files={files} setFiles={setFiles} isDark={isDark} muted={muted} text={text} accept={accept} />
-      <button onClick={upload} disabled={busy || !files.length}
-        className="px-3 py-1.5 rounded-lg text-xs bg-blue-600 text-white flex items-center gap-1 disabled:opacity-60">
-        {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload &amp; Apply
-      </button>
-      {!!result?.errors?.length && (
-        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
-          {result.errors.map((e, i) => (
-            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-              <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {e}
-            </p>
-          ))}
-        </div>
-      )}
-      {result?.results?.length > 0 && (
-        <div className={`rounded-lg border p-3 ${isDark ? 'border-emerald-700/40 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50'}`}>
-          <p className={`text-[11px] flex items-center gap-1.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-            <CheckCircle2 size={12} /> {result.results.map((r) => `${r.filename} (${r.source_type})`).join(' · ')}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WizardMasterDataStep({ company, isDark, text, muted, onApplied }) {
-  const [files, setFiles] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState(null);
-  const [confirmSame, setConfirmSame] = useState(false);
-
-  const existingSig = fileSig((company.master_data?.source_files || []).map((f) => ({ name: f.filename, size: f.size })));
-  const selectedSig = fileSig(files);
-  const looksSame = files.length > 0 && existingSig && selectedSig === existingSig;
-
-  const doUpload = async () => {
-    setBusy(true);
-    setConfirmSame(false);
-    try {
-      const fd = new FormData();
-      files.forEach((f) => fd.append('files', f));
-      const { data } = await api.post(`/roc-sphere/companies/${company.id}/master-data/fetch`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setResult(data);
-      if (data.applied) { toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`); onApplied(); }
-      else toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Master Data fetch failed');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onUploadClick = () => {
-    if (!files.length) { toast.error('Choose the latest MCA Master Data file(s) first'); return; }
-    if (looksSame) { setConfirmSame(true); return; }
-    doUpload();
-  };
-
-  return (
-    <div className="space-y-3">
-      <p className={`text-xs ${muted}`}>
-        Upload the latest MCA "View Company/LLP Master Data" export (PDF, XLSX or CSV). Company Master fields and
-        the Director/Signatory register are fetched and applied automatically.
-      </p>
-      {!!(company.master_data?.last_fetched_at) && (
-        <p className={`text-[11px] ${muted}`}>
-          Currently on file: fetched {new Date(company.master_data.last_fetched_at).toLocaleString('en-IN')}
-          {company.master_data.source_files?.length ? ` from ${company.master_data.source_files.map((f) => f.filename).join(', ')}` : ''}.
-        </p>
-      )}
-      <WizardFileDropzone files={files} setFiles={setFiles} isDark={isDark} muted={muted} text={text} accept=".pdf,.xlsx,.xls,.csv" />
-
-      {confirmSame ? (
-        <div className={`rounded-lg border p-3 space-y-2 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
-          <p className={`text-xs flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
-            This looks identical (same filename &amp; size) to the Master Data already on file. Do you want to go ahead with this same old Master Data anyway?
-          </p>
-          <div className="flex gap-2">
-            <button onClick={doUpload} disabled={busy}
-              className="px-3 py-1.5 rounded-lg text-xs bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60">
-              {busy ? <Loader2 size={13} className="animate-spin inline" /> : 'Yes, go ahead anyway'}
-            </button>
-            <button onClick={() => setConfirmSame(false)}
-              className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
-              No, let me pick a different file
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button onClick={onUploadClick} disabled={busy || !files.length}
-          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <DatabaseZap size={14} />} Fetch &amp; Apply Master Data
-        </button>
-      )}
-
-      {!!result?.errors?.length && (
-        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
-          {result.errors.map((e, i) => (
-            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-              <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {e}
-            </p>
-          ))}
-        </div>
-      )}
-      {result?.applied && (
-        <div className={`rounded-lg border p-3 ${isDark ? 'border-emerald-700/40 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50'}`}>
-          <p className={`text-xs font-semibold flex items-center gap-1.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-            <CheckCircle2 size={13} /> Applied to Company Master
-          </p>
-          <p className={`text-[11px] ${muted} mt-1`}>{result.fields_applied?.join(', ') || '—'}</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function WizardBranchStep({ company, isDark, text, muted, onApplied }) {
-  const [choice, setChoice] = useState(null);
-  const options = [
-    { key: 'br_agm', title: "Board's Report & AGM Documents", desc: "Upload the Board's Report / Auditor's Report extracts and AGM notice/minutes.", accept: '.pdf' },
-    { key: 'annual', title: 'Annual Filing Forms', desc: 'Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) — all in one go.', accept: '.pdf,.xlsx,.xlsm,.xls,.csv' },
-  ];
-  return (
-    <div className="space-y-3">
-      <div className="grid sm:grid-cols-2 gap-2">
-        {options.map((o) => (
-          <button key={o.key} onClick={() => setChoice(o.key)}
-            className={`text-left rounded-lg border p-3 transition ${choice === o.key ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/20' : isDark ? 'border-slate-700 hover:border-slate-600' : 'border-slate-200 hover:border-slate-300'}`}>
-            <p className={`text-xs font-semibold ${text}`}>{o.title}</p>
-            <p className={`text-[11px] mt-0.5 ${muted}`}>{o.desc}</p>
-          </button>
-        ))}
-      </div>
-      {choice && (
-        <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
-          accept={options.find((o) => o.key === choice).accept}
-          hint={choice === 'br_agm'
-            ? "Upload the Board's Report, Auditor's Report and AGM notice/minutes extracts."
-            : "Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) for the previous financial year — all forms can be uploaded together in one go. Financial data and the Statutory Auditor come only from AOC-4; Directors & Shareholders come only from MGT-7/MGT-7A."}
-          onApplied={onApplied} />
-      )}
-    </div>
-  );
-}
-
-function WizardComplianceStep({ company, isDark, text, muted }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const { data: d } = await api.get(`/roc-sphere/companies/${company.id}/applicable-compliances`);
-        setData(d);
-      } catch { /* non-fatal */ } finally { setLoading(false); }
-    })();
-  }, [company.id]);
-
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="animate-spin" size={18} /></div>;
-  if (!data) return <p className={`text-xs ${muted}`}>Could not load applicable compliances.</p>;
-
-  return (
-    <div className="space-y-3">
-      <p className={`text-xs ${muted}`}>
-        Based on everything uploaded so far — <span className={text}>{data.total_applicable}</span> of{' '}
-        {data.total_forms_tracked} tracked forms currently apply to {data.company_name}
-        {data.is_small_company != null && (data.is_small_company ? ' (Small Company)' : '')}.
-      </p>
-      <div className="space-y-2 max-h-[40vh] overflow-y-auto">
-        {(data.groups || []).map((g) => (
-          <div key={g.frequency} className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
-            <p className={`text-xs font-semibold mb-1.5 ${text}`}>{g.frequency}</p>
-            <div className="space-y-1">
-              {g.items.map((item, i) => (
-                <div key={i} className="flex justify-between gap-2 text-[11px]">
-                  <span className={text}>{item.form}</span>
-                  <span className={muted}>{item.due_date_rule}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WizardDraftStep({ company, isDark, text, muted }) {
-  const [downloading, setDownloading] = useState('');
-  const download = async (kind) => {
-    setDownloading(kind);
-    try {
-      const res = await api.get(`/roc-sphere/companies/${company.id}/generate/${kind === 'aoc4' ? 'aoc-4' : 'mgt-7'}`, { responseType: 'blob' });
-      const cd = res.headers['content-disposition'] || '';
-      const match = cd.match(/filename="?([^"]+)"?/);
-      triggerBlobDownload(res.data, match ? match[1] : `${kind}.docx`);
-      toast.success('Draft downloaded');
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Could not generate draft');
-    } finally {
-      setDownloading('');
-    }
-  };
-  return (
-    <div className="space-y-3">
-      <p className={`text-xs ${muted}`}>
-        These drafts are assembled from whatever's been uploaded and applied so far (Master Data, Annual Filing
-        Forms / BR &amp; AGM documents, in-year forms). Review every figure and entry before filing on the MCA V3 portal.
-      </p>
-      <div className="flex flex-col sm:flex-row gap-2">
-        <button onClick={() => download('aoc4')} disabled={!!downloading}
-          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60">
-          {downloading === 'aoc4' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Draft AOC-4
-        </button>
-        <button onClick={() => download('mgt7')} disabled={!!downloading}
-          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60">
-          {downloading === 'mgt7' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Draft MGT-7 / MGT-7A
-        </button>
-      </div>
-      <p className={`text-[11px] ${muted}`}>These also stay available any time afterwards from the Filing Desk tab.</p>
-    </div>
-  );
-}
-
-function GuidedFilingWizard({ company, isDark, text, muted, onClose, onApplied, onGoToTab }) {
-  const [step, setStep] = useState(0);
-  const last = step === WIZARD_STEPS.length - 1;
-  const s = WIZARD_STEPS[step];
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className={`w-full max-w-2xl rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} shadow-xl max-h-[90vh] flex flex-col`}>
-        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-          <div>
-            <p className={`text-[11px] uppercase tracking-wide font-semibold ${muted}`}>Step {step + 1} of {WIZARD_STEPS.length}</p>
-            <h3 className={`text-base font-bold ${text}`}>{s.title}</h3>
-            <p className={`text-xs ${muted}`}>{s.subtitle}</p>
-          </div>
-          <button onClick={onClose} className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
-            <X size={16} className={muted} />
-          </button>
-        </div>
-
-        <div className={`px-5 py-1.5 flex gap-1 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-          {WIZARD_STEPS.map((st, i) => (
-            <div key={st.key} className={`h-1 flex-1 rounded-full my-2 ${i <= step ? 'bg-blue-600' : isDark ? 'bg-slate-700' : 'bg-slate-200'}`} />
-          ))}
-        </div>
-
-        <div className="p-5 overflow-y-auto flex-1">
-          <p className={`text-xs mb-3 ${text}`}>Company: <strong>{company.company_name}</strong></p>
-          {s.key === 'masterdata' && <WizardMasterDataStep company={company} isDark={isDark} text={text} muted={muted} onApplied={onApplied} />}
-          {s.key === 'branch' && <WizardBranchStep company={company} isDark={isDark} text={text} muted={muted} onApplied={onApplied} />}
-          {s.key === 'inyear' && (
-            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
-              accept=".pdf,.xlsx,.xlsm,.xls,.csv"
-              hint="Upload the forms filed during the year — DPT-3, MSME-1, and other event-based forms such as DIR-12, INC-22 or PAS-3, if any."
-              onApplied={onApplied} />
-          )}
-          {s.key === 'compliance' && <WizardComplianceStep company={company} isDark={isDark} text={text} muted={muted} />}
-          {s.key === 'draft' && <WizardDraftStep company={company} isDark={isDark} text={text} muted={muted} />}
-        </div>
-
-        <div className={`flex items-center justify-between px-5 py-3 border-t ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-          <button onClick={() => (step === 0 ? onClose() : setStep((v) => v - 1))}
-            className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
-            {step === 0 ? 'Cancel' : 'Back'}
-          </button>
-          <div className="flex items-center gap-2">
-            {!last && (
-              <button onClick={() => setStep((v) => v + 1)}
-                className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
-                Skip
-              </button>
-            )}
-            <button
-              onClick={() => {
-                if (last) { onClose(); onGoToTab('filing'); }
-                else setStep((v) => v + 1);
-              }}
-              className="px-4 py-1.5 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium">
-              {last ? 'Finish' : 'Continue'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 
 /* ═══════════════════════════════════════════════════════════════════════
  * New company modal — from scratch or prefilled from an existing client
@@ -1722,52 +1174,8 @@ function DirectorsTab({ company, isDark, onSave, input, text, muted }) {
  * Statutory registers — transfer register, SH-4 and share certificates
  * ═══════════════════════════════════════════════════════════════════════ */
 
-function ShareTransferRegisterTab({ company, isDark, text, muted }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data: d } = await api.get(`/roc-sphere/companies/${company.id}/statutory-records`);
-      setData(d);
-    } catch (e) { toast.error('Failed to load Share Transfer Register'); }
-    finally { setLoading(false); }
-  }, [company.id]);
-  useEffect(() => { load(); }, [load]);
-
-  const download = async () => {
-    try {
-      const res = await api.get(`/roc-sphere/companies/${company.id}/generate/share-transfer-register`, { responseType: 'blob' });
-      triggerBlobDownload(res.data, `Share_Transfer_Register_${company.company_name.replace(/\s+/g, '_')}.docx`);
-      toast.success('Share Transfer Register downloaded');
-    } catch (e) { toast.error(await parseBlobError(e) || 'Download failed'); }
-  };
-
-  const rows = data?.share_transfers || [];
-  return (
-    <div className="space-y-4">
-      <div className={`rounded-xl border p-4 ${cardStyle(isDark)}`}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className={`text-sm font-semibold ${text}`}>Share Transfer Register</h3>
-            <p className={`text-xs mt-1 ${muted}`}>Central register of approved/reviewed share transfers. These records remain available to annual-return preparation.</p>
-          </div>
-          <button onClick={download} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold"><Download size={13}/> Download Register</button>
-        </div>
-      </div>
-      <div className={`rounded-xl border overflow-hidden ${cardStyle(isDark)}`}>
-        {loading ? <div className={`p-8 text-center ${muted}`}>Loading…</div> : rows.length === 0 ? <div className={`p-8 text-center ${muted}`}>No share transfers recorded.</div> : (
-          <div className="overflow-x-auto"><table className="w-full text-[11px]"><thead className={isDark ? 'bg-slate-900' : 'bg-slate-100'}><tr>{['Date','Transferor','Transferee','Folio','Certificate','Distinctive Nos.','Shares','Consideration','SH-4 Status','Board Approval'].map(h => <th key={h} className={`text-left px-3 py-2 ${muted}`}>{h}</th>)}</tr></thead>
-            <tbody>{rows.map(r => <tr key={r.id} className={`border-t ${isDark ? 'border-slate-800' : 'border-slate-200'}`}><td className={`px-3 py-2 ${muted}`}>{r.transfer_date || '—'}</td><td className={`px-3 py-2 ${text}`}>{r.transferor_name || '—'}</td><td className={`px-3 py-2 ${text}`}>{r.transferee_name || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.transferor_folio_no || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.share_certificate_no || '—'}</td><td className={`px-3 py-2 ${muted}`}>{r.distinctive_from || '—'} → {r.distinctive_to || '—'}</td><td className={`px-3 py-2 ${muted}`}>{Number(r.number_of_shares || 0).toLocaleString('en-IN')}</td><td className={`px-3 py-2 ${muted}`}>{Number(r.consideration || 0).toLocaleString('en-IN')}</td><td className={`px-3 py-2 ${muted}`}>{r.sh4_status || 'Pending review'}</td><td className={`px-3 py-2 ${muted}`}>{r.board_resolution_date || '—'}</td></tr>)}</tbody>
-          </table></div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied, initialMode = 'transfer', titleOverride = null }) {
-  const [mode, setMode] = useState(initialMode);
+function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied }) {
+  const [mode, setMode] = useState('transfer');
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [data, setData] = useState(null);
@@ -1860,7 +1268,7 @@ function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied, i
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className={`text-sm font-semibold ${text}`}>{titleOverride || 'Statutory registers & instruments'}</h3>
+          <h3 className={`text-sm font-semibold ${text}`}>Statutory registers & instruments</h3>
           <p className={`text-xs ${muted} mt-1`}>Record reviewed transfers, keep holdings aligned, and prepare SH-4 / share certificate drafts.</p>
         </div>
         <button onClick={() => download(`/roc-sphere/companies/${company.id}/generate/share-transfer-register`, `Share_Transfer_Register_${company.company_name.replace(/\s+/g, '_')}.docx`)} disabled={generating}
@@ -1994,8 +1402,6 @@ function ResolutionListEditor({ items, setItems, input, muted }) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 function ResolutionTab({ company, isDark, input, text, muted }) {
-  const [templates, setTemplates] = useState([]);
-  const [templateKey, setTemplateKey] = useState('');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
   const [venue, setVenue] = useState('Registered Office of the Company');
@@ -2004,66 +1410,29 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
   const [resolutions, setResolutions] = useState([{ particulars: '', resolution_text: '', proposed_by: '', seconded_by: '' }]);
   const [generating, setGenerating] = useState(false);
 
-  useEffect(() => {
-    api.get('/roc-sphere/board-resolution-templates').then(({data}) => {
-      setTemplates(data || []);
-      if (data?.length) setTemplateKey(data[0].key);
-    }).catch(() => toast.error('Unable to load Board Resolution templates'));
-  }, []);
-
-  const applyTemplate = (key) => {
-    const t = templates.find((x) => x.key === key);
-    if (!t) return;
-    setResolutions([{
-      particulars: t.title,
-      resolution_text: t.resolution_text
-        .replaceAll('[COMPANY NAME]', company.company_name || '')
-        .replaceAll('[CIN]', company.cin || '')
-        .replaceAll('[DIRECTOR NAME]', company.directors?.[0]?.name || '')
-        .replaceAll('[DIN]', company.directors?.[0]?.din || '')
-        .replaceAll('[REGISTERED OFFICE]', company.registered_office_address || 'Registered Office'),
-      proposed_by: '',
-      seconded_by: '',
-    }]);
-  };
-
-  useEffect(() => {
-    if (templateKey) applyTemplate(templateKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateKey, templates.length]);
-
   const generate = async () => {
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
     if (!resolutions.length || !resolutions[0].resolution_text) { toast.error('Add at least one resolution'); return; }
     setGenerating(true);
     try {
-      const payload = { meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
-        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean), resolutions };
+      const payload = {
+        meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
+        resolutions,
+      };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/board-resolution`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Board_Resolution_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Board Resolution generated');
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Generation failed');
-    } finally { setGenerating(false); }
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
     <div className="space-y-4">
-      <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/30' : 'border-slate-200 bg-slate-50'}`}>
-        <p className={`text-xs font-semibold ${text}`}>ICSI Specimen Resolution Library</p>
-        <p className={`text-[11px] mt-1 ${muted}`}>Templates are based on the specimen-resolution sections in the uploaded Company Law & Practice material. Review the current Act, Rules, Articles and notification updates before use.</p>
-      </div>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <div>
-          <label className={`text-xs font-medium ${muted} mb-1 block`}>Specimen / Resolution Type</label>
-          <select className={input} value={templateKey} onChange={(e) => setTemplateKey(e.target.value)}>
-            {templates.map((t) => <option key={t.key} value={t.key}>{t.category} — {t.title}</option>)}
-          </select>
-        </div>
-        <div className="flex items-end">
-          <button onClick={() => applyTemplate(templateKey)} className="px-3 py-2 rounded-lg bg-slate-700 text-white text-xs">Load Specimen Format</button>
-        </div>
-      </div>
+      <p className={`text-xs ${muted}`}>Drafts a certified-true-copy style Board Resolution (Companies Act, 2013 / SS-1 format) — review before circulation or filing.</p>
       <div className="grid sm:grid-cols-3 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} /></div>
@@ -2080,6 +1449,10 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
     </div>
   );
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Notice of Meeting tab
+ * ═══════════════════════════════════════════════════════════════════════ */
 
 function NoticeTab({ company, isDark, input, text, muted }) {
   const [meetingType, setMeetingType] = useState('board');
@@ -2388,23 +1761,62 @@ function ApplicableCompliancesTab({ company, isDark, text, muted }) {
  * Upload AOC-4 / MGT-7 tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
+// Three upload lanes shown as pills at the top of Upload ROC Forms. Each
+// lane posts its own filing_category to the backend, which rejects any
+// form whose type or best-guess filing year doesn't match that lane (see
+// FILING_CATEGORY_FORM_TYPES / _extract_document_fy in backend/roc_sphere.py)
+// instead of silently applying an old/mismatched-year form.
+const UPLOAD_CATEGORIES = [
+  {
+    key: 'previous_year_annual',
+    label: 'Previous Year Annual Filing',
+    hint: 'AOC-4, AOC-2, MGT-7 / MGT-7A and the MGT-7A shareholder XLSM — the last completed financial year’s annual return set.',
+    accept: '.pdf,.xlsx,.xlsm,.xls,.csv',
+  },
+  {
+    key: 'current_year_other',
+    label: 'Current Year Other Forms Filing',
+    hint: 'DIR-12, ADT-1, INC-22, PAS-3, MGT-14, DPT-3 — event-based forms filed during the current financial year.',
+    accept: '.pdf,.xlsx,.xls,.csv',
+  },
+  {
+    key: 'current_year_audit',
+    label: 'Current Year Audit Report',
+    hint: "Extract of the Auditor's Report (and Board's Report, if you have it) for the current financial year.",
+    accept: '.pdf,.xlsx,.xls,.csv',
+  },
+];
+
 function UploadTab({ company, isDark, input, text, muted, onApplied }) {
+  const [category, setCategory] = useState(UPLOAD_CATEGORIES[0].key);
   const [rocFiles, setRocFiles] = useState([]);
   const [extracting, setExtracting] = useState(false);
   const [extracted, setExtracted] = useState(null);
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
+  const [warnings, setWarnings] = useState([]);
   const [conflicts, setConflicts] = useState([]);
+  const activeCategory = UPLOAD_CATEGORIES.find((c) => c.key === category);
+
+  const switchCategory = (key) => {
+    setCategory(key);
+    setRocFiles([]);
+    setExtracted(null); setResults([]); setErrors([]); setWarnings([]); setConflicts([]);
+  };
 
   // ROC Forms filing-extraction path — separate endpoint/parser from the
   // Master Data tab (see MasterDataTab above / /master-data/fetch below).
+  // filing_category tells the backend which lane this batch was dropped
+  // into, so it can reject a wrong-form-type or wrong-year upload instead
+  // of reading and applying it.
   const handleUpload = async (apply) => {
-    if (!rocFiles.length) { toast.error('Choose at least one ROC form or MGT-7/MGT-7A attachment first'); return; }
+    if (!rocFiles.length) { toast.error('Choose at least one file for this lane first'); return; }
     setExtracting(true);
     try {
       const fd = new FormData();
       rocFiles.forEach((file) => fd.append('files', file));
       fd.append('source_type', 'roc');
+      fd.append('filing_category', category);
       fd.append('apply', apply ? 'true' : 'false');
       const { data } = await api.post(`/roc-sphere/companies/${company.id}/upload-master-data`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -2412,16 +1824,17 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
       setExtracted(data.extracted);
       setResults(data.results || []);
       setErrors(data.errors || []);
+      setWarnings(data.warnings || []);
       setConflicts(data.conflicts || []);
       const hasFields = Object.keys(data.extracted || {}).some((k) => !k.startsWith('_') && (
         !['annual_return_data', 'audit_report_data', 'board_report_data'].includes(k)
         || Object.keys(data.extracted[k] || {}).length
       ));
       if (apply && data.applied) {
-        toast.success('Company master updated from uploaded ROC forms');
+        toast.success(`Company master updated from ${activeCategory.label}`);
         onApplied();
       } else if (!hasFields) {
-        toast.error(data.message || 'Could not extract fields — please enter manually');
+        toast.error(data.message || (data.errors?.[0]) || 'Could not extract fields — please enter manually');
       } else {
         toast.success('Fields extracted — review below, then Apply');
       }
@@ -2437,27 +1850,38 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
     <div className="space-y-4">
       <h3 className={`text-sm font-semibold ${text}`}>Upload ROC Forms</h3>
       <p className={`text-xs ${muted}`}>
-         Upload AOC-4, MGT-7/MGT-7A, the separate MGT-7A shareholder XLSM, Board's/Auditor's Report extracts, DIR-12, ADT-1, INC-22, PAS-3, MGT-14 or
-         DPT-3 acknowledgement files — multiple PDFs and spreadsheets are merged into one extraction, and each field is only ever
-        pulled from its statutory source form: the <strong>Directors &amp; Shareholders register comes only from
-        MGT-7 / MGT-7A</strong>, <strong>financial data and the Statutory Auditor come only from AOC-4</strong>, and
-        general Company Master fields (CIN, name, address, capital, AGM/board meeting dates) are read from whichever
-        recognised form states them. A non-MGT-7/7A form can never add or change a director or shareholder row.
-        Applied details are saved in both ROC Company Master and the linked Client record, and feed straight into
-        the Compliance Checklist and Applicable Compliances tabs.{' '}
-        For the MCA Company/LLP Master Data export (PDF/XLSX/CSV), use the <strong>Master Data</strong> tab instead —
-        that's a separate, dedicated extraction path.
+        Three separate lanes, so a form is only ever read against the year it's actually for: the{' '}
+        <strong>Directors &amp; Shareholders register comes only from MGT-7 / MGT-7A</strong>,{' '}
+        <strong>financial data and the Statutory Auditor come only from AOC-4</strong>, and each lane below rejects
+        a form that doesn't belong to it — wrong form type, or a filing year that doesn't match what that lane
+        expects for today's date. Applied details are saved in both ROC Company Master and the linked Client
+        record, and feed straight into the Compliance Checklist and Applicable Compliances tabs.{' '}
+        For the MCA Company/LLP Master Data export (PDF/XLSX/CSV), use the <strong>Master Data</strong> tab instead.
       </p>
+
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Upload lane">
+        {UPLOAD_CATEGORIES.map((c) => (
+          <button key={c.key} onClick={() => switchCategory(c.key)} role="tab" aria-selected={category === c.key}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition
+              ${category === c.key
+                ? 'bg-blue-600 border-blue-600 text-white'
+                : isDark ? 'border-slate-700 text-slate-300 hover:border-blue-500/60' : 'border-slate-300 text-slate-600 hover:border-blue-400'}`}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+
       <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
-        <p className={`text-xs font-semibold ${text} mb-1`}>ROC Forms (filing extraction)</p>
-         <p className={`text-[11px] ${muted} mb-3`}>PDF, XLSX, XLSM or CSV — the MGT-7A shareholder attachment is read without running macros.</p>
-         <input type="file" multiple accept=".pdf,.xlsx,.xlsm,.xls,.csv" onChange={(e) => setRocFiles(Array.from(e.target.files || []))}
+        <p className={`text-xs font-semibold ${text} mb-1`}>{activeCategory.label}</p>
+        <p className={`text-[11px] ${muted} mb-3`}>{activeCategory.hint}</p>
+        <input key={category} type="file" multiple accept={activeCategory.accept}
+          onChange={(e) => setRocFiles(Array.from(e.target.files || []))}
           className={`text-xs ${muted}`} />
-        {!!rocFiles.length && <p className={`text-xs mt-2 ${text}`}>{rocFiles.length} ROC form(s) selected</p>}
+        {!!rocFiles.length && <p className={`text-xs mt-2 ${text}`}>{rocFiles.length} file(s) selected for {activeCategory.label}</p>}
         <div className="flex gap-2 mt-3">
           <button onClick={() => handleUpload(false)} disabled={extracting || !rocFiles.length}
             className={`px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 disabled:opacity-60 ${isDark ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-700'}`}>
-            {extracting ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Preview ROC Forms
+            {extracting ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />} Preview
           </button>
           <button onClick={() => handleUpload(true)} disabled={extracting || !rocFiles.length}
             className="px-3 py-1.5 rounded-lg text-xs bg-blue-600 text-white flex items-center gap-1 disabled:opacity-60">
@@ -2467,10 +1891,20 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
       </div>
 
       {!!errors.length && (
-        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-red-700/40 bg-red-900/10' : 'border-red-200 bg-red-50'}`}>
+          <p className={`text-xs font-semibold mb-1 ${isDark ? 'text-red-300' : 'text-red-800'}`}>Skipped — not applied</p>
           {errors.map((e, i) => (
-            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-red-300' : 'text-red-700'}`}>
               <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {e}
+            </p>
+          ))}
+        </div>
+      )}
+      {!!warnings.length && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
+          {warnings.map((w, i) => (
+            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+              <Info size={12} className="shrink-0 mt-0.5" /> {w}
             </p>
           ))}
         </div>
@@ -2485,7 +1919,7 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
       {extracted && (
         <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
           <p className={`text-xs font-semibold ${muted} mb-2`}>Extracted fields</p>
-           {results.length > 0 && <p className={`text-[11px] ${muted} mb-2`}>{results.map((r) => `${r.filename} (${r.source_type}${r.shareholder_rows ? `, ${r.shareholder_rows} shareholder rows` : ''}${r.director_rows ? `, ${r.director_rows} director rows` : ''})`).join(' · ')}</p>}
+           {results.length > 0 && <p className={`text-[11px] ${muted} mb-2`}>{results.map((r) => `${r.filename} (${r.source_type}${r.document_fy ? `, FY ${r.document_fy}` : ''}${r.shareholder_rows ? `, ${r.shareholder_rows} shareholder rows` : ''}${r.director_rows ? `, ${r.director_rows} director rows` : ''})`).join(' · ')}</p>}
           <div className="grid sm:grid-cols-2 gap-2 text-xs">
             {Object.entries(extracted).filter(([k, v]) => !k.startsWith('_') && !Array.isArray(v) && typeof v !== 'object' && !['financial_data', 'auditor'].includes(k)).map(([k, v]) => (
               <div key={k} className="flex justify-between gap-2">
