@@ -875,7 +875,12 @@ async def get_company(company_id: str, current_user: User = Depends(VIEW)):
     # Client contact persons are the source for the initial ROC people list.
     # Preserve any richer ROC edits, but backfill empty registers from Client.
     if c.get("client_id"):
-        client = await CLIENTS.find_one({"id": c["client_id"]}, {"_id": 0, "contact_persons": 1})
+        client = await CLIENTS.find_one({"id": c["client_id"]}, {"_id": 0})
+        if client and not _company_email(c):
+            for key in ("email", "company_email", "email_address", "registered_office_email"):
+                if client.get(key):
+                    c["email"] = client.get(key)
+                    break
         contacts = (client or {}).get("contact_persons") or []
         if contacts:
             if c.get("category") == "llp":
