@@ -509,7 +509,7 @@ export default function WebsiteBuilder() {
             ) : renderToolPanel()}
           </div>
         </div>
-      )}      </div>
+      )}
     </div>
   </div>;
 }
