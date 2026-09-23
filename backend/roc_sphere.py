@@ -3590,4 +3590,6 @@ async def list_generated_documents(company_id: str, current_user: User = Depends
     items = [x async for x in cursor]
     for x in items:
         x.pop("_id", None)
+        x["downloadable"] = bool(x.get("content_b64"))
+        x.pop("content_b64", None)
     return items
