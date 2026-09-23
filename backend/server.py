@@ -9610,7 +9610,7 @@ _ZB_ROC = re.compile(r"Registrar of Companies,\s*([A-Za-z .]+?)\.", re.I)
 _ZB_DIRECTORS = re.compile(r"Directors? of [^.]*?\bare\s+(.+?)\.", re.I)
 _ZB_PARTNERS = re.compile(r"Designated Partners of [^.]*?\bare\s+(.+?)\.", re.I)
 _ZB_EMAIL = re.compile(r"Email address is\s+([\w.+\-]+@[\w.\-]+\.\w+)", re.I)
-_ZB_ADDRESS_PIN = re.compile(r"registered address is\s+(.+?)\s*-\s*(\d{6})", re.I)
+_ZB_ADDRESS_PIN = re.compile(r"registered address is\s+(.+?)(?:\s*,?\s*(?:India|IN))?\s*(?:-|,)\s*(\d{6})(?:\s*[-,]?\s*(?:India|IN))?(?:\.|$)", re.I)
 _ZB_STATUS = re.compile(
     r"Current status of [^.]*?\bis\s*-\s*([A-Za-z][A-Za-z /]*?)\.?\s*$", re.I
 )
@@ -9705,6 +9705,9 @@ def _parse_zaubacorp_summary(text: str, company_name: str = "") -> dict:
     out["address"] = address
     out["city"] = city
     out["state"] = state
+    # Keep both aliases for backward compatibility.  The Client form's
+    # primary address field uses "pin"; older GST flows use "gst_pin".
+    out["pin"] = pin
     out["gst_pin"] = pin
 
     m = _ZB_STATUS.search(text)
@@ -10210,10 +10213,89 @@ async def fetch_mca_details(
                     merged[key] = value
 
         # Normalise common aliases expected by the client form.
-        if not merged.get("cin") and is_cin:
-            merged["cin"] = q_upper
-        if not merged.get("llpin") and is_llpin:
-            merged["llpin"] = q_upper
+        # Different upstream company-master sources use different labels for
+        # the same legal field.  Canonicalise them here so the frontend never
+        # has to guess which source supplied the value.
+        def _first_non_empty(*keys):
+            for key in keys:
+                value = merged.get(key)
+                if value not in (None, "", [], {}):
+                    return value
+            return ""
+
+        merged["company_name"] = _first_non_empty(
+            "company_name", "name", "legal_name", "companyName"
+        ) or q
+        merged["cin"] = str(_first_non_empty(
+            "cin", "cin_number", "corporate_identity_number", "corporate_identification_number"
+        ) or (q_upper if is_cin else "")).strip().upper()
+        merged["llpin"] = str(_first_non_empty(
+            "llpin", "llpin_number", "llp_identification_number"
+        ) or (q_upper if is_llpin else "")).strip().upper()
+        merged["date_of_incorporation"] = _first_non_empty(
+            "date_of_incorporation", "incorporation_date", "date_of_registration"
+        )
+        merged["address"] = _first_non_empty(
+            "address", "registered_address", "registered_office_address",
+            "registered_office", "registeredAddress"
+        )
+        merged["city"] = _first_non_empty("city", "registered_city", "registeredCity")
+        merged["state"] = _first_non_empty(
+            "state", "registered_state", "registeredState", "registration_state"
+        )
+        merged["pin"] = str(_first_non_empty(
+            "pin", "pincode", "postal_code", "postalCode", "zip", "zip_code",
+            "registered_pin", "registered_pincode", "gst_pin"
+        ) or "").strip()
+        if not merged["pin"] and merged.get("address"):
+            pin_match = re.search(r"\b(\d{6})\b", str(merged["address"]))
+            if pin_match:
+                merged["pin"] = pin_match.group(1)
+        # Keep the GST alias as a compatibility field while "pin" is the
+        # canonical primary-address PIN consumed by the Client form.
+        merged["gst_pin"] = merged.get("gst_pin") or merged.get("pin") or ""
+        merged["email"] = _first_non_empty("email", "email_id", "emailId")
+        merged["pan"] = _first_non_empty("pan", "pan_number", "panNumber")
+        merged["registration_number"] = _first_non_empty(
+            "registration_number", "registration_no", "registrationNumber"
+        )
+        merged["roc"] = _first_non_empty("roc", "roc_name", "registrar_of_companies")
+        merged["roc_name"] = _first_non_empty("roc_name", "roc", "registrar_of_companies")
+        merged["rd_name"] = _first_non_empty("rd_name", "rd", "rd_region")
+        merged["company_category"] = _first_non_empty(
+            "company_category", "category", "company_class", "class_of_company"
+        )
+        merged["company_subcategory"] = _first_non_empty(
+            "company_subcategory", "subcategory", "company_sub_category"
+        )
+        merged["active_compliance"] = _first_non_empty(
+            "active_compliance", "active_compliance_status"
+        )
+        merged["authorized_capital"] = _first_non_empty(
+            "authorized_capital", "authorised_capital", "authorized_share_capital"
+        )
+        merged["paid_up_capital"] = _first_non_empty(
+            "paid_up_capital", "paidup_capital", "paid_up_share_capital"
+        )
+        merged["last_agm_date"] = _first_non_empty(
+            "last_agm_date", "date_of_last_agm", "agm_date"
+        )
+        merged["balance_sheet_date"] = _first_non_empty(
+            "balance_sheet_date", "date_of_balance_sheet", "last_balance_sheet_date"
+        )
+        merged["books_address"] = _first_non_empty(
+            "books_address", "books_of_account_address",
+            "address_at_which_books_of_account_are_maintained"
+        )
+        merged["company_status"] = _first_non_empty(
+            "company_status", "status", "companyStatus"
+        )
+        if not isinstance(merged.get("charges"), list):
+            merged["charges"] = []
+        if not isinstance(merged.get("loan_details"), list):
+            merged["loan_details"] = []
+        if not isinstance(merged.get("directors"), list):
+            merged["directors"] = []
         if not merged.get("client_type"):
             merged["client_type"] = _detect_entity_type_from_name(merged.get("company_name", ""))
         merged["mca_fetch_date"] = datetime.now(timezone.utc).date().isoformat()
@@ -12245,6 +12327,7 @@ async def create_client(
             "cin",
             "llpin",
             "mca_fetch_date",
+            "mca_company_status",
             "date_of_incorporation",
             "pincode",
             "mca_registration_number",
@@ -12767,6 +12850,7 @@ async def update_client(
         "cin",
         "llpin",
         "mca_fetch_date",
+        "mca_company_status",
         "pincode",
         "mca_registration_number",
         "mca_roc_name",
