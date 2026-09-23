@@ -1391,7 +1391,7 @@ def parse_dpt3(text: str) -> Dict[str, Any]:
     by the filed form and keyed by financial/reporting period.
     """
     out: Dict[str, Any] = {"filing_source": "DPT-3", "form_no": "DPT-3"}
-    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    lines = [re.sub(r"\s+", " ", x).strip() for x in text.splitlines()]
     flat = "\n".join(lines)
 
     def first(patterns: List[str]) -> Optional[str]:
@@ -1531,7 +1531,7 @@ def parse_adt1(text: str) -> Dict[str, Any]:
     Company Master.auditor. Checkbox-only choices are not guessed when the
     PDF text stream does not encode which radio button is selected.
     """
-    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    lines = [re.sub(r"\s+", " ", x).strip() for x in text.splitlines()]
     out: Dict[str, Any] = {
         "filing_source": "ADT-1",
         "form_no": "ADT-1",
@@ -1662,7 +1662,7 @@ def parse_audit_report_shareholders(text: str) -> List[Dict[str, Any]]:
     contain an identifiable holder table, return [] and leave the prior MGT-7
     register unchanged rather than inventing or clearing shareholders."""
     rows: List[Dict[str, Any]] = []
-    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    lines = [re.sub(r"\s+", " ", x).strip() for x in text.splitlines()]
     in_section = False
     for line in lines:
         if re.search(r"shareholding pattern|pattern of shareholding|shareholders|share capital", line, re.I):
@@ -1677,13 +1677,13 @@ def parse_audit_report_shareholders(text: str) -> List[Dict[str, Any]]:
         # Holder Name | No. of Shares | % / PAN. Keep matching deliberately
         # conservative so ordinary narrative text is never treated as a holder.
         m = re.match(
-            r"^([A-Za-z][A-Za-z .,&'()/-]{2,100})\\s+(?:([A-Z]{5}\\d{4}[A-Z])\\s+)?([\\d,]+)(?:\\s+([\\d.]+)\\s*%?)?$",
+            r"^([A-Za-z][A-Za-z .,&'()/-]{2,100})\s+(?:([A-Z]{5}\d{4}[A-Z])\s+)?([\d,]+)(?:\s+([\d.]+)\s*%?)?$",
             line,
             re.I,
         )
         if not m:
             continue
-        name = re.sub(r"\\s+", " ", m.group(1)).strip(" .-")
+        name = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
         if re.search(r"total|particulars|promoter|public|equity shares|authorised|issued|paid", name, re.I):
             continue
         shares = _num(m.group(3).replace(",", ""))
