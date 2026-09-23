@@ -254,8 +254,247 @@ class ResolutionItem(BaseModel):
     seconded_by: Optional[str] = None
 
 
+MEETING_DRAFT_TEMPLATES = [
+    {
+        "key": "routine_opening_bank_account",
+        "category": "Finance & Banking",
+        "label": "Opening / Operation of Bank Account",
+        "legal_basis": "Companies Act, 2013 — Section 179(3) and applicable banking/authorisation provisions",
+        "agenda": "To consider and approve opening / operation of the Company's bank account.",
+        "resolution": "pursuant to the applicable provisions of the Companies Act, 2013 and the Articles of Association, approval be and is hereby accorded for opening and operating the Company's bank account with {bank_name}, and the authorised signatories be and are hereby authorised to operate the account and execute all documents required by the bank",
+    },
+    {
+        "key": "appointment_md",
+        "category": "Directors & KMP",
+        "label": "Appointment of Managing Director",
+        "legal_basis": "Companies Act, 2013 — Sections 196, 197, 203 and Schedule V; applicable Rules",
+        "agenda": "To consider appointment of a Managing Director.",
+        "resolution": "pursuant to Sections 196, 197 and 203, Schedule V and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded, subject to such shareholder / regulatory approvals as may be required, for appointment of {person_name} as Managing Director on the terms placed before the Board",
+    },
+    {
+        "key": "reappointment_md",
+        "category": "Directors & KMP",
+        "label": "Re-appointment of Managing Director",
+        "legal_basis": "Companies Act, 2013 — Sections 196, 197 and Schedule V; applicable Rules",
+        "agenda": "To consider re-appointment of the Managing Director.",
+        "resolution": "pursuant to the applicable provisions of the Companies Act, 2013 and subject to the requisite approvals, approval be and is hereby accorded for re-appointment of {person_name} as Managing Director on the terms and conditions placed before the Board",
+    },
+    {
+        "key": "appointment_cfo",
+        "category": "Directors & KMP",
+        "label": "Appointment of Chief Financial Officer",
+        "legal_basis": "Companies Act, 2013 — Section 203 and applicable Rules",
+        "agenda": "To consider appointment of the Chief Financial Officer.",
+        "resolution": "pursuant to Section 203 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded for appointment of {person_name} as Chief Financial Officer of the Company on the terms placed before the Board",
+    },
+    {
+        "key": "appointment_cs",
+        "category": "Directors & KMP",
+        "label": "Appointment of Whole-time Company Secretary",
+        "legal_basis": "Companies Act, 2013 — Section 203 and applicable Rules",
+        "agenda": "To consider appointment of the Whole-time Company Secretary.",
+        "resolution": "pursuant to Section 203 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded for appointment of {person_name} as Whole-time Company Secretary of the Company on the terms placed before the Board",
+    },
+    {
+        "key": "financial_statements",
+        "category": "Accounts & Audit",
+        "label": "Approval of Annual Financial Statements",
+        "legal_basis": "Companies Act, 2013 — Section 134 and applicable provisions relating to financial statements",
+        "agenda": "To consider and approve the audited financial statements for the financial year ended {fy_end}.",
+        "resolution": "pursuant to the applicable provisions of the Companies Act, 2013, the audited financial statements of the Company for the financial year ended {fy_end}, together with the reports thereon, as placed before the Board, be and are hereby approved",
+    },
+    {
+        "key": "statutory_auditor_report",
+        "category": "Accounts & Audit",
+        "label": "Take Note of Statutory Auditor's Report",
+        "legal_basis": "Companies Act, 2013 — Sections 134 and 143 and applicable Rules",
+        "agenda": "To take note of the Statutory Auditor's Report on the financial statements.",
+        "resolution": "the Statutory Auditor's Report on the financial statements of the Company for the financial year ended {fy_end}, as placed before the Board, be and is hereby taken on record",
+    },
+    {
+        "key": "secretarial_auditor",
+        "category": "Accounts & Audit",
+        "label": "Appointment of Secretarial Auditor",
+        "legal_basis": "Companies Act, 2013 — Section 204 and applicable Rules",
+        "agenda": "To consider appointment of Secretarial Auditor for the financial year.",
+        "resolution": "pursuant to Section 204 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded for appointment of {auditor_name} as Secretarial Auditor for the financial year {financial_year}, on the terms placed before the Board",
+    },
+    {
+        "key": "internal_auditor",
+        "category": "Accounts & Audit",
+        "label": "Appointment of Internal Auditor",
+        "legal_basis": "Companies Act, 2013 — Section 138 and applicable Rules",
+        "agenda": "To consider appointment of Internal Auditor for the financial year.",
+        "resolution": "pursuant to Section 138 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded for appointment of {auditor_name} as Internal Auditor for the financial year {financial_year}, on the terms placed before the Board",
+    },
+    {
+        "key": "interim_dividend",
+        "category": "Dividend",
+        "label": "Declaration of Interim Dividend",
+        "legal_basis": "Companies Act, 2013 — Section 123 and applicable Rules",
+        "agenda": "To consider declaration of Interim Dividend on Equity Shares.",
+        "resolution": "pursuant to Section 123 and other applicable provisions of the Companies Act, 2013, an Interim Dividend of Rs. {dividend_per_share} per equity share be and is hereby declared out of the profits available for distribution, subject to applicable statutory requirements",
+    },
+    {
+        "key": "recommend_final_dividend",
+        "category": "Dividend",
+        "label": "Recommendation of Final Dividend",
+        "legal_basis": "Companies Act, 2013 — Section 123 and applicable Rules",
+        "agenda": "To consider recommendation of dividend on Equity Shares.",
+        "resolution": "pursuant to Section 123 and other applicable provisions of the Companies Act, 2013, a dividend of Rs. {dividend_per_share} per equity share be and is hereby recommended for consideration by the members at the ensuing Annual General Meeting",
+    },
+    {
+        "key": "csr1",
+        "category": "CSR",
+        "label": "Approval for Filing of Form CSR-1",
+        "legal_basis": "Companies Act, 2013 — Section 135 and applicable CSR Rules",
+        "agenda": "To consider approval for filing of Form CSR-1.",
+        "resolution": "pursuant to Section 135 of the Companies Act, 2013 and the applicable CSR Rules, approval be and is hereby accorded for filing Form CSR-1 and for authorising the designated person to complete and submit the filing and related documents",
+    },
+    {
+        "key": "csr_policy_adoption",
+        "category": "CSR",
+        "label": "Approval and Adoption of CSR Policy",
+        "legal_basis": "Companies Act, 2013 — Section 135 and Schedule VII; applicable CSR Rules",
+        "agenda": "To consider and approve the Corporate Social Responsibility Policy.",
+        "resolution": "pursuant to Section 135 of the Companies Act, 2013 and the applicable CSR Rules, the Corporate Social Responsibility Policy placed before the Board be and is hereby approved and adopted",
+    },
+    {
+        "key": "csr_policy_amendment",
+        "category": "CSR",
+        "label": "Amendment of Existing CSR Policy",
+        "legal_basis": "Companies Act, 2013 — Section 135 and applicable CSR Rules",
+        "agenda": "To consider amendment to the existing CSR Policy.",
+        "resolution": "pursuant to Section 135 of the Companies Act, 2013 and the applicable CSR Rules, the amendments to the existing Corporate Social Responsibility Policy placed before the Board be and are hereby approved",
+    },
+    {
+        "key": "shareholders_agreement",
+        "category": "Corporate Governance",
+        "label": "Approval of Shareholders' Agreement",
+        "legal_basis": "Companies Act, 2013 and the Articles of Association; applicable contractual provisions",
+        "agenda": "To consider and approve the Shareholders' Agreement.",
+        "resolution": "the draft Shareholders' Agreement placed before the Board for identification be and is hereby approved, subject to such member / regulatory approvals as may be required, and the authorised persons be and are hereby authorised to execute and give effect to the same",
+    },
+    {
+        "key": "section_186_investment_loan_guarantee",
+        "category": "Finance & Investments",
+        "label": "Investment / Loan / Guarantee / Security under Section 186",
+        "legal_basis": "Companies Act, 2013 — Section 186 and applicable Rules",
+        "agenda": "To consider investment, loan, guarantee or provision of security under Section 186.",
+        "resolution": "pursuant to Section 186 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded for the proposed investment / loan / guarantee / security of {amount} in favour of {recipient}, subject to applicable statutory limits and approvals",
+    },
+    {
+        "key": "section_186_excess",
+        "category": "Finance & Investments",
+        "label": "Investment exceeding Section 186 limits — Members' Approval",
+        "legal_basis": "Companies Act, 2013 — Section 186(3) and applicable Rules",
+        "agenda": "To consider seeking members' approval for investment / loan / guarantee / security exceeding applicable Section 186 limits.",
+        "resolution": "subject to the provisions of Section 186(3) and other applicable provisions of the Companies Act, 2013, approval of the members by Special Resolution be sought for the proposed transaction of {amount} in relation to {recipient}",
+    },
+    {
+        "key": "conversion_private",
+        "category": "Corporate Actions",
+        "label": "Conversion of Public Company into Private Company",
+        "legal_basis": "Companies Act, 2013 — Sections 13 and 14 and applicable Rules",
+        "agenda": "To consider conversion of the Company from Public Limited to Private Limited.",
+        "resolution": "subject to the approval of the members and the Regional Director / other authority as applicable, approval be and is hereby accorded to initiate conversion of the Company from Public Limited to Private Limited and to take all consequential steps",
+    },
+    {
+        "key": "registered_office_shift",
+        "category": "Corporate Actions",
+        "label": "Shifting of Registered Office",
+        "legal_basis": "Companies Act, 2013 — Section 12 and applicable Rules",
+        "agenda": "To consider shifting of the Registered Office from {old_address} to {new_address}.",
+        "resolution": "pursuant to Section 12 and applicable Rules, approval be and is hereby accorded for shifting the Registered Office from {old_address} to {new_address}, subject to such approvals and filings as may be required",
+    },
+    {
+        "key": "borrowing_180",
+        "category": "Finance & Borrowings",
+        "label": "Borrowing beyond Section 180(1)(c) threshold",
+        "legal_basis": "Companies Act, 2013 — Section 180(1)(c) and applicable provisions",
+        "agenda": "To consider borrowing beyond the aggregate of paid-up capital, free reserves and securities premium.",
+        "resolution": "subject to the consent of the members by Special Resolution where required, approval be and is hereby accorded to borrow up to Rs. {amount}, subject to the applicable limits and conditions under Section 180(1)(c) of the Companies Act, 2013",
+    },
+    {
+        "key": "related_party_transaction",
+        "category": "Related Party",
+        "label": "Related Party Transaction",
+        "legal_basis": "Companies Act, 2013 — Sections 177 and 188 and applicable Rules",
+        "agenda": "To consider approval / noting of the proposed Related Party Transaction.",
+        "resolution": "pursuant to Sections 177 and 188 and other applicable provisions of the Companies Act, 2013, approval be and is hereby accorded to the proposed Related Party Transaction with {related_party}, on the terms placed before the Board and subject to applicable approvals",
+    },
+    {
+        "key": "policy_approval",
+        "category": "Policies & Compliance",
+        "label": "Approval / Adoption of Company Policy",
+        "legal_basis": "Companies Act, 2013 and applicable Rules; Articles of Association",
+        "agenda": "To consider and approve the {policy_name}.",
+        "resolution": "the {policy_name} placed before the Board be and is hereby approved and adopted with effect from {effective_date}, and the authorised officers be and are hereby authorised to implement the same",
+    },
+    {
+        "key": "policy_amendment",
+        "category": "Policies & Compliance",
+        "label": "Amendment of Company Policy",
+        "legal_basis": "Companies Act, 2013 and applicable Rules; Articles of Association",
+        "agenda": "To consider amendment to the {policy_name}.",
+        "resolution": "the proposed amendments to the {policy_name}, as placed before the Board, be and are hereby approved with effect from {effective_date}",
+    },
+    {
+        "key": "compliance_certificate",
+        "category": "Compliance",
+        "label": "Review of Compliance Certificate",
+        "legal_basis": "Companies Act, 2013, applicable Rules and Secretarial Standard-1",
+        "agenda": "To consider the Compliance Certificate covering laws applicable to the Company.",
+        "resolution": "the Compliance Certificate for the relevant period, as placed before the Board, be and is hereby taken on record after review of the compliance status and action points arising therefrom",
+    },
+    {
+        "key": "investments_borrowings_guarantees",
+        "category": "Finance & Compliance",
+        "label": "Review of Investments, Borrowings, Guarantees and Application of Funds",
+        "legal_basis": "Secretarial Standard-1 — illustrative agenda items; applicable Companies Act provisions",
+        "agenda": "To review investments, borrowings, corporate guarantees, sale of assets and sources and application of funds.",
+        "resolution": "the report on investments, borrowings, corporate guarantees, sale of assets and sources and application of funds, as placed before the Board, be and is hereby reviewed and taken on record",
+    },
+    {
+        "key": "secretarial_compliance",
+        "category": "Compliance",
+        "label": "Secretarial Compliance / Governance Review",
+        "legal_basis": "Companies Act, 2013 — Section 118(10) and Secretarial Standard-1",
+        "agenda": "To review compliance with applicable laws and governance requirements.",
+        "resolution": "the compliance and governance status report for the relevant period, including material statutory and secretarial matters, be and is hereby reviewed and taken on record, and the identified action points be followed up by the authorised officers",
+    },
+    {
+        "key": "share_transfer",
+        "category": "Shares & Members",
+        "label": "Approval of Share Transfers",
+        "legal_basis": "Companies Act, 2013 — Section 56 and applicable Rules; Articles of Association",
+        "agenda": "To consider and approve the share transfers placed before the Board.",
+        "resolution": "the share transfers listed in the papers placed before the Board be and are hereby approved, subject to verification of the transfer instruments, applicable stamp duty and statutory records, and the names of the transferees be entered in the Register of Members",
+    },
+    {
+        "key": "any_other_business",
+        "category": "General",
+        "label": "Any Other Item with Permission of the Chair",
+        "legal_basis": "Secretarial Standard-1 — agenda / supplementary business requirements",
+        "agenda": "To transact any other business with the permission of the Chair.",
+        "resolution": "the additional matter placed before the Board with the requisite consent of the Directors be and is hereby considered and approved / noted, as applicable",
+    },
+    {
+        "key": "audit_committee_rpt_omnibus",
+        "category": "Audit Committee",
+        "label": "Audit Committee Omnibus Approval — Related Party Transactions",
+        "legal_basis": "Companies Act, 2013 — Sections 177(4)(iv), 188 and applicable Rules; SEBI LODR where applicable",
+        "agenda": "To consider omnibus approval of Related Party Transactions for the financial year.",
+        "resolution": "pursuant to the applicable provisions governing the Audit Committee and Related Party Transactions, omnibus approval be and is hereby granted to the proposed transactions placed before the Committee, subject to the applicable statutory conditions and periodic review",
+    },
+]
+
+
 class BoardResolutionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_key: Optional[str] = None
+    template_values: Dict[str, Any] = Field(default_factory=dict)
+    custom_topic: Optional[str] = None
     meeting_date: str
     meeting_time: Optional[str] = "11:00 AM"
     venue: Optional[str] = "Registered Office of the Company"
@@ -266,6 +505,9 @@ class BoardResolutionRequest(BaseModel):
 
 class MeetingNoticeRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_key: Optional[str] = None
+    template_values: Dict[str, Any] = Field(default_factory=dict)
+    custom_topic: Optional[str] = None
     meeting_type: str = "board"      # board | agm | egm
     meeting_date: str
     meeting_time: Optional[str] = "11:00 AM"
@@ -277,6 +519,9 @@ class MeetingNoticeRequest(BaseModel):
 
 class MinutesRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
+    template_key: Optional[str] = None
+    template_values: Dict[str, Any] = Field(default_factory=dict)
+    custom_topic: Optional[str] = None
     meeting_type: str = "board"      # board | agm | egm
     meeting_date: str
     meeting_time: Optional[str] = "11:00 AM"
@@ -3439,6 +3684,35 @@ async def _log_doc(company_id: str, doc_type: str, filename: str, user: User, co
     if content:
         doc["content_b64"] = base64.b64encode(content).decode("ascii")
     await DOCS_LOG.insert_one(doc)
+
+
+@router.get("/meeting-draft-templates")
+async def meeting_draft_templates(current_user: User = Depends(VIEW)):
+    return {"templates": MEETING_DRAFT_TEMPLATES}
+
+
+def _resolve_meeting_template(template_key: Optional[str], values: Dict[str, Any], custom_topic: Optional[str]) -> Optional[Dict[str, str]]:
+    if custom_topic:
+        topic = custom_topic.strip()
+        if topic:
+            return {
+                "key": "custom",
+                "label": "Other",
+                "category": "Custom",
+                "legal_basis": "Custom item — insert the specific statutory provision(s), Rules, Articles and approvals applicable to the transaction before use.",
+                "agenda": topic,
+                "resolution": topic,
+            }
+    if not template_key:
+        return None
+    template = next((x for x in MEETING_DRAFT_TEMPLATES if x["key"] == template_key), None)
+    if not template:
+        raise HTTPException(400, "Invalid meeting draft template")
+    class SafeValues(dict):
+        def __missing__(self, key):
+            return f"{{{key}}}"
+    safe = SafeValues(values or {})
+    return {k: (v.format_map(safe) if isinstance(v, str) else v) for k, v in template.items()}
 
 
 @router.post("/companies/{company_id}/generate/board-resolution")
