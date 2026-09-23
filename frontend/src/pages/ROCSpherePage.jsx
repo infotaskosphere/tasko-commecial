@@ -1666,7 +1666,14 @@ function DraftTemplatePicker({ input, muted, onApply, mode = 'resolution' }) {
           <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Ready-made statutory / secretarial draft</p>
           <p className={`text-[10px] mt-0.5 ${muted}`}>Select an occasion. ROC Sphere will load the standard agenda and resolution wording; verify facts, Articles and current law before use.</p>
         </div>
-        {selected?.legal_basis && <span className="text-[9px] px-2 py-1 rounded bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900 text-blue-700 dark:text-blue-300 whitespace-nowrap">{selected.legal_basis}</span>}
+        {selected?.legal_basis && (
+          <span
+            title={selected.legal_basis}
+            className="min-w-0 max-w-[46%] shrink text-right text-[9px] px-2 py-1 rounded-none bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900 text-blue-700 dark:text-blue-300 truncate"
+          >
+            {selected.legal_basis}
+          </span>
+        )}
       </div>
 
       <div className="grid sm:grid-cols-[1fr_auto] gap-2">
