@@ -397,7 +397,7 @@ export default function ROCSpherePage() {
               ))}
             </div>
           )}
-        </div>
+        </aside>
 
         {/* ── Detail panel ─────────────────────────────────────────────── */}
         <main className="min-w-0 space-y-4">
