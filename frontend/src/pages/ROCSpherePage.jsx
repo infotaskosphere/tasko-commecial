@@ -479,7 +479,7 @@ export default function ROCSpherePage() {
                   {tab === 'masterdata' && <MasterDataTab company={company} isDark={isDark} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'directors' && <DirectorsTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
                   {tab === 'statutory' && <StatutoryRecordsTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('resolution')} />}
+                  {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={(type) => setTab(type === 'board' ? 'resolution' : 'general-resolution')} />}
                   {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('minutes')} />}
                   {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
                   {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
@@ -2006,8 +2006,10 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
             agenda_items: agendaText.split('\n').map((s) => s.trim()).filter(Boolean),
             special_business: specialBusiness,
           });
-          onNext();
-        }} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Board Resolution →</button>
+          onNext(meetingType);
+        }} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">
+          {meetingType === 'board' ? 'Continue to Board Resolution →' : 'Continue to General Meeting Resolution →'}
+        </button>
       </div>
       <MeetingDocumentsCard company={company} meetingType={meetingType} docType="notice" isDark={isDark} text={text} muted={muted} title="Past Notices of Meeting" />
     </div>
