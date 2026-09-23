@@ -6434,8 +6434,8 @@ export default function Clients() {
               variant="outline"
               onClick={handleDetectClientDuplicates}
               disabled={detectingDups || clients.length === 0}
-              className="h-9 px-4 text-sm !rounded-none gap-2 backdrop-blur-sm font-semibold transition-all disabled:opacity-40" style={{ borderRadius: 0 }}
-              style={{ backgroundColor: 'rgba(139,92,246,0.25)', borderColor: 'rgba(167,139,250,0.6)', color: '#ede9fe' }}
+              className="h-9 px-4 text-sm !rounded-none gap-2 backdrop-blur-sm font-semibold transition-all disabled:opacity-40"
+              style={{ borderRadius: 0, backgroundColor: 'rgba(139,92,246,0.25)', borderColor: 'rgba(167,139,250,0.6)', color: '#ede9fe' }}
             >
               {detectingDups
                 ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Scanning…</>
@@ -6446,8 +6446,8 @@ export default function Clients() {
               <Button
                 variant="outline"
                 onClick={() => { setEditingItrClient(null); setItrDialogOpen(true); }}
-                className="h-9 px-4 text-sm !rounded-none gap-2 backdrop-blur-sm font-semibold transition-all" style={{ borderRadius: 0 }}
-                style={{ backgroundColor: 'rgba(13,115,119,0.25)', borderColor: 'rgba(20,184,166,0.6)', color: '#ccfbf1' }}
+                className="h-9 px-4 text-sm !rounded-none gap-2 backdrop-blur-sm font-semibold transition-all"
+                style={{ borderRadius: 0, backgroundColor: 'rgba(13,115,119,0.25)', borderColor: 'rgba(20,184,166,0.6)', color: '#ccfbf1' }}
               >
                 <FileText className="h-3.5 w-3.5" /> + ITR Client
               </Button>
