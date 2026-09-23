@@ -136,6 +136,7 @@ export default function ROCSpherePage() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('master');
   const [showNewCompany, setShowNewCompany] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [search, setSearch] = useState('');
   const [companyTypeFilter, setCompanyTypeFilter] = useState('all');
   const [syncing, setSyncing] = useState(false);
@@ -346,7 +347,7 @@ export default function ROCSpherePage() {
           ) : (
             <div className="space-y-1 max-h-[60vh] overflow-y-auto">
               {filteredCompanies.map((c) => (
-                <button key={c.id} onClick={() => setSelectedId(c.id)}
+                <button key={c.id} onClick={() => { const changed = selectedId !== c.id; setSelectedId(c.id); if (changed) setShowWizard(true); }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition
                     ${selectedId === c.id ? 'bg-blue-600 text-white' : isDark ? 'hover:bg-slate-700/60 text-slate-200' : 'hover:bg-slate-100 text-slate-700'}`}>
                   <span className="truncate">
@@ -376,6 +377,9 @@ export default function ROCSpherePage() {
                 <div className="flex items-center gap-1">
                   <button onClick={deleteCompany} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
                     <Trash2 size={13} /> Remove
+                  </button>
+                  <button onClick={() => setShowWizard(true)} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
+                    <Zap size={13} /> Guided Filing
                   </button>
                   <button onClick={() => setTab('uploads')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
                     <Upload size={13} /> Upload ROC Forms
@@ -432,6 +436,15 @@ export default function ROCSpherePage() {
           )}
         </div>
       </div>
+
+      {showWizard && company && (
+        <GuidedFilingWizard
+          company={company} isDark={isDark} text={text} muted={muted}
+          onClose={() => setShowWizard(false)}
+          onApplied={() => loadOne(company.id)}
+          onGoToTab={(t) => setTab(t)}
+        />
+      )}
 
       {showNewCompany && (
         <NewCompanyModal
@@ -899,6 +912,270 @@ function CSPracticeAutomationTab({ company, plan, tasks, users, loading, isDark,
 
 function cardStyle(isDark) {
   return isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-white border-slate-200';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Guided Filing wizard — pops up on selecting a client and walks the user
+ * through the ROC Sphere filing sequence step by step:
+ *   1. Master Data (MCA Company/LLP Master Data export)
+ *   2. Annual Filing Forms of the previous year (ADT-1, AOC-4, MGT-7/7A —
+ *      uploaded together in one go)
+ *   3. Forms filed during the year (DPT-3, MSME-1 and other event forms)
+ *   4. Audit Reports (Board's Report / Auditor's Report extracts)
+ *   5. Applicable Compliances — auto-computed from everything uploaded
+ *   6. Draft AOC-4 and MGT-7/MGT-7A working papers, ready to download
+ * Every upload step reuses the same extraction endpoints as the Master
+ * Data / Upload ROC Forms tabs, so anything applied here shows up there
+ * too (and vice versa) — this is a guided front door, not a separate
+ * data path.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+const WIZARD_STEPS = [
+  { key: 'masterdata', title: 'Master Data', subtitle: 'Latest MCA Company/LLP Master Data export' },
+  { key: 'annual', title: 'Annual Filing Forms', subtitle: "Previous year's ADT-1, AOC-4, MGT-7/MGT-7A — all in one go" },
+  { key: 'inyear', title: 'Forms Filed During the Year', subtitle: 'DPT-3, MSME-1 and other event-based forms' },
+  { key: 'audit', title: 'Audit Reports', subtitle: "Board's Report / Auditor's Report extracts" },
+  { key: 'compliance', title: 'Applicable Compliances', subtitle: 'Auto-computed from everything uploaded so far' },
+  { key: 'draft', title: 'Draft AOC-4 & MGT-7/MGT-7A', subtitle: 'Download working papers for review' },
+];
+
+function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceType = 'roc', onApplied }) {
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const upload = async () => {
+    if (!files.length) { toast.error('Choose at least one file first'); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      if (sourceType === 'roc') {
+        files.forEach((f) => fd.append('files', f));
+        fd.append('source_type', 'roc');
+        fd.append('apply', 'true');
+        const { data } = await api.post(`/roc-sphere/companies/${company.id}/upload-master-data`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setResult(data);
+        if (data.applied) {
+          toast.success('Uploaded and applied to Company Master');
+          onApplied();
+        } else {
+          toast.error(data.message || 'Could not extract fields — you can continue and fix this later');
+        }
+      } else {
+        files.forEach((f) => fd.append('files', f));
+        const { data } = await api.post(`/roc-sphere/companies/${company.id}/master-data/fetch`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setResult(data);
+        if (data.applied) {
+          toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`);
+          onApplied();
+        } else {
+          toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
+        }
+      }
+    } catch (e) {
+      toast.error(await parseBlobError(e) || 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className={`text-xs ${muted}`}>{hint}</p>
+      <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
+        <input type="file" multiple accept={accept} onChange={(e) => setFiles(Array.from(e.target.files || []))}
+          className={`text-xs ${muted}`} />
+        {!!files.length && <p className={`text-xs mt-2 ${text}`}>{files.length} file(s) selected</p>}
+        <button onClick={upload} disabled={busy || !files.length}
+          className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-blue-600 text-white flex items-center gap-1 disabled:opacity-60">
+          {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload &amp; Apply
+        </button>
+      </div>
+      {!!result?.errors?.length && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
+          {result.errors.map((e, i) => (
+            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {e}
+            </p>
+          ))}
+        </div>
+      )}
+      {result?.results?.length > 0 && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-emerald-700/40 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50'}`}>
+          <p className={`text-[11px] flex items-center gap-1.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+            <CheckCircle2 size={12} /> {result.results.map((r) => `${r.filename} (${r.source_type})`).join(' · ')}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WizardComplianceStep({ company, isDark, text, muted }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const { data: d } = await api.get(`/roc-sphere/companies/${company.id}/applicable-compliances`);
+        setData(d);
+      } catch { /* non-fatal */ } finally { setLoading(false); }
+    })();
+  }, [company.id]);
+
+  if (loading) return <div className="flex justify-center py-8"><Loader2 className="animate-spin" size={18} /></div>;
+  if (!data) return <p className={`text-xs ${muted}`}>Could not load applicable compliances.</p>;
+
+  return (
+    <div className="space-y-3">
+      <p className={`text-xs ${muted}`}>
+        Based on everything uploaded so far — <span className={text}>{data.total_applicable}</span> of{' '}
+        {data.total_forms_tracked} tracked forms currently apply to {data.company_name}
+        {data.is_small_company != null && (data.is_small_company ? ' (Small Company)' : '')}.
+      </p>
+      <div className="space-y-2 max-h-[40vh] overflow-y-auto">
+        {(data.groups || []).map((g) => (
+          <div key={g.frequency} className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+            <p className={`text-xs font-semibold mb-1.5 ${text}`}>{g.frequency}</p>
+            <div className="space-y-1">
+              {g.items.map((item, i) => (
+                <div key={i} className="flex justify-between gap-2 text-[11px]">
+                  <span className={text}>{item.form}</span>
+                  <span className={muted}>{item.due_date_rule}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WizardDraftStep({ company, isDark, text, muted }) {
+  const [downloading, setDownloading] = useState('');
+  const download = async (kind) => {
+    setDownloading(kind);
+    try {
+      const res = await api.get(`/roc-sphere/companies/${company.id}/generate/${kind === 'aoc4' ? 'aoc-4' : 'mgt-7'}`, { responseType: 'blob' });
+      const cd = res.headers['content-disposition'] || '';
+      const match = cd.match(/filename="?([^"]+)"?/);
+      triggerBlobDownload(res.data, match ? match[1] : `${kind}.docx`);
+      toast.success('Draft downloaded');
+    } catch (e) {
+      toast.error(await parseBlobError(e) || 'Could not generate draft');
+    } finally {
+      setDownloading('');
+    }
+  };
+  return (
+    <div className="space-y-3">
+      <p className={`text-xs ${muted}`}>
+        These drafts are assembled from whatever's been uploaded and applied so far (Master Data, Annual Filing
+        Forms, in-year forms and audit reports). Review every figure and entry before filing on the MCA V3 portal.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <button onClick={() => download('aoc4')} disabled={!!downloading}
+          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60">
+          {downloading === 'aoc4' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Draft AOC-4
+        </button>
+        <button onClick={() => download('mgt7')} disabled={!!downloading}
+          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1.5 disabled:opacity-60">
+          {downloading === 'mgt7' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Draft MGT-7 / MGT-7A
+        </button>
+      </div>
+      <p className={`text-[11px] ${muted}`}>
+        These also stay available any time afterwards from the Filing Desk tab.
+      </p>
+    </div>
+  );
+}
+
+function GuidedFilingWizard({ company, isDark, text, muted, onClose, onApplied, onGoToTab }) {
+  const [step, setStep] = useState(0);
+  const last = step === WIZARD_STEPS.length - 1;
+  const s = WIZARD_STEPS[step];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className={`w-full max-w-2xl rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} shadow-xl max-h-[90vh] flex flex-col`}>
+        <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+          <div>
+            <p className={`text-[11px] uppercase tracking-wide font-semibold ${muted}`}>Guided Filing · Step {step + 1} of {WIZARD_STEPS.length}</p>
+            <h3 className={`text-base font-bold ${text}`}>{s.title}</h3>
+            <p className={`text-xs ${muted}`}>{s.subtitle}</p>
+          </div>
+          <button onClick={onClose} className={`p-1.5 rounded-lg ${isDark ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
+            <X size={16} className={muted} />
+          </button>
+        </div>
+
+        <div className={`px-5 py-1.5 flex gap-1 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+          {WIZARD_STEPS.map((st, i) => (
+            <div key={st.key} className={`h-1 flex-1 rounded-full my-2 ${i <= step ? 'bg-blue-600' : isDark ? 'bg-slate-700' : 'bg-slate-200'}`} />
+          ))}
+        </div>
+
+        <div className="p-5 overflow-y-auto flex-1">
+          <p className={`text-xs mb-3 ${text}`}>Company: <strong>{company.company_name}</strong></p>
+          {s.key === 'masterdata' && (
+            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
+              sourceType="masterdata" accept=".pdf,.xlsx,.xls,.csv"
+              hint='Upload the MCA "View Company/LLP Master Data" export. Company Master fields and the Director/Signatory register are fetched and applied automatically.'
+              onApplied={onApplied} />
+          )}
+          {s.key === 'annual' && (
+            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
+              accept=".pdf,.xlsx,.xlsm,.xls,.csv"
+              hint="Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) for the previous financial year — all forms can be uploaded together in one go. Financial data and the Statutory Auditor come only from AOC-4; Directors & Shareholders come only from MGT-7/MGT-7A."
+              onApplied={onApplied} />
+          )}
+          {s.key === 'inyear' && (
+            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
+              accept=".pdf,.xlsx,.xlsm,.xls,.csv"
+              hint="Upload the forms filed during the year — DPT-3, MSME-1, and other event-based forms such as DIR-12, INC-22 or PAS-3, if any."
+              onApplied={onApplied} />
+          )}
+          {s.key === 'audit' && (
+            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
+              accept=".pdf"
+              hint="Upload the Board's Report and Auditor's Report extracts for the year."
+              onApplied={onApplied} />
+          )}
+          {s.key === 'compliance' && <WizardComplianceStep company={company} isDark={isDark} text={text} muted={muted} />}
+          {s.key === 'draft' && <WizardDraftStep company={company} isDark={isDark} text={text} muted={muted} />}
+        </div>
+
+        <div className={`flex items-center justify-between px-5 py-3 border-t ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+          <button onClick={() => (step === 0 ? onClose() : setStep((v) => v - 1))}
+            className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
+            {step === 0 ? 'Cancel' : 'Back'}
+          </button>
+          <div className="flex items-center gap-2">
+            {!last && (
+              <button onClick={() => setStep((v) => v + 1)}
+                className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
+                Skip
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (last) { onClose(); onGoToTab('filing'); }
+                else setStep((v) => v + 1);
+              }}
+              className="px-4 py-1.5 rounded-lg text-xs bg-blue-600 hover:bg-blue-700 text-white font-medium">
+              {last ? 'Finish' : 'Continue'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
