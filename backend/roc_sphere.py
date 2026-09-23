@@ -4008,6 +4008,13 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
+    if not _company_email(company) and company.get("client_id"):
+        client = await CLIENTS.find_one({"id": company["client_id"]}, {"_id": 0})
+        if client:
+            for key in ("email", "company_email", "email_address", "registered_office_email"):
+                if client.get(key):
+                    company["email"] = client.get(key)
+                    break
     try:
         content = build_board_resolution_doc(company, req, _who(current_user))
     except ImportError as e:
