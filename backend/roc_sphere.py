@@ -595,6 +595,78 @@ MEETING_DRAFT_TEMPLATES = [
         "resolution": "a dividend of Rs. {dividend_per_share} per equity share for the financial year be and is hereby declared out of the profits available for distribution, subject to applicable statutory requirements",
     },
     {
+        "key": "agm_retiring_director",
+        "category": "General Meetings",
+        "label": "Re-appointment of Director Retiring by Rotation",
+        "legal_basis": "Companies Act, 2013 — Section 152 and applicable provisions; Articles of Association",
+        "agenda": "To appoint a Director in place of the Director retiring by rotation and eligible for re-appointment.",
+        "resolution": "{person_name}, who retires by rotation and, being eligible, offers himself / herself for re-appointment, be and is hereby re-appointed as a Director of the Company",
+    },
+    {
+        "key": "agm_auditor_reappointment",
+        "category": "General Meetings",
+        "label": "Re-appointment of Statutory Auditor",
+        "legal_basis": "Companies Act, 2013 — Sections 139 and 142 and applicable Rules",
+        "agenda": "To consider re-appointment of the Statutory Auditor and fix remuneration.",
+        "resolution": "{auditor_name}, Chartered Accountants, be and is hereby re-appointed as Statutory Auditor of the Company for the period permitted under the applicable provisions, at a remuneration of Rs. {remuneration} plus applicable taxes and out-of-pocket expenses",
+    },
+    {
+        "key": "agm_appointment_director",
+        "category": "General Meetings",
+        "label": "Appointment of Director",
+        "legal_basis": "Companies Act, 2013 — Section 152 and applicable provisions; Articles of Association",
+        "agenda": "To consider appointment of {person_name} as a Director of the Company.",
+        "resolution": "{person_name}, who has furnished the requisite consent and declarations, be and is hereby appointed as a Director of the Company with effect from {effective_date}",
+    },
+    {
+        "key": "agm_regularisation_additional_director",
+        "category": "General Meetings",
+        "label": "Regularisation of Additional Director",
+        "legal_basis": "Companies Act, 2013 — Section 149 / Section 152, as applicable; Articles of Association",
+        "agenda": "To consider regularisation of {person_name} as a Director of the Company.",
+        "resolution": "{person_name}, who was appointed as an Additional Director and whose term is subject to the applicable provisions, be and is hereby appointed as a Director of the Company",
+    },
+    {
+        "key": "agm_remuneration",
+        "category": "General Meetings",
+        "label": "Approval of Managerial Remuneration",
+        "legal_basis": "Companies Act, 2013 — Sections 196, 197, 198 and Schedule V, where applicable",
+        "agenda": "To consider and approve remuneration / terms of {person_name}.",
+        "resolution": "the remuneration and terms of appointment of {person_name}, as placed before the members, be and are hereby approved subject to the applicable provisions of the Companies Act, 2013 and requisite approvals",
+    },
+    {
+        "key": "agm_special_business_authorisation",
+        "category": "General Meetings",
+        "label": "Members' Approval for Special Business",
+        "legal_basis": "Companies Act, 2013 and applicable provisions governing members' approval",
+        "agenda": "To consider and approve the proposed special business relating to {business_description}.",
+        "resolution": "the proposal relating to {business_description}, as set out in the Notice and placed before the members, be and is hereby approved, subject to the applicable statutory and contractual requirements",
+    },
+    {
+        "key": "agm_alteration_articles",
+        "category": "General Meetings",
+        "label": "Alteration of Articles of Association",
+        "legal_basis": "Companies Act, 2013 — Section 14 and applicable Rules",
+        "agenda": "To consider alteration of the Articles of Association.",
+        "resolution": "the Articles of Association of the Company be and are hereby altered in the manner set out in the draft placed before the members, and the authorised persons be and are hereby authorised to complete the consequential filings and actions",
+    },
+    {
+        "key": "agm_alteration_memorandum",
+        "category": "General Meetings",
+        "label": "Alteration of Memorandum of Association",
+        "legal_basis": "Companies Act, 2013 — Section 13 and applicable Rules",
+        "agenda": "To consider alteration of the Memorandum of Association.",
+        "resolution": "the Memorandum of Association of the Company be and is hereby altered in the manner set out in the draft placed before the members, subject to such approvals as may be required",
+    },
+    {
+        "key": "agm_related_party",
+        "category": "General Meetings",
+        "label": "Members' Approval for Related Party Transaction",
+        "legal_basis": "Companies Act, 2013 — Section 188 and applicable Rules",
+        "agenda": "To consider approval of the Related Party Transaction with {related_party}.",
+        "resolution": "approval of the members be and is hereby accorded to the proposed Related Party Transaction with {related_party}, on the terms placed before the meeting and subject to the applicable provisions and disclosures",
+    },
+    {
         "key": "audit_committee_rpt_omnibus",
         "category": "Audit Committee",
         "label": "Audit Committee Omnibus Approval — Related Party Transactions",
@@ -617,6 +689,21 @@ class BoardResolutionRequest(BaseModel):
     directors_present: List[str] = Field(default_factory=list)
     chairman: Optional[str] = None
     resolutions: List[ResolutionItem]
+
+
+class GeneralMeetingResolutionRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    template_legal_basis: Optional[str] = None
+    template_key: Optional[str] = None
+    template_values: Dict[str, Any] = Field(default_factory=dict)
+    custom_topic: Optional[str] = None
+    meeting_type: str = "agm"
+    meeting_date: str
+    meeting_time: Optional[str] = "11:00 AM"
+    venue: Optional[str] = "Registered Office of the Company"
+    chairman: Optional[str] = None
+    members_present: List[str] = Field(default_factory=list)
+    resolutions: List[ResolutionItem] = Field(default_factory=list)
 
 
 class MeetingNoticeRequest(BaseModel):
@@ -2878,6 +2965,7 @@ def _record_history_summary(company: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "total": len(records),
         "board_meetings": len(boards),
+        "general_meetings": len(agms) + len(egms),
         "agms": len(agms),
         "egms": len(egms),
         "latest_board_meeting": boards[0] if boards else None,
@@ -2898,10 +2986,10 @@ async def get_record_history(company_id: str, current_user: User = Depends(VIEW)
     generated_docs = await DOCS_LOG.find({"company_id": company_id}).to_list(5000)
     for doc in generated_docs:
         doc_type = str(doc.get("doc_type") or "")
-        if not (doc_type == "board_resolution" or doc_type.startswith("notice_") or doc_type.startswith("minutes_")):
+        if not (doc_type == "board_resolution" or doc_type.startswith("general_resolution_") or doc_type.startswith("notice_") or doc_type.startswith("minutes_")):
             continue
         filename = str(doc.get("filename") or "")
-        date_match = re.search(r"(\\d{4}-\\d{2}-\\d{2})", filename)
+        date_match = re.search(r"(\d{4}-\d{2}-\d{2})", filename)
         meeting_date = date_match.group(1) if date_match else None
         if not meeting_date:
             continue
@@ -3628,6 +3716,62 @@ def build_board_resolution_doc(company: Dict[str, Any], req: BoardResolutionRequ
     d.save(buf)
     return buf.getvalue()
 
+def build_general_meeting_resolution_doc(company: Dict[str, Any], req: GeneralMeetingResolutionRequest, prepared_by: str) -> bytes:
+    d = _base_doc()
+    section = d.sections[0]
+    section.top_margin = Inches(0.60)
+    section.bottom_margin = Inches(0.65)
+    section.left_margin = Inches(0.75)
+    section.right_margin = Inches(0.75)
+    name = company.get("company_name", "").upper()
+    cin = company.get("cin") or "—"
+    address = company.get("registered_office_address") or "—"
+    meeting_label = "ANNUAL GENERAL MEETING" if req.meeting_type == "agm" else "EXTRA-ORDINARY GENERAL MEETING"
+    _heading(d, name, size=15)
+    _para(d, f"CIN: {cin}", center=True)
+    _para(d, f"Registered Office: {address}", center=True)
+    d.add_paragraph()
+    _heading(d, f"CERTIFIED TRUE COPY OF THE RESOLUTION PASSED AT THE {meeting_label}", size=13, underline=True)
+    meta = d.add_table(rows=4, cols=2)
+    meta.style = "Table Grid"
+    for row, (label, value) in zip(meta.rows, [
+        ("Meeting Date", _fmt_date(req.meeting_date)),
+        ("Time / Venue", f"{req.meeting_time or '—'} / {req.venue or '—'}"),
+        ("Chairman", req.chairman or "—"),
+        ("Members Present", ", ".join(req.members_present) or "—"),
+    ]):
+        row.cells[0].text = label
+        row.cells[1].text = str(value)
+        for run in row.cells[0].paragraphs[0].runs:
+            run.bold = True
+    if getattr(req, "template_legal_basis", None):
+        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
+    d.add_paragraph()
+    for i, item in enumerate(req.resolutions, 1):
+        _para(d, f"{i}. {item.particulars}", bold=True)
+        _para(d, f'“RESOLVED THAT {item.resolution_text.strip().rstrip(".")}.”')
+        if item.proposed_by or item.seconded_by:
+            bits = []
+            if item.proposed_by: bits.append(f"Proposed by: {item.proposed_by}")
+            if item.seconded_by: bits.append(f"Seconded by: {item.seconded_by}")
+            _para(d, " | ".join(bits), italic=True)
+        d.add_paragraph()
+    _para(d, "CERTIFIED TRUE COPY", bold=True, center=True)
+    d.add_paragraph()
+    _para(d, f"For {name}", bold=True)
+    _para(d, "Chairman / Authorised Signatory")
+    _para(d, "Signature: ______________________________")
+    _para(d, f"Date: {_fmt_date(datetime.now())}")
+    _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fr = footer.add_run(f"{name}  |  CIN: {cin}  |  ROC Sphere")
+    fr.font.size = Pt(8)
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
 def build_notice_doc(company: Dict[str, Any], req: MeetingNoticeRequest, prepared_by: str) -> bytes:
     d = _base_doc()
     name = company.get("company_name", "").upper()
@@ -4142,6 +4286,31 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
     fname = f"Board_Resolution_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
     doc = await _log_doc(company_id, "board_resolution", fname, current_user, content)
     await _upsert_generated_meeting_record(company_id, "board", req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
+    return _docx_response(content, fname)
+
+
+@router.post("/companies/{company_id}/generate/general-resolution")
+async def generate_general_meeting_resolution(company_id: str, req: GeneralMeetingResolutionRequest, current_user: User = Depends(VIEW)):
+    resolved = _resolve_meeting_template(req.template_key, req.template_values, req.custom_topic)
+    if resolved:
+        req = req.model_copy(update={
+            "template_legal_basis": resolved.get("legal_basis"),
+            "resolutions": req.resolutions if any(r.resolution_text for r in req.resolutions) else [
+                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
+            ],
+        })
+    company = await COMPANIES.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(404, "Company not found")
+    if req.meeting_type not in {"agm", "egm"}:
+        raise HTTPException(400, "General Meeting Resolution supports AGM or EGM only")
+    try:
+        content = build_general_meeting_resolution_doc(company, req, _who(current_user))
+    except ImportError as e:
+        raise HTTPException(500, f"Document generator not installed on the server: {e}")
+    fname = f"General_Meeting_Resolution_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
+    doc = await _log_doc(company_id, f"general_resolution_{req.meeting_type}", fname, current_user, content)
+    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
     return _docx_response(content, fname)
 
 
