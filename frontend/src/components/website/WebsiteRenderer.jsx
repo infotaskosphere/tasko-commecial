@@ -39,6 +39,8 @@ export const DEFAULT_BUILDER = {
   media: []
 };
 
+const pageIdForNav = (builder) => builder?.activePageId || builder?.pages?.[0]?.id || "home";
+
 const cssUrl = (url) => url ? `url("${String(url).replace(/"/g, '\\"')}")` : "none";
 const sectionStyle = (section, design) => { const s = section?.style || {}; return { backgroundColor: s.backgroundColor || "transparent", backgroundImage: s.backgroundImage ? cssUrl(s.backgroundImage) : "none", backgroundSize: s.backgroundSize || "cover", backgroundPosition: s.backgroundPosition || "center", color: s.textColor || design.text, textAlign: s.textAlign || "left", borderRadius: s.borderRadius ? `${s.borderRadius}px` : undefined, paddingTop: s.paddingTop != null ? `${s.paddingTop}px` : undefined, paddingBottom: s.paddingBottom != null ? `${s.paddingBottom}px` : undefined, minHeight: s.minHeight ? `${s.minHeight}px` : undefined }; };
 const Container = ({ children, width = "wide", className = "" }) => <div className={`mx-auto w-full px-5 sm:px-8 ${width === "full" ? "max-w-none" : width === "compact" ? "max-w-4xl" : "max-w-7xl"} ${className}`}>{children}</div>;
@@ -48,7 +50,15 @@ function Header({ builder, identity }) {
   const d = builder.global?.design || {}, h = builder.global?.header || {};
   return <header className={`${h.sticky ? "sticky top-0" : ""} z-40 border-b border-slate-200/80 bg-white/90 shadow-[0_1px_18px_rgba(15,23,42,.04)] backdrop-blur-xl`}><Container width={d.width || "wide"} className="flex min-h-[78px] items-center gap-5">
     <div className="flex min-w-0 flex-1 items-center gap-3">{h.logo !== false && <img src={identity?.logo_url || builder.global?.identity?.logoUrl || "/onenexa-logo.png"} alt={identity?.site_name || "ONENEXA"} className="h-11 w-auto max-w-[190px] object-contain" />}<div className="min-w-0"><div className="truncate text-lg font-extrabold tracking-tight text-slate-900">{identity?.site_name || builder.global?.identity?.siteName || "ONENEXA"}</div><div className="hidden truncate text-xs text-slate-500 sm:block">{identity?.site_tagline || builder.global?.identity?.tagline || "One platform for modern business operations."}</div></div></div>
-    <nav className="hidden items-center justify-center gap-7 md:flex">{(builder.pages || []).filter(p => p.visible !== false).slice(0, 5).map(p => <a key={p.id} href={`#page-${p.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-950">{p.name}</a>)}{(builder.pages?.[0]?.sections || []).slice(0, 4).map(s => <a key={s.id} href={`#section-${s.id}`} className="whitespace-nowrap text-sm font-semibold text-slate-600 hover:text-slate-950">{s.title}</a>)}</nav>
+    <nav className="hidden min-w-0 flex-1 items-center justify-center gap-1 md:flex">
+      <div className="flex min-w-0 max-w-[min(62vw,720px)] items-center gap-1 overflow-hidden">
+        {(builder.pages || []).filter(p => p.visible !== false).slice(0, 6).map(p => (
+          <a key={p.id} href={p.id === pageIdForNav(builder) ? "#" : `#page-${p.id}`} className="max-w-[150px] truncate whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-950">
+            {p.name}
+          </a>
+        ))}
+      </div>
+    </nav>
     {h.showLogin !== false && <SmartLink href="/login" className="shrink-0 rounded-xl px-5 py-3 text-sm font-bold text-white shadow-[0_10px_24px_rgba(16,42,86,.2)] transition hover:-translate-y-0.5" style={{ background: d.primary || "#102A56" }}>Sign in</SmartLink>}
   </Container></header>;
 }
