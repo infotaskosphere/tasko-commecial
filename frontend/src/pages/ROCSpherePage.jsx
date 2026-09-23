@@ -2065,7 +2065,7 @@ function RecordedMeetingSelector({ company, input, muted, onSelect }) {
       <div><p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Select recorded meeting for Minutes</p><p className={`text-[10px] mt-0.5 ${muted}`}>Select the Board Meeting, AGM or EGM first. Its meeting details, attendance and resolutions will populate the Minutes draft.</p></div>
       <select className={input} disabled={loading} value={selected} onChange={(e) => { setSelected(e.target.value); const r=records.find(x=>x.id===e.target.value); if(r) onSelect(r); }}>
         <option value="">{loading ? 'Loading recorded meetings…' : records.length ? 'Select a recorded Board / General Meeting…' : 'No recorded meetings available'}</option>
-        {records.map(r => <option key={r.id} value={r.id}>{r.meeting_type === 'board' ? 'Board Meeting' : r.meeting_type === 'agm' ? 'AGM' : 'EGM'} — {r.meeting_number ? `#${r.meeting_number} — ` : ''}{r.meeting_date}{r.chairman ? ` — Chairman: ${r.chairman}` : ''}</option>)}
+        {records.map(r => <option key={r.id} value={r.id}>{r.meeting_type === 'board' ? 'Board Meeting' : r.meeting_type === 'agm' ? 'AGM' : 'EGM'} — {r.meeting_number ? `#${r.meeting_number} — ` : ''}{r.meeting_date}{r.occasion ? ` — ${r.occasion}` : ''}{r.chairman ? ` — Chairman: ${r.chairman}` : ''}</option>)}
       </select>
       <div className={`text-[10px] ${muted}`}>The selected meeting becomes the source record for the generated minutes.</div>
     </div>
