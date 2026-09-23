@@ -1882,24 +1882,30 @@ const UPLOAD_CATEGORIES = [
   {
     key: 'previous_year_annual',
     label: 'Previous Year Annual Filing',
-    hint: 'AOC-4, AOC-2, MGT-7 / MGT-7A and the MGT-7A shareholder XLSM — the last completed financial year’s annual return set.',
+    hint: 'AOC-4, AOC-2, MGT-7 / MGT-7A and the MGT-7A shareholder XLSM. This lane is shown only when ROC Sphere has prior annual-filing data to reconcile.',
     accept: '.pdf,.xlsx,.xlsm,.xls,.csv',
   },
   {
     key: 'current_year_other',
     label: 'Current Year Other Forms Filing',
-    hint: 'DIR-12, ADT-1, INC-22, PAS-3, MGT-14, DPT-3 — event-based forms filed during the current financial year.',
-    accept: '.pdf,.xlsx,.xls,.csv',
+    hint: 'DIR-12, ADT-1, INC-22, PAS-3, MGT-14, DPT-3 and other event-based forms filed during the current financial year.',
+    accept: '.pdf,.xlsx,.xlsm,.xls,.csv',
   },
   {
     key: 'current_year_audit',
     label: 'Current Year Audit Report',
-    hint: "Extract of the Auditor's Report (and Board's Report, if you have it) for the current financial year.",
-    accept: '.pdf,.xlsx,.xls,.csv',
+    hint: "Auditor's Report and, where available, Board's Report for the current financial year. For a first ROC annual filing, this is the starting source — no previous-year annual filing is required.",
+    accept: '.pdf,.xlsx,.xlsm,.xls,.csv',
   },
 ];
 
 function UploadTab({ company, isDark, input, text, muted, onApplied }) {
+  const firstRocFiling = !(
+    (company.roc_form_uploads || []).some((d) => ['aoc-4','aoc4','mgt-7','mgt-7a'].includes(String(d.form_type || '').toLowerCase())) ||
+    Object.keys(company.financial_data || {}).length ||
+    Object.keys(company.annual_return_data || {}).length
+  );
+
   const [category, setCategory] = useState(UPLOAD_CATEGORIES[0].key);
   const [rocFiles, setRocFiles] = useState([]);
   const [extracting, setExtracting] = useState(false);
@@ -1908,7 +1914,12 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
   const [errors, setErrors] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [conflicts, setConflicts] = useState([]);
-  const activeCategory = UPLOAD_CATEGORIES.find((c) => c.key === category);
+  const availableCategories = firstRocFiling ? UPLOAD_CATEGORIES.filter((c) => c.key !== 'previous_year_annual') : UPLOAD_CATEGORIES;
+  const activeCategory = availableCategories.find((c) => c.key === category) || availableCategories[0];
+
+  useEffect(() => {
+    if (firstRocFiling && category === 'previous_year_annual') setCategory('current_year_audit');
+  }, [firstRocFiling, category]);
 
   const switchCategory = (key) => {
     setCategory(key);
@@ -1961,6 +1972,18 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
   return (
     <div className="space-y-4">
       <h3 className={`text-sm font-semibold ${text}`}>Upload ROC Forms</h3>
+      <div className={`rounded-lg border p-3 mb-3 ${firstRocFiling ? (isDark ? 'border-blue-800 bg-blue-950/20' : 'border-blue-200 bg-blue-50') : (isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50')}`}>
+        <div className={`flex items-start gap-2 text-xs ${text}`}>
+          <Info size={14} className="mt-0.5 shrink-0 text-blue-600" />
+          <div>
+            <p className="font-semibold">{firstRocFiling ? 'First ROC annual filing workflow' : 'Annual filing workflow'}</p>
+            <p className={`mt-1 ${muted}`}>{firstRocFiling
+              ? 'No prior AOC-4 / MGT-7 / MGT-7A annual filing data is recorded for this company. Upload the current-year Audit Report first; ROC Sphere will not ask you for previous-year annual filing documents.'
+              : 'Previous-year annual filing documents can be used for reconciliation against the current-year audit and event data.'}</p>
+          </div>
+        </div>
+      </div>
+
       <p className={`text-xs ${muted}`}>
         Three separate lanes, so a form is only ever read against the year it's actually for: the{' '}
         <strong>Directors &amp; Shareholders register comes only from MGT-7 / MGT-7A</strong>,{' '}
@@ -1972,7 +1995,7 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
       </p>
 
       <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Upload lane">
-        {UPLOAD_CATEGORIES.map((c) => (
+        {availableCategories.map((c) => (
           <button key={c.key} onClick={() => switchCategory(c.key)} role="tab" aria-selected={category === c.key}
             className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition
               ${category === c.key
