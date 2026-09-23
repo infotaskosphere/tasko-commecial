@@ -646,6 +646,34 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
 
 function FilingDeskTab({ company, prep, docs, loading, isDark, text, muted, onRefresh }) {
   const missing = prep?.missing_working_fields || [];
+  const [docBusy, setDocBusy] = useState({});
+  const downloadGenerated = async (doc) => {
+    if (!doc?.id) return;
+    setDocBusy((p) => ({ ...p, [doc.id]: 'download' }));
+    try {
+      const res = await api.get(`/roc-sphere/companies/${company.id}/documents/${doc.id}/download`, { responseType: 'blob' });
+      triggerBlobDownload(res.data, doc.filename || 'ROC_Document.docx');
+      toast.success('Document downloaded');
+    } catch (e) {
+      toast.error(await parseBlobError(e) || 'Download failed');
+    } finally {
+      setDocBusy((p) => ({ ...p, [doc.id]: null }));
+    }
+  };
+  const deleteGenerated = async (doc) => {
+    if (!doc?.id) return;
+    if (!window.confirm(`Delete generated document "${doc.filename || 'document'}"? You can regenerate it later.`)) return;
+    setDocBusy((p) => ({ ...p, [doc.id]: 'delete' }));
+    try {
+      await api.delete(`/roc-sphere/companies/${company.id}/documents/${doc.id}`);
+      toast.success('Generated document deleted');
+      onRefresh?.();
+    } catch (e) {
+      toast.error(await parseBlobError(e) || 'Delete failed');
+    } finally {
+      setDocBusy((p) => ({ ...p, [doc.id]: null }));
+    }
+  };
   const ready = prep && missing.length === 0;
   const labelMap = {
     company_name: 'Company name', cin: 'CIN', registered_office_address: 'Registered office',
@@ -654,6 +682,18 @@ function FilingDeskTab({ company, prep, docs, loading, isDark, text, muted, onRe
   };
   return (
     <div className="space-y-4">
+      {prep?.first_roc_annual_filing && (
+        <div className={`rounded-xl border p-4 ${isDark ? 'bg-blue-950/20 border-blue-800' : 'bg-blue-50 border-blue-200'}`}>
+          <div className={`flex items-start gap-2 text-xs ${text}`}>
+            <Info size={15} className="mt-0.5 shrink-0 text-blue-600" />
+            <div>
+              <p className="font-semibold">First ROC annual filing</p>
+              <p className={`mt-1 ${muted}`}>Previous-year AOC-4 / MGT-7 / MGT-7A documents are not required in this workflow. The current-year Audit Report is the starting source.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -715,8 +755,21 @@ function FilingDeskTab({ company, prep, docs, loading, isDark, text, muted, onRe
             {docs.slice(0, 20).map((d, i) => (
               <div key={d.id || i} className={`px-4 py-3 flex items-center gap-3 ${isDark ? 'bg-slate-900/20' : 'bg-white'}`}>
                 <FileText size={16} className="text-blue-600 shrink-0"/>
-                <div className="min-w-0 flex-1"><div className={`text-xs font-medium truncate ${text}`}>{d.filename}</div><div className={`text-[10px] ${muted}`}>{d.doc_type} · {d.generated_at ? new Date(d.generated_at).toLocaleString() : '—'}</div></div>
-                <BadgeCheck size={15} className="text-emerald-500 shrink-0" title="Generated"/>
+                <div className="min-w-0 flex-1">
+                  <div className={`text-xs font-medium truncate ${text}`}>{d.filename}</div>
+                  <div className={`text-[10px] ${muted}`}>{d.doc_type} · {d.generated_at ? new Date(d.generated_at).toLocaleString() : '—'}</div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => downloadGenerated(d)} disabled={!!docBusy[d.id] || d.downloadable === false}
+                    className={`p-1.5 rounded border ${d.downloadable === false ? 'opacity-40 cursor-not-allowed' : 'text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30'}`} title={d.downloadable === false ? 'Older record — regenerate to download' : 'Download'}>
+                    {docBusy[d.id] === 'download' ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                  </button>
+                  <button onClick={() => deleteGenerated(d)} disabled={!!docBusy[d.id]}
+                    className="p-1.5 rounded border text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30" title="Delete — regenerate later">
+                    {docBusy[d.id] === 'delete' ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  </button>
+                  <BadgeCheck size={15} className="text-emerald-500" title="Generated"/>
+                </div>
               </div>
             ))}
           </div>}
