@@ -658,18 +658,7 @@ ROC_FORM_RECOGNIZED = (
     ("pas-3", r"pas[- ]?3"),
     ("mgt-14", r"mgt[- ]?14"),
     ("dpt-3", r"dpt[- ]?3"),
-    ("msme-1", r"msme[- ]?1\b"),
 )
-
-# Forms treated as "annual filing forms of the previous year" in the
-# Guided Filing wizard's Step 2 (ADT-1 / AOC-4 / MGT-7 / MGT-7A — the
-# forms filed once, after the AGM, for the year just closed).
-GUIDED_STEP_ANNUAL_FORM_TYPES = {"adt-1", "aoc-4", "aoc-2", "mgt-7", "mgt-7a", "mgt-7a-attachment", "mgt-14"}
-# Forms treated as "forms filed during the year" in Step 3 — periodic /
-# event-based returns filed through the year rather than at year-close.
-GUIDED_STEP_INYEAR_FORM_TYPES = {"dpt-3", "msme-1", "dir-12", "inc-22", "pas-3"}
-# Forms treated as "audit reports" in Step 4.
-GUIDED_STEP_AUDIT_FORM_TYPES = {"auditor-report", "board-report"}
 
 # Forms whose MCA-prescribed content includes the statutory Director/
 # Signatory register and the shareholder/member register.
@@ -678,6 +667,92 @@ DIRECTOR_SHAREHOLDER_SOURCE_TYPES = {"mgt-7", "mgt-7a", "mgt-7a-attachment"}
 # Statement of Profit & Loss and Auditor Details block.
 FINANCIAL_SOURCE_TYPE = "aoc-4"
 
+# ── Filing-category lanes for the split "Upload ROC Forms" UI ─────────────
+# The frontend now offers three separate upload lanes instead of one mixed
+# dropzone, each restricted to (a) a fixed set of statutory forms and (b)
+# a fixed expected filing year, so an old form uploaded into the wrong lane
+# — or a current-year form that is actually a leftover from a prior year —
+# is rejected instead of silently overwriting current data.
+FILING_CATEGORY_FORM_TYPES: Dict[str, set] = {
+    "previous_year_annual": {"aoc-4", "aoc-2", "mgt-7", "mgt-7a", "mgt-7a-attachment"},
+    "current_year_other": {"dir-12", "adt-1", "inc-22", "pas-3", "mgt-14", "dpt-3"},
+    "current_year_audit": {"auditor-report", "board-report"},
+}
+FILING_CATEGORY_LABELS: Dict[str, str] = {
+    "previous_year_annual": "Previous Year Annual Filing",
+    "current_year_other": "Current Year Other Forms Filing",
+    "current_year_audit": "Current Year Audit Report",
+}
+
+
+def _category_for_form_type(form_type: str) -> Optional[str]:
+    for cat, types in FILING_CATEGORY_FORM_TYPES.items():
+        if form_type in types:
+            return cat
+    return None
+
+
+def _expected_fy_for_category(category: str) -> Optional[str]:
+    """FY label ('2024-25') a given upload lane's forms should belong to,
+    computed off today's date the same way build_cs_practice_plan() does."""
+    _, _, current_fy = _fy_dates(None)
+    if category == "previous_year_annual":
+        start_year = int(current_fy.split("-")[0]) - 1
+        return f"{start_year}-{str(start_year + 1)[-2:]}"
+    if category in ("current_year_other", "current_year_audit"):
+        return current_fy
+    return None
+
+
+_FY_RANGE_RE = re.compile(r"\b(20\d{2})\s*[-–/]\s*(20\d{2}|\d{2})\b")
+_MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july",
+                "august", "september", "october", "november", "december"]
+_LONG_DATE_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(" + "|".join(_MONTH_NAMES) + r")[,\s]+((?:19|20)\d{2})\b",
+    re.I,
+)
+_SHORT_DATE_RE = re.compile(r"\b([0-3]?\d)[/-]([01]?\d)[/-]((?:19|20)\d{2})\b")
+
+
+def _fy_label_for_date(d: date) -> str:
+    start_year = d.year if d.month >= 4 else d.year - 1
+    return f"{start_year}-{str(start_year + 1)[-2:]}"
+
+
+def _extract_document_fy(text: str) -> Optional[str]:
+    """Best-effort guess at which financial year this document's content
+    relates to — used only to flag a likely stale/mismatched-year upload
+    for review, never a legal determination. Tries an explicit year range
+    first ('Financial Year From 01/04/2024 To 31/03/2025', 'F.Y. 2024-25'),
+    which is how MCA forms usually print it, then falls back to the latest
+    calendar date found near the top of the document (filing/appointment/
+    event date on ADT-1, DIR-12 etc., which carry no year-range label)."""
+    head = text[:6000]
+    for y1s, y2s in _FY_RANGE_RE.findall(head):
+        y1 = int(y1s)
+        y2_full = int(y2s) if len(y2s) == 4 else (y1 // 100) * 100 + int(y2s)
+        if y2_full == y1 + 1:
+            return f"{y1}-{str(y2_full)[-2:]}"
+    dates: List[date] = []
+    for m in _LONG_DATE_RE.finditer(head):
+        month = _MONTH_NAMES.index(m.group(2).lower()) + 1
+        try:
+            dates.append(date(int(m.group(3)), month, int(m.group(1))))
+        except ValueError:
+            pass
+    for m in _SHORT_DATE_RE.finditer(head):
+        d1, d2, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        for day, month in ((d1, d2), (d2, d1)):
+            if 1 <= month <= 12 and 1 <= day <= 31:
+                try:
+                    dates.append(date(y, month, day))
+                    break
+                except ValueError:
+                    continue
+    if not dates:
+        return None
+    return _fy_label_for_date(max(dates))
+
 # Keys populated on company.financial_data by an AOC-4 upload — kept as a
 # named set so the frontend/UI and this parser stay in sync.
 FINANCIAL_DATA_FIELDS = (
@@ -685,27 +760,6 @@ FINANCIAL_DATA_FIELDS = (
     "profit_before_tax", "profit_after_tax", "net_worth", "share_capital",
     "reserves_and_surplus", "balance_sheet_total", "turnover",
 )
-
-# Human-readable labels for FINANCIAL_DATA_FIELDS, used by the AOC-4 draft
-# builder below (mirrors the frontend's FINANCIAL_DATA_LABELS).
-FINANCIAL_DATA_LABELS_BACKEND = (
-    ("period_from", "Period From"),
-    ("period_to", "Period To"),
-    ("total_income", "Total Income (Rs.)"),
-    ("total_expenses", "Total Expenses (Rs.)"),
-    ("profit_before_tax", "Profit Before Tax (Rs.)"),
-    ("profit_after_tax", "Profit / (Loss) After Tax (Rs.)"),
-    ("net_worth", "Net Worth (Rs.)"),
-    ("share_capital", "Share Capital (Rs.)"),
-    ("reserves_and_surplus", "Reserves & Surplus (Rs.)"),
-    ("balance_sheet_total", "Balance Sheet Total (Rs.)"),
-    ("turnover", "Turnover (Rs.)"),
-)
-
-CATEGORY_LABELS_BACKEND = {
-    "private": "Private Limited", "public": "Public Limited", "opc": "One Person Company",
-    "section_8": "Section 8 Company", "llp": "LLP",
-}
 
 
 def _identify_roc_form_type(filename: str, text: str) -> str:
@@ -1272,8 +1326,17 @@ def parse_aoc4_financials(text: str) -> Dict[str, Any]:
 
 
 def parse_aoc4_auditor(text: str) -> Dict[str, Any]:
-    """Statutory Auditor name + firm registration/membership number —
-    only meaningful for form_type == 'aoc-4'; callers must gate on that."""
+    """Statutory Auditor name, firm registration number, membership number
+    and appointment period — only meaningful for form_type == 'aoc-4';
+    callers must gate on that.
+
+    firm_reg_no and membership_no used to share one _find_label_line()
+    lookup (["...firm's registration number", "membership number of
+    auditor"]) with a single OR match, so whichever label happened to
+    appear first in the PDF's text flow silently ate both fields under
+    firm_reg_no and membership_no was never populated — the working-paper
+    draft always showed "—" for Membership No. regardless of what was
+    uploaded. These are now two independent lookups."""
     lines = [re.sub(r"\s+", " ", x).strip() for x in text.splitlines()]
     out: Dict[str, Any] = {}
     idx, p = _find_label_line(lines, ["name of the auditor or auditor's firm", "name of the auditor"])
@@ -1281,11 +1344,28 @@ def parse_aoc4_auditor(text: str) -> Dict[str, Any]:
         v = _extract_labeled_value(lines, idx, p, lambda s: bool(_NAME_VALUE_RE.match(s)) and "address" not in s.lower(), True, 2)
         if v:
             out["name"] = v
-    idx, p = _find_label_line(lines, ["auditor's firm's registration number", "membership number of auditor"])
+    idx, p = _find_label_line(lines, ["auditor's firm's registration number", "firm's registration number"])
     if idx != -1:
         v = _extract_labeled_value(lines, idx, p, lambda s: bool(_ALNUM_ID_VALUE_RE.match(s)), False, 2)
         if v:
             out["firm_reg_no"] = v
+    idx, p = _find_label_line(lines, ["membership number of auditor", "membership number"])
+    if idx != -1:
+        v = _extract_labeled_value(lines, idx, p, lambda s: bool(_ALNUM_ID_VALUE_RE.match(s)), False, 2)
+        if v:
+            out["membership_no"] = v
+    idx, p = _find_label_line(lines, ["period of account for which auditor appointed", "date of appointment of auditor", "period of appointment"])
+    if idx != -1:
+        idx_from, p1 = _find_label_line(lines, ["from (dd/mm/yyyy)", "from"], idx)
+        if idx_from != -1 and idx_from <= idx + 3:
+            v = _extract_labeled_value(lines, idx_from, p1, lambda s: bool(_DATE_VALUE_RE.match(s)), False, 2)
+            if v:
+                out["appointed_from"] = v
+            idx_to, p2 = _find_label_line(lines, ["to (dd/mm/yyyy)", "to"], idx_from + 1)
+            if idx_to != -1 and idx_to <= idx_from + 3:
+                v = _extract_labeled_value(lines, idx_to, p2, lambda s: bool(_DATE_VALUE_RE.match(s)), False, 2)
+                if v:
+                    out["appointed_till"] = v
     return out
 
 
@@ -1295,6 +1375,7 @@ async def upload_master_data(
     files: List[UploadFile] = File(...),
     apply: bool = Form(False),
     source_type: str = Form("roc"),
+    filing_category: str = Form("auto"),
     current_user: User = Depends(CREATE),
 ):
     """Upload ROC Forms — AOC-4, AOC-2, MGT-7, MGT-7A, Board's/Auditor's
@@ -1311,15 +1392,27 @@ async def upload_master_data(
     fetch`), which reads the MCA "Company/LLP Master Data" export
     instead. Robust to partial batch failures: one unreadable file no
     longer aborts the whole upload.
+
+    filing_category ("auto" | "previous_year_annual" | "current_year_other"
+    | "current_year_audit") is set by which of the three Upload ROC Forms
+    lanes the file was dropped into on the frontend. When it isn't "auto",
+    every file is checked against that lane's fixed form-type set and its
+    best-guess filing year: a wrong-lane form type, or a form whose printed
+    year doesn't match what that lane expects for today's date, is skipped
+    (with an explanatory error) instead of being applied — this is what
+    stops an old/stale form from quietly overwriting current company data.
     """
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
         raise HTTPException(404, "Company not found")
     if not files:
         raise HTTPException(400, "Choose at least one ROC form or MGT-7/MGT-7A attachment")
+    if filing_category not in ("auto", *FILING_CATEGORY_FORM_TYPES.keys()):
+        filing_category = "auto"
 
     results = []
     errors: List[str] = []
+    warnings: List[str] = []
     conflicts: List[Dict[str, Any]] = []
     roc_extracted: Dict[str, Any] = {}
     total_size = 0
@@ -1348,6 +1441,31 @@ async def upload_master_data(
             continue
 
         form_type = _identify_roc_form_type(filename, text)
+        document_fy = _extract_document_fy(text)
+        expected_fy = _expected_fy_for_category(filing_category) if filing_category != "auto" else None
+
+        if filing_category != "auto" and form_type != "roc-form":
+            allowed_types = FILING_CATEGORY_FORM_TYPES[filing_category]
+            if form_type not in allowed_types:
+                correct_category = _category_for_form_type(form_type)
+                correct_label = FILING_CATEGORY_LABELS.get(correct_category, "a different lane")
+                errors.append(
+                    f"{filename}: this looks like a {form_type.upper()} form — that belongs under "
+                    f"\"{correct_label}\", not \"{FILING_CATEGORY_LABELS[filing_category]}\". Skipped, not applied."
+                )
+                continue
+            if document_fy and expected_fy and document_fy != expected_fy:
+                errors.append(
+                    f"{filename}: this form is for FY {document_fy}, but \"{FILING_CATEGORY_LABELS[filing_category]}\" "
+                    f"expects an FY {expected_fy} form. Old/mismatched-year forms are never applied — skipped."
+                )
+                continue
+            if not document_fy:
+                warnings.append(
+                    f"{filename}: could not confirm the filing year automatically — please check this is an "
+                    f"FY {expected_fy} form before relying on it."
+                )
+
         extracted: Dict[str, Any] = parse_roc_general_fields(text)
 
         directors = _parse_directors_for_form(form_type, filename, raw, text)
@@ -1382,7 +1500,9 @@ async def upload_master_data(
         results.append({"filename": filename, "source_type": form_type, "extracted": fields_found,
                          "fields_found": len(fields_found),
                          "director_rows": len(extracted.get("_directors") or []),
-                         "shareholder_rows": len(extracted.get("_shareholders") or [])})
+                         "shareholder_rows": len(extracted.get("_shareholders") or []),
+                         "filing_category": filing_category if filing_category != "auto" else None,
+                         "document_fy": document_fy})
         for key, value in extracted.items():
             if not key.startswith("_") and value:
                 if key in roc_extracted and roc_extracted[key] != value:
@@ -1417,6 +1537,7 @@ async def upload_master_data(
             "results": results,
             "applied": False,
             "errors": errors,
+            "warnings": warnings,
             "conflicts": conflicts,
             "message": errors[0] if errors and len(errors) == len(files) else
                        "Could not confidently extract fields from these forms — please enter details manually.",
@@ -1453,7 +1574,9 @@ async def upload_master_data(
             clean["board_report_data"] = {**(company.get("board_report_data") or {}), **roc_extracted["_board_report"]}
         clean["mgt_shareholder_data"] = {k: v for k, v in roc_extracted.items() if not k.startswith("_") and k not in ("directors", "shareholders", "financial_data", "auditor")}
         clean["roc_form_uploads"] = (company.get("roc_form_uploads") or []) + [
-            {"filename": r["filename"], "form_type": r["source_type"], "uploaded_at": _now().isoformat()}
+            {"filename": r["filename"], "form_type": r["source_type"],
+             "filing_category": r.get("filing_category"), "document_fy": r.get("document_fy"),
+             "uploaded_at": _now().isoformat()}
             for r in results
         ]
         clean["updated_at"] = _now()
@@ -1475,7 +1598,8 @@ async def upload_master_data(
         visible["audit_report_data"] = roc_extracted["_audit_report"]
     if roc_extracted.get("_board_report"):
         visible["board_report_data"] = roc_extracted["_board_report"]
-    return {"extracted": visible, "results": results, "applied": bool(apply), "errors": errors, "conflicts": conflicts}
+    return {"extracted": visible, "results": results, "applied": bool(apply), "errors": errors,
+            "warnings": warnings, "conflicts": conflicts}
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1737,7 +1861,7 @@ async def fetch_master_data(
             continue
 
         fields = {k: v for k, v in extracted.items() if not k.startswith("_")}
-        results.append({"filename": filename, "fields_found": len(fields), "size": len(raw)})
+        results.append({"filename": filename, "fields_found": len(fields)})
         for k, v in fields.items():
             if v not in (None, "", 0):
                 merged[k] = v
@@ -1781,7 +1905,7 @@ async def fetch_master_data(
     }.items() if v not in (None, "")})
     existing_master["last_fetched_at"] = _now().isoformat()
     existing_master["last_fetched_by"] = _who(current_user)
-    existing_master["source_files"] = [{"filename": r["filename"], "size": r.get("size")} for r in results]
+    existing_master["source_files"] = [r["filename"] for r in results]
     clean["master_data"] = existing_master
 
     clean["roc_form_uploads"] = (company.get("roc_form_uploads") or []) + [
@@ -2085,359 +2209,6 @@ async def create_share_certificate(
     return {"certificate": certificate}
 
 
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# BOARD RESOLUTION SPECIMEN LIBRARY
-# ─────────────────────────────────────────────────────────────────────────
-# These are structured drafting templates derived from the specimen-resolution
-# portions of the uploaded ICSI Company Law & Practice material. They are
-# intentionally editable and are not presented as certified legal advice.
-BOARD_RESOLUTION_TEMPLATES = [
-    {
-        "key": "additional-director",
-        "category": "Directors",
-        "title": "Appointment of Additional Director — Section 161",
-        "resolution_text": "RESOLVED THAT pursuant to the provisions of Section 161 of the Companies Act, 2013 and other applicable provisions, if any, [DIRECTOR NAME] (DIN: [DIN]), who has signified consent to act as a director, be and is hereby appointed as an Additional Director of the Company with effect from [DATE], to hold office up to the date of the ensuing Annual General Meeting.\n\nRESOLVED FURTHER THAT the Directors of the Company be and are hereby authorised to do all acts, deeds, matters and things and to file the necessary e-form(s) with the Registrar of Companies.",
-    },
-    {
-        "key": "director-resignation",
-        "category": "Directors",
-        "title": "Acceptance of Director Resignation",
-        "resolution_text": "RESOLVED THAT the resignation of [DIRECTOR NAME] (DIN: [DIN]) from the directorship of the Company be and is hereby accepted with effect from [DATE].\n\nRESOLVED FURTHER THAT the Board places on record its appreciation for the assistance and guidance provided by [DIRECTOR NAME] during the tenure as Director.\n\nRESOLVED FURTHER THAT any Director of the Company be and is hereby authorised to do all such acts and deeds as may be necessary to give effect to the above resolution.",
-    },
-    {
-        "key": "first-directors",
-        "category": "Directors",
-        "title": "Appointment / Recording of First Directors",
-        "resolution_text": "RESOLVED THAT the persons whose names are given below and who are identified as the first Directors of the Company under the Articles of Association be and are hereby recorded as constituting the Board of Directors of the Company:\n1. [DIRECTOR NAME] (DIN: [DIN])\n2. [DIRECTOR NAME] (DIN: [DIN])\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to make the necessary entries in the Register of Directors and Key Managerial Personnel and their shareholding and to complete the applicable statutory filings.",
-    },
-    {
-        "key": "private-placement-allotment",
-        "category": "Share Capital",
-        "title": "Private Placement / Allotment of Equity Shares",
-        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013 and the applicable rules, consent of the Board be and is hereby accorded for allotment of [NUMBER] Equity Shares of Rs. [FACE VALUE] each to [ALLOTTEE NAME], for an aggregate consideration of Rs. [AMOUNT], on the terms placed before the Board.\n\nRESOLVED FURTHER THAT the said Equity Shares shall rank pari passu with the existing Equity Shares of the Company in all respects.\n\nRESOLVED FURTHER THAT any Director of the Company be and is hereby authorised to file the Return of Allotment in Form PAS-3 or such other applicable form and to do all acts necessary to give effect to this resolution.\n\nRESOLVED FURTHER THAT the Share Certificate for the shares allotted be issued in accordance with the applicable provisions and necessary entries be made in the Register of Members.",
-    },
-    {
-        "key": "share-transfer",
-        "category": "Share Transfer",
-        "title": "Approval / Registration of Transfer of Shares",
-        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013, the Articles of Association of the Company and subject to the transfer instrument and supporting documents being in order, approval be and is hereby accorded for registration of transfer of [NUMBER] Equity Shares of the Company from [TRANSFEROR NAME] to [TRANSFEREE NAME], as per the details placed before the Board.\n\nRESOLVED FURTHER THAT the Register of Members and other statutory records be updated accordingly and the necessary share certificate / endorsement be issued in accordance with law.",
-    },
-    {
-        "key": "bank-account",
-        "category": "General Corporate",
-        "title": "Opening / Operation of Bank Account",
-        "resolution_text": "RESOLVED THAT a current / bank account in the name of [COMPANY NAME] be opened with [BANK NAME] at [BRANCH], and that [AUTHORISED SIGNATORY] be and is hereby authorised to operate the account in accordance with the mandate approved by the Board.\n\nRESOLVED FURTHER THAT the authorised signatories be and are hereby empowered to sign, execute and submit all applications, declarations, forms and documents required by the bank.",
-    },
-    {
-        "key": "borrowing",
-        "category": "Borrowing",
-        "title": "Borrowing / Banking Facility",
-        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, consent of the Board be and is hereby accorded to avail the borrowing / banking facility of Rs. [AMOUNT] from [LENDER / BANK] on the terms placed before the Board.\n\nRESOLVED FURTHER THAT [AUTHORISED DIRECTOR] be and is hereby authorised to negotiate, finalise, execute and deliver the facility documents and to do all acts, deeds and things necessary in connection with the facility.",
-    },
-    {
-        "key": "section-186-loan",
-        "category": "Loans / Investments",
-        "title": "Loan / Guarantee / Security / Investment — Section 186 Review",
-        "resolution_text": "RESOLVED THAT pursuant to the applicable provisions of the Companies Act, 2013, including Section 186 where applicable, and subject to the necessary approvals and limits, the Company be and is hereby authorised to provide [LOAN / GUARANTEE / SECURITY / INVESTMENT] of up to Rs. [AMOUNT] in favour of [RECIPIENT / BODY CORPORATE] for the purpose placed before the Board.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby empowered to execute the relevant documents and complete the statutory and regulatory requirements.",
-    },
-    {
-        "key": "charge-creation",
-        "category": "Charges",
-        "title": "Creation of Charge / Security",
-        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, the creation of charge / security in favour of [LENDER] over the assets described in the facility documents for securing the borrowing of Rs. [AMOUNT] be and is hereby approved.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to execute the charge documents and make the necessary filings with the Registrar of Companies.",
-    },
-    {
-        "key": "auditor-appointment",
-        "category": "Auditor",
-        "title": "Auditor Appointment / Reappointment",
-        "resolution_text": "RESOLVED THAT subject to the approval / appointment requirements applicable to the Company, [AUDITOR / FIRM NAME], Chartered Accountants, Firm Registration No. [FRN], be and is hereby appointed / recommended for appointment as Statutory Auditor of the Company from [DATE] to [DATE], on such remuneration as may be approved in accordance with law.\n\nRESOLVED FURTHER THAT the authorised Director / Company Secretary be and is hereby authorised to complete the necessary statutory filing and related documentation.",
-    },
-    {
-        "key": "registered-office",
-        "category": "Registered Office",
-        "title": "Change of Registered Office",
-        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013, the Articles of Association and the approvals required, the registered office of the Company be shifted from [OLD ADDRESS] to [NEW ADDRESS] with effect from [DATE].\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to file the applicable form(s) with the Registrar of Companies and make all consequential changes in the statutory records.",
-    },
-    {
-        "key": "moa-capital",
-        "category": "MOA / AOA",
-        "title": "Alteration / Increase of Authorised Share Capital",
-        "resolution_text": "RESOLVED THAT subject to the applicable provisions of the Companies Act, 2013 and the Articles of Association of the Company, the authorised share capital of the Company be increased from Rs. [OLD CAPITAL] divided into [OLD SHARES] shares to Rs. [NEW CAPITAL] divided into [NEW SHARES] shares of Rs. [FACE VALUE] each, by creation of additional shares ranking pari passu with the existing shares.\n\nRESOLVED FURTHER THAT the authorised Director be and is hereby authorised to complete the required alteration of the capital clause and statutory filings.",
-    },
-    {
-        "key": "authorised-signatory-roc",
-        "category": "ROC Filings",
-        "title": "Authorisation for MCA / ROC Filing",
-        "resolution_text": "RESOLVED THAT [AUTHORISED PERSON] be and is hereby authorised to prepare, sign, submit and file the applicable forms, returns, attachments and documents with the Registrar of Companies / Ministry of Corporate Affairs and to do all acts, deeds and things necessary to give effect to the decisions of the Board.",
-    },
-]
-
-
-@router.get("/board-resolution-templates")
-async def get_board_resolution_templates(current_user: User = Depends(VIEW)):
-    return BOARD_RESOLUTION_TEMPLATES
-
-# ─────────────────────────────────────────────────────────────────────────
-# LEGAL NOTIFICATIONS / UPDATE DOCUMENTS
-# ─────────────────────────────────────────────────────────────────────────
-# Notifications are intentionally stored as a versioned legal-update inbox.
-# Uploads are extracted and converted into proposed rule changes, but NEVER
-# become active compliance rules automatically. A CS/Admin reviewer must
-# approve an extracted rule before the applicability engine consumes it.
-NOTIFICATIONS = db.roc_notifications
-NOTIFICATION_MAX_INLINE_BYTES = 12 * 1024 * 1024
-
-NOTIFICATION_ALLOWED_EXT = (".pdf", ".docx", ".txt", ".csv", ".xlsx", ".xlsm", ".xls")
-
-
-def _extract_notification_text(filename: str, raw: bytes) -> str:
-    """Extract readable text from legal update documents without executing macros."""
-    name = (filename or "").lower()
-    try:
-        if name.endswith(".pdf"):
-            import pdfplumber
-            parts = []
-            with pdfplumber.open(io.BytesIO(raw)) as pdf:
-                for page in pdf.pages:
-                    parts.append(page.extract_text() or "")
-            return "\n".join(parts)
-        if name.endswith(".docx"):
-            from docx import Document
-            doc = Document(io.BytesIO(raw))
-            parts = [p.text for p in doc.paragraphs if p.text]
-            for table in doc.tables:
-                for row in table.rows:
-                    parts.append(" | ".join(cell.text for cell in row.cells))
-            return "\n".join(parts)
-        if name.endswith((".xlsx", ".xlsm", ".xls")):
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True, keep_vba=name.endswith(".xlsm"))
-            parts = []
-            for ws in wb.worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    values = [str(v).strip() for v in row if v is not None and str(v).strip()]
-                    if values:
-                        parts.append(" | ".join(values))
-            wb.close()
-            return "\n".join(parts)
-        return raw.decode("utf-8", errors="ignore")
-    except Exception as exc:
-        logger.warning("roc_sphere notification extraction failed for %s: %s", filename, exc)
-        return ""
-
-
-def _analyse_notification(filename: str, raw_text: str) -> Dict[str, Any]:
-    """Best-effort extraction of legal-update metadata.
-
-    This deliberately produces *proposed* changes only. Legal interpretation
-    remains reviewable by the professional before activation.
-    """
-    text = raw_text or ""
-    lower = text.lower()
-    forms = []
-    for form in ("AOC-4", "MGT-7", "MGT-7A", "ADT-1", "DIR-12", "PAS-3", "SH-7", "MGT-14",
-                 "DPT-3", "MSME-1", "PAS-6", "CHG-1", "CHG-4", "INC-22", "CSR-1", "CSR-2",
-                 "DIR-3 KYC", "Form 11", "Form 8", "Form 3", "Form 4"):
-        if re.search(re.escape(form).replace(r"\ ", r"\s*"), text, re.I):
-            forms.append(form)
-
-    sections = sorted(set(re.findall(r"\b(?:section|sec\.?|s\.)\s*([0-9]{1,3}[A-Z]?)", text, re.I)))
-    notification_no = None
-    for pattern in (
-        r"\b(?:G\.S\.R\.|S\.O\.|F\.No\.?|General Circular(?: No\.?)?|Circular(?: No\.?)?)\s*[:#-]?\s*([A-Z0-9./()_-]+)",
-        r"\bNotification\s*(?:No\.?|Number)?\s*[:#-]?\s*([A-Z0-9./()_-]+)",
-    ):
-        m = re.search(pattern, text, re.I)
-        if m:
-            notification_no = m.group(1).strip()
-            break
-
-    effective_date = None
-    date_patterns = (
-        r"(?:with effect from|effective from|shall come into force on|comes into force on|applicable from)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4})",
-        r"(?:dated|date)\s*[:\-]?\s*(\d{1,2}[/-]\d{1,2}[/-]\d{4})",
-    )
-    for pattern in date_patterns:
-        m = re.search(pattern, text, re.I)
-        if m:
-            effective_date = m.group(1)
-            break
-
-    authority = "MCA" if any(k in lower for k in ("ministry of corporate affairs", "mca21", "mca v3", "mca ")) else "Other"
-    if "institute of company secretaries" in lower or "icsi" in lower:
-        authority = "ICSI"
-
-    title = (text.strip().splitlines()[0].strip() if text.strip() else filename)[:300]
-    proposed = [{
-        "id": _uid(),
-        "kind": "review",
-        "title": f"Review update affecting {', '.join(forms) if forms else 'ROC compliance'}",
-        "forms": forms,
-        "sections": sections,
-        "effective_date": effective_date,
-        "instruction": "Review the uploaded source and approve/edit the rule before it becomes active.",
-    }]
-    if any(k in lower for k in ("amendment", "substituted", "omitted", "inserted", "revised", "replaced", "relaxation", "extension")):
-        proposed.append({
-            "id": _uid(),
-            "kind": "rule-change",
-            "title": "Potential amendment / revised requirement detected",
-            "forms": forms,
-            "sections": sections,
-            "effective_date": effective_date,
-            "instruction": "Compare the source document with the existing rule before activation.",
-        })
-
-    return {
-        "title": title,
-        "authority": authority,
-        "notification_number": notification_no,
-        "effective_date": effective_date,
-        "affected_forms": forms,
-        "affected_sections": sections,
-        "proposed_rule_updates": proposed,
-    }
-
-
-@router.get("/notifications")
-async def list_roc_notifications(current_user: User = Depends(VIEW)):
-    docs = []
-    cursor = NOTIFICATIONS.find({}).sort("uploaded_at", -1)
-    async for doc in cursor:
-        doc.pop("_id", None)
-        if doc.get("file_base64"):
-            doc["file_base64"] = None
-            doc["file_available"] = True
-        else:
-            doc["file_available"] = False
-        doc["extracted_text_preview"] = (doc.get("extracted_text") or "")[:2500]
-        doc["extracted_text"] = None
-        docs.append(doc)
-    return docs
-
-
-@router.post("/notifications/upload")
-async def upload_roc_notification(
-    file: UploadFile = File(...),
-    current_user: User = Depends(CREATE),
-):
-    filename = (file.filename or "").strip()
-    if not filename:
-        raise HTTPException(400, "Notification document filename is required")
-    if not filename.lower().endswith(NOTIFICATION_ALLOWED_EXT):
-        raise HTTPException(400, "Supported notification documents: PDF, DOCX, TXT, CSV, XLSX, XLSM, XLS")
-    raw = await file.read()
-    if not raw:
-        raise HTTPException(400, "Uploaded notification document is empty")
-    if len(raw) > NOTIFICATION_MAX_INLINE_BYTES:
-        raise HTTPException(413, "Notification document is larger than 12 MB. Please upload a smaller copy.")
-
-    extracted_text = _extract_notification_text(filename, raw)
-    if not extracted_text.strip():
-        raise HTTPException(422, "The uploaded notification could not be read. Please upload a text-readable document.")
-
-    analysis = _analyse_notification(filename, extracted_text)
-    now = _now()
-    doc = {
-        "id": _uid(),
-        "filename": filename,
-        "content_type": file.content_type or "application/octet-stream",
-        "size_bytes": len(raw),
-        "uploaded_at": now,
-        "uploaded_by": _who(current_user),
-        "authority": analysis["authority"],
-        "title": analysis["title"],
-        "notification_number": analysis["notification_number"],
-        "effective_date": analysis["effective_date"],
-        "affected_forms": analysis["affected_forms"],
-        "affected_sections": analysis["affected_sections"],
-        "proposed_rule_updates": analysis["proposed_rule_updates"],
-        "status": "under_review",
-        "extracted_text": extracted_text[:500000],
-        "file_base64": __import__("base64").b64encode(raw).decode("ascii"),
-        "reviewed_by": None,
-        "reviewed_at": None,
-    }
-    await NOTIFICATIONS.insert_one(doc)
-    result = {k: v for k, v in doc.items() if k != "file_base64"}
-    result["file_available"] = True
-    result["text_length"] = len(extracted_text)
-    return result
-
-
-@router.get("/notifications/{notification_id}")
-async def get_roc_notification(notification_id: str, current_user: User = Depends(VIEW)):
-    doc = await NOTIFICATIONS.find_one({"id": notification_id})
-    if not doc:
-        raise HTTPException(404, "Notification not found")
-    doc.pop("_id", None)
-    doc["file_available"] = bool(doc.get("file_base64"))
-    doc["file_base64"] = None
-    return doc
-
-
-@router.get("/notifications/{notification_id}/download")
-async def download_roc_notification(notification_id: str, current_user: User = Depends(VIEW)):
-    doc = await NOTIFICATIONS.find_one({"id": notification_id})
-    if not doc:
-        raise HTTPException(404, "Notification not found")
-    encoded = doc.get("file_base64")
-    if not encoded:
-        raise HTTPException(404, "Original notification file is not available")
-    import base64
-    return Response(
-        content=base64.b64decode(encoded),
-        media_type=doc.get("content_type") or "application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{doc.get("filename") or "notification"}"'},
-    )
-
-
-@router.post("/notifications/{notification_id}/approve")
-async def approve_roc_notification(notification_id: str, payload: Dict[str, Any] = None, current_user: User = Depends(EDIT)):
-    doc = await NOTIFICATIONS.find_one({"id": notification_id})
-    if not doc:
-        raise HTTPException(404, "Notification not found")
-    updates = (payload or {}).get("rule_updates") or doc.get("proposed_rule_updates") or []
-    now = _now()
-    await NOTIFICATIONS.update_one({"id": notification_id}, {"$set": {
-        "status": "approved",
-        "active_rule_updates": updates,
-        "reviewed_by": _who(current_user),
-        "reviewed_at": now,
-        "updated_at": now,
-    }})
-    return {"approved": True, "notification_id": notification_id, "active_rule_updates": updates}
-
-
-@router.post("/notifications/{notification_id}/reject")
-async def reject_roc_notification(notification_id: str, current_user: User = Depends(EDIT)):
-    doc = await NOTIFICATIONS.find_one({"id": notification_id})
-    if not doc:
-        raise HTTPException(404, "Notification not found")
-    now = _now()
-    await NOTIFICATIONS.update_one({"id": notification_id}, {"$set": {
-        "status": "rejected",
-        "reviewed_by": _who(current_user),
-        "reviewed_at": now,
-        "updated_at": now,
-    }})
-    return {"rejected": True, "notification_id": notification_id}
-
-
-async def _approved_notification_rules() -> List[Dict[str, Any]]:
-    rules: List[Dict[str, Any]] = []
-    cursor = NOTIFICATIONS.find({"status": "approved"})
-    async for doc in cursor:
-        for rule in doc.get("active_rule_updates") or []:
-            item = dict(rule)
-            item["notification_id"] = doc.get("id")
-            item["notification_title"] = doc.get("title")
-            item["notification_effective_date"] = doc.get("effective_date")
-            rules.append(item)
-    return rules
-
 # ─────────────────────────────────────────────────────────────────────────
 # COMPLIANCE CHECKLIST ENGINE
 # ─────────────────────────────────────────────────────────────────────────
@@ -2575,19 +2346,6 @@ async def get_compliance_checklist(company_id: str, current_user: User = Depends
     if not company:
         raise HTTPException(404, "Company not found")
     checklist = build_compliance_checklist(company)
-    # Approved notification-derived rules are additive and are evaluated here,
-    # outside the synchronous base-rule builder.
-    for rule in await _approved_notification_rules():
-        forms = rule.get("forms") or ([] if not rule.get("form") else [rule.get("form")])
-        checklist.append({
-            "form": forms[0] if forms else "Legal Update",
-            "particulars": rule.get("title") or "Notification-derived compliance update",
-            "due_date_rule": rule.get("effective_date") or rule.get("notification_effective_date") or "Review source notification",
-            "frequency": "Event-based",
-            "applicable": True,
-            "notes": f"Approved from Notifications: {rule.get('notification_title') or rule.get('notification_id')}. Review the source before filing.",
-            "source_notification_id": rule.get("notification_id"),
-        })
     is_llp = _is_llp(company)
     return {
         "company_name": company.get("company_name"),
@@ -3308,198 +3066,6 @@ def build_checklist_doc(company: Dict[str, Any], checklist: List[Dict[str, Any]]
     return buf.getvalue()
 
 
-def build_aoc4_draft_doc(company: Dict[str, Any], prepared_by: str) -> bytes:
-    """Working draft of Form AOC-4 (Filing of Financial Statements), built
-    only from the financial_data / auditor blocks — both of which are only
-    ever populated from an uploaded AOC-4 (see FINANCIAL_SOURCE_TYPE above).
-    This is a drafting aid summarising what would go into e-Form AOC-4 on
-    the MCA V3 portal, not a substitute for filing on the portal itself."""
-    fin = company.get("financial_data") or {}
-    auditor = company.get("auditor") or {}
-    is_llp = _is_llp(company)
-    d = _base_doc()
-    name = company.get("company_name", "").upper()
-    _heading(d, name, size=16)
-    _para(d, f"CIN: {company.get('cin') or '—'}" if not is_llp else f"LLPIN: {company.get('cin') or '—'}", center=True)
-    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
-    d.add_paragraph()
-    _heading(d, "DRAFT WORKING PAPER — FORM AOC-4", size=13, underline=True)
-    _para(d, "Filing of Financial Statements and other documents with the Registrar", center=True)
-    _para(d, f"Financial Year ended: {fin.get('period_to') or '—'}", center=True)
-    d.add_paragraph()
-
-    _heading(d, "Part A — Company & Filing Particulars", size=12, center=False, underline=True)
-    table = d.add_table(rows=0, cols=2)
-    table.style = "Table Grid"
-    for label, value in [
-        ("Company Name", company.get("company_name") or "—"),
-        ("CIN / LLPIN", company.get("cin") or "—"),
-        ("Category of Company", CATEGORY_LABELS_BACKEND.get(company.get("category"), company.get("category") or "—")),
-        ("Period From", fin.get("period_from") or "—"),
-        ("Period To", fin.get("period_to") or "—"),
-        ("Date of AGM", company.get("last_agm_date") or "—"),
-    ]:
-        row = table.add_row().cells
-        row[0].text, row[1].text = label, str(value)
-    d.add_paragraph()
-
-    _heading(d, "Part B — Financial Statement Figures (Rs.)", size=12, center=False, underline=True)
-    fin_table = d.add_table(rows=0, cols=2)
-    fin_table.style = "Table Grid"
-    for key, label in FINANCIAL_DATA_LABELS_BACKEND:
-        row = fin_table.add_row().cells
-        row[0].text = label
-        val = fin.get(key)
-        row[1].text = f"{_num(val):,.0f}" if val not in (None, "") else "—"
-    d.add_paragraph()
-
-    _heading(d, "Part C — Statutory Auditor Details", size=12, center=False, underline=True)
-    aud_table = d.add_table(rows=0, cols=2)
-    aud_table.style = "Table Grid"
-    for label, value in [
-        ("Auditor / Firm Name", auditor.get("name") or "—"),
-        ("Firm Registration No.", auditor.get("firm_reg_no") or "—"),
-        ("Membership No.", auditor.get("membership_no") or "—"),
-        ("Appointed From", auditor.get("appointed_from") or "—"),
-        ("Appointed Till", auditor.get("appointed_till") or "—"),
-    ]:
-        row = aud_table.add_row().cells
-        row[0].text, row[1].text = label, str(value)
-
-    board_report = company.get("board_report_data") or {}
-    audit_report = company.get("audit_report_data") or {}
-    if board_report or audit_report:
-        d.add_paragraph()
-        _heading(d, "Part D — Board's Report / Auditor's Report Disclosures", size=12, center=False, underline=True)
-        for label, block in [("Board's Report", board_report), ("Auditor's Report", audit_report)]:
-            if block:
-                _para(d, label, bold=True)
-                _para(d, " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in block.items()) or "—")
-
-    missing = [label for key, label in FINANCIAL_DATA_LABELS_BACKEND if fin.get(key) in (None, "")]
-    d.add_paragraph()
-    if missing:
-        _para(d, "Fields still missing (upload/re-upload AOC-4 to fill): " + ", ".join(missing), italic=True)
-    _para(d, "This is a working draft assembled from uploaded AOC-4 data for internal review before e-filing on the "
-             "MCA V3 portal. Verify every figure against the audited financial statements and Board's/Auditor's "
-             "Report before filing; this document does not itself constitute the e-Form.", italic=True)
-    _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
-
-    buf = io.BytesIO()
-    d.save(buf)
-    return buf.getvalue()
-
-
-def build_mgt7_draft_doc(company: Dict[str, Any], prepared_by: str) -> bytes:
-    """Working draft of Form MGT-7 / MGT-7A (Annual Return), built only from
-    the annual_return_data block, the Directors & Shareholders register and
-    record_history — all of which are only ever populated from an uploaded
-    MGT-7/MGT-7A (or, for meetings, the Board Meetings/EGM registers)."""
-    mgt = company.get("annual_return_data") or {}
-    directors = company.get("directors") or company.get("designated_partners") or company.get("partners") or []
-    shareholders = company.get("shareholders") or []
-    is_llp = _is_llp(company)
-    is_small = None if is_llp else _is_small_company(company)
-    is_opc = company.get("category") == "opc"
-    form_name = "FORM MGT-7A (Abridged Annual Return)" if (is_small or is_opc) else "FORM MGT-7 (Annual Return)"
-    history = _record_history_summary(company)
-
-    d = _base_doc()
-    name = company.get("company_name", "").upper()
-    _heading(d, name, size=16)
-    _para(d, f"CIN: {company.get('cin') or '—'}" if not is_llp else f"LLPIN: {company.get('cin') or '—'}", center=True)
-    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
-    d.add_paragraph()
-    _heading(d, f"DRAFT WORKING PAPER — {form_name}", size=13, underline=True)
-    _para(d, f"Financial Year ended: {mgt.get('period_to') or (company.get('financial_data') or {}).get('period_to') or '—'}", center=True)
-    d.add_paragraph()
-
-    _heading(d, "Part A — Registration & Other Details", size=12, center=False, underline=True)
-    reg_table = d.add_table(rows=0, cols=2)
-    reg_table.style = "Table Grid"
-    for label, value in [
-        ("Company Name", company.get("company_name") or "—"),
-        ("CIN / LLPIN", company.get("cin") or "—"),
-        ("Category", CATEGORY_LABELS_BACKEND.get(company.get("category"), company.get("category") or "—")),
-        ("Date of AGM", company.get("last_agm_date") or (history.get("latest_agm") or {}).get("meeting_date") or "—"),
-        ("Board Meetings held in the year", str(history.get("board_meetings", 0))),
-        ("EGMs held in the year", str(history.get("egms", 0))),
-    ]:
-        row = reg_table.add_row().cells
-        row[0].text, row[1].text = label, str(value)
-    d.add_paragraph()
-
-    _heading(d, "Part B — Principal Financial Indicators", size=12, center=False, underline=True)
-    fin_table = d.add_table(rows=0, cols=2)
-    fin_table.style = "Table Grid"
-    for label, value in [
-        ("Turnover (Rs.)", mgt.get("turnover")),
-        ("Net Worth (Rs.)", mgt.get("net_worth")),
-        ("Share Capital (Rs.)", company.get("paid_up_capital")),
-        ("Authorized Capital (Rs.)", company.get("authorized_capital")),
-    ]:
-        row = fin_table.add_row().cells
-        row[0].text = label
-        row[1].text = f"{_num(value):,.0f}" if value not in (None, "") else "—"
-    d.add_paragraph()
-
-    people_label = "Designated Partners" if is_llp else "Directors"
-    _heading(d, f"Part C — {people_label}", size=12, center=False, underline=True)
-    p_table = d.add_table(rows=1, cols=3)
-    p_table.style = "Table Grid"
-    hdr = p_table.rows[0].cells
-    for i, h in enumerate(["Name", "DIN/DPIN", "Designation"]):
-        hdr[i].text = ""
-        hdr[i].paragraphs[0].add_run(h).bold = True
-    for p in directors:
-        row = p_table.add_row().cells
-        row[0].text = p.get("name", "—")
-        row[1].text = p.get("din") or p.get("dpin") or "—"
-        row[2].text = p.get("designation") or "—"
-    if not directors:
-        row = p_table.add_row().cells
-        row[0].text = "No directors/partners on file — upload MGT-7/MGT-7A to populate this register."
-    d.add_paragraph()
-
-    if not is_llp:
-        _heading(d, "Part D — Shareholding Pattern", size=12, center=False, underline=True)
-        s_table = d.add_table(rows=1, cols=4)
-        s_table.style = "Table Grid"
-        hdr = s_table.rows[0].cells
-        for i, h in enumerate(["Name of Member", "Class of Shares", "No. of Shares Held", "% Holding"]):
-            hdr[i].text = ""
-            hdr[i].paragraphs[0].add_run(h).bold = True
-        total_shares = sum(_num(s.get("shares_held")) for s in shareholders) or 1
-        for s in shareholders:
-            row = s_table.add_row().cells
-            pct = s.get("percentage")
-            if pct is None:
-                pct = round(_num(s.get("shares_held")) / total_shares * 100, 2)
-            row[0].text = s.get("name", "—")
-            row[1].text = s.get("class_of_shares") or "Equity"
-            row[2].text = f"{_num(s.get('shares_held')):,.0f}"
-            row[3].text = f"{pct}%"
-        if not shareholders:
-            row = s_table.add_row().cells
-            row[0].text = "No shareholders on file — upload MGT-7/MGT-7A (and its shareholder attachment) to populate this register."
-        d.add_paragraph()
-
-    extra = {k: v for k, v in mgt.items() if k not in {"turnover", "net_worth", "period_to", "period_from"} and v not in (None, "")}
-    if extra:
-        _heading(d, "Part E — Other Annual Return Particulars", size=12, center=False, underline=True)
-        _para(d, " · ".join(f"{k.replace('_', ' ')}: {v}" for k, v in extra.items()))
-        d.add_paragraph()
-
-    _para(d, "This is a working draft assembled from uploaded MGT-7/MGT-7A data, the Directors & Shareholders "
-             "register and the Board Meetings/EGM registers, for internal review before e-filing on the MCA V3 "
-             "portal. Verify every entry before filing; this document does not itself constitute the e-Form.", italic=True)
-    _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
-
-    buf = io.BytesIO()
-    d.save(buf)
-    return buf.getvalue()
-
-
 def _docx_response(content: bytes, filename: str) -> Response:
     return Response(
         content=content,
@@ -3636,42 +3202,6 @@ async def generate_checklist_doc(company_id: str, current_user: User = Depends(V
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Compliance_Checklist_{_safe(company.get('company_name'))}.docx"
     await _log_doc(company_id, "checklist", fname, current_user)
-    return _docx_response(content, fname)
-
-
-@router.get("/companies/{company_id}/generate/aoc-4")
-async def generate_aoc4_draft(company_id: str, current_user: User = Depends(VIEW)):
-    """Draft working paper for Form AOC-4, built from financial_data/auditor
-    (populated only from uploaded AOC-4s — see FINANCIAL_SOURCE_TYPE)."""
-    company = await COMPANIES.find_one({"id": company_id})
-    if not company:
-        raise HTTPException(404, "Company not found")
-    try:
-        content = build_aoc4_draft_doc(company, _who(current_user))
-    except ImportError as e:
-        raise HTTPException(500, f"Document generator not installed on the server: {e}")
-    fname = f"AOC-4_Draft_{_safe(company.get('company_name'))}.docx"
-    await _log_doc(company_id, "aoc4_draft", fname, current_user)
-    return _docx_response(content, fname)
-
-
-@router.get("/companies/{company_id}/generate/mgt-7")
-async def generate_mgt7_draft(company_id: str, current_user: User = Depends(VIEW)):
-    """Draft working paper for Form MGT-7 / MGT-7A (Small Companies and
-    OPCs get the abridged MGT-7A automatically), built from
-    annual_return_data (populated only from uploaded MGT-7/MGT-7A), the
-    Directors & Shareholders register and the meeting registers."""
-    company = await COMPANIES.find_one({"id": company_id})
-    if not company:
-        raise HTTPException(404, "Company not found")
-    try:
-        content = build_mgt7_draft_doc(company, _who(current_user))
-    except ImportError as e:
-        raise HTTPException(500, f"Document generator not installed on the server: {e}")
-    is_llp = _is_llp(company)
-    is_abridged = (not is_llp) and (_is_small_company(company) or company.get("category") == "opc")
-    fname = f"{'MGT-7A' if is_abridged else 'MGT-7'}_Draft_{_safe(company.get('company_name'))}.docx"
-    await _log_doc(company_id, "mgt7_draft", fname, current_user)
     return _docx_response(content, fname)
 
 
