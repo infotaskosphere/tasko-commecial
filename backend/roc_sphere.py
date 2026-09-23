@@ -222,6 +222,9 @@ class RocCompanyIn(BaseModel):
     annual_return_data: Dict[str, Any] = Field(default_factory=dict)
     audit_report_data: Dict[str, Any] = Field(default_factory=dict)
     board_report_data: Dict[str, Any] = Field(default_factory=dict)
+    # Structured DPT-3 return data: deposits, non-deposit loans, liquid assets,
+    # charges and filing/signatory metadata, retained by financial year.
+    dpt3_data: Dict[str, Any] = Field(default_factory=dict)
     share_transfers: List[Dict[str, Any]] = Field(default_factory=list)
     share_certificates: List[Dict[str, Any]] = Field(default_factory=list)
     # Persistent meeting / event history used by MGT-7/MGT-7A preparation.
@@ -586,6 +589,7 @@ async def _sync_company_to_client(company: Dict[str, Any]) -> None:
         "roc_master_data": company.get("master_data") or {},
         "roc_mgt_shareholder_data": company.get("mgt_shareholder_data") or {},
         "roc_form_uploads": company.get("roc_form_uploads") or [],
+        "roc_dpt3_data": company.get("dpt3_data") or {},
     }
     if is_llp:
         update["llpin"] = company.get("cin")
@@ -1001,6 +1005,146 @@ def parse_mgt_annual_return(text: str) -> Dict[str, Any]:
         }
 
     out["filing_source"] = "MGT-7A / MGT-7"
+    return out
+
+
+def parse_dpt3(text: str) -> Dict[str, Any]:
+    """Extract structured DPT-3 Return of Deposits / non-deposit loan data.
+
+    DPT-3 contains a large Rule 2(1)(c) classification table.  Preserve the
+    statutory row labels and all eight numeric columns rather than collapsing
+    the table into one generic loan amount.  Values are retained as supplied
+    by the filed form and keyed by financial/reporting period.
+    """
+    out: Dict[str, Any] = {"filing_source": "DPT-3", "form_no": "DPT-3"}
+    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    flat = "\n".join(lines)
+
+    def first(patterns: List[str]) -> Optional[str]:
+        for pattern in patterns:
+            m = re.search(pattern, flat, re.I | re.M)
+            if m:
+                return re.sub(r"\\s+", " ", m.group(1)).strip()
+        return None
+
+    cin = first([r"Corporate identity number \\(CIN\\)\\s+([A-Z0-9]{21})"])
+    name = first([r"Name of the Company\\s+(.+?)(?=\\s+\\d+\\s*\\(b\\)|\\n)"])
+    period = first([r"Period for which return is being filed \\(DD/MM/YYYY\\)\\s+([0-3]\\d/[01]\\d/\\d{4})"])
+    srn = first([r"eForm Service request number \\(SRN\\)\\s+([A-Z0-9]+)"])
+    filing_date = first([r"eForm filing date \\(DD/MM/YYYY\\)\\s+([0-3]\\d/[01]\\d/\\d{4})"])
+    if cin:
+        out["cin"] = cin
+    if name:
+        out["company_name"] = name
+    if period:
+        out["return_period"] = period
+    if srn:
+        out["srn"] = srn
+    if filing_date:
+        out["filing_date"] = filing_date
+
+    for key, patterns in {
+        "paid_up_share_capital": [r"Paid up share capital\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "free_reserves": [r"Free reserves\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "securities_premium_account": [r"Securities Premium Account\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "accumulated_loss": [r"Accumulated Loss\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deferred_revenue_expenditure": [r"Balance of deferred revenue expenditure\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "accumulated_unprovided_depreciation": [r"Accumulated unprovided depreciation\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "miscellaneous_preliminary_expenses": [r"Miscellaneous expense and preliminary expenses\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "other_intangible_assets": [r"Other intangible assets\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "net_worth": [r"Net worth \\(a\\)\\s*[-–]\\s*\\(b\\)\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "maximum_deposit_limit": [r"Maximum limit of deposits.*?\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deposit_holders_beginning": [r"Total number of deposit holders as on 1st April\\s+([\\d,]+)"],
+        "deposit_holders_end": [r"Total number of deposit holders at the end of financial year\\s+([\\d,]+)"],
+        "existing_deposits_beginning": [r"Amount of existing deposits as at 1st April\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deposits_renewed_during_year": [r"Amount of deposits renewed during the year\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deposits_accepted_during_year": [r"Amount of deposits accepted during the year\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deposits_repaid_during_year": [r"Amount of deposits repaid during the year\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "deposits_outstanding_end": [r"Balance of deposits outstanding at the end of the year\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "matured_unclaimed": [r"Amount of deposits that have matured but not claimed\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "matured_claimed_not_paid": [r"Amount of deposits that have matured and claimed but not paid\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "charges_count": [r"Number of charges\\s+([\\d,]+)"],
+        "dpt3_rule_2_1_c_total": [r"Total amounts of outstanding money or loan received by a company but not considered as deposits.*?\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+    }.items():
+        value=first(patterns)
+        if value is not None:
+            out[key]=_num(value)
+
+    # Liquid-asset facts.
+    for key, patterns in {
+        "deposits_maturing_next_period": [r"Amount of deposits maturing on or before 31st March next year.*?\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "liquid_assets_required": [r"Amount required to be invested in liquid assets\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+        "scheduled_bank_liquid_assets": [r"Amount in current or other deposits account, free from charge or lien, with.*?scheduled bank\\s+(-?[\\d,]+(?:\\.\\d+)?)"],
+    }.items():
+        value=first(patterns)
+        if value is not None:
+            out[key]=_num(value)
+
+    # Preserve the Rule 2(1)(c) loan matrix as row objects.  The filed PDF
+    # repeats the eight column headings on each page; capture numeric rows
+    # following recognizable statutory category text.
+    matrix_rows: List[Dict[str, Any]] = []
+    current_label: Optional[str] = None
+    skip_labels = {
+        "opening balance", "additional loan", "during the year",
+        "repaid during the year", "any other adjustment", "closing balance",
+        "loans outstanding for less than or equal to 1 year",
+        "loans outstanding for more than 1 year and less than 3 years",
+        "loans outstanding for more than 3 years",
+    }
+    for line in lines:
+        clean=line.strip(" -")
+        if not clean:
+            continue
+        if clean.lower() in skip_labels:
+            continue
+        nums=re.findall(r"-?\\d+(?:,\\d{3})*(?:\\.\\d+)?", clean)
+        if len(nums) >= 8 and current_label:
+            values=[_num(n.replace(",", "")) for n in nums[-8:]]
+            matrix_rows.append({
+                "particular": current_label,
+                "opening_balance": values[0],
+                "additional_loan_during_year": values[1],
+                "repaid_during_year": values[2],
+                "other_adjustment": values[3],
+                "closing_balance": values[4],
+                "outstanding_upto_1_year": values[5],
+                "outstanding_1_to_3_years": values[6],
+                "outstanding_over_3_years": values[7],
+            })
+            current_label=None
+            continue
+        if not re.fullmatch(r"[-–—\\d., ]+", clean) and not re.match(r"^(Total|S\\.?No\\.?|Particulars|Details of loan|Ageing of loan)", clean, re.I):
+            # Keep statutory row text; ignore ordinary table headings.
+            if len(clean) > 12 and not any(x in clean.lower() for x in ("particulars", "details of loan", "ageing of loan")):
+                current_label = clean if current_label is None else f"{current_label} {clean}"
+
+    if matrix_rows:
+        out["non_deposit_loan_matrix"]=matrix_rows
+
+    # Attachments and declarations are useful evidence for compliance follow-up.
+    attachment_names=[]
+    if re.search(r"Copy of trust deed", text, re.I):
+        attachment_names.append("Copy of trust deed")
+    if re.search(r"List of depositors \\(excel format\\)", text, re.I):
+        attachment_names.append("List of depositors (excel format)")
+    if attachment_names:
+        out["attachments_expected"]=attachment_names
+
+    auditor_certified=bool(re.search(r"Declaration by Statutory Auditor", text, re.I))
+    if auditor_certified:
+        out["statutory_auditor_declaration_present"]=True
+    resolution=first([r"resolution no \\*\\s*([\\dA-Za-z-]+)"])
+    resolution_date=first([r"Dated \\*\\s*([0-3]\\d/[01]\\d/\\d{4})"])
+    if resolution:
+        out["board_resolution_no"]=resolution
+    if resolution_date:
+        out["board_resolution_date"]=resolution_date
+    out["source_document_sections"]=[
+        "Company Information","Net Worth","Deposits","Liquid Assets",
+        "Charges","Rule 2(1)(c) Non-Deposit Loans","Credit Rating",
+        "Attachments","Declarations","Filing Metadata"
+    ]
     return out
 
 
@@ -1486,6 +1630,10 @@ async def upload_master_data(
             annual_return = parse_mgt_annual_return(text)
             if annual_return:
                 extracted["_annual_return"] = annual_return
+        if form_type == "dpt-3":
+            dpt3 = parse_dpt3(text)
+            if dpt3:
+                extracted["_dpt3"] = dpt3
         if form_type == "auditor-report":
             audit_report = parse_auditor_report(text)
             if audit_report:
@@ -1528,6 +1676,8 @@ async def upload_master_data(
             roc_extracted["_audit_report"] = {**(roc_extracted.get("_audit_report") or {}), **extracted["_audit_report"]}
         if extracted.get("_board_report"):
             roc_extracted["_board_report"] = {**(roc_extracted.get("_board_report") or {}), **extracted["_board_report"]}
+        if extracted.get("_dpt3"):
+            roc_extracted["_dpt3"] = {**(roc_extracted.get("_dpt3") or {}), **extracted["_dpt3"]}
 
     if not any(k for k in roc_extracted if not k.startswith("_")) and not any(
         roc_extracted.get(k) for k in ("_directors", "_shareholders", "_financials", "_auditor", "_annual_return", "_audit_report", "_board_report")
@@ -1572,6 +1722,14 @@ async def upload_master_data(
             clean["audit_report_data"] = {**(company.get("audit_report_data") or {}), **roc_extracted["_audit_report"]}
         if roc_extracted.get("_board_report"):
             clean["board_report_data"] = {**(company.get("board_report_data") or {}), **roc_extracted["_board_report"]}
+        if roc_extracted.get("_dpt3"):
+            dpt3_data = dict(company.get("dpt3_data") or {})
+            period_key = roc_extracted["_dpt3"].get("return_period") or "latest"
+            existing_period = dict(dpt3_data.get(period_key) or {})
+            existing_period.update({k: v for k, v in roc_extracted["_dpt3"].items() if v is not None})
+            dpt3_data[period_key] = existing_period
+            dpt3_data["latest_period"] = period_key
+            clean["dpt3_data"] = dpt3_data
         clean["mgt_shareholder_data"] = {k: v for k, v in roc_extracted.items() if not k.startswith("_") and k not in ("directors", "shareholders", "financial_data", "auditor")}
         clean["roc_form_uploads"] = (company.get("roc_form_uploads") or []) + [
             {"filename": r["filename"], "form_type": r["source_type"],
@@ -1598,6 +1756,8 @@ async def upload_master_data(
         visible["audit_report_data"] = roc_extracted["_audit_report"]
     if roc_extracted.get("_board_report"):
         visible["board_report_data"] = roc_extracted["_board_report"]
+    if roc_extracted.get("_dpt3"):
+        visible["dpt3_data"] = roc_extracted["_dpt3"]
     return {"extracted": visible, "results": results, "applied": bool(apply), "errors": errors,
             "warnings": warnings, "conflicts": conflicts}
 
