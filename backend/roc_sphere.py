@@ -1656,6 +1656,49 @@ def parse_adt1(text: str) -> Dict[str, Any]:
     return out
 
 
+def parse_audit_report_shareholders(text: str) -> List[Dict[str, Any]]:
+    """Best-effort extraction of a shareholding pattern from the current-year
+    audit-report/financial-statement text. If the audit material does not
+    contain an identifiable holder table, return [] and leave the prior MGT-7
+    register unchanged rather than inventing or clearing shareholders."""
+    rows: List[Dict[str, Any]] = []
+    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    in_section = False
+    for line in lines:
+        if re.search(r"shareholding pattern|pattern of shareholding|shareholders|share capital", line, re.I):
+            in_section = True
+            continue
+        if in_section and re.search(r"(directors|key managerial|auditor|independent auditor|related parties|earnings per share|cash flows)", line, re.I):
+            if rows:
+                break
+        if not in_section:
+            continue
+        # Common financial-statement table shape:
+        # Holder Name | No. of Shares | % / PAN. Keep matching deliberately
+        # conservative so ordinary narrative text is never treated as a holder.
+        m = re.match(
+            r"^([A-Za-z][A-Za-z .,&'()/-]{2,100})\\s+(?:([A-Z]{5}\\d{4}[A-Z])\\s+)?([\\d,]+)(?:\\s+([\\d.]+)\\s*%?)?$",
+            line,
+            re.I,
+        )
+        if not m:
+            continue
+        name = re.sub(r"\\s+", " ", m.group(1)).strip(" .-")
+        if re.search(r"total|particulars|promoter|public|equity shares|authorised|issued|paid", name, re.I):
+            continue
+        shares = _num(m.group(3).replace(",", ""))
+        if shares <= 0:
+            continue
+        rows.append({
+            "name": name,
+            "pan": m.group(2),
+            "shares_held": shares,
+            "percentage": _num(m.group(4)) if m.group(4) else None,
+            "class_of_shares": "Equity",
+        })
+    return rows
+
+
 def parse_auditor_report(text: str) -> Dict[str, Any]:
     """Capture audit-report facts for review and Board's Report drafting."""
     out: Dict[str, Any] = {}
@@ -2161,8 +2204,11 @@ async def upload_master_data(
                 }
         if form_type == "auditor-report":
             audit_report = parse_auditor_report(text)
+            audit_shareholders = parse_audit_report_shareholders(text)
             if audit_report:
                 extracted["_audit_report"] = audit_report
+            if audit_shareholders:
+                extracted["_audit_shareholders"] = audit_shareholders
         if form_type == "board-report":
             board_report = parse_board_report(text)
             if board_report:
@@ -2199,6 +2245,8 @@ async def upload_master_data(
             roc_extracted["_annual_return"] = {**(roc_extracted.get("_annual_return") or {}), **extracted["_annual_return"]}
         if extracted.get("_audit_report"):
             roc_extracted["_audit_report"] = {**(roc_extracted.get("_audit_report") or {}), **extracted["_audit_report"]}
+        if extracted.get("_audit_shareholders"):
+            roc_extracted["_audit_shareholders"] = (roc_extracted.get("_audit_shareholders") or []) + extracted["_audit_shareholders"]
         if extracted.get("_board_report"):
             roc_extracted["_board_report"] = {**(roc_extracted.get("_board_report") or {}), **extracted["_board_report"]}
         if extracted.get("_adt1"):
@@ -2229,7 +2277,40 @@ async def upload_master_data(
             else:
                 clean["directors"] = roc_extracted["_directors"]
         if roc_extracted.get("_shareholders"):
-            clean["shareholders"] = roc_extracted["_shareholders"]
+            previous = list(roc_extracted["_shareholders"])
+            previous_fy = next((r.get("document_fy") for r in results if r.get("source_type") in {"mgt-7", "mgt-7a"} and r.get("document_fy")), None)
+            for holder in previous:
+                holder["register_source"] = "MGT-7 / MGT-7A"
+                holder["register_source_fy"] = previous_fy
+                holder["audit_verified"] = False
+                holder["verification_status"] = "Awaiting current-year Audit Report verification"
+            clean["shareholders"] = previous
+        if roc_extracted.get("_audit_shareholders"):
+            current = list(company.get("shareholders") or clean.get("shareholders") or [])
+            for audit_holder in roc_extracted["_audit_shareholders"]:
+                key_name = str(audit_holder.get("name") or "").strip().lower()
+                key_pan = str(audit_holder.get("pan") or "").strip().lower()
+                match = next(
+                    (h for h in current if
+                     (key_pan and str(h.get("pan") or "").strip().lower() == key_pan) or
+                     (key_name and str(h.get("name") or "").strip().lower() == key_name)),
+                    None,
+                )
+                if match:
+                    match.update({
+                        "shares_held": audit_holder.get("shares_held", match.get("shares_held", 0)),
+                        "percentage": audit_holder.get("percentage", match.get("percentage")),
+                        "audit_verified": True,
+                        "audit_verified_source": "Current-year Audit Report",
+                        "verification_status": "Verified / updated from current-year Audit Report",
+                    })
+                else:
+                    audit_holder["register_source"] = "Current-year Audit Report"
+                    audit_holder["audit_verified"] = True
+                    audit_holder["audit_verified_source"] = "Current-year Audit Report"
+                    audit_holder["verification_status"] = "Added from current-year Audit Report — review against Register of Members"
+                    current.append(audit_holder)
+            clean["shareholders"] = current
         if roc_extracted.get("_financials"):
             clean["financial_data"] = {**(company.get("financial_data") or {}), **roc_extracted["_financials"]}
             if roc_extracted["_financials"].get("turnover") is not None:
@@ -2283,6 +2364,8 @@ async def upload_master_data(
         visible["annual_return_data"] = roc_extracted["_annual_return"]
     if roc_extracted.get("_audit_report"):
         visible["audit_report_data"] = roc_extracted["_audit_report"]
+    if roc_extracted.get("_audit_shareholders"):
+        visible["audit_shareholders"] = roc_extracted["_audit_shareholders"]
     if roc_extracted.get("_board_report"):
         visible["board_report_data"] = roc_extracted["_board_report"]
     if roc_extracted.get("_adt1"):
@@ -2809,8 +2892,45 @@ async def get_record_history(company_id: str, current_user: User = Depends(VIEW)
     if not company:
         raise HTTPException(404, "Company not found")
     records = list(company.get("record_history") or [])
+    # Reconcile documents generated before the persistent meeting-register
+    # feature was introduced. This makes existing Board/AGM/EGM documents
+    # immediately visible without requiring users to regenerate them.
+    generated_docs = await DOCS_LOG.find({"company_id": company_id}).to_list(5000)
+    for doc in generated_docs:
+        doc_type = str(doc.get("doc_type") or "")
+        if not (doc_type == "board_resolution" or doc_type.startswith("notice_") or doc_type.startswith("minutes_")):
+            continue
+        filename = str(doc.get("filename") or "")
+        date_match = re.search(r"(\\d{4}-\\d{2}-\\d{2})", filename)
+        meeting_date = date_match.group(1) if date_match else None
+        if not meeting_date:
+            continue
+        meeting_type = "board" if doc_type == "board_resolution" else doc_type.split("_", 1)[1]
+        match = next((r for r in records if r.get("meeting_type") == meeting_type and str(r.get("meeting_date") or "")[:10] == meeting_date), None)
+        if match is None:
+            match = {
+                "id": _uid(), "meeting_type": meeting_type, "meeting_number": None,
+                "meeting_date": meeting_date, "meeting_time": None, "notice_date": None,
+                "venue": company.get("registered_office_address"), "mode": None, "chairman": None,
+                "quorum_present": True, "attendance": [], "members_present_count": None,
+                "members_entitled_count": None, "leave_of_absence": [], "agenda_items": [],
+                "resolutions_passed": [], "special_business": [], "minutes_date": meeting_date if doc_type.startswith("minutes_") else None,
+                "minutes_signed_date": None, "adjourned": False, "adjourned_to": None,
+                "auditor_attended": None, "secretarial_notes": "Recovered from previously generated ROC document.",
+                "attachments": [], "status": "Generated", "remarks": "", "created_at": _now().isoformat(),
+                "created_by": doc.get("generated_by"), "updated_at": _now().isoformat(),
+            }
+            records.append(match)
+        generated = list(match.get("generated_documents") or [])
+        if not any(x.get("id") == doc.get("id") for x in generated):
+            generated.append({
+                "id": doc.get("id"), "doc_type": doc_type, "filename": doc.get("filename"),
+                "generated_at": doc.get("generated_at").isoformat() if hasattr(doc.get("generated_at"), "isoformat") else str(doc.get("generated_at")),
+                "generated_by": doc.get("generated_by"),
+            })
+            match["generated_documents"] = generated
     records.sort(key=lambda r: str(r.get("meeting_date") or ""), reverse=True)
-    return {"company_id": company_id, "records": records, "summary": _record_history_summary(company)}
+    return {"company_id": company_id, "records": records, "summary": _record_history_summary({**company, "record_history": records})}
 
 
 @router.post("/companies/{company_id}/record-history")
