@@ -613,8 +613,8 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
         <div><h3 className={`font-semibold ${text}`}>Record History</h3><p className={`text-xs mt-1 ${muted}`}>Permanent meeting register for Board Meetings, AGMs, EGMs and other secretarial records. Entries remain available for future MGT-7 / MGT-7A preparation.</p></div>
         <button onClick={openNew} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold"><Plus size={13}/> Add Meeting Record</button>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
-        {[['Total', summary.total || 0], ['Board Meetings', summary.board_meetings || 0], ['AGM', summary.agms || 0], ['EGM', summary.egms || 0]].map(([k,v]) => <div key={k} className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}><div className={`text-[10px] uppercase font-bold ${muted}`}>{k}</div><div className={`text-xl font-bold mt-1 ${text}`}>{v}</div></div>)}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-4">
+        {[['Total', summary.total || 0], ['Board Meetings', summary.board_meetings || 0], ['General Meetings', summary.general_meetings || ((summary.agms || 0) + (summary.egms || 0))], ['AGM', summary.agms || 0], ['EGM', summary.egms || 0]].map(([k,v]) => <div key={k} className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}><div className={`text-[10px] uppercase font-bold ${muted}`}>{k}</div><div className={`text-xl font-bold mt-1 ${text}`}>{v}</div></div>)}
       </div>
     </div>
 
@@ -1863,14 +1863,23 @@ function DirectorMultiSelect({ company, value = [], onChange, input, muted, plac
     </div>
   );
 }
+function meetingFlowKey(companyId) { return `roc-meeting-flow:${companyId}`; }
+function saveMeetingFlow(companyId, payload) {
+  try { sessionStorage.setItem(meetingFlowKey(companyId), JSON.stringify(payload)); } catch {}
+}
+function readMeetingFlow(companyId) {
+  try { return JSON.parse(sessionStorage.getItem(meetingFlowKey(companyId)) || 'null'); } catch { return null; }
+}
+
 function ResolutionTab({ company, isDark, input, text, muted, onNext }) {
-  const [meetingDate, setMeetingDate] = useState('');
-  const [meetingTime, setMeetingTime] = useState('11:00 AM');
-  const [venue, setVenue] = useState('Registered Office of the Company');
+  const flow = readMeetingFlow(company.id);
+  const [meetingDate, setMeetingDate] = useState(flow?.meeting_date || '');
+  const [meetingTime, setMeetingTime] = useState(flow?.meeting_time || '11:00 AM');
+  const [venue, setVenue] = useState(flow?.venue || 'Registered Office of the Company');
   const [chairman, setChairman] = useState('');
   const [directorsPresent, setDirectorsPresent] = useState([]);
-  const [resolutions, setResolutions] = useState([]);
-  const [draftMeta, setDraftMeta] = useState(null);
+  const [resolutions, setResolutions] = useState((flow?.special_business || []).map((r) => ({ ...r })));
+  const [draftMeta, setDraftMeta] = useState(flow ? { template_key: flow.template_key, template_values: flow.template_values || flow.values || {}, custom_topic: flow.custom_topic } : null);
   const [generating, setGenerating] = useState(false);
 
   const useDraft = ({ template_key, values, custom_topic, template }) => {
@@ -1894,6 +1903,7 @@ function ResolutionTab({ company, isDark, input, text, muted, onNext }) {
         directors_present: directorsPresent,
         resolutions,
       };
+      saveMeetingFlow(company.id, { ...readMeetingFlow(company.id), meeting_type: 'board', meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, directors_present: directorsPresent, resolutions });
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/board-resolution`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Board_Resolution_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Board Resolution generated');
@@ -1959,6 +1969,7 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
         agenda_items: agendaText.split('\n').map((s) => s.trim()).filter(Boolean),
         special_business: specialBusiness,
       };
+      saveMeetingFlow(company.id, payload);
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/notice`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Notice_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Notice generated');
@@ -1988,7 +1999,15 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Notice (.docx)
       </button>
       <div className="flex justify-end">
-        <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Board Resolution →</button>
+        <button type="button" onClick={() => {
+          if (!meetingDate) { toast.error('Meeting date is required'); return; }
+          saveMeetingFlow(company.id, {
+            ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue,
+            agenda_items: agendaText.split('\n').map((s) => s.trim()).filter(Boolean),
+            special_business: specialBusiness,
+          });
+          onNext();
+        }} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Board Resolution →</button>
       </div>
       <MeetingDocumentsCard company={company} meetingType={meetingType} docType="notice" isDark={isDark} text={text} muted={muted} title="Past Notices of Meeting" />
     </div>
@@ -2000,16 +2019,17 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 function MinutesTab({ company, isDark, input, text, muted, onNext }) {
-  const [meetingType, setMeetingType] = useState('board');
-  const [meetingDate, setMeetingDate] = useState('');
-  const [meetingTime, setMeetingTime] = useState('11:00 AM');
-  const [venue, setVenue] = useState('Registered Office of the Company');
-  const [chairman, setChairman] = useState('');
-  const [directorsPresent, setDirectorsPresent] = useState([]);
+  const flow = readMeetingFlow(company.id);
+  const [meetingType, setMeetingType] = useState(flow?.meeting_type === 'board' ? 'board' : 'board');
+  const [meetingDate, setMeetingDate] = useState(flow?.meeting_date || '');
+  const [meetingTime, setMeetingTime] = useState(flow?.meeting_time || '11:00 AM');
+  const [venue, setVenue] = useState(flow?.venue || 'Registered Office of the Company');
+  const [chairman, setChairman] = useState(flow?.chairman || '');
+  const [directorsPresent, setDirectorsPresent] = useState(flow?.directors_present || []);
   const [directorsAbsent, setDirectorsAbsent] = useState([]);
   const [attendeesOther, setAttendeesOther] = useState('');
   const [discussion, setDiscussion] = useState('');
-  const [resolutions, setResolutions] = useState([]);
+  const [resolutions, setResolutions] = useState((flow?.resolutions || []).map((r) => ({ ...r })));
   const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
 
@@ -2030,6 +2050,7 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
         attendees_other: attendeesOther.split(',').map((s) => s.trim()).filter(Boolean),
         quorum_present: true, discussion_notes: discussion, resolutions,
       };
+      saveMeetingFlow(company.id, { ...readMeetingFlow(company.id), meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, directors_present: directorsPresent, directors_absent: directorsAbsent, resolutions });
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/minutes`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Minutes_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Minutes generated');
@@ -2114,7 +2135,7 @@ function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNe
     </div>
     <div className="grid sm:grid-cols-2 gap-3">
       <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={e=>setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
-      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Members Present</label><DirectorMultiSelect company={company} value={membersPresent} onChange={setMembersPresent} input={input} muted={muted} placeholder="Select members / directors…" /></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Members Present</label><DirectorMultiSelect company={{ directors: company.shareholders || company.directors || [] }} value={membersPresent} onChange={setMembersPresent} input={input} muted={muted} placeholder="Select members / shareholders…" /></div>
     </div>
     <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
     <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
