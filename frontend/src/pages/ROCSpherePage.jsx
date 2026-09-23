@@ -130,9 +130,10 @@ const NAV_GROUPS = [
     label: 'Meetings & Events',
     icon: CalendarDays,
     tabs: [
-      { key: 'resolution', label: 'Board Resolution', icon: Gavel },
       { key: 'notice', label: 'Notice of Meeting', icon: ScrollText },
+      { key: 'resolution', label: 'Board Resolution', icon: Gavel },
       { key: 'minutes', label: 'Minutes of Meeting', icon: NotebookPen },
+      { key: 'general-resolution', label: 'General Meeting Resolution', icon: Gavel },
     ],
   },
   {
@@ -478,9 +479,10 @@ export default function ROCSpherePage() {
                   {tab === 'masterdata' && <MasterDataTab company={company} isDark={isDark} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'directors' && <DirectorsTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
                   {tab === 'statutory' && <StatutoryRecordsTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
+                  {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
+                  {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
                   {tab === 'history' && <RecordHistoryTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
@@ -626,17 +628,37 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
         <label><span className={`text-[10px] font-bold ${muted}`}>Notice Date</span><input type="date" className={input} value={form.notice_date || ''} onChange={e=>setField('notice_date',e.target.value)}/></label>
         <label><span className={`text-[10px] font-bold ${muted}`}>Mode</span><select className={input} value={form.mode || ''} onChange={e=>setField('mode',e.target.value)}><option>Physical</option><option>VC</option><option>OAVM</option><option>Hybrid</option><option>Other</option></select></label>
         <label className="md:col-span-2"><span className={`text-[10px] font-bold ${muted}`}>Venue</span><input className={input} value={form.venue || ''} onChange={e=>setField('venue',e.target.value)}/></label>
-        <label><span className={`text-[10px] font-bold ${muted}`}>Chairman</span><input className={input} value={form.chairman || ''} onChange={e=>setField('chairman',e.target.value)}/></label>
+        <label className="md:col-span-2"><span className={`text-[10px] font-bold ${muted}`}>Chairman</span>
+          <select className={input} value={form.chairman || ''} onChange={e=>setField('chairman',e.target.value)}>
+            <option value="">Select chairman…</option>
+            {(company.directors || company.designated_partners || company.partners || []).map((p) => <option key={p.name} value={p.name}>{p.name}{p.din ? ` — ${p.din}` : ''}</option>)}
+          </select>
+        </label>
         <label><span className={`text-[10px] font-bold ${muted}`}>Members Present</span><input type="number" className={input} value={form.members_present_count ?? ''} onChange={e=>setField('members_present_count',e.target.value)}/></label>
         <label><span className={`text-[10px] font-bold ${muted}`}>Members Entitled</span><input type="number" className={input} value={form.members_entitled_count ?? ''} onChange={e=>setField('members_entitled_count',e.target.value)}/></label>
         <label className="flex items-end gap-2 text-xs"><input type="checkbox" checked={!!form.quorum_present} onChange={e=>setField('quorum_present',e.target.checked)}/> Quorum present</label>
       </div>
 
-      <div className="mt-4">
-        <div className="flex items-center justify-between mb-2"><label className={`text-xs font-semibold ${text}`}>Attendance</label><button onClick={addAllDirectors} type="button" className={`text-[10px] px-2 py-1 rounded border ${isDark?'border-slate-700 text-slate-300':'border-slate-300 text-slate-600'}`}><UsersRound size={11} className="inline mr-1"/>Load Directors / Partners</button></div>
-        <div className={`rounded-lg border p-2 space-y-2 ${isDark?'border-slate-700 bg-slate-900/30':'border-slate-200 bg-slate-50'}`}>
-          {(form.attendance || []).map((a,i)=><div key={i} className="grid grid-cols-12 gap-2 items-center"><input className={`${input} col-span-4`} value={a.name || ''} onChange={e=>updateAttendance(i,'name',e.target.value)} placeholder="Name"/><input className={`${input} col-span-2`} value={a.din || ''} onChange={e=>updateAttendance(i,'din',e.target.value)} placeholder="DIN / DPIN"/><select className={`${input} col-span-3`} value={a.status || 'Present'} onChange={e=>updateAttendance(i,'status',e.target.value)}><option>Present</option><option>Absent</option><option>Leave of Absence</option></select><select className={`${input} col-span-2`} value={a.mode || form.mode || 'Physical'} onChange={e=>updateAttendance(i,'mode',e.target.value)}><option>Physical</option><option>VC</option><option>OAVM</option><option>Hybrid</option></select><button type="button" onClick={()=>setField('attendance',(form.attendance||[]).filter((_,x)=>x!==i))} className="text-red-500"><Trash2 size={14}/></button></div>)}
-          <button type="button" onClick={()=>setField('attendance',[...(form.attendance||[]),{name:'',din:'',designation:'',status:'Present',mode:form.mode||'Physical',remarks:''}])} className="text-xs text-blue-600"><Plus size={12} className="inline"/> Add attendee</button>
+      <div className="mt-4 space-y-3">
+        <div className="flex items-center justify-between"><label className={`text-xs font-semibold ${text}`}>Attendance</label><span className={`text-[10px] ${muted}`}>Select multiple directors / partners</span></div>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div><label className={`text-[10px] font-bold ${muted} mb-1 block`}>Present *</label>
+            <DirectorMultiSelect company={company} value={(form.attendance || []).filter(a=>a.status==='Present').map(a=>a.name)} onChange={(names)=>{
+              const people=company.directors || company.designated_partners || company.partners || [];
+              const absent=new Set((form.attendance||[]).filter(a=>a.status!=='Present').map(a=>a.name));
+              setField('attendance', [...names.map(name=>{const p=people.find(x=>x.name===name)||{}; return {name,din:p.din||'',designation:p.designation||'Director',status:'Present',mode:form.mode||'Physical',remarks:''};}), ...Array.from(absent).map(name=>{const p=people.find(x=>x.name===name)||{}; return {name,din:p.din||'',designation:p.designation||'Director',status:'Absent',mode:form.mode||'Physical',remarks:''};})]);
+            }} input={input} muted={muted} placeholder="Select present directors…" />
+          </div>
+          <div><label className={`text-[10px] font-bold ${muted} mb-1 block`}>Absent / Leave of Absence</label>
+            <DirectorMultiSelect company={company} value={(form.attendance || []).filter(a=>a.status!=='Present').map(a=>a.name)} onChange={(names)=>{
+              const people=company.directors || company.designated_partners || company.partners || [];
+              const present=new Set((form.attendance || []).filter(a=>a.status==='Present').map(a=>a.name));
+              setField('attendance', [...Array.from(present).map(name=>{const p=people.find(x=>x.name===name)||{}; return {name,din:p.din||'',designation:p.designation||'Director',status:'Present',mode:form.mode||'Physical',remarks:''};}), ...names.map(name=>{const p=people.find(x=>x.name===name)||{}; return {name,din:p.din||'',designation:p.designation||'Director',status:'Absent',mode:form.mode||'Physical',remarks:''};})]);
+            }} input={input} muted={muted} placeholder="Select absent directors…" />
+          </div>
+        </div>
+        <div className={`rounded-lg border p-2 ${isDark?'border-slate-700 bg-slate-900/30':'border-slate-200 bg-slate-50'}`}>
+          {(form.attendance || []).map((a,i)=><div key={i} className="grid grid-cols-12 gap-2 items-center py-1"><div className={`col-span-5 text-xs ${text}`}>{a.name}</div><div className={`col-span-3 text-[10px] ${muted}`}>{a.din || '—'}</div><select className={`${input} col-span-3`} value={a.mode || form.mode || 'Physical'} onChange={e=>updateAttendance(i,'mode',e.target.value)}><option>Physical</option><option>VC</option><option>OAVM</option><option>Hybrid</option></select><button type="button" onClick={()=>setField('attendance',(form.attendance||[]).filter((_,x)=>x!==i))} className="text-red-500"><Trash2 size={14}/></button></div>)}
         </div>
       </div>
 
@@ -1745,6 +1767,7 @@ function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, mut
         if (!alive) return;
         setDocs((data || []).filter((d) => {
           if (meetingType === 'board' && docType === 'board_resolution') return d.doc_type === 'board_resolution';
+          if (docType === 'general_resolution') return d.doc_type === `general_resolution_${meetingType}`;
           return d.doc_type === `${docType}_${meetingType}`;
         }));
       } catch { if (alive) setDocs([]); }
@@ -1766,7 +1789,9 @@ function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, mut
     d.doc_type === 'notice_egm' ? 'EGM Notice' :
     d.doc_type === 'minutes_board' ? 'Board Minutes' :
     d.doc_type === 'minutes_agm' ? 'AGM Minutes' :
-    d.doc_type === 'minutes_egm' ? 'EGM Minutes' : d.doc_type;
+    d.doc_type === 'minutes_egm' ? 'EGM Minutes' :
+    d.doc_type === 'general_resolution_agm' ? 'AGM Resolution' :
+    d.doc_type === 'general_resolution_egm' ? 'EGM Resolution' : d.doc_type;
 
   return (
     <div className={`rounded-xl border p-4 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-white'}`}>
@@ -1795,12 +1820,40 @@ function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, mut
   );
 }
 
+function DirectorMultiSelect({ company, value = [], onChange, input, muted, placeholder = 'Select directors…' }) {
+  const people = company?.directors || company?.designated_partners || company?.partners || [];
+  const selected = new Set(Array.isArray(value) ? value : []);
+  return (
+    <div className="relative">
+      <div className={`min-h-[38px] ${input} flex flex-wrap items-center gap-1.5`}>
+        {selected.size ? Array.from(selected).map((name) => (
+          <button key={name} type="button" onClick={() => onChange(Array.from(selected).filter((x) => x !== name))}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-[#0D3B66] border border-blue-100 text-[10px] font-semibold">
+            {name}<X size={10}/>
+          </button>
+        )) : <span className={`text-xs ${muted}`}>{placeholder}</span>}
+      </div>
+      <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
+        {people.length ? people.map((p) => {
+          const name = p.name;
+          const checked = selected.has(name);
+          return <label key={name} className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer text-xs ${checked ? 'border-blue-300 bg-blue-50/60' : 'border-transparent hover:border-slate-200'}`}>
+            <input type="checkbox" checked={checked} onChange={() => onChange(checked ? Array.from(selected).filter((x) => x !== name) : [...Array.from(selected), name])}/>
+            <span>{name}</span>
+            {p.din && <span className={`text-[9px] ${muted}`}>{p.din}</span>}
+          </label>;
+        }) : <span className={`text-[10px] ${muted}`}>No directors available in Company Master.</span>}
+      </div>
+    </div>
+  );
+}
+
 function ResolutionTab({ company, isDark, input, text, muted }) {
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
   const [venue, setVenue] = useState('Registered Office of the Company');
   const [chairman, setChairman] = useState('');
-  const [directorsPresent, setDirectorsPresent] = useState((company.directors || []).map((d) => d.name).join(', '));
+  const [directorsPresent, setDirectorsPresent] = useState([]);
   const [resolutions, setResolutions] = useState([]);
   const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
@@ -1823,7 +1876,7 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
     try {
       const payload = {
         ...draftMeta, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
-        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
+        directors_present: directorsPresent,
         resolutions,
       };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/board-resolution`, payload, { responseType: 'blob' });
@@ -1846,8 +1899,8 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Venue</label><input className={input} value={venue} onChange={(e) => setVenue(e.target.value)} /></div>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><input className={input} value={chairman} onChange={(e) => setChairman(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Directors Present</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={(e) => setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Directors Present</label><DirectorMultiSelect company={company} value={directorsPresent} onChange={setDirectorsPresent} input={input} muted={muted} placeholder="Select present directors…" /></div>
       </div>
       <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
@@ -1931,8 +1984,8 @@ function MinutesTab({ company, isDark, input, text, muted }) {
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
   const [venue, setVenue] = useState('Registered Office of the Company');
   const [chairman, setChairman] = useState('');
-  const [directorsPresent, setDirectorsPresent] = useState((company.directors || []).map((d) => d.name).join(', '));
-  const [directorsAbsent, setDirectorsAbsent] = useState('');
+  const [directorsPresent, setDirectorsPresent] = useState([]);
+  const [directorsAbsent, setDirectorsAbsent] = useState([]);
   const [attendeesOther, setAttendeesOther] = useState('');
   const [discussion, setDiscussion] = useState('');
   const [resolutions, setResolutions] = useState([]);
@@ -1951,8 +2004,8 @@ function MinutesTab({ company, isDark, input, text, muted }) {
     try {
       const payload = {
         ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
-        directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
-        directors_absent: directorsAbsent.split(',').map((s) => s.trim()).filter(Boolean),
+        directors_present: directorsPresent,
+        directors_absent: directorsAbsent,
         attendees_other: attendeesOther.split(',').map((s) => s.trim()).filter(Boolean),
         quorum_present: true, discussion_notes: discussion, resolutions,
       };
@@ -1974,9 +2027,9 @@ function MinutesTab({ company, isDark, input, text, muted }) {
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Venue</label><input className={input} value={venue} onChange={(e) => setVenue(e.target.value)} /></div>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><input className={input} value={chairman} onChange={(e) => setChairman(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Present</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Absent / Leave granted</label><input className={input} value={directorsAbsent} onChange={(e) => setDirectorsAbsent(e.target.value)} /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={(e) => setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Present</label><DirectorMultiSelect company={company} value={directorsPresent} onChange={setDirectorsPresent} input={input} muted={muted} placeholder="Select present directors…" /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Absent / Leave granted</label><DirectorMultiSelect company={company} value={directorsAbsent} onChange={setDirectorsAbsent} input={input} muted={muted} placeholder="Select absent directors…" /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Other attendees</label><input className={input} value={attendeesOther} onChange={(e) => setAttendeesOther(e.target.value)} /></div>
       </div>
       <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Discussion Notes</label><textarea className={input} rows={2} value={discussion} onChange={(e) => setDiscussion(e.target.value)} placeholder="Record the material discussion and decisions actually taken." /></div>
@@ -1992,6 +2045,60 @@ function MinutesTab({ company, isDark, input, text, muted }) {
 /* ═══════════════════════════════════════════════════════════════════════
  * Compliance Checklist tab
  * ═══════════════════════════════════════════════════════════════════════ */
+
+function GeneralMeetingResolutionTab({ company, isDark, input, text, muted }) {
+  const [meetingType, setMeetingType] = useState('agm');
+  const [meetingDate, setMeetingDate] = useState('');
+  const [meetingTime, setMeetingTime] = useState('11:00 AM');
+  const [venue, setVenue] = useState(company.registered_office_address || 'Registered Office of the Company');
+  const [chairman, setChairman] = useState('');
+  const [membersPresent, setMembersPresent] = useState([]);
+  const [resolutions, setResolutions] = useState([]);
+  const [draftMeta, setDraftMeta] = useState(null);
+  const [generating, setGenerating] = useState(false);
+
+  const useDraft = ({ template_key, values, custom_topic, template }) => {
+    const resolved = template ? applyDraftToText(template, values) : { particulars: 'Other', resolution: custom_topic };
+    setDraftMeta({ template_key, values, custom_topic });
+    setResolutions((prev) => [...prev, { particulars: resolved.particulars, resolution_text: resolved.resolution, proposed_by: '', seconded_by: '' }]);
+  };
+
+  const generate = async () => {
+    if (!meetingDate) { toast.error('Meeting date is required'); return; }
+    if (!resolutions.some((r) => r.resolution_text)) { toast.error('Select a pre-decided business item or add a resolution'); return; }
+    setGenerating(true);
+    try {
+      const payload = { ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, members_present: membersPresent, resolutions };
+      const res = await api.post(`/roc-sphere/companies/${company.id}/generate/general-resolution`, payload, { responseType: 'blob' });
+      triggerBlobDownload(res.data, `General_Meeting_Resolution_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
+      toast.success('General Meeting Resolution generated');
+    } catch (e) { toast.error(await parseBlobError(e) || 'Generation failed'); }
+    finally { setGenerating(false); }
+  };
+
+  return <div className="space-y-4">
+    <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+      <p className={`text-xs font-semibold ${text}`}>Resolution at General Meeting</p>
+      <p className={`text-[10px] mt-1 ${muted}`}>Choose AGM/EGM business from the pre-decided General Meetings library, enter the meeting details, review the resolution and generate the certified draft.</p>
+    </div>
+    <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="general" />
+    <div className="grid sm:grid-cols-4 gap-3">
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label><select className={input} value={meetingType} onChange={e=>setMeetingType(e.target.value)}><option value="agm">Annual General Meeting (AGM)</option><option value="egm">Extra-Ordinary General Meeting (EGM)</option></select></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={e=>setMeetingDate(e.target.value)}/></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={e=>setMeetingTime(e.target.value)}/></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Venue</label><input className={input} value={venue} onChange={e=>setVenue(e.target.value)}/></div>
+    </div>
+    <div className="grid sm:grid-cols-2 gap-3">
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={e=>setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Members Present</label><DirectorMultiSelect company={company} value={membersPresent} onChange={setMembersPresent} input={input} muted={muted} placeholder="Select members / directors…" /></div>
+    </div>
+    <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
+    <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
+      {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate General Meeting Resolution (.docx)
+    </button>
+    <MeetingDocumentsCard company={company} meetingType={meetingType} docType="general_resolution" isDark={isDark} text={text} muted={muted} title="Past General Meeting Resolutions" />
+  </div>;
+}
 
 function ChecklistTab({ company, isDark, text, muted }) {
   const [data, setData] = useState(null);
@@ -2280,10 +2387,10 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
         For the MCA Company/LLP Master Data export (PDF/XLSX/CSV), use the <strong>Master Data</strong> tab instead.
       </p>
 
-      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Upload lane">
+      <div className="flex border-b border-slate-200 dark:border-slate-700" role="tablist" aria-label="Upload lane">
         {availableCategories.map((c) => (
           <button key={c.key} onClick={() => switchCategory(c.key)} role="tab" aria-selected={category === c.key}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition
+            className={`px-3 py-2 text-[11px] font-semibold border-b-2 transition
               ${category === c.key
                 ? 'bg-blue-600 border-blue-600 text-white'
                 : isDark ? 'border-slate-700 text-slate-300 hover:border-blue-500/60' : 'border-slate-300 text-slate-600 hover:border-blue-400'}`}>
@@ -2292,12 +2399,12 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
         ))}
       </div>
 
-      <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
+      <div className={`rounded-xl border p-5 shadow-sm ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
         <p className={`text-xs font-semibold ${text} mb-1`}>{activeCategory.label}</p>
         <p className={`text-[11px] ${muted} mb-3`}>{activeCategory.hint}</p>
         <input key={category} type="file" multiple accept={activeCategory.accept}
           onChange={(e) => setRocFiles(Array.from(e.target.files || []))}
-          className={`text-xs ${muted}`} />
+          className={`block w-full text-xs ${muted} file:mr-3 file:px-3 file:py-1.5 file:border file:border-slate-300 file:bg-slate-50 file:text-slate-700 file:font-semibold file:cursor-pointer`} />
         {!!rocFiles.length && <p className={`text-xs mt-2 ${text}`}>{rocFiles.length} file(s) selected for {activeCategory.label}</p>}
         <div className="flex gap-2 mt-3">
           <button onClick={() => handleUpload(false)} disabled={extracting || !rocFiles.length}
