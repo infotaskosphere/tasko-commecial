@@ -12,8 +12,8 @@ server.py (see INTEGRATION.md):
 Covers:
   - Company master (linked to an existing Client, or standalone)
   - Directors / shareholders register
-  - Upload & best-effort parse of AOC-4 / MGT-7 / MGT-7A PDFs plus the
-    separate macro-enabled MGT-7A shareholder workbook
+  - Upload & best-effort parse of AOC-4 / MGT-7 / MGT-7A / ADT-1 / DPT-3
+    PDFs plus the separate macro-enabled MGT-7A shareholder workbook
   - Share-transfer register, SH-4 instrument and share-certificate drafts
   - Companies Act 2013 compliance checklist engine (heuristic, based on
     company category/size — see COMPLIANCE_RULES below)
@@ -222,6 +222,9 @@ class RocCompanyIn(BaseModel):
     annual_return_data: Dict[str, Any] = Field(default_factory=dict)
     audit_report_data: Dict[str, Any] = Field(default_factory=dict)
     board_report_data: Dict[str, Any] = Field(default_factory=dict)
+    # Structured ADT-1 auditor appointment data, retained separately from the
+    # compact auditor card so all filed appointment particulars remain available.
+    adt1_data: Dict[str, Any] = Field(default_factory=dict)
     # Structured DPT-3 return data: deposits, non-deposit loans, liquid assets,
     # charges and filing/signatory metadata, retained by financial year.
     dpt3_data: Dict[str, Any] = Field(default_factory=dict)
@@ -670,6 +673,8 @@ DIRECTOR_SHAREHOLDER_SOURCE_TYPES = {"mgt-7", "mgt-7a", "mgt-7a-attachment"}
 # Form whose MCA-prescribed content includes the audited Balance Sheet,
 # Statement of Profit & Loss and Auditor Details block.
 FINANCIAL_SOURCE_TYPE = "aoc-4"
+# ADT-1 is the filing-specific source for auditor appointment/tenure details.
+AUDITOR_APPOINTMENT_SOURCE_TYPE = "adt-1"
 
 # ── Filing-category lanes for the split "Upload ROC Forms" UI ─────────────
 # The frontend now offers three separate upload lanes instead of one mixed
@@ -1145,6 +1150,132 @@ def parse_dpt3(text: str) -> Dict[str, Any]:
         "Charges","Rule 2(1)(c) Non-Deposit Loans","Credit Rating",
         "Attachments","Declarations","Filing Metadata"
     ]
+    return out
+
+
+def parse_adt1(text: str) -> Dict[str, Any]:
+    """Extract the text-bearing fields of MCA Form ADT-1.
+
+    ADT-1 is the appointment/continuance record for the statutory auditor.
+    The parser deliberately stores the complete appointment particulars in
+    adt1_data and also returns the compact fields that can safely populate
+    Company Master.auditor. Checkbox-only choices are not guessed when the
+    PDF text stream does not encode which radio button is selected.
+    """
+    lines = [re.sub(r"\\s+", " ", x).strip() for x in text.splitlines()]
+    out: Dict[str, Any] = {
+        "filing_source": "ADT-1",
+        "form_no": "ADT-1",
+    }
+
+    def find_value(patterns: List[str], validator=None, start: int = 0, lookahead: int = 4) -> Optional[str]:
+        for i in range(start, len(lines)):
+            line = lines[i]
+            for pattern in patterns:
+                m = re.search(pattern, line, re.I)
+                if m:
+                    value = (m.group(1) if m.lastindex else "").strip(" :")
+                    if value and (validator is None or validator(value)):
+                        return value
+                    for cand in lines[i + 1:i + 1 + lookahead]:
+                        cand = cand.strip()
+                        if cand and (validator is None or validator(cand)):
+                            return cand
+        return None
+
+    date_re = lambda s: bool(_DATE_VALUE_RE.fullmatch(s))
+    cin = find_value([r"Corporate Identity Number \\(CIN\\)\\s+([A-Z0-9]{21})"])
+    name = find_value([r"Name of the company\\s+(.+)$"])
+    registered_address = find_value(
+        [r"Address of the registered office of the company\\s+(.+)$"],
+        lambda s: len(s) >= 10,
+        lookahead=6,
+    )
+    company_email = find_value([r"Email ID of the company\\s+(.+)$"])
+    agm_date = find_value([r"If yes, date of AGM \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+    appointment_date = find_value([r"Date of appointment \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+    auditor_count = find_value([r"Number of auditor\\(s\\) appointed\\s+(\\d+)"])
+    membership_no = find_value([r"Membership Number of Auditor signing the balance sheet of the company\\s+(\\d+)"])
+    auditor_name = find_value([r"Name of the Auditor\\s+(.+)$"])
+    auditor_pan = find_value([r"Income Tax permanent account number of auditor\\s+([A-Z]{5}\\d{4}[A-Z])"])
+    auditor_email = find_value([r"\\*?Email ID\\s+([*A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})"])
+    from_date = find_value([r"From \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+    till_date = find_value([r"To \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+    fy_count = find_value([r"Number of financial year\\(s\\) to which appointment relates\\s+(\\d+)"])
+    previous_year_count = find_value([r"Number of financial year\\(s\\)\\s+(\\d+)"])
+    filing_srn = find_value([r"eForm Service request number \\(SRN\\)\\s+([A-Z0-9]+)$"])
+    filing_date = find_value([r"eForm filing date \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+    signer_din = find_value([r"Director identification number.*?\\s+(\\d{8})$"])
+    resolution_date = find_value([r"resolution number.*?dated.*?\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
+
+    # Multi-line auditor address: the ADT-1 form has separate labelled lines.
+    auditor_address_parts = []
+    for label, pattern in (
+        ("address_line_1", r"Address Line 1\\s+(.+)$"),
+        ("address_line_2", r"Address Line 2\\s+(.+)$"),
+        ("country", r"Country\\s+(.+)$"),
+        ("pin_code", r"Pin Code/Zip Code\\s+([0-9A-Za-z -]+)$"),
+        ("area_locality", r"Area/Locality\\s+(.+)$"),
+        ("city", r"City\\s+(.+)$"),
+        ("district", r"District\\s+(.+)$"),
+        ("state", r"State/UT\\s+(.+)$"),
+    ):
+        v = find_value([pattern])
+        if v:
+            out[f"auditor_{label}"] = v
+            if label.startswith("address_") or label in ("city", "district", "state", "area_locality", "country", "pin_code"):
+                auditor_address_parts.append(v)
+    if auditor_address_parts:
+        out["auditor_address"] = ", ".join(dict.fromkeys(auditor_address_parts))
+
+    # Auditor firm fields can be blank for an individual auditor.
+    for key, patterns in {
+        "category": [r"Category of Auditor\\s+(.+)$"],
+        "firm_reg_no": [r"Firm Registration Number\\s+([A-Z0-9-]+)$"],
+        "firm_name": [r"Name of the Auditor's Firm\\s+(.+)$"],
+        "firm_pan": [r"Income Tax permanent account number of auditor's firm\\s+([A-Z]{5}\\d{4}[A-Z])$"],
+        "firm_email": [r"Email ID\\s+([*A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})$"],
+        "previous_appointment_tenure": [r"Specify the tenure of previous appointment\\(s\\).*?\\s+(.+)$"],
+        "inc28_srn": [r"Specify the SRN of INC-28.*?\\s+([A-Z0-9]+)$"],
+        "casual_vacancy_srn": [r"Specify the SRN of relevant form\\s+([A-Z0-9]+)$"],
+        "casual_vacancy_date": [r"Mention the date of casual vacancy.*?\\s+([0-3]?\\d/[01]?\\d/\\d{4})$"],
+        "vacating_firm_reg_no": [r"Registration number of auditor's firm who has vacated the office\\s+([A-Z0-9-]+)$"],
+        "vacating_membership_no": [r"Membership number of the auditor\\s+(\\d+)$"],
+        "casual_vacancy_reason": [r"Reasons of the casual vacancy\\s+(.+)$"],
+    }.items():
+        v=find_value(patterns)
+        if v:
+            out[key]=v
+
+    if cin: out["cin"]=cin
+    if name: out["company_name"]=name
+    if registered_address: out["registered_office_address"]=registered_address
+    if company_email: out["company_email"]=company_email
+    if agm_date: out["agm_date"]=agm_date
+    if appointment_date: out["appointment_date"]=appointment_date
+    if auditor_count: out["auditor_count"]=int(_num(auditor_count))
+    if membership_no: out["membership_no"]=membership_no
+    if auditor_name: out["auditor_name"]=auditor_name
+    if auditor_pan: out["auditor_pan"]=auditor_pan
+    if auditor_email: out["auditor_email"]=auditor_email
+    if from_date: out["appointed_from"]=from_date
+    if till_date: out["appointed_till"]=till_date
+    if fy_count: out["financial_year_count"]=int(_num(fy_count))
+    if previous_year_count: out["previous_appointment_year_count"]=int(_num(previous_year_count))
+    if filing_srn: out["filing_srn"]=filing_srn
+    if filing_date: out["filing_date"]=filing_date
+    if signer_din: out["signatory_din"]=signer_din
+    if resolution_date: out["board_resolution_date"]=resolution_date
+
+    # Attachment names are useful evidence for the filing record.
+    attachments=[]
+    for line in lines:
+        if re.search(r"(?:intimation|consent|eligibility|resignation letter|central government order)", line, re.I):
+            if ".pdf" in line.lower() or "attachment" in line.lower():
+                attachments.append(line)
+    if attachments:
+        out["attachments"]=list(dict.fromkeys(attachments))
+
     return out
 
 
@@ -1634,6 +1765,23 @@ async def upload_master_data(
             dpt3 = parse_dpt3(text)
             if dpt3:
                 extracted["_dpt3"] = dpt3
+        if form_type == "adt-1":
+            adt1 = parse_adt1(text)
+            if adt1:
+                extracted["_adt1"] = adt1
+                # Keep the compact auditor card in sync with appointment data.
+                extracted["_auditor"] = {
+                    "name": adt1.get("auditor_name"),
+                    "membership_no": adt1.get("membership_no"),
+                    "appointed_from": adt1.get("appointed_from"),
+                    "appointed_till": adt1.get("appointed_till"),
+                    "pan": adt1.get("auditor_pan"),
+                    "email": adt1.get("auditor_email"),
+                    "address": adt1.get("auditor_address"),
+                    "category": adt1.get("category"),
+                    "firm_reg_no": adt1.get("firm_reg_no"),
+                    "firm_name": adt1.get("firm_name"),
+                }
         if form_type == "auditor-report":
             audit_report = parse_auditor_report(text)
             if audit_report:
@@ -1676,6 +1824,8 @@ async def upload_master_data(
             roc_extracted["_audit_report"] = {**(roc_extracted.get("_audit_report") or {}), **extracted["_audit_report"]}
         if extracted.get("_board_report"):
             roc_extracted["_board_report"] = {**(roc_extracted.get("_board_report") or {}), **extracted["_board_report"]}
+        if extracted.get("_adt1"):
+            roc_extracted["_adt1"] = {**(roc_extracted.get("_adt1") or {}), **extracted["_adt1"]}
         if extracted.get("_dpt3"):
             roc_extracted["_dpt3"] = {**(roc_extracted.get("_dpt3") or {}), **extracted["_dpt3"]}
 
@@ -1722,6 +1872,8 @@ async def upload_master_data(
             clean["audit_report_data"] = {**(company.get("audit_report_data") or {}), **roc_extracted["_audit_report"]}
         if roc_extracted.get("_board_report"):
             clean["board_report_data"] = {**(company.get("board_report_data") or {}), **roc_extracted["_board_report"]}
+        if roc_extracted.get("_adt1"):
+            clean["adt1_data"] = {**(company.get("adt1_data") or {}), **roc_extracted["_adt1"]}
         if roc_extracted.get("_dpt3"):
             dpt3_data = dict(company.get("dpt3_data") or {})
             period_key = roc_extracted["_dpt3"].get("return_period") or "latest"
@@ -1756,6 +1908,8 @@ async def upload_master_data(
         visible["audit_report_data"] = roc_extracted["_audit_report"]
     if roc_extracted.get("_board_report"):
         visible["board_report_data"] = roc_extracted["_board_report"]
+    if roc_extracted.get("_adt1"):
+        visible["adt1_data"] = roc_extracted["_adt1"]
     if roc_extracted.get("_dpt3"):
         visible["dpt3_data"] = roc_extracted["_dpt3"]
     return {"extracted": visible, "results": results, "applied": bool(apply), "errors": errors,
