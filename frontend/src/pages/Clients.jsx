@@ -6426,15 +6426,15 @@ export default function Clients() {
             </div>
           </div>
           <div className="flex flex-nowrap items-center gap-2">
-            <Button variant="outline" onClick={downloadTemplate} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 rounded-xl gap-2 backdrop-blur-sm whitespace-nowrap"><FileText className="h-4 w-4" /> CSV Template</Button>
-            {canEditClients && <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importLoading} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 rounded-xl backdrop-blur-sm whitespace-nowrap">{importLoading ? 'Importing…' : 'Import CSV'}</Button>}
+            <Button variant="outline" onClick={downloadTemplate} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 rounded-none gap-2 backdrop-blur-sm whitespace-nowrap"><FileText className="h-4 w-4" /> CSV Template</Button>
+            {canEditClients && <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importLoading} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 rounded-none backdrop-blur-sm whitespace-nowrap">{importLoading ? 'Importing…' : 'Import CSV'}</Button>}
 
             {/* ── AI Duplicate Detector ── */}
             <Button
               variant="outline"
               onClick={handleDetectClientDuplicates}
               disabled={detectingDups || clients.length === 0}
-              className="h-9 px-4 text-sm rounded-xl gap-2 backdrop-blur-sm font-semibold transition-all disabled:opacity-40"
+              className="h-9 px-4 text-sm rounded-none gap-2 backdrop-blur-sm font-semibold transition-all disabled:opacity-40"
               style={{ backgroundColor: 'rgba(139,92,246,0.25)', borderColor: 'rgba(167,139,250,0.6)', color: '#ede9fe' }}
             >
               {detectingDups
@@ -6446,7 +6446,7 @@ export default function Clients() {
               <Button
                 variant="outline"
                 onClick={() => { setEditingItrClient(null); setItrDialogOpen(true); }}
-                className="h-9 px-4 text-sm rounded-xl gap-2 backdrop-blur-sm font-semibold transition-all"
+                className="h-9 px-4 text-sm rounded-none gap-2 backdrop-blur-sm font-semibold transition-all"
                 style={{ backgroundColor: 'rgba(13,115,119,0.25)', borderColor: 'rgba(20,184,166,0.6)', color: '#ccfbf1' }}
               >
                 <FileText className="h-3.5 w-3.5" /> + ITR Client
@@ -6455,7 +6455,7 @@ export default function Clients() {
             <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
               {canEditClients && (
               <DialogTrigger asChild>
-                <Button onClick={openAddDialog} className="h-9 px-5 text-sm rounded-xl bg-white text-slate-800 hover:bg-blue-50 shadow-sm gap-2 font-semibold border-0"><Plus className="h-4 w-4" /> New Client</Button>
+                <Button onClick={openAddDialog} className="h-9 px-5 text-sm rounded-none bg-white text-slate-800 hover:bg-blue-50 shadow-sm gap-2 font-semibold border-0"><Plus className="h-4 w-4" /> New Client</Button>
               </DialogTrigger>
               )}
               <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-0">
