@@ -2085,7 +2085,8 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   const [discussion, setDiscussion] = useState('');
   const [resolutions, setResolutions] = useState((flow?.resolutions || []).map((r) => ({ ...r })));
   const [draftMeta, setDraftMeta] = useState(null);
-  const [selectedRecordId, setSelectedRecordId] = useState(flow?.id || '');
+  const [selectedRecordId, setSelectedRecordId] = useState(flow?.selected_record_id || '');
+  const [selectedOccasion, setSelectedOccasion] = useState(flow?.occasion || '');
   const [generating, setGenerating] = useState(false);
 
   const useDraft = ({ template_key, values, custom_topic, template }) => {
@@ -2100,13 +2101,13 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
     setGenerating(true);
     try {
       const payload = {
-        ...draftMeta, selected_record_id: selectedRecordId, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        ...draftMeta, selected_record_id: selectedRecordId, occasion: selectedOccasion, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
         directors_present: directorsPresent,
         directors_absent: directorsAbsent,
         attendees_other: attendeesOther.split(',').map((s) => s.trim()).filter(Boolean),
         quorum_present: true, discussion_notes: discussion, resolutions,
       };
-      saveMeetingFlow(company.id, { ...readMeetingFlow(company.id), meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, directors_present: directorsPresent, directors_absent: directorsAbsent, resolutions });
+      saveMeetingFlow(company.id, { ...readMeetingFlow(company.id), selected_record_id: selectedRecordId, occasion: selectedOccasion, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, directors_present: directorsPresent, directors_absent: directorsAbsent, resolutions });
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/minutes`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Minutes_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Minutes generated');
@@ -2119,6 +2120,7 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
       <p className={`text-xs ${muted}`}>Minutes must be entered in the Minutes Book within 30 days of the meeting (Section 118); the uploaded ICSI specimen also covers the standard sequence: Chairman, leave of absence, quorum, previous minutes, committee minutes, circulation resolutions, registers/disclosures, business, and conclusion.</p>
       <RecordedMeetingSelector company={company} input={input} muted={muted} onSelect={(record) => {
         setSelectedRecordId(record.id);
+        setSelectedOccasion(record.occasion || record.resolution_items?.[0]?.particulars || record.agenda_items?.[0] || '');
         setMeetingType(record.meeting_type || 'board');
         setMeetingDate(record.meeting_date || '');
         setMeetingTime(record.meeting_time || '11:00 AM');
@@ -2126,10 +2128,23 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
         setChairman(record.chairman || '');
         setDirectorsPresent((record.attendance || []).filter(a => a.status === 'Present').map(a => a.name));
         setDirectorsAbsent((record.attendance || []).filter(a => a.status !== 'Present').map(a => a.name));
-        setResolutions((record.resolutions_passed || []).map((x, idx) => ({ particulars: `Resolution ${idx + 1}`, resolution_text: x, proposed_by: '', seconded_by: '' })));
+        setResolutions((record.resolution_items || (record.resolutions_passed || []).map((x, idx) => ({ particulars: `Resolution ${idx + 1}`, resolution_text: x }))).map((x) => ({ particulars: x.particulars || 'Resolution', resolution_text: x.resolution_text || '', proposed_by: x.proposed_by || '', seconded_by: x.seconded_by || '' })));
         setDiscussion(record.secretarial_notes || '');
       }} />
-      <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="minutes" />
+      {selectedRecordId ? (
+        <div className="rounded-xl border border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/50 dark:bg-emerald-950/10 p-4">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 size={17} className="mt-0.5 text-emerald-600 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Occasion auto-fetched from the selected meeting</p>
+              <p className={`text-[10px] mt-0.5 ${muted}`}>The Minutes draft uses the resolution/business already recorded for this meeting. No second topic selection is required.</p>
+              <p className={`text-sm font-semibold mt-2 ${text}`}>{selectedOccasion || 'Recorded meeting business'}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="minutes" />
+      )}
       <div className="grid sm:grid-cols-4 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label><select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}><option value="board">Board Meeting</option><option value="agm">Annual General Meeting (AGM)</option><option value="egm">Extra-Ordinary General Meeting (EGM)</option></select></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
