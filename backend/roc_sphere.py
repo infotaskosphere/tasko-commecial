@@ -1737,7 +1737,7 @@ async def fetch_master_data(
             continue
 
         fields = {k: v for k, v in extracted.items() if not k.startswith("_")}
-        results.append({"filename": filename, "fields_found": len(fields)})
+        results.append({"filename": filename, "fields_found": len(fields), "size": len(raw)})
         for k, v in fields.items():
             if v not in (None, "", 0):
                 merged[k] = v
@@ -1781,7 +1781,7 @@ async def fetch_master_data(
     }.items() if v not in (None, "")})
     existing_master["last_fetched_at"] = _now().isoformat()
     existing_master["last_fetched_by"] = _who(current_user)
-    existing_master["source_files"] = [r["filename"] for r in results]
+    existing_master["source_files"] = [{"filename": r["filename"], "size": r.get("size")} for r in results]
     clean["master_data"] = existing_master
 
     clean["roc_form_uploads"] = (company.get("roc_form_uploads") or []) + [
