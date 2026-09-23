@@ -495,12 +495,21 @@ export default function WebsiteBuilder() {
         <button type="button" onClick={() => { setSelectedId(selected?.id); setMobilePanel("section"); }} className="flex flex-1 flex-col items-center gap-0.5 py-1 text-[9px] font-bold text-emerald-600"><Type size={17}/>Edit</button>
       </div>
 
-      {mobilePanel && <div className="fixed inset-0 z-[60] bg-slate-950/35 md:hidden" onClick={() => setMobilePanel(null)}>
-        <div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-          <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3"><div className="text-sm font-extrabold text-slate-900">{mobilePanel === "section" ? "Edit module" : tools.find((x) => x[0] === mobilePanel)?.[2]}</div><button type="button" onClick={() => setMobilePanel(null)} className="p-1 text-slate-500"><X size={18}/></button></div>
-          {mobilePanel === "section" ? (selected ? <SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/> : <div className="text-xs text-slate-500">Select a module first.</div>) : renderToolPanel()}
+      {mobilePanel && (
+        <div className="fixed inset-0 z-[60] bg-slate-950/35 md:hidden" onClick={() => setMobilePanel(null)}>
+          <div className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="text-sm font-extrabold text-slate-900">
+                {mobilePanel === "section" ? "Edit module" : tools.find((x) => x[0] === mobilePanel)?.[2]}
+              </div>
+              <button type="button" onClick={() => setMobilePanel(null)} className="p-1 text-slate-500"><X size={18}/></button>
+            </div>
+            {mobilePanel === "section" ? (
+              selected ? <SectionEditor section={selected} patchData={patchSection} patchStyle={patchStyle}/> : <div className="text-xs text-slate-500">Select a module first.</div>
+            ) : renderToolPanel()}
+          </div>
         </div>
-      </div>
+      )}      </div>
     </div>
   </div>;
 }
