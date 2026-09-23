@@ -1198,14 +1198,22 @@ def parse_adt1(text: str) -> Dict[str, Any]:
     membership_no = find_value([r"Membership Number of Auditor signing the balance sheet of the company\\s+(\\d+)"])
     auditor_name = find_value([r"Name of the Auditor\\s+(.+)$"])
     auditor_pan = find_value([r"Income Tax permanent account number of auditor\\s+([A-Z]{5}\\d{4}[A-Z])"])
-    auditor_email = find_value([r"\\*?Email ID\\s+([*A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})"])
+    # The first generic Email ID on ADT-1 is the company email. Locate the
+    # auditor email only after the auditor address/name block (page 3).
+    auditor_email = None
+    auditor_name_idx = next((i for i, line in enumerate(lines) if re.search(r"Name of the Auditor\\s+", line, re.I)), -1)
+    if auditor_name_idx >= 0:
+        auditor_email = find_value([r"\\*?Email ID\\s+([*A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,})"], start=auditor_name_idx + 1, lookahead=25)
     from_date = find_value([r"From \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
     till_date = find_value([r"To \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
     fy_count = find_value([r"Number of financial year\\(s\\) to which appointment relates\\s+(\\d+)"])
     previous_year_count = find_value([r"Number of financial year\\(s\\)\\s+(\\d+)"])
     filing_srn = find_value([r"eForm Service request number \\(SRN\\)\\s+([A-Z0-9]+)$"])
     filing_date = find_value([r"eForm filing date \\(DD/MM/YYYY\\)\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
-    signer_din = find_value([r"Director identification number.*?\\s+(\\d{8})$"])
+    signer_din = find_value([r"Director identification number.*"], validator=lambda s: bool(re.search(r"\\b\\d{8}\\b", s)), lookahead=8)
+    if signer_din and not signer_din.isdigit():
+        m_signer = re.search(r"\\b(\\d{8})\\b", signer_din)
+        signer_din = m_signer.group(1) if m_signer else signer_din
     resolution_date = find_value([r"resolution number.*?dated.*?\\s+([0-3]?\\d/[01]?\\d/\\d{4})"])
 
     # Multi-line auditor address: the ADT-1 form has separate labelled lines.
