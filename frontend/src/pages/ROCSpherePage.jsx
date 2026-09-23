@@ -482,7 +482,7 @@ export default function ROCSpherePage() {
                   {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={(type) => setTab(type === 'board' ? 'resolution' : 'general-resolution')} />}
                   {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('minutes')} />}
                   {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
-                  {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
+                  {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('minutes')} />}
                   {tab === 'history' && <RecordHistoryTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
@@ -2022,7 +2022,7 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
 
 function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   const flow = readMeetingFlow(company.id);
-  const [meetingType, setMeetingType] = useState(flow?.meeting_type === 'board' ? 'board' : 'board');
+  const [meetingType, setMeetingType] = useState(flow?.meeting_type || 'board');
   const [meetingDate, setMeetingDate] = useState(flow?.meeting_date || '');
   const [meetingTime, setMeetingTime] = useState(flow?.meeting_time || '11:00 AM');
   const [venue, setVenue] = useState(flow?.venue || 'Registered Office of the Company');
@@ -2094,13 +2094,14 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
  * ═══════════════════════════════════════════════════════════════════════ */
 
 function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNext }) {
-  const [meetingType, setMeetingType] = useState('agm');
-  const [meetingDate, setMeetingDate] = useState('');
-  const [meetingTime, setMeetingTime] = useState('11:00 AM');
-  const [venue, setVenue] = useState(company.registered_office_address || 'Registered Office of the Company');
-  const [chairman, setChairman] = useState('');
-  const [membersPresent, setMembersPresent] = useState([]);
-  const [resolutions, setResolutions] = useState([]);
+  const flow = readMeetingFlow(company.id);
+  const [meetingType, setMeetingType] = useState(flow?.meeting_type === 'egm' ? 'egm' : 'agm');
+  const [meetingDate, setMeetingDate] = useState(flow?.meeting_date || '');
+  const [meetingTime, setMeetingTime] = useState(flow?.meeting_time || '11:00 AM');
+  const [venue, setVenue] = useState(flow?.venue || company.registered_office_address || 'Registered Office of the Company');
+  const [chairman, setChairman] = useState(flow?.chairman || '');
+  const [membersPresent, setMembersPresent] = useState(flow?.members_present || []);
+  const [resolutions, setResolutions] = useState((flow?.resolutions || []).map((r) => ({ ...r })));
   const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
 
@@ -2116,6 +2117,7 @@ function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNe
     setGenerating(true);
     try {
       const payload = { ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman, members_present: membersPresent, resolutions };
+      saveMeetingFlow(company.id, { ...readMeetingFlow(company.id), ...payload });
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/general-resolution`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `General_Meeting_Resolution_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('General Meeting Resolution generated');
@@ -2144,7 +2146,7 @@ function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNe
       {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate General Meeting Resolution (.docx)
     </button>
     <div className="flex justify-end">
-      <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Open Meeting Records →</button>
+      <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Minutes →</button>
     </div>
     <MeetingDocumentsCard company={company} meetingType={meetingType} docType="general_resolution" isDark={isDark} text={text} muted={muted} title="Past General Meeting Resolutions" />
   </div>;
