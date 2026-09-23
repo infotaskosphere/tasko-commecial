@@ -479,10 +479,10 @@ export default function ROCSpherePage() {
                   {tab === 'masterdata' && <MasterDataTab company={company} isDark={isDark} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'directors' && <DirectorsTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
                   {tab === 'statutory' && <StatutoryRecordsTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
-                  {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
-                  {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
-                  {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
-                  {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} />}
+                  {tab === 'notice' && <NoticeTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('resolution')} />}
+                  {tab === 'resolution' && <ResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('minutes')} />}
+                  {tab === 'minutes' && <MinutesTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
+                  {tab === 'general-resolution' && <GeneralMeetingResolutionTab company={company} isDark={isDark} input={input} text={text} muted={muted} onNext={() => setTab('history')} />}
                   {tab === 'history' && <RecordHistoryTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
@@ -1800,7 +1800,7 @@ function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, mut
           <h4 className={`text-sm font-semibold ${text}`}>{title}</h4>
           <p className={`text-[10px] mt-0.5 ${muted}`}>Previously generated documents are listed here and remain linked to the company's meeting register.</p>
         </div>
-        <span className="px-2 py-1 rounded-full bg-blue-50 text-[#0D3B66] text-[10px] font-semibold">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
+        <span className="px-2 py-1 border border-blue-100 bg-blue-50 text-[#0D3B66] text-[10px] font-semibold">{docs.length} document{docs.length === 1 ? '' : 's'}</span>
       </div>
       {loading ? <div className={`py-5 text-center ${muted}`}>Loading…</div> :
        docs.length === 0 ? <div className={`py-5 text-center text-xs ${muted}`}>No generated {title.toLowerCase()} documents yet.</div> :
@@ -1821,34 +1821,49 @@ function MeetingDocumentsCard({ company, meetingType, docType, isDark, text, mut
 }
 
 function DirectorMultiSelect({ company, value = [], onChange, input, muted, placeholder = 'Select directors…' }) {
+  const [open, setOpen] = useState(false);
   const people = company?.directors || company?.designated_partners || company?.partners || [];
   const selected = new Set(Array.isArray(value) ? value : []);
+  const toggle = (name) => onChange(selected.has(name) ? Array.from(selected).filter((x) => x !== name) : [...Array.from(selected), name]);
+
+  useEffect(() => {
+    const close = (e) => {
+      if (!e.target.closest('[data-director-multiselect]')) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
   return (
-    <div className="relative">
-      <div className={`min-h-[38px] ${input} flex flex-wrap items-center gap-1.5`}>
-        {selected.size ? Array.from(selected).map((name) => (
-          <button key={name} type="button" onClick={() => onChange(Array.from(selected).filter((x) => x !== name))}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-[#0D3B66] border border-blue-100 text-[10px] font-semibold">
-            {name}<X size={10}/>
-          </button>
-        )) : <span className={`text-xs ${muted}`}>{placeholder}</span>}
-      </div>
-      <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-28 overflow-y-auto">
-        {people.length ? people.map((p) => {
-          const name = p.name;
-          const checked = selected.has(name);
-          return <label key={name} className={`flex items-center gap-2 px-2 py-1.5 rounded border cursor-pointer text-xs ${checked ? 'border-blue-300 bg-blue-50/60' : 'border-transparent hover:border-slate-200'}`}>
-            <input type="checkbox" checked={checked} onChange={() => onChange(checked ? Array.from(selected).filter((x) => x !== name) : [...Array.from(selected), name])}/>
-            <span>{name}</span>
-            {p.din && <span className={`text-[9px] ${muted}`}>{p.din}</span>}
-          </label>;
-        }) : <span className={`text-[10px] ${muted}`}>No directors available in Company Master.</span>}
-      </div>
+    <div className="relative" data-director-multiselect>
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className={`${input} w-full min-h-[38px] flex items-center justify-between gap-2 text-left`}>
+        <span className="flex flex-wrap gap-1 min-w-0">
+          {selected.size ? Array.from(selected).map((name) => (
+            <span key={name} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-50 text-[#0D3B66] border border-blue-100 text-[10px] font-semibold">
+              {name}<X size={10} onClick={(e) => { e.stopPropagation(); toggle(name); }}/>
+            </span>
+          )) : <span className={`text-xs ${muted}`}>{placeholder}</span>}
+        </span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${open ? 'rotate-180' : ''} ${muted}`} />
+      </button>
+      {open && (
+        <div className={`absolute z-50 mt-1 w-full rounded-lg border shadow-lg p-2 max-h-56 overflow-y-auto`} style={{background: 'var(--roc-select-bg, white)'}}>
+          {people.length ? people.map((p) => {
+            const name = p.name;
+            const checked = selected.has(name);
+            return <label key={name} className="flex items-center gap-2 px-2 py-2 rounded cursor-pointer text-xs hover:bg-blue-50">
+              <input type="checkbox" checked={checked} onChange={() => toggle(name)} />
+              <span className="flex-1">{name}</span>
+              {p.din && <span className={`text-[9px] ${muted}`}>{p.din}</span>}
+            </label>;
+          }) : <div className={`text-[10px] p-2 ${muted}`}>No directors available in Company Master.</div>}
+        </div>
+      )}
     </div>
   );
 }
-
-function ResolutionTab({ company, isDark, input, text, muted }) {
+function ResolutionTab({ company, isDark, input, text, muted, onNext }) {
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
   const [venue, setVenue] = useState('Registered Office of the Company');
@@ -1906,6 +1921,9 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Board Resolution (.docx)
       </button>
+      <div className="flex justify-end">
+        <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Minutes →</button>
+      </div>
       <MeetingDocumentsCard company={company} meetingType="board" docType="board_resolution" isDark={isDark} text={text} muted={muted} title="Past Board Resolutions" />
     </div>
   );
@@ -1915,7 +1933,7 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
  * Notice of Meeting tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
-function NoticeTab({ company, isDark, input, text, muted }) {
+function NoticeTab({ company, isDark, input, text, muted, onNext }) {
   const [meetingType, setMeetingType] = useState('board');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
@@ -1969,6 +1987,9 @@ function NoticeTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Notice (.docx)
       </button>
+      <div className="flex justify-end">
+        <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Continue to Board Resolution →</button>
+      </div>
       <MeetingDocumentsCard company={company} meetingType={meetingType} docType="notice" isDark={isDark} text={text} muted={muted} title="Past Notices of Meeting" />
     </div>
   );
@@ -1978,7 +1999,7 @@ function NoticeTab({ company, isDark, input, text, muted }) {
  * Minutes of Meeting tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
-function MinutesTab({ company, isDark, input, text, muted }) {
+function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   const [meetingType, setMeetingType] = useState('board');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
@@ -2037,6 +2058,9 @@ function MinutesTab({ company, isDark, input, text, muted }) {
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Minutes (.docx)
       </button>
+      <div className="flex justify-end">
+        <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Open Meeting Records →</button>
+      </div>
       <MeetingDocumentsCard company={company} meetingType={meetingType} docType="minutes" isDark={isDark} text={text} muted={muted} title="Past Minutes of Meeting" />
     </div>
   );
@@ -2046,7 +2070,7 @@ function MinutesTab({ company, isDark, input, text, muted }) {
  * Compliance Checklist tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
-function GeneralMeetingResolutionTab({ company, isDark, input, text, muted }) {
+function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNext }) {
   const [meetingType, setMeetingType] = useState('agm');
   const [meetingDate, setMeetingDate] = useState('');
   const [meetingTime, setMeetingTime] = useState('11:00 AM');
@@ -2096,6 +2120,9 @@ function GeneralMeetingResolutionTab({ company, isDark, input, text, muted }) {
     <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
       {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate General Meeting Resolution (.docx)
     </button>
+    <div className="flex justify-end">
+      <button type="button" onClick={onNext} className="px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 hover:bg-blue-50">Open Meeting Records →</button>
+    </div>
     <MeetingDocumentsCard company={company} meetingType={meetingType} docType="general_resolution" isDark={isDark} text={text} muted={muted} title="Past General Meeting Resolutions" />
   </div>;
 }
