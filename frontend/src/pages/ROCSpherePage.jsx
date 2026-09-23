@@ -1726,31 +1726,58 @@ function applyDraftToText(template, values = {}) {
   return { agenda: replace(template.agenda), resolution: replace(template.resolution), particulars: template.label };
 }
 
-function ResolutionListEditor({ items, setItems, input, muted }) {
+function ResolutionListEditor({ items, setItems, input, muted, mode = 'board', meetingType = 'board' }) {
+  const [templates, setTemplates] = useState([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const res = await api.get('/roc-sphere/meeting-draft-templates'); if (alive) setTemplates(res.data?.templates || []); }
+      catch { if (alive) setTemplates([]); }
+      finally { if (alive) setLoadingDrafts(false); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  const filtered = templates.filter((t) => {
+    if (mode === 'general') return t.category === 'General Meetings';
+    if (mode === 'notice') return meetingType === 'board' ? t.category !== 'General Meetings' : t.category === 'General Meetings';
+    if (mode === 'minutes') return meetingType === 'board' ? t.category !== 'General Meetings' : t.category === 'General Meetings';
+    return t.category !== 'General Meetings';
+  });
+  const applyDraft = (index, key) => {
+    if (!key) return;
+    const template = filtered.find((t) => t.key === key);
+    if (!template) return;
+    const source = [template.agenda, template.resolution].join(' ');
+    const keys = [...new Set((source.match(/\{[a-zA-Z0-9_]+\}/g) || []).map((x) => x.slice(1, -1)))];
+    const values = {};
+    keys.forEach((k) => { values[k] = window.prompt(`Enter ${k.replace(/_/g, ' ')}`, '') || ''; });
+    const replace = (v) => String(v || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_, k) => values[k] || `{${k}}`);
+    const next = [...items];
+    next[index] = { ...next[index], particulars: template.label, resolution_text: replace(template.resolution), draft_key: template.key, draft_legal_basis: template.legal_basis, agenda_text: replace(template.agenda) };
+    setItems(next);
+  };
   const add = () => setItems([...items, { particulars: '', resolution_text: '', proposed_by: '', seconded_by: '' }]);
   return (
     <div className="space-y-3">
       {items.map((r, i) => (
         <div key={i} className={`p-3 rounded-lg border ${muted.includes('slate-400') ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'} space-y-2`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-semibold ${muted}`}>Resolution {i + 1}</span>
-            <button onClick={() => setItems(items.filter((_, x) => x !== i))} className="text-red-500" title="Remove"><Trash2 size={13} /></button>
-          </div>
-          <input className={input} placeholder="Particulars" value={r.particulars}
-            onChange={(e) => { const c = [...items]; c[i] = { ...c[i], particulars: e.target.value }; setItems(c); }} />
-          <textarea className={input} rows={3} placeholder='Resolution text — the part after "RESOLVED THAT ..."' value={r.resolution_text}
-            onChange={(e) => { const c = [...items]; c[i] = { ...c[i], resolution_text: e.target.value }; setItems(c); }} />
-          <div className="grid grid-cols-2 gap-2">
-            <input className={input} placeholder="Proposed by" value={r.proposed_by} onChange={(e) => { const c = [...items]; c[i] = { ...c[i], proposed_by: e.target.value }; setItems(c); }} />
-            <input className={input} placeholder="Seconded by" value={r.seconded_by} onChange={(e) => { const c = [...items]; c[i] = { ...c[i], seconded_by: e.target.value }; setItems(c); }} />
-          </div>
+          <div className="flex items-center justify-between"><span className={`text-xs font-semibold ${muted}`}>Resolution {i + 1}</span><button onClick={() => setItems(items.filter((_, x) => x !== i))} className="text-red-500"><Trash2 size={13}/></button></div>
+          <select className={input} value={r.draft_key || ''} disabled={loadingDrafts} onChange={(e) => applyDraft(i, e.target.value)}>
+            <option value="">{loadingDrafts ? 'Loading ready-made resolutions…' : 'Select ready-made resolution draft…'}</option>
+            {[...new Set(filtered.map((t) => t.category))].map((category) => <optgroup key={category} label={category}>{filtered.filter(t => t.category === category).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}</optgroup>)}
+            <option value="custom">Custom / enter manually</option>
+          </select>
+          <input className={input} placeholder="Particulars" value={r.particulars || ''} onChange={(e) => { const n=[...items]; n[i]={...n[i],particulars:e.target.value}; setItems(n); }} />
+          <textarea className={input} rows={4} placeholder='Resolution text — auto-filled from the selected statutory draft' value={r.resolution_text || ''} onChange={(e) => { const n=[...items]; n[i]={...n[i],resolution_text:e.target.value}; setItems(n); }} />
+          {r.draft_legal_basis && <p className={`text-[9px] ${muted}`}>Draft basis: {r.draft_legal_basis}</p>}
+          <div className="grid grid-cols-2 gap-2"><input className={input} placeholder="Proposed by" value={r.proposed_by || ''} onChange={(e) => { const n=[...items]; n[i]={...n[i],proposed_by:e.target.value}; setItems(n); }}/><input className={input} placeholder="Seconded by" value={r.seconded_by || ''} onChange={(e) => { const n=[...items]; n[i]={...n[i],seconded_by:e.target.value}; setItems(n); }}/></div>
         </div>
       ))}
-      <button onClick={add} className="text-xs flex items-center gap-1 text-blue-500"><Plus size={13} /> Add another resolution</button>
+      <button onClick={add} className="text-xs flex items-center gap-1 text-blue-500"><Plus size={13}/> Add another resolution</button>
     </div>
   );
 }
-
 /* ═══════════════════════════════════════════════════════════════════════
  * Board Resolution tab
  * ═══════════════════════════════════════════════════════════════════════ */
@@ -1927,7 +1954,7 @@ function ResolutionTab({ company, isDark, input, text, muted, onNext }) {
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={(e) => setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Directors Present</label><DirectorMultiSelect company={company} value={directorsPresent} onChange={setDirectorsPresent} input={input} muted={muted} placeholder="Select present directors…" /></div>
       </div>
-      <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
+      <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} mode="board" meetingType="board" />
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Board Resolution (.docx)
       </button>
@@ -1993,7 +2020,7 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
       </div>
       <div>
         <label className={`text-xs font-medium ${muted} mb-1 block`}>Special Business / Resolutions</label>
-        <ResolutionListEditor items={specialBusiness} setItems={setSpecialBusiness} input={input} muted={muted} />
+        <ResolutionListEditor items={specialBusiness} setItems={setSpecialBusiness} input={input} muted={muted} mode="notice" meetingType={meetingType} />
       </div>
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Notice (.docx)
@@ -2020,6 +2047,31 @@ function NoticeTab({ company, isDark, input, text, muted, onNext }) {
  * Minutes of Meeting tab
  * ═══════════════════════════════════════════════════════════════════════ */
 
+function RecordedMeetingSelector({ company, input, muted, onSelect }) {
+  const [records, setRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState('');
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try { const { data } = await api.get(`/roc-sphere/companies/${company.id}/record-history`); if (alive) setRecords((data.records || []).filter(r => ['board','agm','egm'].includes(r.meeting_type))); }
+      catch { if (alive) setRecords([]); }
+      finally { if (alive) setLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [company.id]);
+  return (
+    <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/10 p-4 space-y-3">
+      <div><p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Select recorded meeting for Minutes</p><p className={`text-[10px] mt-0.5 ${muted}`}>Select the Board Meeting, AGM or EGM first. Its meeting details, attendance and resolutions will populate the Minutes draft.</p></div>
+      <select className={input} disabled={loading} value={selected} onChange={(e) => { setSelected(e.target.value); const r=records.find(x=>x.id===e.target.value); if(r) onSelect(r); }}>
+        <option value="">{loading ? 'Loading recorded meetings…' : records.length ? 'Select a recorded Board / General Meeting…' : 'No recorded meetings available'}</option>
+        {records.map(r => <option key={r.id} value={r.id}>{r.meeting_type === 'board' ? 'Board Meeting' : r.meeting_type === 'agm' ? 'AGM' : 'EGM'} — {r.meeting_number ? `#${r.meeting_number} — ` : ''}{r.meeting_date}{r.chairman ? ` — Chairman: ${r.chairman}` : ''}</option>)}
+      </select>
+      <div className={`text-[10px] ${muted}`}>The selected meeting becomes the source record for the generated minutes.</div>
+    </div>
+  );
+}
+
 function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   const flow = readMeetingFlow(company.id);
   const [meetingType, setMeetingType] = useState(flow?.meeting_type || 'board');
@@ -2033,6 +2085,7 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   const [discussion, setDiscussion] = useState('');
   const [resolutions, setResolutions] = useState((flow?.resolutions || []).map((r) => ({ ...r })));
   const [draftMeta, setDraftMeta] = useState(null);
+  const [selectedRecordId, setSelectedRecordId] = useState(flow?.id || '');
   const [generating, setGenerating] = useState(false);
 
   const useDraft = ({ template_key, values, custom_topic, template }) => {
@@ -2042,11 +2095,12 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   };
 
   const generate = async () => {
+    if (!selectedRecordId) { toast.error('Select a recorded meeting first'); return; }
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
     setGenerating(true);
     try {
       const payload = {
-        ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        ...draftMeta, selected_record_id: selectedRecordId, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
         directors_present: directorsPresent,
         directors_absent: directorsAbsent,
         attendees_other: attendeesOther.split(',').map((s) => s.trim()).filter(Boolean),
@@ -2063,6 +2117,18 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
   return (
     <div className="space-y-4">
       <p className={`text-xs ${muted}`}>Minutes must be entered in the Minutes Book within 30 days of the meeting (Section 118); the uploaded ICSI specimen also covers the standard sequence: Chairman, leave of absence, quorum, previous minutes, committee minutes, circulation resolutions, registers/disclosures, business, and conclusion.</p>
+      <RecordedMeetingSelector company={company} input={input} muted={muted} onSelect={(record) => {
+        setSelectedRecordId(record.id);
+        setMeetingType(record.meeting_type || 'board');
+        setMeetingDate(record.meeting_date || '');
+        setMeetingTime(record.meeting_time || '11:00 AM');
+        setVenue(record.venue || company.registered_office_address || 'Registered Office of the Company');
+        setChairman(record.chairman || '');
+        setDirectorsPresent((record.attendance || []).filter(a => a.status === 'Present').map(a => a.name));
+        setDirectorsAbsent((record.attendance || []).filter(a => a.status !== 'Present').map(a => a.name));
+        setResolutions((record.resolutions_passed || []).map((x, idx) => ({ particulars: `Resolution ${idx + 1}`, resolution_text: x, proposed_by: '', seconded_by: '' })));
+        setDiscussion(record.secretarial_notes || '');
+      }} />
       <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="minutes" />
       <div className="grid sm:grid-cols-4 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label><select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}><option value="board">Board Meeting</option><option value="agm">Annual General Meeting (AGM)</option><option value="egm">Extra-Ordinary General Meeting (EGM)</option></select></div>
@@ -2077,7 +2143,7 @@ function MinutesTab({ company, isDark, input, text, muted, onNext }) {
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Other attendees</label><input className={input} value={attendeesOther} onChange={(e) => setAttendeesOther(e.target.value)} /></div>
       </div>
       <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Discussion Notes</label><textarea className={input} rows={2} value={discussion} onChange={(e) => setDiscussion(e.target.value)} placeholder="Record the material discussion and decisions actually taken." /></div>
-      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Resolutions Passed</label><ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} /></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Resolutions Passed</label><ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} mode="minutes" meetingType={meetingType} /></div>
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Minutes (.docx)
       </button>
@@ -2141,7 +2207,7 @@ function GeneralMeetingResolutionTab({ company, isDark, input, text, muted, onNe
       <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><select className={input} value={chairman} onChange={e=>setChairman(e.target.value)}><option value="">Select chairman…</option>{(company.directors || []).map(d=><option key={d.name} value={d.name}>{d.name}{d.din ? ` — ${d.din}` : ''}</option>)}</select></div>
       <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Members Present</label><DirectorMultiSelect company={{ directors: company.shareholders || company.directors || [] }} value={membersPresent} onChange={setMembersPresent} input={input} muted={muted} placeholder="Select members / shareholders…" /></div>
     </div>
-    <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
+    <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} mode="general" meetingType={meetingType} />
     <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
       {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate General Meeting Resolution (.docx)
     </button>
