@@ -11046,7 +11046,11 @@ async def parse_multi_documents(
     udyam_number = udyam_data.get("udyam_number") or ""
     msme_type = udyam_data.get("msme_type") or ""
     pan = _first(mca_data.get("pan"), udyam_data.get("pan"))
-    cin = mca_data.get("cin") or ""
+    cin = _first(
+        mca_data.get("cin"),
+        mca_data.get("cin_number"),
+        mca_data.get("corporate_identity_number"),
+    )
 
     address = _first(
         gst_data.get("address"), udyam_data.get("address"), mca_data.get("address")
@@ -11055,7 +11059,17 @@ async def parse_multi_documents(
     state = _first(
         gst_data.get("state"), udyam_data.get("state"), mca_data.get("state")
     )
-    pin = _first(gst_data.get("pin"), udyam_data.get("pin"))
+    # Primary PIN must also fall back to MCA master data.  When the user
+    # uploads only an MCA Company Master Data document, GST/Udyam are empty and
+    # the previous merge therefore returned a blank PIN even though the MCA
+    # document contained a valid six-digit registered-address PIN.
+    pin = _first(
+        gst_data.get("pin"),
+        udyam_data.get("pin"),
+        mca_data.get("pin"),
+        mca_data.get("pincode"),
+        mca_data.get("postal_code"),
+    )
     gst_full_address = gst_data.get("full_address") or ""
 
     mca_directors = mca_data.get("directors", [])
