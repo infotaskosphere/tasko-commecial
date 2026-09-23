@@ -454,7 +454,7 @@ export default function ROCSpherePage() {
                     return (
                       <button key={group.key} onClick={() => setTab(group.tabs[0].key)}
                         className={`min-w-0 px-3 py-3 text-xs font-semibold border-b-2 flex items-center justify-center gap-1.5 transition
-                          ${activeGroup ? 'border-blue-600 text-blue-600 bg-blue-50/40 dark:bg-blue-950/20' : `border-transparent ${muted} hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50`}`}>
+                          ${activeGroup ? 'border-blue-800 text-[#0D3B66] bg-blue-50/70 dark:bg-blue-950/30 dark:text-blue-300' : 'border-transparent text-[#0D3B66] dark:text-blue-300 hover:bg-blue-50/50 dark:hover:bg-slate-800/50'}`}>
                         <Icon size={14} className="shrink-0" /><span className="truncate">{group.label}</span>
                       </button>
                     );
@@ -590,6 +590,21 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
   };
   const updateAttendance = (i, key, value) => setField('attendance', (form.attendance || []).map((a, x) => x === i ? { ...a, [key]: value } : a));
 
+  const meetingFY = (value) => {
+    const d = new Date(String(value || '').slice(0, 10) + 'T00:00:00');
+    if (Number.isNaN(d.getTime())) return 'Unknown Financial Year';
+    return d.getMonth() >= 3
+      ? `FY ${d.getFullYear()}-${String(d.getFullYear() + 1).slice(-2)}`
+      : `FY ${d.getFullYear() - 1}-${String(d.getFullYear()).slice(-2)}`;
+  };
+
+  const groupedRecords = records.reduce((acc, record) => {
+    const fy = meetingFY(record.meeting_date);
+    (acc[fy] ||= []).push(record);
+    return acc;
+  }, {});
+  const groupedYears = Object.keys(groupedRecords).sort((a, b) => b.localeCompare(a));
+
   return <div className="space-y-4">
     <div className={`rounded-xl border p-4 ${card}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -638,7 +653,53 @@ function RecordHistoryTab({ company, isDark, input, text, muted, onApplied }) {
     </div>}
 
     <div className={`rounded-xl border overflow-hidden ${card}`}>
-      {loading ? <div className={`p-8 text-center ${muted}`}><Loader2 className="animate-spin inline" size={18}/></div> : records.length === 0 ? <div className={`p-10 text-center ${muted}`}><History size={28} className="mx-auto mb-2 opacity-50"/><p className="text-sm font-medium">No meeting history yet</p><p className="text-xs mt-1">Add your first Board Meeting / AGM / EGM record. It will be retained and exposed automatically to the MGT-7 / MGT-7A filing-preparation data.</p></div> : <div className="divide-y divide-slate-200 dark:divide-slate-700">{records.map(r => { const present=(r.attendance||[]).filter(a=>a.status==='Present').length; return <div key={r.id} className="px-4 py-3"><div className="flex items-start gap-3"><div className="h-9 w-9 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-blue-600 flex items-center justify-center shrink-0"><CalendarDays size={15}/></div><div className="min-w-0 flex-1"><div className={`flex flex-wrap items-center gap-2 text-xs font-semibold ${text}`}><span>{r.meeting_type==='agm'?'AGM':r.meeting_type==='egm'?'EGM':r.meeting_type==='board'?'Board Meeting':(r.meeting_type||'Meeting')}</span>{r.meeting_number&&<span className={`font-normal ${muted}`}>#{r.meeting_number}</span>}<span className={`font-normal ${muted}`}>{r.meeting_date}</span></div><div className={`text-[10px] mt-1 ${muted}`}>{r.venue||'—'} · {r.mode||'—'} · Chairman: {r.chairman||'—'} · Attendance: {present}/{(r.attendance||[]).length}</div>{(r.resolutions_passed||[]).length>0&&<div className={`text-[10px] mt-1 ${muted}`}>Resolutions: {(r.resolutions_passed||[]).length} · Minutes: {r.minutes_date||'Not recorded'}</div>}</div><div className="flex items-center gap-1"><button onClick={()=>openEdit(r)} className="p-1.5 rounded text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30" title="Edit"><Pencil size={13}/></button><button onClick={()=>remove(r.id)} className="p-1.5 rounded text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30" title="Delete"><Trash2 size={13}/></button></div></div></div>; })}</div>}
+      {loading ? <div className={`p-8 text-center ${muted}`}><Loader2 className="animate-spin inline" size={18}/></div>
+      : records.length === 0 ? <div className={`p-10 text-center ${muted}`}><History size={28} className="mx-auto mb-2 opacity-50"/><p className="text-sm font-medium">No meeting history yet</p><p className="text-xs mt-1">Generated Board Resolutions, Notices, Minutes and saved meeting records will appear here grouped by financial year.</p></div>
+      : <div>
+          {groupedYears.map((fy) => (
+            <section key={fy} className={`border-b last:border-b-0 ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+              <div className={`px-4 py-2.5 flex items-center justify-between ${isDark ? 'bg-slate-900/60' : 'bg-[#0D3B66]'}`}>
+                <div className={`text-xs font-bold ${isDark ? 'text-blue-200' : 'text-white'}`}>{fy}</div>
+                <div className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-blue-100'}`}>{groupedRecords[fy].length} meeting{groupedRecords[fy].length === 1 ? '' : 's'}</div>
+              </div>
+              <div className="divide-y divide-slate-200 dark:divide-slate-700">
+                {groupedRecords[fy].map(r => {
+                  const present = (r.attendance || []).filter(a => a.status === 'Present').length;
+                  const typeLabel = r.meeting_type === 'agm' ? 'AGM' : r.meeting_type === 'egm' ? 'EGM' : r.meeting_type === 'board' ? 'Board Meeting' : (r.meeting_type || 'Meeting');
+                  return (
+                    <div key={r.id} className="px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className="h-9 w-9 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-blue-700 flex items-center justify-center shrink-0"><CalendarDays size={15}/></div>
+                        <div className="min-w-0 flex-1">
+                          <div className={`flex flex-wrap items-center gap-2 text-xs font-semibold ${text}`}>
+                            <span>{typeLabel}</span>
+                            {r.meeting_number && <span className={`font-normal ${muted}`}>#{r.meeting_number}</span>}
+                            <span className={`font-normal ${muted}`}>{r.meeting_date}</span>
+                          </div>
+                          <div className={`text-[10px] mt-1 ${muted}`}>{r.venue || '—'} · {r.mode || '—'} · Chairman: {r.chairman || '—'} · Attendance: {present}/{(r.attendance || []).length}</div>
+                          {(r.resolutions_passed || []).length > 0 && <div className={`text-[10px] mt-1 ${muted}`}>Resolutions: {(r.resolutions_passed || []).length} · Minutes: {r.minutes_date || 'Not recorded'}</div>}
+                          {(r.generated_documents || []).length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {r.generated_documents.map((doc) => (
+                                <span key={doc.id} title={doc.filename} className={`inline-flex items-center gap-1 px-2 py-1 rounded border text-[9px] font-medium ${isDark ? 'border-slate-600 text-slate-300 bg-slate-800' : 'border-blue-100 text-[#0D3B66] bg-blue-50'}`}>
+                                  <FileSpreadsheet size={10}/> {doc.doc_type === 'board_resolution' ? 'Board Resolution' : doc.doc_type === 'notice_board' ? 'Board Notice' : doc.doc_type === 'notice_agm' ? 'AGM Notice' : doc.doc_type === 'notice_egm' ? 'EGM Notice' : doc.doc_type === 'minutes_board' ? 'Board Minutes' : doc.doc_type === 'minutes_agm' ? 'AGM Minutes' : doc.doc_type === 'minutes_egm' ? 'EGM Minutes' : 'Generated Document'}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openEdit(r)} className="p-1.5 rounded text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30" title="Edit"><Pencil size={13}/></button>
+                          <button onClick={() => remove(r.id)} className="p-1.5 rounded text-red-500 hover:bg-red-50 dark:hover:bg-slate-800" title="Delete"><Trash2 size={13}/></button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>}
     </div>
     <p className={`text-[10px] ${muted}`}>Record History is the application's persistent secretarial register. It is not a legal certification: verify minutes, attendance, quorum, resolutions and current MCA requirements before filing.</p>
   </div>;
