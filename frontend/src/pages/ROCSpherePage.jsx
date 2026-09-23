@@ -1537,6 +1537,112 @@ function StatutoryRecordsTab({ company, isDark, input, text, muted, onApplied })
  * Shared: resolution-list editor used by Board Resolution + Notice(special business)
  * ═══════════════════════════════════════════════════════════════════════ */
 
+function DraftTemplatePicker({ input, muted, onApply, mode = 'resolution' }) {
+  const [templates, setTemplates] = useState([]);
+  const [selectedKey, setSelectedKey] = useState('');
+  const [values, setValues] = useState({});
+  const [customTopic, setCustomTopic] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.get('/roc-sphere/meeting-draft-templates');
+        if (alive) setTemplates(res.data?.templates || []);
+      } catch (e) {
+        if (alive) toast.error('Could not load the standard meeting drafts');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  const selected = templates.find((t) => t.key === selectedKey);
+  const sourceText = selected ? [selected.agenda, selected.resolution].join(' ') : '';
+  const placeholders = [...new Set((sourceText.match(/\{[a-zA-Z0-9_]+\}/g) || []).map((x) => x.slice(1, -1)))];
+
+  const updateValue = (key, value) => setValues((p) => ({ ...p, [key]: value }));
+
+  const apply = () => {
+    if (selectedKey === 'custom') {
+      const topic = customTopic.trim();
+      if (!topic) { toast.error('Enter the topic for Other'); return; }
+      onApply({ template_key: null, values: {}, custom_topic: topic, template: null });
+      return;
+    }
+    if (!selected) return;
+    onApply({ template_key: selected.key, values, custom_topic: null, template: selected });
+  };
+
+  return (
+    <div className="rounded-xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/10 p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Ready-made statutory / secretarial draft</p>
+          <p className={`text-[10px] mt-0.5 ${muted}`}>Select an occasion. ROC Sphere will load the standard agenda and resolution wording; verify facts, Articles and current law before use.</p>
+        </div>
+        {selected?.legal_basis && <span className="text-[9px] px-2 py-1 rounded bg-white dark:bg-slate-900 border border-blue-100 dark:border-blue-900 text-blue-700 dark:text-blue-300 whitespace-nowrap">{selected.legal_basis}</span>}
+      </div>
+
+      <div className="grid sm:grid-cols-[1fr_auto] gap-2">
+        <select className={input} value={selectedKey} disabled={loading} onChange={(e) => {
+          const key = e.target.value;
+          setSelectedKey(key);
+          setValues({});
+          setCustomTopic('');
+        }}>
+          <option value="">{loading ? 'Loading standard drafts…' : 'Select draft / occasion…'}</option>
+          {[...new Set(templates.map((t) => t.category))].map((category) => (
+            <optgroup key={category} label={category}>
+              {templates.filter((t) => t.category === category).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </optgroup>
+          ))}
+          <option value="custom">Other — add my own topic</option>
+        </select>
+        <button type="button" onClick={apply} disabled={!selectedKey || loading}
+          className="px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+          Use Draft
+        </button>
+      </div>
+
+      {selectedKey === 'custom' && (
+        <textarea className={input} rows={2} value={customTopic} onChange={(e) => setCustomTopic(e.target.value)}
+          placeholder="Enter the topic / business to be drafted…" />
+      )}
+
+      {selected && placeholders.length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-2">
+          {placeholders.map((key) => (
+            <input key={key} className={input} value={values[key] || ''} onChange={(e) => updateValue(key, e.target.value)}
+              placeholder={key.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())} />
+          ))}
+        </div>
+      )}
+
+      {selected && (
+        <div className="grid sm:grid-cols-2 gap-2">
+          <div className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5">
+            <p className={`text-[9px] uppercase font-bold ${muted}`}>Agenda preview</p>
+            <p className={`text-[11px] mt-1 ${muted}`}>{selected.agenda}</p>
+          </div>
+          <div className="rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-2.5">
+            <p className={`text-[9px] uppercase font-bold ${muted}`}>Resolution preview</p>
+            <p className={`text-[11px] mt-1 ${muted}`}>{selected.resolution}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function applyDraftToText(template, values = {}) {
+  if (!template) return null;
+  const replace = (s) => String(s || '').replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => values[key] || `{${key}}`);
+  return { agenda: replace(template.agenda), resolution: replace(template.resolution), particulars: template.label };
+}
+
 function ResolutionListEditor({ items, setItems, input, muted }) {
   const add = () => setItems([...items, { particulars: '', resolution_text: '', proposed_by: '', seconded_by: '' }]);
   return (
@@ -1545,11 +1651,11 @@ function ResolutionListEditor({ items, setItems, input, muted }) {
         <div key={i} className={`p-3 rounded-lg border ${muted.includes('slate-400') ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'} space-y-2`}>
           <div className="flex items-center justify-between">
             <span className={`text-xs font-semibold ${muted}`}>Resolution {i + 1}</span>
-            <button onClick={() => setItems(items.filter((_, x) => x !== i))} className="text-red-500"><Trash2 size={13} /></button>
+            <button onClick={() => setItems(items.filter((_, x) => x !== i))} className="text-red-500" title="Remove"><Trash2 size={13} /></button>
           </div>
-          <input className={input} placeholder="Particulars (e.g. Opening of Bank Account)" value={r.particulars}
+          <input className={input} placeholder="Particulars" value={r.particulars}
             onChange={(e) => { const c = [...items]; c[i] = { ...c[i], particulars: e.target.value }; setItems(c); }} />
-          <textarea className={input} rows={2} placeholder='Resolution text — the part after "RESOLVED THAT ..."' value={r.resolution_text}
+          <textarea className={input} rows={3} placeholder='Resolution text — the part after "RESOLVED THAT ..."' value={r.resolution_text}
             onChange={(e) => { const c = [...items]; c[i] = { ...c[i], resolution_text: e.target.value }; setItems(c); }} />
           <div className="grid grid-cols-2 gap-2">
             <input className={input} placeholder="Proposed by" value={r.proposed_by} onChange={(e) => { const c = [...items]; c[i] = { ...c[i], proposed_by: e.target.value }; setItems(c); }} />
@@ -1557,7 +1663,7 @@ function ResolutionListEditor({ items, setItems, input, muted }) {
           </div>
         </div>
       ))}
-      <button onClick={add} className="text-xs flex items-center gap-1 text-blue-500"><Plus size={13} /> Add Resolution</button>
+      <button onClick={add} className="text-xs flex items-center gap-1 text-blue-500"><Plus size={13} /> Add another resolution</button>
     </div>
   );
 }
@@ -1572,32 +1678,45 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
   const [venue, setVenue] = useState('Registered Office of the Company');
   const [chairman, setChairman] = useState('');
   const [directorsPresent, setDirectorsPresent] = useState((company.directors || []).map((d) => d.name).join(', '));
-  const [resolutions, setResolutions] = useState([{ particulars: '', resolution_text: '', proposed_by: '', seconded_by: '' }]);
+  const [resolutions, setResolutions] = useState([]);
+  const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  const useDraft = ({ template_key, values, custom_topic, template }) => {
+    const resolved = template ? applyDraftToText(template, values) : { particulars: 'Other', resolution: custom_topic, agenda: custom_topic };
+    setDraftMeta({ template_key, values, custom_topic });
+    setResolutions((prev) => [...prev, {
+      particulars: resolved.particulars,
+      resolution_text: resolved.resolution,
+      proposed_by: '',
+      seconded_by: '',
+    }]);
+  };
 
   const generate = async () => {
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
-    if (!resolutions.length || !resolutions[0].resolution_text) { toast.error('Add at least one resolution'); return; }
+    if (!resolutions.length || !resolutions.some((r) => r.resolution_text)) { toast.error('Select a draft or add a resolution'); return; }
     setGenerating(true);
     try {
       const payload = {
-        meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        ...draftMeta, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
         directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
         resolutions,
       };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/board-resolution`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Board_Resolution_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Board Resolution generated');
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Generation failed');
-    } finally {
-      setGenerating(false);
-    }
+    } catch (e) { toast.error(await parseBlobError(e) || 'Generation failed'); }
+    finally { setGenerating(false); }
   };
 
   return (
     <div className="space-y-4">
-      <p className={`text-xs ${muted}`}>Drafts a certified-true-copy style Board Resolution (Companies Act, 2013 / SS-1 format) — review before circulation or filing.</p>
+      <div className={`rounded-lg border p-3 ${isDark ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-slate-50'}`}>
+        <p className={`text-xs font-semibold ${text}`}>Choose the occasion — the draft is prepared for you</p>
+        <p className={`text-[10px] mt-1 ${muted}`}>The library is based on the uploaded ICSI Company Law & Practice and Drafting, Pleadings & Appearances materials, including SS-1 agenda items and specimen drafting principles.</p>
+      </div>
+      <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} />
       <div className="grid sm:grid-cols-3 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} /></div>
@@ -1605,7 +1724,7 @@ function ResolutionTab({ company, isDark, input, text, muted }) {
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><input className={input} value={chairman} onChange={(e) => setChairman(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Directors Present (comma separated)</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Directors Present</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
       </div>
       <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
@@ -1626,50 +1745,48 @@ function NoticeTab({ company, isDark, input, text, muted }) {
   const [venue, setVenue] = useState('Registered Office of the Company');
   const [agendaText, setAgendaText] = useState('');
   const [specialBusiness, setSpecialBusiness] = useState([]);
+  const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  const useDraft = ({ template_key, values, custom_topic, template }) => {
+    const resolved = template ? applyDraftToText(template, values) : { particulars: 'Other', resolution: custom_topic, agenda: custom_topic };
+    setDraftMeta({ template_key, values, custom_topic });
+    setAgendaText((prev) => [prev, resolved.agenda].filter(Boolean).join('\n'));
+    if (resolved.resolution) setSpecialBusiness((prev) => [...prev, { particulars: resolved.particulars, resolution_text: resolved.resolution, proposed_by: '', seconded_by: '' }]);
+  };
 
   const generate = async () => {
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
     setGenerating(true);
     try {
       const payload = {
-        meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue,
+        ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue,
         agenda_items: agendaText.split('\n').map((s) => s.trim()).filter(Boolean),
         special_business: specialBusiness,
       };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/notice`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Notice_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Notice generated');
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Generation failed');
-    } finally {
-      setGenerating(false);
-    }
+    } catch (e) { toast.error(await parseBlobError(e) || 'Generation failed'); }
+    finally { setGenerating(false); }
   };
 
   return (
     <div className="space-y-4">
-      <p className={`text-xs ${muted}`}>Board Meeting notice needs no minimum notice period under SS-1 unless the AoA says otherwise; General Meeting (AGM/EGM) notices generally require 21 clear days — check applicability of shorter notice.</p>
+      <p className={`text-xs ${muted}`}>Board Meeting notices should follow Section 173, the Companies (Meetings of Board and its Powers) Rules and SS-1; the uploaded ICSI material includes a specimen Board/Committee notice and agenda framework. AGM/EGM notices follow the applicable Companies Act / SS-2 requirements.</p>
+      <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="notice" />
       <div className="grid sm:grid-cols-4 gap-3">
-        <div>
-          <label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label>
-          <select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}>
-            <option value="board">Board Meeting</option>
-            <option value="agm">Annual General Meeting (AGM)</option>
-            <option value="egm">Extra-Ordinary General Meeting (EGM)</option>
-          </select>
-        </div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label><select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}><option value="board">Board Meeting</option><option value="agm">Annual General Meeting (AGM)</option><option value="egm">Extra-Ordinary General Meeting (EGM)</option></select></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Venue</label><input className={input} value={venue} onChange={(e) => setVenue(e.target.value)} /></div>
       </div>
       <div>
-        <label className={`text-xs font-medium ${muted} mb-1 block`}>Agenda / Ordinary Business (one per line)</label>
-        <textarea className={input} rows={4} value={agendaText} onChange={(e) => setAgendaText(e.target.value)}
-          placeholder={'To confirm the minutes of the previous meeting\nTo consider and approve the financial statements\n...'} />
+        <label className={`text-xs font-medium ${muted} mb-1 block`}>Agenda / Ordinary Business</label>
+        <textarea className={input} rows={4} value={agendaText} onChange={(e) => setAgendaText(e.target.value)} placeholder="Select a ready-made occasion above, or enter your own agenda item." />
       </div>
       <div>
-        <label className={`text-xs font-medium ${muted} mb-1 block`}>Special Business (optional)</label>
+        <label className={`text-xs font-medium ${muted} mb-1 block`}>Special Business / Resolutions</label>
         <ResolutionListEditor items={specialBusiness} setItems={setSpecialBusiness} input={input} muted={muted} />
       </div>
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
@@ -1694,61 +1811,51 @@ function MinutesTab({ company, isDark, input, text, muted }) {
   const [attendeesOther, setAttendeesOther] = useState('');
   const [discussion, setDiscussion] = useState('');
   const [resolutions, setResolutions] = useState([]);
+  const [draftMeta, setDraftMeta] = useState(null);
   const [generating, setGenerating] = useState(false);
+
+  const useDraft = ({ template_key, values, custom_topic, template }) => {
+    const resolved = template ? applyDraftToText(template, values) : { particulars: 'Other', resolution: custom_topic };
+    setDraftMeta({ template_key, values, custom_topic });
+    setResolutions((prev) => [...prev, { particulars: resolved.particulars, resolution_text: resolved.resolution, proposed_by: '', seconded_by: '' }]);
+  };
 
   const generate = async () => {
     if (!meetingDate) { toast.error('Meeting date is required'); return; }
     setGenerating(true);
     try {
       const payload = {
-        meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
+        ...draftMeta, meeting_type: meetingType, meeting_date: meetingDate, meeting_time: meetingTime, venue, chairman,
         directors_present: directorsPresent.split(',').map((s) => s.trim()).filter(Boolean),
         directors_absent: directorsAbsent.split(',').map((s) => s.trim()).filter(Boolean),
         attendees_other: attendeesOther.split(',').map((s) => s.trim()).filter(Boolean),
-        quorum_present: true,
-        discussion_notes: discussion,
-        resolutions,
+        quorum_present: true, discussion_notes: discussion, resolutions,
       };
       const res = await api.post(`/roc-sphere/companies/${company.id}/generate/minutes`, payload, { responseType: 'blob' });
       triggerBlobDownload(res.data, `Minutes_${meetingType.toUpperCase()}_${company.company_name.replace(/\s+/g, '_')}.docx`);
       toast.success('Minutes generated');
-    } catch (e) {
-      toast.error(await parseBlobError(e) || 'Generation failed');
-    } finally {
-      setGenerating(false);
-    }
+    } catch (e) { toast.error(await parseBlobError(e) || 'Generation failed'); }
+    finally { setGenerating(false); }
   };
 
   return (
     <div className="space-y-4">
-      <p className={`text-xs ${muted}`}>Minutes must be entered in the Minutes Book within 30 days of the meeting (Sec. 118) and signed by the Chairman.</p>
+      <p className={`text-xs ${muted}`}>Minutes must be entered in the Minutes Book within 30 days of the meeting (Section 118); the uploaded ICSI specimen also covers the standard sequence: Chairman, leave of absence, quorum, previous minutes, committee minutes, circulation resolutions, registers/disclosures, business, and conclusion.</p>
+      <DraftTemplatePicker input={input} muted={muted} onApply={useDraft} mode="minutes" />
       <div className="grid sm:grid-cols-4 gap-3">
-        <div>
-          <label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label>
-          <select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}>
-            <option value="board">Board Meeting</option>
-            <option value="agm">Annual General Meeting (AGM)</option>
-            <option value="egm">Extra-Ordinary General Meeting (EGM)</option>
-          </select>
-        </div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Type</label><select className={input} value={meetingType} onChange={(e) => setMeetingType(e.target.value)}><option value="board">Board Meeting</option><option value="agm">Annual General Meeting (AGM)</option><option value="egm">Extra-Ordinary General Meeting (EGM)</option></select></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Meeting Date *</label><input type="date" className={input} value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Time</label><input className={input} value={meetingTime} onChange={(e) => setMeetingTime(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Venue</label><input className={input} value={venue} onChange={(e) => setVenue(e.target.value)} /></div>
       </div>
       <div className="grid sm:grid-cols-2 gap-3">
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Chairman</label><input className={input} value={chairman} onChange={(e) => setChairman(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Present (comma separated)</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Present</label><input className={input} value={directorsPresent} onChange={(e) => setDirectorsPresent(e.target.value)} /></div>
         <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Absent / Leave granted</label><input className={input} value={directorsAbsent} onChange={(e) => setDirectorsAbsent(e.target.value)} /></div>
-        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Other attendees (auditor, CS, invitees)</label><input className={input} value={attendeesOther} onChange={(e) => setAttendeesOther(e.target.value)} /></div>
+        <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Other attendees</label><input className={input} value={attendeesOther} onChange={(e) => setAttendeesOther(e.target.value)} /></div>
       </div>
-      <div>
-        <label className={`text-xs font-medium ${muted} mb-1 block`}>Discussion Notes (optional)</label>
-        <textarea className={input} rows={2} value={discussion} onChange={(e) => setDiscussion(e.target.value)} />
-      </div>
-      <div>
-        <label className={`text-xs font-medium ${muted} mb-1 block`}>Resolutions Passed</label>
-        <ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} />
-      </div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Discussion Notes</label><textarea className={input} rows={2} value={discussion} onChange={(e) => setDiscussion(e.target.value)} placeholder="Record the material discussion and decisions actually taken." /></div>
+      <div><label className={`text-xs font-medium ${muted} mb-1 block`}>Resolutions Passed</label><ResolutionListEditor items={resolutions} setItems={setResolutions} input={input} muted={muted} /></div>
       <button onClick={generate} disabled={generating} className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
         {generating ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Generate Minutes (.docx)
       </button>
