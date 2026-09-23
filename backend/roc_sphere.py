@@ -31,6 +31,7 @@ the current Companies Act / MCA rules.
 
 import io
 import logging
+import base64
 import re
 import uuid
 from datetime import datetime, timezone, date, timedelta
@@ -2340,6 +2341,17 @@ async def get_statutory_records(company_id: str, current_user: User = Depends(VI
     }
 
 
+def _is_first_roc_annual_filing(company: Dict[str, Any]) -> bool:
+    uploads = company.get("roc_form_uploads") or []
+    annual_types = {"aoc-4", "aoc4", "mgt-7", "mgt-7a"}
+    has_prior_annual = any(
+        str(item.get("form_type") or "").strip().lower() in annual_types
+        for item in uploads
+    )
+    has_prior_annual_data = bool(company.get("annual_return_data")) or bool(company.get("financial_data"))
+    return not has_prior_annual and not has_prior_annual_data
+
+
 @router.get("/companies/{company_id}/filing-preparation")
 async def get_filing_preparation(company_id: str, current_user: User = Depends(VIEW)):
     """Return source-separated working data for the next AOC-4/MGT-7A cycle."""
@@ -2350,6 +2362,7 @@ async def get_filing_preparation(company_id: str, current_user: User = Depends(V
     mgt7a = company.get("annual_return_data") or {}
     record_history = list(company.get("record_history") or [])
     history_summary = _record_history_summary(company)
+    first_roc_filing = _is_first_roc_annual_filing(company)
     required = {
         "company_name": company.get("company_name"),
         "cin": company.get("cin"),
@@ -2377,6 +2390,17 @@ async def get_filing_preparation(company_id: str, current_user: User = Depends(V
         },
         "required_working_fields": required,
         "missing_working_fields": missing,
+        "first_roc_annual_filing": first_roc_filing,
+        "document_requirements": {
+            "previous_year_annual_filing": not first_roc_filing,
+            "current_year_audit_report": True,
+            "reason": (
+                "No prior AOC-4/MGT-7/MGT-7A annual filing data is recorded in ROC Sphere; "
+                "treat this as the first ROC annual filing workflow. Do not ask for previous-year annual filing documents."
+                if first_roc_filing else
+                "Prior annual filing data exists; previous-year documents may be used for year-on-year reconciliation."
+            ),
+        },
         "source_rules": {
             "financials_and_auditor": "AOC-4",
             "directors_and_shareholders": "MGT-7 / MGT-7A and its shareholder attachment",
@@ -3403,15 +3427,18 @@ def _safe(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]+", "_", text or "").strip("_") or "Document"
 
 
-async def _log_doc(company_id: str, doc_type: str, filename: str, user: User):
-    await DOCS_LOG.insert_one({
+async def _log_doc(company_id: str, doc_type: str, filename: str, user: User, content: Optional[bytes] = None):
+    doc = {
         "id": _uid(),
         "company_id": company_id,
         "doc_type": doc_type,
         "filename": filename,
         "generated_at": _now(),
         "generated_by": _who(user),
-    })
+    }
+    if content:
+        doc["content_b64"] = base64.b64encode(content).decode("ascii")
+    await DOCS_LOG.insert_one(doc)
 
 
 @router.post("/companies/{company_id}/generate/board-resolution")
@@ -3424,7 +3451,7 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Board_Resolution_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, "board_resolution", fname, current_user)
+    await _log_doc(company_id, "board_resolution", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3438,7 +3465,7 @@ async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_us
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Notice_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, f"notice_{req.meeting_type}", fname, current_user)
+    await _log_doc(company_id, f"notice_{req.meeting_type}", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3452,7 +3479,7 @@ async def generate_minutes(company_id: str, req: MinutesRequest, current_user: U
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Minutes_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, f"minutes_{req.meeting_type}", fname, current_user)
+    await _log_doc(company_id, f"minutes_{req.meeting_type}", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3466,7 +3493,7 @@ async def generate_shareholders(company_id: str, current_user: User = Depends(VI
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Shareholders_{_safe(company.get('company_name'))}.docx"
-    await _log_doc(company_id, "shareholders", fname, current_user)
+    await _log_doc(company_id, "shareholders", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3480,7 +3507,7 @@ async def generate_share_transfer_register(company_id: str, current_user: User =
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Share_Transfer_Register_{_safe(company.get('company_name'))}.docx"
-    await _log_doc(company_id, "share_transfer_register", fname, current_user)
+    await _log_doc(company_id, "share_transfer_register", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3494,7 +3521,7 @@ async def generate_sh4(company_id: str, req: ShareTransferRequest, current_user:
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"SH-4_{_safe(req.transferor_name)}_to_{_safe(req.transferee_name)}_{_safe(req.transfer_date or datetime.now().date().isoformat())}.docx"
-    await _log_doc(company_id, "sh4", fname, current_user)
+    await _log_doc(company_id, "sh4", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3508,7 +3535,7 @@ async def generate_share_certificate(company_id: str, req: ShareCertificateReque
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Share_Certificate_{_safe(req.certificate_no)}_{_safe(req.holder_name)}.docx"
-    await _log_doc(company_id, "share_certificate", fname, current_user)
+    await _log_doc(company_id, "share_certificate", fname, current_user, content)
     return _docx_response(content, fname)
 
 
@@ -3523,8 +3550,38 @@ async def generate_checklist_doc(company_id: str, current_user: User = Depends(V
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Compliance_Checklist_{_safe(company.get('company_name'))}.docx"
-    await _log_doc(company_id, "checklist", fname, current_user)
+    await _log_doc(company_id, "checklist", fname, current_user, content)
     return _docx_response(content, fname)
+
+
+@router.get("/companies/{company_id}/documents/{document_id}/download")
+async def download_generated_document(company_id: str, document_id: str, current_user: User = Depends(VIEW)):
+    doc = await DOCS_LOG.find_one({"id": document_id, "company_id": company_id})
+    if not doc:
+        raise HTTPException(404, "Generated document not found")
+    encoded = doc.get("content_b64")
+    if not encoded:
+        raise HTTPException(410, "This older document record has no stored file content. Delete it and regenerate the document.")
+    try:
+        content = base64.b64decode(encoded)
+    except Exception:
+        raise HTTPException(500, "Stored document content is invalid")
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{doc.get("filename") or "ROC_Document.docx"}"',
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
+    )
+
+
+@router.delete("/companies/{company_id}/documents/{document_id}")
+async def delete_generated_document(company_id: str, document_id: str, current_user: User = Depends(DELETE)):
+    result = await DOCS_LOG.delete_one({"id": document_id, "company_id": company_id})
+    if not result.deleted_count:
+        raise HTTPException(404, "Generated document not found")
+    return {"deleted": document_id}
 
 
 @router.get("/companies/{company_id}/documents")
