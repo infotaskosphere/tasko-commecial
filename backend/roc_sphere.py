@@ -576,6 +576,22 @@ MEETING_DRAFT_TEMPLATES = [
         "resolution": "the additional matter placed before the Board with the requisite consent of the Directors be and is hereby considered and approved / noted, as applicable",
     },
     {
+        "key": "members_adoption_financials",
+        "category": "General Meetings",
+        "label": "Members' Adoption of Financial Statements and Directors' Report",
+        "legal_basis": "Companies Act, 2013 — Section 134 and applicable provisions governing the Annual General Meeting",
+        "agenda": "To receive, consider and adopt the audited financial statements and the Directors' Report for the financial year ended {fy_end}.",
+        "resolution": "the audited financial statements for the financial year ended {fy_end}, together with the Directors' Report and Auditor's Report thereon, be and are hereby received, considered and adopted",
+    },
+    {
+        "key": "agm_dividend",
+        "category": "General Meetings",
+        "label": "Declaration of Dividend by Members",
+        "legal_basis": "Companies Act, 2013 — Section 123 and applicable provisions governing declaration of dividend",
+        "agenda": "To consider declaration of dividend on Equity Shares.",
+        "resolution": "a dividend of Rs. {dividend_per_share} per equity share for the financial year be and is hereby declared out of the profits available for distribution, subject to applicable statutory requirements",
+    },
+    {
         "key": "audit_committee_rpt_omnibus",
         "category": "Audit Committee",
         "label": "Audit Committee Omnibus Approval — Related Party Transactions",
