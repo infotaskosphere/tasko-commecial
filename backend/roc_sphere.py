@@ -41,6 +41,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict
 
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 from backend.dependencies import db, get_current_user, check_module_permission
 from backend.models import User
 
@@ -3379,60 +3382,126 @@ def _para(document, text, center=False, bold=False, italic=False):
     return p
 
 
+def _company_email(company: Dict[str, Any]) -> str:
+    master = company.get("master_data") or {}
+    candidates = [
+        company.get("email"), company.get("company_email"), company.get("email_address"),
+        company.get("registered_office_email"),
+        master.get("email"), master.get("company_email"),
+        master.get("email_address"), master.get("registered_office_email"),
+    ]
+    for value in candidates:
+        if isinstance(value, str) and value.strip() and "@" in value:
+            return value.strip()
+    return "—"
+
+
+def _meeting_financial_year(meeting_date: str) -> str:
+    try:
+        d = datetime.strptime(str(meeting_date)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return "Unknown"
+    return f"{d.year}-{str(d.year + 1)[-2:]}" if d.month >= 4 else f"{d.year - 1}-{str(d.year)[-2:]}"
+
+
 def build_board_resolution_doc(company: Dict[str, Any], req: BoardResolutionRequest, prepared_by: str) -> bytes:
     d = _base_doc()
+    section = d.sections[0]
+    section.top_margin = Inches(0.60)
+    section.bottom_margin = Inches(0.65)
+    section.left_margin = Inches(0.75)
+    section.right_margin = Inches(0.75)
+
     name = company.get("company_name", "").upper()
     cin = company.get("cin") or "—"
+    address = company.get("registered_office_address") or "—"
+    email = _company_email(company)
     is_llp = _is_llp(company)
     body_label = "Designated Partners of the LLP" if is_llp else "Board of Directors of the Company"
     present_label = "Designated Partners Present" if is_llp else "Directors Present"
     sign_label = "Designated Partner" if is_llp else "Director / Company Secretary"
     din_label = "DIN/DPIN" if is_llp else "DIN/Membership No."
-    _heading(d, name, size=16)
-    _para(d, f"CIN: {cin}" if not is_llp else f"LLPIN: {cin}", center=True)
-    _para(d, f"Registered Office: {company.get('registered_office_address') or '—'}", center=True)
+
+    # Professional corporate header.
+    p = d.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(name)
+    run.bold = True
+    run.font.size = Pt(15)
+
+    p = d.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"{'LLPIN' if is_llp else 'CIN'}: {cin}")
+    run.bold = True
+    run.font.size = Pt(9.5)
+
+    p = d.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"Registered Office: {address}")
+    run.font.size = Pt(9)
+
+    p = d.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"Email: {email}")
+    run.font.size = Pt(9)
+
     d.add_paragraph()
-    _heading(d, "EXTRACT OF MINUTES / CERTIFIED TRUE COPY OF RESOLUTION(S)", size=13)
-    if getattr(req, "template_legal_basis", None):
-        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
-        d.add_paragraph()
-    _para(
-        d,
-        f"Passed at the meeting of the {body_label} held on "
-        f"{_fmt_date(req.meeting_date)} at {req.meeting_time} at {req.venue}."
-    )
+    _heading(d, "CERTIFIED TRUE COPY OF THE RESOLUTION PASSED AT THE MEETING", size=13, underline=True)
+    p = d.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = p.add_run(f"OF THE {body_label.upper()}")
+    run.bold = True
+    run.font.size = Pt(10.5)
+
+    meta = d.add_table(rows=3, cols=2)
+    meta.style = "Table Grid"
+    for row, (label, value) in zip(meta.rows, [
+        ("Meeting Date", _fmt_date(req.meeting_date)),
+        ("Time / Venue", f"{req.meeting_time or '—'} / {req.venue or '—'}"),
+        ("Chairman", req.chairman or "—"),
+    ]):
+        row.cells[0].text = label
+        row.cells[1].text = str(value)
+        for run in row.cells[0].paragraphs[0].runs:
+            run.bold = True
+
+    d.add_paragraph()
     if req.directors_present:
         _para(d, f"{present_label}: " + ", ".join(req.directors_present))
-    if req.chairman:
-        _para(d, f"Chairman of the Meeting: {req.chairman}")
+    if getattr(req, "template_legal_basis", None):
+        _para(d, f"Drafting / legal basis: {req.template_legal_basis}", italic=True)
     d.add_paragraph()
 
-    for i, r in enumerate(req.resolutions, 1):
-        _para(d, f"{i}. {r.particulars}", bold=True)
-        _para(d, f'"RESOLVED THAT {r.resolution_text.strip().rstrip(".")}."')
-        if r.proposed_by or r.seconded_by:
+    for i, item in enumerate(req.resolutions, 1):
+        _para(d, f"{i}. {item.particulars}", bold=True)
+        _para(d, f'“RESOLVED THAT {item.resolution_text.strip().rstrip(".")}.”')
+        if item.proposed_by or item.seconded_by:
             bits = []
-            if r.proposed_by:
-                bits.append(f"Proposed by: {r.proposed_by}")
-            if r.seconded_by:
-                bits.append(f"Seconded by: {r.seconded_by}")
-            _para(d, "   " + " | ".join(bits), italic=True)
+            if item.proposed_by:
+                bits.append(f"Proposed by: {item.proposed_by}")
+            if item.seconded_by:
+                bits.append(f"Seconded by: {item.seconded_by}")
+            _para(d, " | ".join(bits), italic=True)
         d.add_paragraph()
 
-    _para(d, "\nCertified True Copy")
     d.add_paragraph()
-    _para(d, "For " + name, bold=True)
+    _para(d, "CERTIFIED TRUE COPY", bold=True, center=True)
     d.add_paragraph()
+    _para(d, f"For {name}", bold=True)
     d.add_paragraph()
     _para(d, sign_label)
-    _para(d, f"{din_label}: __________________")
-    _para(d, f"Date: {_fmt_date(datetime.now())}", )
+    _para(d, f"{din_label}: ______________________________")
+    _para(d, f"Date: {_fmt_date(datetime.now())}")
     _para(d, f"Prepared by: {prepared_by} (Taskosphere ROC Sphere)", italic=True)
+
+    footer = section.footer.paragraphs[0]
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fr = footer.add_run(f"{name}  |  {'LLPIN' if is_llp else 'CIN'}: {cin}  |  ROC Sphere")
+    fr.font.size = Pt(8)
 
     buf = io.BytesIO()
     d.save(buf)
     return buf.getvalue()
-
 
 def build_notice_doc(company: Dict[str, Any], req: MeetingNoticeRequest, prepared_by: str) -> bytes:
     d = _base_doc()
@@ -3806,6 +3875,89 @@ async def _log_doc(company_id: str, doc_type: str, filename: str, user: User, co
     if content:
         doc["content_b64"] = base64.b64encode(content).decode("ascii")
     await DOCS_LOG.insert_one(doc)
+    return doc
+
+
+async def _upsert_generated_meeting_record(
+    company_id: str,
+    meeting_type: str,
+    meeting_date: str,
+    meeting_time: Optional[str],
+    venue: Optional[str],
+    doc: Dict[str, Any],
+    agenda_items: Optional[List[str]] = None,
+    resolutions: Optional[List[ResolutionItem]] = None,
+):
+    """Persist generated meeting documents in the company's secretarial register."""
+    company = await COMPANIES.find_one({"id": company_id}, {"record_history": 1})
+    if not company:
+        return
+
+    records = list(company.get("record_history") or [])
+    date_key = str(meeting_date)[:10]
+    match = next(
+        (r for r in records
+         if r.get("meeting_type") == meeting_type and str(r.get("meeting_date"))[:10] == date_key),
+        None,
+    )
+
+    if match is None:
+        match = {
+            "id": _uid(),
+            "meeting_type": meeting_type,
+            "meeting_number": None,
+            "meeting_date": meeting_date,
+            "meeting_time": meeting_time,
+            "notice_date": None,
+            "venue": venue,
+            "mode": None,
+            "chairman": None,
+            "quorum_present": True,
+            "attendance": [],
+            "members_present_count": None,
+            "members_entitled_count": None,
+            "leave_of_absence": [],
+            "agenda_items": [],
+            "resolutions_passed": [],
+            "special_business": [],
+            "minutes_date": meeting_date if doc.get("doc_type") == f"minutes_{meeting_type}" else None,
+            "minutes_signed_date": None,
+            "adjourned": False,
+            "adjourned_to": None,
+            "auditor_attended": None,
+            "secretarial_notes": "",
+            "attachments": [],
+            "status": "Draft / Generated",
+            "remarks": "",
+            "created_at": _now().isoformat(),
+            "created_by": doc.get("generated_by"),
+            "updated_at": _now().isoformat(),
+        }
+        records.append(match)
+
+    if agenda_items:
+        match["agenda_items"] = list(dict.fromkeys([*(match.get("agenda_items") or []), *agenda_items]))
+    if resolutions:
+        resolution_texts = [r.resolution_text for r in resolutions if r.resolution_text]
+        match["resolutions_passed"] = list(dict.fromkeys([*(match.get("resolutions_passed") or []), *resolution_texts]))
+    if doc.get("doc_type") == f"minutes_{meeting_type}":
+        match["minutes_date"] = meeting_date
+
+    generated = list(match.get("generated_documents") or [])
+    generated.append({
+        "id": doc.get("id"),
+        "doc_type": doc.get("doc_type"),
+        "filename": doc.get("filename"),
+        "generated_at": doc.get("generated_at").isoformat() if hasattr(doc.get("generated_at"), "isoformat") else str(doc.get("generated_at")),
+        "generated_by": doc.get("generated_by"),
+    })
+    match["generated_documents"] = [x for i, x in enumerate(generated) if x.get("id") and x.get("id") not in {y.get("id") for y in generated[:i]}]
+    match["updated_at"] = _now().isoformat()
+
+    await COMPANIES.update_one(
+        {"id": company_id},
+        {"$set": {"record_history": records, "updated_at": _now()}},
+    )
 
 
 @router.get("/meeting-draft-templates")
@@ -3856,7 +4008,8 @@ async def generate_board_resolution(company_id: str, req: BoardResolutionRequest
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Board_Resolution_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, "board_resolution", fname, current_user, content)
+    doc = await _log_doc(company_id, "board_resolution", fname, current_user, content)
+    await _upsert_generated_meeting_record(company_id, "board", req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
     return _docx_response(content, fname)
 
 
@@ -3882,7 +4035,8 @@ async def generate_notice(company_id: str, req: MeetingNoticeRequest, current_us
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Notice_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, f"notice_{req.meeting_type}", fname, current_user, content)
+    doc = await _log_doc(company_id, f"notice_{req.meeting_type}", fname, current_user, content)
+    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, agenda_items=req.agenda_items, resolutions=req.special_business)
     return _docx_response(content, fname)
 
 
@@ -3892,10 +4046,10 @@ async def generate_minutes(company_id: str, req: MinutesRequest, current_user: U
     if resolved:
         req = req.model_copy(update={
             "template_legal_basis": resolved.get("legal_basis"),
-            "resolutions": [
-                *req.resolutions,
-                ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")
-            ],
+            "resolutions": (
+                req.resolutions if any(r.resolution_text for r in req.resolutions)
+                else [ResolutionItem(particulars=resolved.get("label") or "Other", resolution_text=resolved.get("resolution") or "")]
+            ),
         })
     company = await COMPANIES.find_one({"id": company_id})
     if not company:
@@ -3905,7 +4059,8 @@ async def generate_minutes(company_id: str, req: MinutesRequest, current_user: U
     except ImportError as e:
         raise HTTPException(500, f"Document generator not installed on the server: {e}")
     fname = f"Minutes_{req.meeting_type.upper()}_{_safe(company.get('company_name'))}_{_safe(req.meeting_date)}.docx"
-    await _log_doc(company_id, f"minutes_{req.meeting_type}", fname, current_user, content)
+    doc = await _log_doc(company_id, f"minutes_{req.meeting_type}", fname, current_user, content)
+    await _upsert_generated_meeting_record(company_id, req.meeting_type, req.meeting_date, req.meeting_time, req.venue, doc, resolutions=req.resolutions)
     return _docx_response(content, fname)
 
 
