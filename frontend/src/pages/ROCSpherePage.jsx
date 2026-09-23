@@ -347,7 +347,7 @@ export default function ROCSpherePage() {
           ) : (
             <div className="space-y-1 max-h-[60vh] overflow-y-auto">
               {filteredCompanies.map((c) => (
-                <button key={c.id} onClick={() => { const changed = selectedId !== c.id; setSelectedId(c.id); if (changed) setShowWizard(true); }}
+                <button key={c.id} onClick={() => { setSelectedId(c.id); setShowWizard(true); }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition
                     ${selectedId === c.id ? 'bg-blue-600 text-white' : isDark ? 'hover:bg-slate-700/60 text-slate-200' : 'hover:bg-slate-100 text-slate-700'}`}>
                   <span className="truncate">
@@ -377,9 +377,6 @@ export default function ROCSpherePage() {
                 <div className="flex items-center gap-1">
                   <button onClick={deleteCompany} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
                     <Trash2 size={13} /> Remove
-                  </button>
-                  <button onClick={() => setShowWizard(true)} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
-                    <Zap size={13} /> Guided Filing
                   </button>
                   <button onClick={() => setTab('uploads')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
                     <Upload size={13} /> Upload ROC Forms
@@ -915,29 +912,65 @@ function cardStyle(isDark) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Guided Filing wizard — pops up on selecting a client and walks the user
- * through the ROC Sphere filing sequence step by step:
- *   1. Master Data (MCA Company/LLP Master Data export)
- *   2. Annual Filing Forms of the previous year (ADT-1, AOC-4, MGT-7/7A —
- *      uploaded together in one go)
- *   3. Forms filed during the year (DPT-3, MSME-1 and other event forms)
- *   4. Audit Reports (Board's Report / Auditor's Report extracts)
- *   5. Applicable Compliances — auto-computed from everything uploaded
- *   6. Draft AOC-4 and MGT-7/MGT-7A working papers, ready to download
- * Every upload step reuses the same extraction endpoints as the Master
- * Data / Upload ROC Forms tabs, so anything applied here shows up there
- * too (and vice versa) — this is a guided front door, not a separate
- * data path.
+ * Company Master Data popup — fires by default whenever a company is
+ * selected. Step 1 (mandatory-first, but skippable) always asks for the
+ * latest MCA Company/LLP Master Data export; if the files picked look
+ * identical to what's already on file it asks for confirmation instead
+ * of silently re-applying stale data. From there it branches into either
+ * Board's Report & AGM documents or Annual Filing Forms, then optionally
+ * in-year forms, applicable compliances, and AOC-4/MGT-7/MGT-7A drafts.
+ * Every step reuses the same extraction endpoints as the Master Data /
+ * Upload ROC Forms tabs, so anything applied here shows up there too.
  * ═══════════════════════════════════════════════════════════════════════ */
 
 const WIZARD_STEPS = [
-  { key: 'masterdata', title: 'Master Data', subtitle: 'Latest MCA Company/LLP Master Data export' },
-  { key: 'annual', title: 'Annual Filing Forms', subtitle: "Previous year's ADT-1, AOC-4, MGT-7/MGT-7A — all in one go" },
+  { key: 'masterdata', title: 'Company Master Data', subtitle: 'Latest MCA Company/LLP Master Data export' },
+  { key: 'branch', title: 'What would you like to upload next?', subtitle: "Board's Report & AGM documents, or this year's Annual Filing Forms" },
   { key: 'inyear', title: 'Forms Filed During the Year', subtitle: 'DPT-3, MSME-1 and other event-based forms' },
-  { key: 'audit', title: 'Audit Reports', subtitle: "Board's Report / Auditor's Report extracts" },
   { key: 'compliance', title: 'Applicable Compliances', subtitle: 'Auto-computed from everything uploaded so far' },
   { key: 'draft', title: 'Draft AOC-4 & MGT-7/MGT-7A', subtitle: 'Download working papers for review' },
 ];
+
+// name+size signature of a file list, used to detect "this is the same
+// file(s) I uploaded last time" without needing to re-hash/re-upload.
+function fileSig(files) {
+  return files.map((f) => `${f.name}:${f.size}`).sort().join('|');
+}
+
+function WizardFileDropzone({ files, setFiles, isDark, muted, text, accept }) {
+  const pickFiles = (list) => {
+    const picked = Array.from(list || []);
+    if (!picked.length) return;
+    setFiles((prev) => {
+      const seen = new Set(prev.map((f) => `${f.name}:${f.size}`));
+      const merged = [...prev];
+      for (const f of picked) {
+        const key = `${f.name}:${f.size}`;
+        if (!seen.has(key)) { merged.push(f); seen.add(key); }
+      }
+      return merged;
+    });
+  };
+  const removeFile = (i) => setFiles((prev) => prev.filter((_, x) => x !== i));
+  return (
+    <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
+      <input type="file" multiple accept={accept}
+        onChange={(e) => { pickFiles(e.target.files); e.target.value = ''; }}
+        className={`text-xs ${muted}`} />
+      <p className={`text-[11px] ${muted} mt-1`}>You can open the file picker more than once to add files from different folders — earlier selections are kept.</p>
+      {!!files.length && (
+        <div className="mt-2 space-y-1">
+          {files.map((f, i) => (
+            <div key={`${f.name}:${f.size}:${i}`} className="flex items-center justify-between text-xs">
+              <span className={`flex items-center gap-1.5 ${text}`}><FileText size={12} /> {f.name}</span>
+              <button onClick={() => removeFile(i)} className="text-red-500"><X size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceType = 'roc', onApplied }) {
   const [files, setFiles] = useState([]);
@@ -949,32 +982,23 @@ function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceTy
     setBusy(true);
     try {
       const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
       if (sourceType === 'roc') {
-        files.forEach((f) => fd.append('files', f));
         fd.append('source_type', 'roc');
         fd.append('apply', 'true');
         const { data } = await api.post(`/roc-sphere/companies/${company.id}/upload-master-data`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
         setResult(data);
-        if (data.applied) {
-          toast.success('Uploaded and applied to Company Master');
-          onApplied();
-        } else {
-          toast.error(data.message || 'Could not extract fields — you can continue and fix this later');
-        }
+        if (data.applied) { toast.success('Uploaded and applied to Company Master'); onApplied(); }
+        else toast.error(data.message || 'Could not extract fields — you can continue and fix this later');
       } else {
-        files.forEach((f) => fd.append('files', f));
         const { data } = await api.post(`/roc-sphere/companies/${company.id}/master-data/fetch`, fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
         setResult(data);
-        if (data.applied) {
-          toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`);
-          onApplied();
-        } else {
-          toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
-        }
+        if (data.applied) { toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`); onApplied(); }
+        else toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
       }
     } catch (e) {
       toast.error(await parseBlobError(e) || 'Upload failed');
@@ -986,15 +1010,11 @@ function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceTy
   return (
     <div className="space-y-3">
       <p className={`text-xs ${muted}`}>{hint}</p>
-      <div className={`rounded-lg border-2 border-dashed p-4 ${isDark ? 'border-slate-700' : 'border-slate-300'}`}>
-        <input type="file" multiple accept={accept} onChange={(e) => setFiles(Array.from(e.target.files || []))}
-          className={`text-xs ${muted}`} />
-        {!!files.length && <p className={`text-xs mt-2 ${text}`}>{files.length} file(s) selected</p>}
-        <button onClick={upload} disabled={busy || !files.length}
-          className="mt-3 px-3 py-1.5 rounded-lg text-xs bg-blue-600 text-white flex items-center gap-1 disabled:opacity-60">
-          {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload &amp; Apply
-        </button>
-      </div>
+      <WizardFileDropzone files={files} setFiles={setFiles} isDark={isDark} muted={muted} text={text} accept={accept} />
+      <button onClick={upload} disabled={busy || !files.length}
+        className="px-3 py-1.5 rounded-lg text-xs bg-blue-600 text-white flex items-center gap-1 disabled:opacity-60">
+        {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload &amp; Apply
+      </button>
       {!!result?.errors?.length && (
         <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
           {result.errors.map((e, i) => (
@@ -1010,6 +1030,129 @@ function WizardUploadStep({ company, isDark, text, muted, accept, hint, sourceTy
             <CheckCircle2 size={12} /> {result.results.map((r) => `${r.filename} (${r.source_type})`).join(' · ')}
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+function WizardMasterDataStep({ company, isDark, text, muted, onApplied }) {
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [confirmSame, setConfirmSame] = useState(false);
+
+  const existingSig = fileSig((company.master_data?.source_files || []).map((f) => ({ name: f.filename, size: f.size })));
+  const selectedSig = fileSig(files);
+  const looksSame = files.length > 0 && existingSig && selectedSig === existingSig;
+
+  const doUpload = async () => {
+    setBusy(true);
+    setConfirmSame(false);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      const { data } = await api.post(`/roc-sphere/companies/${company.id}/master-data/fetch`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setResult(data);
+      if (data.applied) { toast.success(`Master Data applied — ${data.fields_applied?.length || 0} field(s) updated`); onApplied(); }
+      else toast.error((data.errors && data.errors[0]) || 'Could not extract Master Data');
+    } catch (e) {
+      toast.error(await parseBlobError(e) || 'Master Data fetch failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onUploadClick = () => {
+    if (!files.length) { toast.error('Choose the latest MCA Master Data file(s) first'); return; }
+    if (looksSame) { setConfirmSame(true); return; }
+    doUpload();
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className={`text-xs ${muted}`}>
+        Upload the latest MCA "View Company/LLP Master Data" export (PDF, XLSX or CSV). Company Master fields and
+        the Director/Signatory register are fetched and applied automatically.
+      </p>
+      {!!(company.master_data?.last_fetched_at) && (
+        <p className={`text-[11px] ${muted}`}>
+          Currently on file: fetched {new Date(company.master_data.last_fetched_at).toLocaleString('en-IN')}
+          {company.master_data.source_files?.length ? ` from ${company.master_data.source_files.map((f) => f.filename).join(', ')}` : ''}.
+        </p>
+      )}
+      <WizardFileDropzone files={files} setFiles={setFiles} isDark={isDark} muted={muted} text={text} accept=".pdf,.xlsx,.xls,.csv" />
+
+      {confirmSame ? (
+        <div className={`rounded-lg border p-3 space-y-2 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
+          <p className={`text-xs flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+            <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+            This looks identical (same filename &amp; size) to the Master Data already on file. Do you want to go ahead with this same old Master Data anyway?
+          </p>
+          <div className="flex gap-2">
+            <button onClick={doUpload} disabled={busy}
+              className="px-3 py-1.5 rounded-lg text-xs bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60">
+              {busy ? <Loader2 size={13} className="animate-spin inline" /> : 'Yes, go ahead anyway'}
+            </button>
+            <button onClick={() => setConfirmSame(false)}
+              className={`px-3 py-1.5 rounded-lg text-xs ${isDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100'}`}>
+              No, let me pick a different file
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={onUploadClick} disabled={busy || !files.length}
+          className="px-4 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 disabled:opacity-60">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <DatabaseZap size={14} />} Fetch &amp; Apply Master Data
+        </button>
+      )}
+
+      {!!result?.errors?.length && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-amber-700/40 bg-amber-900/10' : 'border-amber-200 bg-amber-50'}`}>
+          {result.errors.map((e, i) => (
+            <p key={i} className={`text-[11px] flex items-start gap-1.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {e}
+            </p>
+          ))}
+        </div>
+      )}
+      {result?.applied && (
+        <div className={`rounded-lg border p-3 ${isDark ? 'border-emerald-700/40 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50'}`}>
+          <p className={`text-xs font-semibold flex items-center gap-1.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+            <CheckCircle2 size={13} /> Applied to Company Master
+          </p>
+          <p className={`text-[11px] ${muted} mt-1`}>{result.fields_applied?.join(', ') || '—'}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WizardBranchStep({ company, isDark, text, muted, onApplied }) {
+  const [choice, setChoice] = useState(null);
+  const options = [
+    { key: 'br_agm', title: "Board's Report & AGM Documents", desc: "Upload the Board's Report / Auditor's Report extracts and AGM notice/minutes.", accept: '.pdf' },
+    { key: 'annual', title: 'Annual Filing Forms', desc: 'Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) — all in one go.', accept: '.pdf,.xlsx,.xlsm,.xls,.csv' },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="grid sm:grid-cols-2 gap-2">
+        {options.map((o) => (
+          <button key={o.key} onClick={() => setChoice(o.key)}
+            className={`text-left rounded-lg border p-3 transition ${choice === o.key ? 'border-blue-600 bg-blue-50/40 dark:bg-blue-950/20' : isDark ? 'border-slate-700 hover:border-slate-600' : 'border-slate-200 hover:border-slate-300'}`}>
+            <p className={`text-xs font-semibold ${text}`}>{o.title}</p>
+            <p className={`text-[11px] mt-0.5 ${muted}`}>{o.desc}</p>
+          </button>
+        ))}
+      </div>
+      {choice && (
+        <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
+          accept={options.find((o) => o.key === choice).accept}
+          hint={choice === 'br_agm'
+            ? "Upload the Board's Report, Auditor's Report and AGM notice/minutes extracts."
+            : "Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) for the previous financial year — all forms can be uploaded together in one go. Financial data and the Statutory Auditor come only from AOC-4; Directors & Shareholders come only from MGT-7/MGT-7A."}
+          onApplied={onApplied} />
       )}
     </div>
   );
@@ -1077,7 +1220,7 @@ function WizardDraftStep({ company, isDark, text, muted }) {
     <div className="space-y-3">
       <p className={`text-xs ${muted}`}>
         These drafts are assembled from whatever's been uploaded and applied so far (Master Data, Annual Filing
-        Forms, in-year forms and audit reports). Review every figure and entry before filing on the MCA V3 portal.
+        Forms / BR &amp; AGM documents, in-year forms). Review every figure and entry before filing on the MCA V3 portal.
       </p>
       <div className="flex flex-col sm:flex-row gap-2">
         <button onClick={() => download('aoc4')} disabled={!!downloading}
@@ -1089,9 +1232,7 @@ function WizardDraftStep({ company, isDark, text, muted }) {
           {downloading === 'mgt7' ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} Draft MGT-7 / MGT-7A
         </button>
       </div>
-      <p className={`text-[11px] ${muted}`}>
-        These also stay available any time afterwards from the Filing Desk tab.
-      </p>
+      <p className={`text-[11px] ${muted}`}>These also stay available any time afterwards from the Filing Desk tab.</p>
     </div>
   );
 }
@@ -1106,7 +1247,7 @@ function GuidedFilingWizard({ company, isDark, text, muted, onClose, onApplied, 
       <div className={`w-full max-w-2xl rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} shadow-xl max-h-[90vh] flex flex-col`}>
         <div className={`flex items-center justify-between px-5 py-4 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
           <div>
-            <p className={`text-[11px] uppercase tracking-wide font-semibold ${muted}`}>Guided Filing · Step {step + 1} of {WIZARD_STEPS.length}</p>
+            <p className={`text-[11px] uppercase tracking-wide font-semibold ${muted}`}>Step {step + 1} of {WIZARD_STEPS.length}</p>
             <h3 className={`text-base font-bold ${text}`}>{s.title}</h3>
             <p className={`text-xs ${muted}`}>{s.subtitle}</p>
           </div>
@@ -1123,28 +1264,12 @@ function GuidedFilingWizard({ company, isDark, text, muted, onClose, onApplied, 
 
         <div className="p-5 overflow-y-auto flex-1">
           <p className={`text-xs mb-3 ${text}`}>Company: <strong>{company.company_name}</strong></p>
-          {s.key === 'masterdata' && (
-            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
-              sourceType="masterdata" accept=".pdf,.xlsx,.xls,.csv"
-              hint='Upload the MCA "View Company/LLP Master Data" export. Company Master fields and the Director/Signatory register are fetched and applied automatically.'
-              onApplied={onApplied} />
-          )}
-          {s.key === 'annual' && (
-            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
-              accept=".pdf,.xlsx,.xlsm,.xls,.csv"
-              hint="Upload ADT-1, AOC-4 and MGT-7/MGT-7A (plus its shareholder XLSM) for the previous financial year — all forms can be uploaded together in one go. Financial data and the Statutory Auditor come only from AOC-4; Directors & Shareholders come only from MGT-7/MGT-7A."
-              onApplied={onApplied} />
-          )}
+          {s.key === 'masterdata' && <WizardMasterDataStep company={company} isDark={isDark} text={text} muted={muted} onApplied={onApplied} />}
+          {s.key === 'branch' && <WizardBranchStep company={company} isDark={isDark} text={text} muted={muted} onApplied={onApplied} />}
           {s.key === 'inyear' && (
             <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
               accept=".pdf,.xlsx,.xlsm,.xls,.csv"
               hint="Upload the forms filed during the year — DPT-3, MSME-1, and other event-based forms such as DIR-12, INC-22 or PAS-3, if any."
-              onApplied={onApplied} />
-          )}
-          {s.key === 'audit' && (
-            <WizardUploadStep company={company} isDark={isDark} text={text} muted={muted}
-              accept=".pdf"
-              hint="Upload the Board's Report and Auditor's Report extracts for the year."
               onApplied={onApplied} />
           )}
           {s.key === 'compliance' && <WizardComplianceStep company={company} isDark={isDark} text={text} muted={muted} />}
@@ -1177,6 +1302,7 @@ function GuidedFilingWizard({ company, isDark, text, muted, onClose, onApplied, 
     </div>
   );
 }
+
 
 /* ═══════════════════════════════════════════════════════════════════════
  * New company modal — from scratch or prefilled from an existing client
