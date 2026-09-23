@@ -105,21 +105,66 @@ const emptyCompanyForm = () => ({
   notes: '',
 });
 
-const TABS = [
-  { key: 'master', label: 'Company Master', icon: Building2 },
-  { key: 'masterdata', label: 'Master Data', icon: DatabaseZap },
-  { key: 'directors', label: 'Directors & Shareholders', icon: UsersIcon },
-  { key: 'statutory', label: 'Statutory Registers', icon: BookOpen },
-  { key: 'resolution', label: 'Board Resolution', icon: Gavel },
-  { key: 'notice', label: 'Notice of Meeting', icon: ScrollText },
-  { key: 'minutes', label: 'Minutes of Meeting', icon: NotebookPen },
-  { key: 'history', label: 'Record History', icon: History },
-  { key: 'checklist', label: 'Compliance Checklist', icon: ClipboardList },
-  { key: 'applicable', label: 'Applicable Compliances', icon: ListChecks },
-  { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
-  { key: 'documents', label: 'Document Vault', icon: ScrollText },
-  { key: 'cspractice', label: 'CS Practice Automation', icon: Zap },
+const NAV_GROUPS = [
+  {
+    key: 'overview',
+    label: 'Overview',
+    icon: Building2,
+    tabs: [
+      { key: 'master', label: 'Company Master', icon: Building2 },
+      { key: 'masterdata', label: 'Master Data', icon: DatabaseZap },
+    ],
+  },
+  {
+    key: 'people',
+    label: 'People & Registers',
+    icon: UsersIcon,
+    tabs: [
+      { key: 'directors', label: 'Directors & Shareholders', icon: UsersIcon },
+      { key: 'statutory', label: 'Statutory Registers', icon: BookOpen },
+      { key: 'history', label: 'Record History', icon: History },
+    ],
+  },
+  {
+    key: 'meetings',
+    label: 'Meetings & Events',
+    icon: CalendarDays,
+    tabs: [
+      { key: 'resolution', label: 'Board Resolution', icon: Gavel },
+      { key: 'notice', label: 'Notice of Meeting', icon: ScrollText },
+      { key: 'minutes', label: 'Minutes of Meeting', icon: NotebookPen },
+    ],
+  },
+  {
+    key: 'compliance',
+    label: 'Compliance',
+    icon: ClipboardList,
+    tabs: [
+      { key: 'checklist', label: 'Compliance Checklist', icon: ClipboardList },
+      { key: 'applicable', label: 'Applicable Compliances', icon: ListChecks },
+    ],
+  },
+  {
+    key: 'filings',
+    label: 'Filings & Documents',
+    icon: FileSpreadsheet,
+    tabs: [
+      { key: 'upload', label: 'Upload ROC Forms', icon: Upload },
+      { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
+      { key: 'documents', label: 'Document Vault', icon: ScrollText },
+    ],
+  },
+  {
+    key: 'automation',
+    label: 'Automation',
+    icon: Zap,
+    tabs: [
+      { key: 'cspractice', label: 'CS Practice Automation', icon: Zap },
+    ],
+  },
 ];
+
+const TABS = NAV_GROUPS.flatMap((group) => group.tabs);
 
 export default function ROCSpherePage() {
   const isDark = useDark();
@@ -297,9 +342,9 @@ export default function ROCSpherePage() {
         />
       </div>
 
-      <div className="px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="px-4 sm:px-6 pb-8 pt-4 grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] gap-5">
         {/* ── Company list / picker ───────────────────────────────────── */}
-        <div className={`lg:col-span-1 rounded-xl border ${card} p-4 h-fit`}>
+        <aside className={`lg:sticky lg:top-4 self-start rounded-xl border ${card} p-3 h-fit`}>
           <div className="flex items-center justify-between mb-3">
             <h3 className={`font-semibold text-sm ${text}`}>Companies</h3>
             <div className="flex items-center gap-1.5">
@@ -355,48 +400,78 @@ export default function ROCSpherePage() {
         </div>
 
         {/* ── Detail panel ─────────────────────────────────────────────── */}
-        <div className="lg:col-span-3 space-y-4">
+        <main className="min-w-0 space-y-4">
           {!company ? (
             <div className={`rounded-xl border ${card} p-10 text-center ${muted}`}>
               Select a company on the left, or add one to get started.
             </div>
           ) : (
             <>
-              <div className={`rounded-xl border ${card} p-4 flex flex-wrap items-center justify-between gap-2`}>
-                <div>
-                  <h2 className={`text-lg font-bold ${text}`}>{company.company_name}</h2>
-                  <p className={`text-xs ${muted}`}>CIN: {company.cin || '—'} · {CATEGORY_LABELS[company.category] || company.category}</p>
+              <section className={`rounded-xl border ${card} overflow-hidden`}>
+                <div className="px-4 py-4 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <h2 className={`text-lg sm:text-xl font-bold ${text} truncate`}>{company.company_name}</h2>
+                      <span className={`px-2 py-0.5 text-[10px] font-semibold border ${isDark ? 'border-blue-800 bg-blue-950/30 text-blue-300' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                        {CATEGORY_LABELS[getCompanyCategory(company)] || getCompanyCategory(company)}
+                      </span>
+                    </div>
+                    <p className={`text-xs ${muted} truncate`}>CIN: {company.cin || 'Not available'}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={() => setTab('upload')} className="px-3 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5">
+                      <Upload size={14} /> Upload ROC Forms
+                    </button>
+                    <button onClick={() => setTab('filing')} className={`px-3 py-2 text-xs font-semibold border flex items-center gap-1.5 ${isDark ? 'border-slate-600 text-slate-200 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                      <FileSpreadsheet size={14} /> Filing Desk
+                    </button>
+                    <button onClick={deleteCompany} className="px-3 py-2 text-xs font-semibold text-red-500 border border-transparent hover:bg-red-500/10 flex items-center gap-1.5">
+                      <Trash2 size={14} /> Remove
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={deleteCompany} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-red-500 hover:bg-red-500/10">
-                    <Trash2 size={13} /> Remove
-                  </button>
-                  <button onClick={() => setTab('upload')} className="text-xs flex items-center gap-1 px-2 py-1.5 rounded-lg text-blue-600 hover:bg-blue-500/10">
-                    <Upload size={13} /> Upload ROC Forms
-                  </button>
-                </div>
-              </div>
-
-              {/* Tabs */}
-              <div className={`rounded-xl border ${card} overflow-hidden`}>
-                {/* Two fixed tab rows: no horizontal scroll. Seven equal slots per row keeps the desktop layout balanced. */}
-                <div className={`border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-                  {[TABS.slice(0, 7), TABS.slice(7)].map((row, rowIndex) => (
-                    <div key={rowIndex} className={`grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 ${rowIndex === 0 ? (isDark ? 'border-b border-slate-700' : 'border-b border-slate-200') : ''}`}>
-                      {row.map((t) => {
-                        const Icon = t.icon;
-                        const active = tab === t.key;
-                        return (
-                          <button key={t.key} onClick={() => setTab(t.key)} title={t.label}
-                            className={`min-w-0 flex items-center justify-center gap-1 px-2 py-2.5 text-[11px] font-medium border-b-2 transition text-center
-                              ${active ? 'border-blue-600 text-blue-600 bg-blue-50/40 dark:bg-blue-950/20' : `border-transparent ${muted} hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50`}`}>
-                            <Icon size={13} className="shrink-0" /> <span className="truncate">{t.label}</span>
-                          </button>
-                        );
-                      })}
-                      {row.length < 7 && <div aria-hidden="true" className="hidden lg:block" />}
+                <div className={`grid grid-cols-2 sm:grid-cols-4 border-t ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+                  {[
+                    ['Paid-up Capital', company.paid_up_capital],
+                    ['Directors', company.directors?.length || 0],
+                    ['Shareholders', company.shareholders?.length || 0],
+                    ['ROC Documents', company.roc_form_uploads?.length || 0],
+                  ].map(([label, value]) => (
+                    <div key={label} className={`px-4 py-2.5 border-r last:border-r-0 ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <p className={`text-[10px] uppercase tracking-wide ${muted}`}>{label}</p>
+                      <p className={`text-sm font-semibold ${text}`}>{typeof value === 'number' && label === 'Paid-up Capital' ? `₹${value.toLocaleString('en-IN')}` : value}</p>
                     </div>
                   ))}
+                </div>
+              </section>
+
+              {/* Grouped navigation: primary workflow areas + contextual actions. No curved tabs or horizontal page scrolling. */}
+              <div className={`rounded-xl border ${card} overflow-hidden`}>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 border-b ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+                  {NAV_GROUPS.map((group) => {
+                    const activeGroup = group.tabs.some((t) => t.key === tab);
+                    const Icon = group.icon;
+                    return (
+                      <button key={group.key} onClick={() => setTab(group.tabs[0].key)}
+                        className={`min-w-0 px-3 py-3 text-xs font-semibold border-b-2 flex items-center justify-center gap-1.5 transition
+                          ${activeGroup ? 'border-blue-600 text-blue-600 bg-blue-50/40 dark:bg-blue-950/20' : `border-transparent ${muted} hover:text-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800/50`}`}>
+                        <Icon size={14} className="shrink-0" /><span className="truncate">{group.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-50/70'}`}>
+                  {(NAV_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) || NAV_GROUPS[0]).tabs.map((t) => {
+                    const Icon = t.icon;
+                    const active = tab === t.key;
+                    return (
+                      <button key={t.key} onClick={() => setTab(t.key)} title={t.label}
+                        className={`min-w-0 px-3 py-2.5 text-[11px] font-medium border-b-2 flex items-center justify-center gap-1.5 transition text-center
+                          ${active ? 'border-blue-600 text-blue-600 bg-white dark:bg-slate-800' : `border-transparent ${muted} hover:text-blue-500`}`}>
+                        <Icon size={13} className="shrink-0" /><span className="truncate">{t.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="p-4">
                   {tab === 'master' && <MasterTab company={company} isDark={isDark} onSave={saveCompany} input={input} text={text} muted={muted} />}
@@ -417,7 +492,7 @@ export default function ROCSpherePage() {
               </div>
             </>
           )}
-        </div>
+        </main>
       </div>
 
       {showNewCompany && (
