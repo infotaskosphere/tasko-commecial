@@ -188,6 +188,58 @@ const safeDate = (dateStr) => {
 
 const trimmedEmail = (v) => { const t = v?.trim(); return t && t.length > 0 ? t : null; };
 
+// MCA/company-master sources do not always use the same field names.
+// Keep the frontend contract canonical so CIN, registered address, city,
+// state and PIN always land in the correct Client form fields.
+const normalizeMcaDetails = (raw = {}) => {
+  const first = (...keys) => {
+    for (const key of keys) {
+      const value = raw?.[key];
+      if (value !== undefined && value !== null && String(value).trim() !== '' && String(value).trim() !== '-' && String(value).trim().toLowerCase() !== 'nan') {
+        return String(value).trim();
+      }
+    }
+    return '';
+  };
+
+  const address = first('address', 'registered_address', 'registered_office_address', 'registered_office', 'registeredAddress');
+  let pin = first('pin', 'pincode', 'postal_code', 'postalCode', 'zip', 'zip_code', 'registered_pin', 'registered_pincode', 'gst_pin');
+  if (!pin && address) {
+    const match = address.match(/\b(\d{6})\b/);
+    if (match) pin = match[1];
+  }
+
+  return {
+    company_name: first('company_name', 'name', 'legal_name', 'companyName'),
+    cin: first('cin', 'cin_number', 'corporate_identity_number', 'corporate_identification_number'),
+    llpin: first('llpin', 'llpin_number', 'llp_identification_number'),
+    date_of_incorporation: first('date_of_incorporation', 'incorporation_date', 'date_of_registration'),
+    address,
+    city: first('city', 'registered_city', 'registeredCity'),
+    state: first('state', 'registered_state', 'registeredState', 'registration_state'),
+    pin,
+    email: first('email', 'email_id', 'emailId'),
+    pan: first('pan', 'pan_number', 'panNumber'),
+    client_type: first('client_type', 'entity_type', 'constitution'),
+    registration_number: first('registration_number', 'registration_no', 'registrationNumber'),
+    roc_name: first('roc_name', 'roc', 'registrar_of_companies'),
+    rd_name: first('rd_name', 'rd', 'rd_region'),
+    company_category: first('company_category', 'category', 'company_class', 'class_of_company'),
+    company_subcategory: first('company_subcategory', 'subcategory', 'company_sub_category'),
+    active_compliance: first('active_compliance', 'active_compliance_status'),
+    authorized_capital: first('authorized_capital', 'authorised_capital', 'authorized_share_capital'),
+    paid_up_capital: first('paid_up_capital', 'paidup_capital', 'paid_up_share_capital'),
+    last_agm_date: first('last_agm_date', 'date_of_last_agm', 'agm_date'),
+    balance_sheet_date: first('balance_sheet_date', 'date_of_balance_sheet', 'last_balance_sheet_date'),
+    books_address: first('books_address', 'books_of_account_address', 'address_at_which_books_of_account_are_maintained'),
+    company_status: first('company_status', 'status', 'companyStatus'),
+    charges: Array.isArray(raw?.charges) ? raw.charges : [],
+    loan_details: Array.isArray(raw?.loan_details) ? raw.loan_details : [],
+    directors: Array.isArray(raw?.directors) ? raw.directors : [],
+    mca_fetch_date: first('mca_fetch_date') || new Date().toISOString().slice(0, 10),
+  };
+};
+
 
 
 // ─── copyToClipboard helper ───────────────────────────────────────────────────
@@ -5008,14 +5060,15 @@ export default function Clients() {
       setMcaQuery(name);
       setMcaFetching(true);
       try {
-        const { data: d } = await api.get('/clients/fetch-mca-details', { params: { query: name } });
+        const d = normalizeMcaDetails((await api.get('/clients/fetch-mca-details', { params: { query: name } })).data || {});
         if (!d) return;
         setFormData(p => ({
           ...p,
           company_name: d.company_name || p.company_name,
           client_type: d.client_type || p.client_type,
           date_of_incorporation: d.date_of_incorporation || p.date_of_incorporation || '',
-          cin: d.cin || d.cin_number || d.corporate_identity_number || p.cin || '',
+          cin: d.cin || p.cin || '',
+          llpin: d.llpin || p.llpin || '',
           address: d.address || p.address || '',
           city: d.city || p.city || '',
           state: d.state || p.state || '',
@@ -5024,7 +5077,7 @@ export default function Clients() {
           pan: d.pan || p.pan || '',
           mca_fetch_date: d.mca_fetch_date || new Date().toISOString().slice(0, 10),
           mca_registration_number: d.registration_number || p.mca_registration_number || '',
-          mca_roc_name: d.roc_name || d.roc || p.mca_roc_name || '',
+          mca_roc_name: d.roc_name || p.mca_roc_name || '',
           mca_rd_name: d.rd_name || p.mca_rd_name || '',
           mca_company_category: d.company_category || p.mca_company_category || '',
           mca_company_subcategory: d.company_subcategory || p.mca_company_subcategory || '',
@@ -5035,9 +5088,9 @@ export default function Clients() {
           mca_last_agm_date: d.last_agm_date || p.mca_last_agm_date || '',
           mca_balance_sheet_date: d.balance_sheet_date || p.mca_balance_sheet_date || '',
           mca_books_address: d.books_address || p.mca_books_address || '',
-          mca_charges: Array.isArray(d.charges) ? d.charges : (p.mca_charges || []),
-          mca_loan_details: Array.isArray(d.loan_details) ? d.loan_details : (p.mca_loan_details || []),
-          contact_persons: d.directors?.length
+          mca_charges: d.charges.length ? d.charges : (p.mca_charges || []),
+          mca_loan_details: d.loan_details.length ? d.loan_details : (p.mca_loan_details || []),
+          contact_persons: d.directors.length
             ? d.directors.map(dir => ({ name: dir.name || '', designation: dir.designation || 'Director', din: dir.din || '', email: '', phone: '', birthday: '' }))
             : p.contact_persons,
         }));
@@ -6557,7 +6610,27 @@ export default function Clients() {
                                         const existingNames = new Set(existingContacts.map(c => c.name?.toLowerCase().trim()).filter(Boolean));
                                         const mergedContacts = [...existingContacts, ...contacts.filter(c => !existingNames.has(c.name.toLowerCase().trim()))];
                                         if (mergedContacts.length === 0) mergedContacts.push({ name: '', designation: '', email: '', phone: '', birthday: '', din: '' });
-                                        setFormData({ ...existing, contact_persons: mergedContacts, gstin: parsed.gstin || existing.gstin, pan: parsed.pan || existing.pan, address: existing.address || parsed.address, city: existing.city || parsed.city, state: existing.state || parsed.state, gst_address: parsed.gst_address || existing.gst_address || '', gst_city: '', gst_state: '', gst_pin: parsed.pin || '', msme_number: parsed.udyam_number || existing.msme_number || '', notes: parsed.notes ? (existing.notes ? existing.notes + '\n' + parsed.notes : parsed.notes) : existing.notes || '', email: existing.email || parsed.email || '', phone: existing.phone || parsed.phone || '' });
+                                        setFormData({
+                                          ...existing,
+                                          contact_persons: mergedContacts,
+                                          gstin: parsed.gstin || existing.gstin,
+                                          pan: parsed.pan || existing.pan,
+                                          cin: parsed.cin || parsed.cin_number || parsed.corporate_identity_number || existing.cin || '',
+                                          llpin: parsed.llpin || parsed.llpin_number || existing.llpin || '',
+                                          date_of_incorporation: parsed.date_of_incorporation || existing.date_of_incorporation || '',
+                                          address: existing.address || parsed.address || '',
+                                          city: existing.city || parsed.city || '',
+                                          state: existing.state || parsed.state || '',
+                                          pincode: parsed.pin || parsed.pincode || existing.pincode || '',
+                                          gst_address: parsed.gst_address || existing.gst_address || '',
+                                          gst_city: parsed.city || existing.gst_city || '',
+                                          gst_state: parsed.state || existing.gst_state || '',
+                                          gst_pin: parsed.pin || existing.gst_pin || '',
+                                          msme_number: parsed.udyam_number || existing.msme_number || '',
+                                          notes: parsed.notes ? (existing.notes ? existing.notes + '\n' + parsed.notes : parsed.notes) : existing.notes || '',
+                                          email: existing.email || parsed.email || '',
+                                          phone: existing.phone || parsed.phone || '',
+                                        });
                                         setSmartImportFiles({ gst: null, udyam: null, mca: null });
                                         toast.success(`"${existing.company_name}" updated from ${parsed.doc_types_found?.join(' + ')}. Review and save.`, { duration: 6000 });
                                         mergedIntoExisting = true;
@@ -6571,6 +6644,9 @@ export default function Clients() {
                                     company_name:      parsed.company_name || '',
                                     client_type:       mappedConstitution,
                                     client_type_other: mappedConstitution === 'other' ? (parsed.constitution_raw || parsed.company_category || '') : '',
+                                    cin:               parsed.cin || parsed.cin_number || parsed.corporate_identity_number || '',
+                                    llpin:              parsed.llpin || parsed.llpin_number || '',
+                                    date_of_incorporation: parsed.date_of_incorporation || '',
                                     gstin:             parsed.gstin || '',
                                     pan:               parsed.pan || '',
                                     email:             parsed.email || '',
@@ -6578,9 +6654,10 @@ export default function Clients() {
                                     address:           parsed.address || '',
                                     city:              parsed.city || '',
                                     state:             parsed.state || '',
+                                    pincode:           parsed.pin || parsed.pincode || '',
                                     gst_address:       parsed.gst_address || '',
-                                    gst_city:          '',
-                                    gst_state:         '',
+                                    gst_city:          parsed.city || '',
+                                    gst_state:         parsed.state || '',
                                     gst_pin:           parsed.pin || '',
                                     msme_number:       parsed.udyam_number || '',
                                     notes:             parsed.notes || '',
@@ -6678,8 +6755,7 @@ export default function Clients() {
                             if (!q) return;
                             setMcaFetching(true);
                             try {
-                              const res = await api.get('/clients/fetch-mca-details', { params: { query: q } });
-                              const d = res.data || {};
+                              const d = normalizeMcaDetails((await api.get('/clients/fetch-mca-details', { params: { query: q } })).data || {});
                               const isLLP = (d.client_type === 'llp') || /llp/i.test(d.company_name || '');
                               const masterDate = d.mca_fetch_date || new Date().toISOString().slice(0, 10);
                               setFormData(p => ({
@@ -6694,8 +6770,8 @@ export default function Clients() {
                                 email: d.email || p.email,
                                 pan: d.pan || p.pan,
                                 gst_pin: d.gst_pin || d.pin || p.gst_pin,
-                                cin: isLLP ? '' : (d.cin || d.cin_number || d.corporate_identity_number || p.cin || ''),
-                                llpin: isLLP ? (d.llpin || d.llpin_number || d.cin || p.llpin || '') : '',
+                                cin: isLLP ? '' : (d.cin || p.cin || ''),
+                                llpin: isLLP ? (d.llpin || p.llpin || '') : '',
                                 mca_fetch_date: masterDate,
                                 mca_registration_number: d.registration_number || p.mca_registration_number || '',
                                 mca_roc_name: d.roc_name || d.roc || p.mca_roc_name || '',
