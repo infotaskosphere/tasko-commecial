@@ -382,7 +382,7 @@ export default function MasterConsole() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col lg:flex-row">
+    <div className="master-console-shell min-h-screen bg-slate-50 flex flex-col lg:flex-row">
       {/* Sidebar Control Center Navigation */}
       <CommercialSidebar currentTab={tab} setTab={setTab} stats={stats} />
 
