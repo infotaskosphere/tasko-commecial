@@ -13592,16 +13592,16 @@ async def get_user_activity(
 # TASK REMINDER ROUTES
 # ─── Email Template Defaults ──────────────────────────────────────────────────
 _DEFAULT_TASK_EMAIL_TEMPLATE = {
-    "accent_color": "#4F46E5",
-    "company_name": "Task-O-Sphere",
-    "tagline": "Your Productivity. Our Priority.",
-    "support_email": "info.taskosphere@gmail.com",
-    "website": "www.taskosphere.com",
-    "footer_note": "This is an automated notification from Task-O-Sphere. Please do not reply directly to this email.",
+    "accent_color": os.getenv("EMAIL_ACCENT_COLOR", "#4F46E5"),
+    "company_name": os.getenv("EMAIL_COMPANY_NAME", "Enterprise Workspace"),
+    "tagline": os.getenv("EMAIL_TAGLINE", "Your Productivity. Our Priority."),
+    "support_email": os.getenv("SUPPORT_EMAIL", "support@enterprise.com"),
+    "website": os.getenv("COMPANY_WEBSITE", "www.enterprise.com"),
+    "footer_note": "This is an automated notification. Please do not reply directly to this email.",
     "subject_prefix": "⏰ You Have Pending Tasks!",
-    "greeting_line": "We hope you are doing well. This is an automated reminder from Task-O-Sphere to let you know that you have pending tasks that require your attention. Please review and complete them at your earliest convenience.",
+    "greeting_line": "We hope you are doing well. This is an automated reminder to let you know that you have pending tasks that require your attention. Please review and complete them at your earliest convenience.",
     "tips": [
-        "Log in to Task-O-Sphere daily to review and update your task status.",
+        "Log in daily to review and update your task status.",
         "Use the Priority filter to focus on High-priority tasks first.",
         "Set personal reminders inside the app so you never miss a deadline.",
         "Reach out to your team lead if you need deadline extensions or support.",

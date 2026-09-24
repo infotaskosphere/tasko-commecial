@@ -1,9 +1,9 @@
 import api from './api';
+import { isPlatformOwner } from './commercialPermissionMatrix';
 
 // Existing Users UI still posts to /auth/register. Only licensed company
 // admins are routed through the commercial onboarding endpoint. Internal
 // platform owners continue using the existing user-creation process.
-const PLATFORM_OWNER_EMAILS = new Set(['info.taskosphere@gmail.com']);
 
 const readStoredUser = () => {
   try {
@@ -19,8 +19,7 @@ api.interceptors.request.use((config) => {
   if (config.method?.toLowerCase() !== 'post' || path !== '/auth/register') return config;
 
   const user = readStoredUser();
-  const email = String(user?.email || '').trim().toLowerCase();
-  if (PLATFORM_OWNER_EMAILS.has(email)) return config;
+  if (isPlatformOwner(user)) return config;
   if (String(user?.role || '').toLowerCase() !== 'admin') return config;
 
   // A commercial administrator has a company/license context. Do not alter

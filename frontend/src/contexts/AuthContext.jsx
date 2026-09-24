@@ -68,8 +68,7 @@ export const AuthProvider = ({ children }) => {
     if (sessionToken) {
       storage.setItem("session_token", sessionToken);
       localStorage.setItem("session_token", sessionToken);
-      const email = String(userData?.email || "").trim().toLowerCase();
-      const isOwner = email === PLATFORM_OWNER_EMAIL || userData?.id === "usr-admin-01" || userData?.id === "saas-bootstrap-admin";
+      const isOwner = matrixIsPlatformOwner(userData);
       if (!isOwner) {
         localStorage.setItem("taskosphere_active_session_token", sessionToken);
         if (email) localStorage.setItem("taskosphere_active_session_email", email);
@@ -96,21 +95,17 @@ export const AuthProvider = ({ children }) => {
   const LAST_ACTIVE_KEY = 'taskosphere_last_active';
 
   const isPlatformOwnerAccount = useCallback((targetUser = user) => {
-    let email = targetUser?.email;
-    let uid = targetUser?.id;
-    if (!email && typeof window !== "undefined") {
+    if (matrixIsPlatformOwner(targetUser)) return true;
+    let fallbackUser = targetUser;
+    if (!fallbackUser && typeof window !== "undefined") {
       try {
         const storedStr = localStorage.getItem("user") || sessionStorage.getItem("user");
         if (storedStr) {
-          const parsed = JSON.parse(storedStr);
-          email = email || parsed?.email;
-          uid = uid || parsed?.id;
+          fallbackUser = JSON.parse(storedStr);
         }
       } catch {}
     }
-    const cleanEmail = String(email || "").trim().toLowerCase();
-    const cleanId = String(uid || "").trim();
-    const companyId = String(targetUser?.company_id || targetUser?.company?.id || "").trim().toLowerCase(); return cleanEmail === PLATFORM_OWNER_EMAIL || cleanId === "usr-admin-01" || cleanId === "saas-bootstrap-admin" || companyId === "platform-owner-48fe785fdd75127f";
+    return matrixIsPlatformOwner(fallbackUser);
   }, [user]);
 
   const forceLogoutForReplacement = useCallback(() => {

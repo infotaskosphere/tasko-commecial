@@ -1,4 +1,5 @@
 import api from './api';
+import { isPlatformOwner } from './commercialPermissionMatrix';
 
 // Some dashboard/invoicing data sources are optional secondary requests. If
 // the current page does not actually need the protected resource, do not send
@@ -14,12 +15,6 @@ const readStoredUser = () => {
 };
 
 const isAdmin = (user) => String(user?.role || '').toLowerCase() === 'admin';
-
-const isPlatformOwner = (user) => {
-  const email = String(user?.email || '').trim().toLowerCase();
-  const id = String(user?.id || '').trim();
-  return email === 'info.taskosphere@gmail.com' || id === 'usr-admin-01' || id === 'saas-bootstrap-admin';
-};
 
 const isCommercialTenant = (user) => Boolean(user) && !isPlatformOwner(user) && Boolean(
   user.company_id || user.license_id || user.commercial_customer_id ||

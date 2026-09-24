@@ -253,6 +253,13 @@ async def get_current_user(credentials=Depends(security)):
     company_id=getattr(user,"company_id",None)
     if not company_id or not str(company_id).strip():
         if is_platform_owner(user):
+            raw_db = globals().get("_raw_db", db)
+            owner_comp = await raw_db.companies.find_one({"is_platform_owner_workspace": True, "status": "active"})
+            owner_comp_id = str((owner_comp or {}).get("id") or "comp-platform-owner")
+            user_data = user.model_dump()
+            user_data["company_id"] = owner_comp_id
+            user = User.model_validate(user_data)
+            set_authenticated_company(owner_comp_id)
             set_platform_owner(True)
             return user
         company_id=await _resolve_licensed_company_id(user)

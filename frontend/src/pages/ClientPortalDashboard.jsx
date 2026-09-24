@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { BASE_URL } from "@/lib/api";
 
 // Same department codes used on Admin → Users (a staff member's
 // `departments` field) and Admin → Contact Details (the helpline
@@ -21,11 +22,7 @@ const DEPT_LABELS = {
 };
 const deptLabel = (code) => DEPT_LABELS[code] || code;
 
-// Always resolve to the absolute backend URL — same logic as api.js and ClientPortalLogin.jsx
-let _raw = import.meta?.env?.VITE_API_URL || "https://final-taskosphere-backend.onrender.com";
-_raw = _raw.replace(/\/+$/, "");
-if (!_raw.endsWith("/api")) _raw += "/api";
-const API_BASE = _raw;
+const API_BASE = BASE_URL;
 
 function portalApi() {
   const token = sessionStorage.getItem("client_portal_token");

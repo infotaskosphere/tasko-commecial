@@ -1,19 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { BASE_URL, BACKEND_BASE_URL } from "@/lib/api";
 
-// ── Use the same backend URL resolution as the rest of the app (api.js) ──────
-// VITE_API_URL may be the full backend base (e.g. https://final-taskosphere-backend.onrender.com)
-// or may be unset — in both cases we always fall back to the absolute backend URL so that
-// the built production bundle (served from the frontend Render service) never POSTs to itself.
-let _raw = import.meta?.env?.VITE_API_URL || "https://final-taskosphere-backend.onrender.com";
-_raw = _raw.replace(/\/+$/, "");
-if (!_raw.endsWith("/api")) _raw += "/api";
-const API_BASE = _raw;
+const API_BASE = BASE_URL;
 const API = axios.create({ baseURL: API_BASE });
 
 // Bare backend root (no /api) — used only for the wake-up health ping
-const BACKEND_URL = API_BASE.replace(/\/api$/, "");
+const BACKEND_URL = BACKEND_BASE_URL;
 
 function extractErrorMessage(err, fallback) {
   const detail = err?.response?.data?.detail;

@@ -17,9 +17,9 @@ DEFAULT_PLATFORM_OWNER_EMAILS = {
 
 
 def platform_owner_emails() -> set[str]:
-    configured = os.getenv("PLATFORM_OWNER_EMAILS", "")
+    configured = os.getenv("PLATFORM_OWNER_EMAILS", "") or os.getenv("PLATFORM_OWNER_EMAIL", "")
     values = {item.strip().lower() for item in configured.split(",") if item.strip()}
-    return values or DEFAULT_PLATFORM_OWNER_EMAILS
+    return (values | DEFAULT_PLATFORM_OWNER_EMAILS) if values else DEFAULT_PLATFORM_OWNER_EMAILS
 
 
 def _install_owner_auth_compat() -> None:
@@ -62,9 +62,16 @@ def is_platform_owner(user) -> bool:
     if isinstance(user, dict):
         email = str(user.get("email") or "").strip().lower()
         user_id = str(user.get("id") or user.get("_id") or "").strip()
+        role = str(user.get("role") or "").strip().lower()
+        is_owner_flag = bool(user.get("is_platform_owner") or user.get("isPlatformOwner"))
     else:
         email = str(getattr(user, "email", "") or "").strip().lower()
         user_id = str(getattr(user, "id", "") or "").strip()
+        role = str(getattr(user, "role", "") or "").strip().lower()
+        is_owner_flag = bool(getattr(user, "is_platform_owner", False) or getattr(user, "isPlatformOwner", False))
+
+    if is_owner_flag or role in {"platform_owner", "superadmin", "saas_admin"}:
+        return True
 
     owner_emails = platform_owner_emails()
     company_id = str(
@@ -76,4 +83,5 @@ def is_platform_owner(user) -> bool:
         (email and email in owner_emails)
         or (user_id and user_id in {"saas-bootstrap-admin", "usr-admin-01"})
         or company_id == "platform-owner-48fe785fdd75127f"
+        or company_id.startswith("platform-owner-")
     )

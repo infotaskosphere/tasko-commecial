@@ -61,8 +61,8 @@ export default function Login() {
     return () => clearInterval(timer);
   }, [serverWaking]);
 
-  const siteName = "ONENEXA";
-  const logo = "/onenexa-logo.svg?v=20260918";
+  const siteName = config?.branding?.site_name || config?.site_name || import.meta.env.VITE_APP_NAME || "Taskosphere";
+  const logo = config?.branding?.logo || config?.logo || "/logo-transparent.png";
 
   const loginWithRetry = async () => {
     let lastError;

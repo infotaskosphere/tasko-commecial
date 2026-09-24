@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Mapping
@@ -14,16 +15,41 @@ COMPANY_FIELD = "company_id"
 COMPANY_ID_FIELD = "id"
 
 TENANT_COLLECTIONS = {
-    "tasks", "todos", "clients", "invoices", "payments",
-    "purchase_invoices", "purchase_payments", "purchases",
-    "bank_accounts", "bank_transactions", "chart_of_accounts",
-    "journal_entries", "journal_lines",
-    "knowledge_base", "learning_events", "manual_corrections",
-    "recommendation_history", "learning_audit",
-    "workflow_definitions", "workflow_instances", "workflow_history",
-    "approval_requests", "approval_history", "automation_rules",
-    "business_events", "notification_history", "analytics_data",
-    "kpi_history", "workflow_audit",
+    # Tasks & Todos & Visits
+    "tasks", "todos", "reminders", "visits", "due_dates",
+    # Clients, Drive, & Discussions
+    "clients", "client_activities", "client_drive_visibility", "client_discussions",
+    "client_portal_users", "client_portal_activity",
+    # Invoicing, Banking, & Accounting
+    "invoices", "payments", "purchase_invoices", "purchase_payments", "purchases",
+    "bank_accounts", "bank_transactions", "bank_rules", "bank_reconciliation",
+    "bank_reconciliation_matches", "bank_reconciliation_audit", "bank_statistics",
+    "bank_transaction_history", "chart_of_accounts", "journal_entries", "journal_lines",
+    "party_ledgers", "opening_balances", "fixed_assets", "depreciation_runs",
+    "tds_tcs_entries", "einvoice_history", "ewaybill_history", "standalone_govt_fees",
+    # Leads & Quotations
+    "leads", "quotations",
+    # Records & Vaults
+    "dsc_register", "passwords", "password_access_logs", "documents",
+    # Compliance & Filings
+    "compliances", "compliance_records", "compliance_masters", "compliance_assignments",
+    "compliance_comments", "trademark_sphere", "trademark_sphere_reminders",
+    "trademark_qc_reports", "trademark_qc_branding", "roc_companies", "roc_documents",
+    "gst_reconciliation_history", "gst_reconciliation_sessions", "gst_returns",
+    "gst_compliances", "gst_portal_snapshots", "gst_portal_registrations",
+    "gst_trade_names", "gst_vendor_profiles", "vendor_profiles",
+    # HR, Attendance & Payroll
+    "attendance", "identix_attendance", "salary_slips", "salary_employees",
+    "salary_manual_companies", "interview_candidates", "leaves", "holidays", "staff_activity",
+    # MIS & Analytics
+    "mis_manual", "mis_transactions", "mis_uploads", "analytics_data", "kpi_history",
+    # AI & Workflow
+    "knowledge_base", "learning_events", "manual_corrections", "recommendation_history",
+    "learning_audit", "workflow_definitions", "workflow_instances", "workflow_history",
+    "approval_requests", "approval_history", "automation_rules", "business_events",
+    "notification_history", "workflow_audit", "notifications",
+    "whatsapp_hub_contacts", "whatsapp_hub_groups", "whatsapp_hub_messages",
+    "zte_processed_documents", "zte_category_rules", "template_library"
 }
 
 COMPANY_REGISTRY_COLLECTION = "companies"
@@ -124,15 +150,39 @@ def assert_record_company(current_user: Any, record: Mapping[str, Any] | None) -
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
 
 
+def _is_commercial_control_context() -> bool:
+    """Return True for commercial control-plane, licensing, and system setup operations."""
+    if in_system_context():
+        return True
+    for frame_info in inspect.stack(context=0):
+        module_name = str(frame_info.frame.f_globals.get("__name__") or "")
+        if (
+            module_name.startswith("backend.commercial_")
+            or module_name.startswith("backend.licensing_")
+            or module_name.startswith("backend.platform_owner")
+            or module_name == "backend.backup_restore"
+            or (module_name == "backend.invoicing" and frame_info.function in {"create_invoice", "_next_invoice_no", "recalculate_invoice_accounting"})
+        ):
+            return True
+    return False
+
+
 def _scope_query(query: Any) -> dict[str, Any]:
-    # Platform owner requests are deliberately cross-tenant. Do not inject
-    # the owner's own company_id or reject a requested customer company.
-    if in_platform_owner_context():
-        return query if isinstance(query, dict) else {}
     company_id = authenticated_company_id()
+    base = dict(query or {}) if isinstance(query, dict) else {}
+    if in_platform_owner_context():
+        if _is_commercial_control_context():
+            return base
+        # If platform owner explicitly queries a specific company_id, permit it
+        if base.get(COMPANY_FIELD):
+            return base
+        # When platform owner operates inside normal operational modules for own practice (Tenant #1),
+        # automatically isolate queries to owner's dedicated company workspace
+        if company_id:
+            base[COMPANY_FIELD] = company_id
+        return base
     if not company_id:
-        return query if isinstance(query, dict) else {}
-    base = dict(query or {})
+        return base
     requested = base.get(COMPANY_FIELD)
     if requested is not None and str(requested) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
@@ -185,21 +235,25 @@ def _scope_company_registry_update(update: Any) -> Any:
 
 
 def _scope_update(update: Any) -> Any:
-    # Platform-owner writes are not forced into the owner's tenant.
-    if in_platform_owner_context():
-        return update
     company_id = authenticated_company_id()
+    if not isinstance(update, dict):
+        return update
+    result = dict(update)
+    set_values = dict(result.get("$set") or {})
+    if in_platform_owner_context():
+        if _is_commercial_control_context() and (COMPANY_FIELD in set_values or COMPANY_FIELD in result):
+            return update
+        if not set_values.get(COMPANY_FIELD) and COMPANY_FIELD not in result and company_id:
+            set_values[COMPANY_FIELD] = company_id
+            result["$set"] = set_values
+        return result
     if not company_id:
         return update
     if isinstance(update, list):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant update pipelines are not permitted")
-    if not isinstance(update, dict):
-        return update
-    result = dict(update)
     unset_values = dict(result.get("$unset") or {})
     if COMPANY_FIELD in unset_values:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="company_id cannot be removed")
-    set_values = dict(result.get("$set") or {})
     if COMPANY_FIELD in set_values and str(set_values[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
     set_values[COMPANY_FIELD] = company_id
@@ -208,14 +262,19 @@ def _scope_update(update: Any) -> Any:
 
 
 def _scope_replacement(replacement: Any) -> Any:
-    # Platform owners may explicitly write records for a selected customer
-    # company; do not silently rewrite them to the owner's company.
-    if in_platform_owner_context():
-        return replacement
     company_id = authenticated_company_id()
-    if not company_id or not isinstance(replacement, dict):
+    if not isinstance(replacement, dict):
         return replacement
     result = dict(replacement)
+    if in_platform_owner_context():
+        if _is_commercial_control_context() and result.get(COMPANY_FIELD):
+            return result
+        # For platform owner operating in normal modules, stamp owner's dedicated company_id
+        if not result.get(COMPANY_FIELD) and company_id:
+            result[COMPANY_FIELD] = company_id
+        return result
+    if not company_id:
+        return result
     if result.get(COMPANY_FIELD) is not None and str(result[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
     result[COMPANY_FIELD] = company_id
@@ -316,6 +375,10 @@ class TenantAwareCollection:
         if self._enabled():
             pipeline = list(pipeline or [])
             if in_platform_owner_context():
+                if _is_commercial_control_context():
+                    return self._collection.aggregate(pipeline, *args, **kwargs)
+                if authenticated_company_id():
+                    pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
                 return self._collection.aggregate(pipeline, *args, **kwargs)
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
         elif self._company_registry_enabled():

@@ -4,6 +4,18 @@
 
 export const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
 
+const getPlatformOwnerEmails = () => {
+  const configured = [
+    import.meta.env?.VITE_PLATFORM_OWNER_EMAIL,
+    import.meta.env?.VITE_PLATFORM_OWNER_EMAILS,
+  ].filter(Boolean).join(",");
+  const set = new Set([PLATFORM_OWNER_EMAIL, "infotaskosphere@gmail.com", "admin@taskosphere.com"]);
+  if (configured) {
+    configured.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).forEach((e) => set.add(e));
+  }
+  return set;
+};
+
 export const MODULES = Object.freeze({
   taskosphere: { flag: "can_access_taskosphere", aliases: ["taskosphere", "tasks"], landing: "/dashboard" },
   finix: { flag: "can_access_finix", aliases: ["finix", "invoicing", "accounting"], landing: "/finix-dashboard" },
@@ -26,7 +38,17 @@ export const PAGE_MATRIX = Object.freeze([
 
 const normalize = (value) => String(value || "").trim().toLowerCase().replace(/-/g, "_").replace(/\s+/g, "_");
 
-export function isPlatformOwner(user) { if (!user) return false; const email = String(user.email || "").trim().toLowerCase(); const id = String(user.id || "").trim(); const companyId = String(user.company_id || user.company?.id || "").trim().toLowerCase(); return email === PLATFORM_OWNER_EMAIL || id === "usr-admin-01" || id === "saas-bootstrap-admin" || companyId === "platform-owner-48fe785fdd75127f"; }
+export function isPlatformOwner(user) {
+  if (!user) return false;
+  if (user.is_platform_owner === true || user.isPlatformOwner === true) return true;
+  const role = String(user.role || "").trim().toLowerCase();
+  if (role === "platform_owner" || role === "superadmin" || role === "saas_admin") return true;
+  const email = String(user.email || "").trim().toLowerCase();
+  const id = String(user.id || "").trim();
+  const companyId = String(user.company_id || user.company?.id || "").trim().toLowerCase();
+  const ownerEmails = getPlatformOwnerEmails();
+  return ownerEmails.has(email) || id === "usr-admin-01" || id === "saas-bootstrap-admin" || companyId === "platform-owner-48fe785fdd75127f" || companyId.startsWith("platform-owner-");
+}
 
 export function normalizeModules(user) {
   const sources = [user?.licensed_modules, user?.modules, user?.company?.licensed_modules, user?.company?.modules, user?.license?.modules, user?.subscription?.modules];

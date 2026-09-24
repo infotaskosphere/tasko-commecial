@@ -15,7 +15,7 @@ import axios from 'axios';
  * This runs silently in the background. User never sees it.
  */
 
-const AGENT_URL = 'http://localhost:7432';
+const AGENT_URL = (import.meta.env?.VITE_DSC_AGENT_URL || 'http://localhost:7432').replace(/\/+$/, '');
 const AUTH_ENDPOINT = '/api/auth';
 const DEBUG_AGENT_AUTO_AUTH =
   import.meta.env?.VITE_DEBUG_AGENT_AUTOAUTH === 'true' ||

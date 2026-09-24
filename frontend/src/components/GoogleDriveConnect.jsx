@@ -19,14 +19,10 @@ import {
   Unplug, RefreshCw, ExternalLink, ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BACKEND_BASE_URL } from '@/lib/api';
 
 // ── Resolve the raw backend base URL (no /api suffix) ────────────────────
-const BACKEND_URL = (() => {
-  let raw = import.meta.env.VITE_API_URL || 'https://final-taskosphere-backend.onrender.com';
-  raw = raw.replace(/\/+$/, '');           // strip trailing slashes
-  raw = raw.replace(/\/api\/?$/, '');      // strip /api suffix
-  return raw;
-})();
+const BACKEND_URL = BACKEND_BASE_URL;
 
 // ── Token lookup ───────────────────────────────────────────────────────────
 // NOTE: api.js's exported getToken() only checks localStorage, but

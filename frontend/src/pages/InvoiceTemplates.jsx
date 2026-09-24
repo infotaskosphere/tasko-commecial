@@ -1468,14 +1468,14 @@ function makeSampleInvoice() {
 
 function makeSampleCompany() {
   return {
-    name:            'Manthan Desai & Associates',
-    address:         '302, Shivalay Complex, Ring Road, Surat \u2013 395002, Gujarat',
-    gstin:           '24AABCM1234F1ZA',
-    phone:           '0261-2345678',
-    bank_name:       'HDFC Bank',
-    bank_account_no: '50200012345678',
-    bank_ifsc:       'HDFC0001234',
-    upi_id:          'manthandesai@hdfcbank',
+    name:            'Enterprise Solutions & Co.',
+    address:         'Suite 401, Business Boulevard, Commercial District, Mumbai \u2013 400051',
+    gstin:           '27AAAAA0000A1Z5',
+    phone:           '+91 22 2847 0000',
+    bank_name:       'State Bank of India',
+    bank_account_no: '00000012345678',
+    bank_ifsc:       'SBIN0001234',
+    upi_id:          'billing@bank',
   };
 }
 

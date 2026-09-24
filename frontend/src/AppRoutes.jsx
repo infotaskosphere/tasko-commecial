@@ -87,7 +87,7 @@ function ProtectedLayout(){const {user,loading}=useAuth();const location=useLoca
 function PublicOnly({children}){const {user,loading}=useAuth();if(loading)return <AuthLoading/>;if(user){const destination=isCommercialTenant(user)?firstAccessiblePath(user):'/dashboard';if(destination==='/login')return <NoModuleAccess/>;return <Navigate to={destination} replace/>;}return children}
 function AdminOnly({children}){const {user}=useAuth();if(user?.role?.toLowerCase()!=='admin')return <Navigate to="/dashboard" replace/>;return children}
 function BackupPermission({children}){const {user}=useAuth();const isAdmin=user?.role?.toLowerCase()==='admin';if(isAdmin||user?.permissions?.can_view_backup_restore===true)return children;return <Navigate to="/dashboard" replace/>}
-function PlatformOwnerOnly({children}){const {user,loading,isPlatformOwner}=useAuth();if(loading)return <AuthLoading/>;const isOwner=Boolean(isPlatformOwner) || String(user?.email||'').trim().toLowerCase()==='info.taskosphere@gmail.com';if(!isOwner)return <Navigate to="/dashboard" replace/>;return children}
+function PlatformOwnerOnly({children}){const {loading,isPlatformOwner}=useAuth();if(loading)return <AuthLoading/>;if(!isPlatformOwner)return <Navigate to="/dashboard" replace/>;return children}
 function UsersEntry(){ return <Users/>; }
 
 export default function AppRoutes(){return <Suspense fallback={<AuthLoading/>}><Routes>

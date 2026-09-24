@@ -4,6 +4,8 @@
  * Allows full offline / preview functionality without requiring an external MongoDB/Python instance.
  */
 
+import { isPlatformOwner } from "./commercialPermissionMatrix";
+
 export function derivePermissionsFromModules(modules) {
   const norm = (modules || []).map((m) => String(m).toLowerCase().replace(/-/g, "_"));
   return {
@@ -13,41 +15,202 @@ export function derivePermissionsFromModules(modules) {
     can_access_records: norm.some((m) => m === "records"),
     can_access_proposals: norm.some((m) => m === "proposals" || m === "client_proposals"),
     can_access_people_matrix: norm.some((m) => m === "people_matrix" || m === "hrms" || m === "peoplematrix"),
+    can_access_aiweave: norm.some((m) => m === "aiweave" || m === "ai-weave"),
   };
+}
+
+export const DEFAULT_MOCK_CATALOG = [
+  {
+    id: "taskosphere",
+    name: "Taskosphere",
+    label: "Taskosphere",
+    description: "Tasks, Attendance, Reminders, Client Portal, Action Center",
+    monthly_price: 2499,
+    active: true,
+    features: [
+      { id: "can_view_dashboard", name: "Dashboard", monthly_price: 299 },
+      { id: "can_view_tasks", name: "Tasks Management", monthly_price: 399 },
+      { id: "can_view_todo_dashboard", name: "To-Do Dashboard", monthly_price: 199 },
+      { id: "can_view_attendance", name: "Attendance & Time Tracking", monthly_price: 299 },
+      { id: "can_view_reminders", name: "Reminders & Alerts", monthly_price: 199 },
+      { id: "can_view_action_center", name: "Action Center", monthly_price: 299 },
+      { id: "can_view_client_visits", name: "Client Visits", monthly_price: 249 },
+      { id: "can_view_client_portal", name: "Client Portal Manager", monthly_price: 499 },
+      { id: "can_reset_client_passwords", name: "Client Password Resets", monthly_price: 149 },
+    ],
+  },
+  {
+    id: "finix",
+    name: "Finix",
+    label: "Finix",
+    description: "Invoicing, Accounting, Banking, Chart of Accounts & Journals",
+    monthly_price: 3499,
+    active: true,
+    features: [
+      { id: "can_view_accounting_reports", name: "Accounting Reports", monthly_price: 499 },
+      { id: "can_view_sale", name: "Sales & Invoicing", monthly_price: 499 },
+      { id: "can_view_purchase", name: "Purchase Management", monthly_price: 399 },
+      { id: "can_view_bank", name: "Bank Accounts", monthly_price: 399 },
+      { id: "can_view_chart_of_accounts", name: "Chart of Accounts", monthly_price: 399 },
+      { id: "can_manage_chart_of_accounts", name: "Manage Chart of Accounts", monthly_price: 499 },
+      { id: "can_view_journal_entries", name: "Journal Entries", monthly_price: 399 },
+      { id: "can_post_journal_entries", name: "Post Journal Entries", monthly_price: 499 },
+      { id: "can_match_bank", name: "Bank Reconciliation", monthly_price: 499 },
+    ],
+  },
+  {
+    id: "compliance",
+    name: "CompliGenie",
+    label: "CompliGenie",
+    description: "GST, ROC, Trademark Sphere, Salary Slips & MIS Reports",
+    monthly_price: 2999,
+    active: true,
+    features: [
+      { id: "can_view_compliance", name: "Compliance Dashboard", monthly_price: 399 },
+      { id: "can_manage_compliance", name: "Manage Compliance", monthly_price: 499 },
+      { id: "can_view_gst_reconciliation", name: "GST Reconciliation", monthly_price: 499 },
+      { id: "can_view_trademark_sphere", name: "Trademark Sphere", monthly_price: 399 },
+      { id: "can_view_mis_report", name: "MIS Reports", monthly_price: 399 },
+      { id: "can_manage_mis_report", name: "Manage MIS Reports", monthly_price: 499 },
+      { id: "can_view_salary_slips", name: "Salary Slips", monthly_price: 299 },
+      { id: "can_manage_salary_slips", name: "Manage Salary Slips", monthly_price: 399 },
+      { id: "can_view_roc_sphere", name: "ROC Sphere", monthly_price: 399 },
+      { id: "can_manage_roc_sphere", name: "Manage ROC Sphere", monthly_price: 499 },
+    ],
+  },
+  {
+    id: "records",
+    name: "Records",
+    label: "Records",
+    description: "Document Vault, DSC Register, Password Manager, Client Database",
+    monthly_price: 2499,
+    active: true,
+    features: [
+      { id: "can_view_documents", name: "Document Vault", monthly_price: 399 },
+      { id: "can_view_all_dsc", name: "DSC Register", monthly_price: 399 },
+      { id: "can_view_passwords", name: "Password Vault", monthly_price: 299 },
+      { id: "can_edit_passwords", name: "Manage Passwords", monthly_price: 349 },
+      { id: "can_view_all_clients", name: "Client Master", monthly_price: 399 },
+      { id: "can_edit_clients", name: "Manage Clients", monthly_price: 399 },
+      { id: "can_approve_clients", name: "Approve Clients", monthly_price: 299 },
+      { id: "can_approve_whatsapp_wishes", name: "Automated WhatsApp Greetings", monthly_price: 249 },
+      { id: "can_approve_email_wishes", name: "Automated Email Greetings", monthly_price: 249 },
+    ],
+  },
+  {
+    id: "proposals",
+    name: "LeadSense",
+    label: "LeadSense",
+    description: "Leads Pipeline, Quotations & Proposals, Client Discussions",
+    monthly_price: 1999,
+    active: true,
+    features: [
+      { id: "can_view_all_leads", name: "Leads Pipeline", monthly_price: 499 },
+      { id: "can_create_quotations", name: "Quotations & Proposals", monthly_price: 499 },
+      { id: "can_view_client_discussion", name: "Client Discussions", monthly_price: 299 },
+      { id: "can_manage_client_discussion", name: "Manage Client Discussions", monthly_price: 399 },
+    ],
+  },
+  {
+    id: "people_matrix",
+    name: "People Matrix",
+    label: "People Matrix",
+    description: "HR Management, Attendance, Payroll, Recruitment & Performance",
+    monthly_price: 2999,
+    active: true,
+    features: [
+      { id: "can_view_user_page", name: "Staff Directory", monthly_price: 299 },
+      { id: "can_view_leave", name: "Leave Tracking", monthly_price: 299 },
+      { id: "can_manage_leave", name: "Approve Leaves", monthly_price: 349 },
+      { id: "can_view_payroll", name: "Payroll Directory", monthly_price: 499 },
+      { id: "can_manage_payroll", name: "Process Payroll", monthly_price: 599 },
+      { id: "can_view_hr", name: "HR Core", monthly_price: 399 },
+      { id: "can_manage_hr", name: "Manage HR Policies", monthly_price: 449 },
+      { id: "can_view_recruitment", name: "Recruitment Tracker", monthly_price: 349 },
+      { id: "can_manage_recruitment", name: "Manage Candidates", monthly_price: 399 },
+      { id: "can_view_performance", name: "Appraisals & KPIs", monthly_price: 399 },
+      { id: "can_manage_performance", name: "Manage Appraisals", monthly_price: 499 },
+    ],
+  },
+  {
+    id: "aiweave",
+    name: "AIWeave",
+    label: "AIWeave",
+    description: "Document Intelligence, OCR Data Extraction & Smart Search",
+    monthly_price: 3999,
+    active: true,
+    features: [
+      { id: "can_view_aiweave", name: "AI Document Intelligence", monthly_price: 999 },
+    ],
+  },
+];
+
+export function getStoredMockCatalog() {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const stored = window.localStorage.getItem("taskosphere_mock_module_catalog");
+      if (stored) return JSON.parse(stored);
+    } catch {}
+  }
+  if (!globalThis.__mockCatalog) {
+    globalThis.__mockCatalog = JSON.parse(JSON.stringify(DEFAULT_MOCK_CATALOG));
+  }
+  return globalThis.__mockCatalog;
+}
+
+export function saveStoredMockCatalog(catalog) {
+  globalThis.__mockCatalog = catalog;
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem("taskosphere_mock_module_catalog", JSON.stringify(catalog));
+    } catch {}
+  }
 }
 
 export const DEFAULT_MOCK_LICENSES = [
   {
     id: "lic-01",
-    customer_id: "cust-mda-01",
+    customer_id: "cust-ent-01",
     license_key: "TSO-COMM-2026-DEMO-0001",
-    company_name: "Manthan Desai And Associates",
-    package_name: "Taskosphere Custom",
+    company_name: "Enterprise Solutions & Associates",
+    package_name: "Commercial Enterprise Suite",
     status: "active",
-    valid_until: "2027-12-31T23:59:59Z",
+    valid_until: "2028-12-31T23:59:59Z",
     max_users: 100,
     max_installations: 5,
-    modules: ["taskosphere"],
-    licensed_modules: ["taskosphere"],
+    modules: ["taskosphere", "finix", "compliance", "records", "proposals", "people_matrix", "aiweave"],
+    licensed_modules: ["taskosphere", "finix", "compliance", "records", "proposals", "people_matrix", "aiweave"],
     selected_features: {
-      taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
+      taskosphere: ["can_view_dashboard", "can_view_tasks", "can_view_todo_dashboard", "can_view_attendance", "can_view_reminders", "can_view_action_center", "can_view_client_visits", "can_view_client_portal", "can_reset_client_passwords"],
+      finix: ["can_view_accounting_reports", "can_view_sale", "can_view_purchase", "can_view_bank", "can_view_chart_of_accounts", "can_manage_chart_of_accounts", "can_view_journal_entries", "can_post_journal_entries", "can_match_bank"],
+      compliance: ["can_view_compliance", "can_manage_compliance", "can_view_gst_reconciliation", "can_view_trademark_sphere", "can_view_mis_report", "can_manage_mis_report", "can_view_salary_slips", "can_manage_salary_slips", "can_view_roc_sphere", "can_manage_roc_sphere"],
+      records: ["can_view_documents", "can_view_all_dsc", "can_view_passwords", "can_edit_passwords", "can_view_all_clients", "can_edit_clients", "can_approve_clients", "can_approve_whatsapp_wishes", "can_approve_email_wishes"],
+      proposals: ["can_view_all_leads", "can_create_quotations", "can_view_client_discussion", "can_manage_client_discussion"],
+      people_matrix: ["can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll", "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment", "can_manage_recruitment", "can_view_performance", "can_manage_performance"],
+      aiweave: ["can_view_aiweave"],
     },
   },
 ];
 
 export const DEFAULT_MOCK_CUSTOMERS = [
   {
-    id: "cust-mda-01",
-    company_name: "Manthan Desai And Associates",
-    contact_name: "Manthan P Desai",
-    email: "director@desaiassociates.com",
-    phone: "+91 98765 43210",
-    gstin: "27AAACD1234F1Z5",
-    address: "101, Business Center, Mumbai",
+    id: "cust-ent-01",
+    company_name: "Enterprise Solutions & Associates",
+    contact_name: "Operations Director",
+    email: "admin@enterprisesolutions.com",
+    phone: "+91 98765 00000",
+    gstin: "27AAAAA0000A1Z5",
+    address: "Suite 401, Business Center, Mumbai",
     status: "active",
-    licensed_modules: ["taskosphere"],
+    licensed_modules: ["taskosphere", "finix", "compliance", "records", "proposals", "people_matrix", "aiweave"],
     selected_features: {
-      taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
+      taskosphere: ["can_view_dashboard", "can_view_tasks", "can_view_todo_dashboard", "can_view_attendance", "can_view_reminders", "can_view_action_center", "can_view_client_visits", "can_view_client_portal", "can_reset_client_passwords"],
+      finix: ["can_view_accounting_reports", "can_view_sale", "can_view_purchase", "can_view_bank", "can_view_chart_of_accounts", "can_manage_chart_of_accounts", "can_view_journal_entries", "can_post_journal_entries", "can_match_bank"],
+      compliance: ["can_view_compliance", "can_manage_compliance", "can_view_gst_reconciliation", "can_view_trademark_sphere", "can_view_mis_report", "can_manage_mis_report", "can_view_salary_slips", "can_manage_salary_slips", "can_view_roc_sphere", "can_manage_roc_sphere"],
+      records: ["can_view_documents", "can_view_all_dsc", "can_view_passwords", "can_edit_passwords", "can_view_all_clients", "can_edit_clients", "can_approve_clients", "can_approve_whatsapp_wishes", "can_approve_email_wishes"],
+      proposals: ["can_view_all_leads", "can_create_quotations", "can_view_client_discussion", "can_manage_client_discussion"],
+      people_matrix: ["can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll", "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment", "can_manage_recruitment", "can_view_performance", "can_manage_performance"],
+      aiweave: ["can_view_aiweave"],
     },
   },
 ];
@@ -98,33 +261,48 @@ export function saveStoredMockCustomers(customers) {
 
 export const MOCK_USER = {
   id: "lic-usr-01",
-  email: "director@desaiassociates.com",
-  full_name: "Manthan P Desai",
+  email: "admin@enterprisesolutions.com",
+  full_name: "Admin Director",
   role: "admin",
-  company_id: "cust-mda-01",
-  commercial_customer_id: "cust-mda-01",
+  company_id: "cust-ent-01",
+  commercial_customer_id: "cust-ent-01",
   license_id: "lic-01",
   company: {
-    id: "cust-mda-01",
-    name: "Manthan Desai And Associates",
-    plan: "Taskosphere",
+    id: "cust-ent-01",
+    name: "Enterprise Solutions & Associates",
+    plan: "Commercial Enterprise Suite",
   },
   subscription: {
     status: "active",
-    package_id: "taskosphere",
+    package_id: "enterprise",
     valid_until: "2030-12-31T23:59:59Z",
   },
-  licensed_modules: ["taskosphere"],
+  licensed_modules: ["taskosphere", "finix", "compliance", "records", "proposals", "people_matrix", "aiweave"],
   selected_features: {
-    taskosphere: ["tasks_view", "tasks_create", "tasks_edit", "tasks_delete", "dashboard_view", "attendance_view", "reminders_view", "action_center_view", "client_visits_view", "ai_reader_view"],
+    taskosphere: ["can_view_dashboard", "can_view_tasks", "can_view_todo_dashboard", "can_view_attendance", "can_view_reminders", "can_view_action_center", "can_view_client_visits", "can_view_client_portal", "can_reset_client_passwords"],
+    finix: ["can_view_accounting_reports", "can_view_sale", "can_view_purchase", "can_view_bank", "can_view_chart_of_accounts", "can_manage_chart_of_accounts", "can_view_journal_entries", "can_post_journal_entries", "can_match_bank"],
+    compliance: ["can_view_compliance", "can_manage_compliance", "can_view_gst_reconciliation", "can_view_trademark_sphere", "can_view_mis_report", "can_manage_mis_report", "can_view_salary_slips", "can_manage_salary_slips", "can_view_roc_sphere", "can_manage_roc_sphere"],
+    records: ["can_view_documents", "can_view_all_dsc", "can_view_passwords", "can_edit_passwords", "can_view_all_clients", "can_edit_clients", "can_approve_clients", "can_approve_whatsapp_wishes", "can_approve_email_wishes"],
+    proposals: ["can_view_all_leads", "can_create_quotations", "can_view_client_discussion", "can_manage_client_discussion"],
+    people_matrix: ["can_view_user_page", "can_view_leave", "can_manage_leave", "can_view_payroll", "can_manage_payroll", "can_view_hr", "can_manage_hr", "can_view_recruitment", "can_manage_recruitment", "can_view_performance", "can_manage_performance"],
+    aiweave: ["can_view_aiweave"],
   },
   permissions: {
     can_access_taskosphere: true,
-    can_access_finix: false,
-    can_access_compliance: false,
-    can_access_records: false,
-    can_access_proposals: false,
-    can_access_people_matrix: false,
+    can_access_finix: true,
+    can_access_compliance: true,
+    can_access_records: true,
+    can_access_proposals: true,
+    can_access_people_matrix: true,
+    can_access_aiweave: true,
+    can_view_dashboard: true,
+    can_view_tasks: true,
+    can_view_accounting_reports: true,
+    can_view_compliance: true,
+    can_view_documents: true,
+    can_view_all_leads: true,
+    can_view_user_page: true,
+    can_view_aiweave: true,
   },
 };
 
@@ -360,15 +538,19 @@ export function handleMockRoute(method, url, data) {
 
   if (normUrl === "/auth/login" || normUrl === "/auth/signin") {
     const email = String(data?.email || "").trim().toLowerCase();
-    const isPlatformOwner = email === "info.taskosphere@gmail.com" || email === "admin@taskosphere.com";
+    const isOwner = isPlatformOwner({ email, role: data?.role });
     const newSessionToken = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
 
-    if (typeof window !== "undefined" && window.localStorage && !isPlatformOwner && email) {
+    if (typeof window !== "undefined" && window.localStorage && !isOwner && email) {
       window.localStorage.setItem("tasko_active_session_" + email, newSessionToken);
     }
 
     const activeUser = getActiveMockUser();
     if (email) activeUser.email = email;
+    if (isOwner) {
+      activeUser.is_platform_owner = true;
+      activeUser.role = "admin";
+    }
     return {
       status: 200,
       data: {
@@ -388,8 +570,8 @@ export function handleMockRoute(method, url, data) {
         try {
           const parsed = JSON.parse(stored);
           const email = String(parsed?.email || "").trim().toLowerCase();
-          const isPlatformOwner = email === "info.taskosphere@gmail.com" || parsed?.id === "usr-admin-01" || parsed?.id === "saas-bootstrap-admin";
-          if (!isPlatformOwner && email && currentSessToken) {
+          const isOwner = isPlatformOwner(parsed);
+          if (!isOwner && email && currentSessToken) {
             const activeToken = window.localStorage.getItem("tasko_active_session_" + email);
             if (activeToken && activeToken !== currentSessToken) {
               return {
@@ -726,24 +908,24 @@ export function handleMockRoute(method, url, data) {
   }
 
   if (normUrl.startsWith("/commercial-onboarding/lookup")) {
-    const compName = data?.company_name || "Manthan Desai And Associates";
+    const compName = data?.company_name || "Enterprise Solutions & Associates";
     return {
       status: 200,
       data: {
         success: true,
         customer: {
-          id: "cust-mda-01",
+          id: "cust-ent-01",
           company_name: compName,
-          email: "director@desaiassociates.com",
-          gstin: "27AAACD1234F1Z5",
-          phone: "+91 98765 43210",
-          address: "101, Business Center, Mumbai",
+          email: "admin@enterprisesolutions.com",
+          gstin: "27AAAAA0000A1Z5",
+          phone: "+91 98765 00000",
+          address: "Suite 401, Business Center, Mumbai",
         },
         license: {
           id: "lic-01",
           license_key: data?.license_key || "TSO-COMM-2026-DEMO-0001",
-          package_name: "Taskosphere Enterprise",
-          valid_until: "2027-12-31T23:59:59Z",
+          package_name: "Commercial Enterprise Suite",
+          valid_until: "2028-12-31T23:59:59Z",
           validity_months: 12,
         },
       },
@@ -759,7 +941,7 @@ export function handleMockRoute(method, url, data) {
       ...MOCK_USER,
       email: data?.email || MOCK_USER.email,
       full_name: data?.full_name || MOCK_USER.full_name,
-      company_name: data?.company_name || "Manthan Desai And Associates",
+      company_name: data?.company_name || "Enterprise Solutions & Associates",
     };
     return {
       status: 200,
@@ -771,19 +953,131 @@ export function handleMockRoute(method, url, data) {
     };
   }
 
-  if (normUrl.startsWith("/commercial-onboarding/module-catalog")) {
+  if (normUrl.startsWith("/commercial-onboarding/generate-license")) {
+    const licenses = getStoredMockLicenses();
+    const customers = getStoredMockCustomers();
+    const newCustId = `cust-${Date.now()}`;
+    const newLicId = `lic-${Date.now()}`;
+    const licenseKey = `TSO-COMM-${Math.floor(1000 + Math.random() * 9000)}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newCustomer = {
+      id: newCustId,
+      company_name: data?.company_name || "New Enterprise",
+      contact_name: data?.admin_name || data?.contact_name || "Admin",
+      email: data?.email || "",
+      phone: data?.phone || "",
+      gstin: data?.gstin || "",
+      address: data?.address || data?.gst_address || "",
+      city: data?.city || "",
+      state: data?.state || "",
+      pincode: data?.pincode || "",
+      status: "active",
+      licensed_modules: data?.selected_modules || ["taskosphere"],
+      selected_features: data?.selected_features || {},
+      created_at: new Date().toISOString(),
+    };
+
+    const validityMonths = Number(data?.validity_months || 12);
+    const validUntilDate = new Date();
+    validUntilDate.setMonth(validUntilDate.getMonth() + validityMonths);
+
+    const newLicense = {
+      id: newLicId,
+      customer_id: newCustId,
+      license_key: licenseKey,
+      company_name: data?.company_name || "New Enterprise",
+      package_name: data?.package_name || "Commercial Custom",
+      status: "active",
+      valid_until: validUntilDate.toISOString(),
+      validity_months: validityMonths,
+      max_users: Number(data?.max_users || 10),
+      max_installations: Number(data?.max_installations || 1),
+      modules: data?.selected_modules || ["taskosphere"],
+      licensed_modules: data?.selected_modules || ["taskosphere"],
+      selected_features: data?.selected_features || {},
+      amount_charged: Number(data?.amount_charged || 0),
+      currency: data?.currency || "INR",
+      notes: data?.notes || "",
+      created_at: new Date().toISOString(),
+    };
+
+    customers.unshift(newCustomer);
+    licenses.unshift(newLicense);
+    saveStoredMockCustomers(customers);
+    saveStoredMockLicenses(licenses);
+
     return {
       status: 200,
       data: {
-        modules: [
-          { id: "TASKS", name: "Tasks & Workflows", active: true, monthly_price: 1999 },
-          { id: "INVOICING", name: "Invoicing & Billing", active: true, monthly_price: 1499 },
-          { id: "ACCOUNTING", name: "Accounting & Ledgers", active: true, monthly_price: 2499 },
-          { id: "HRMS", name: "HRMS & Payroll", active: true, monthly_price: 1999 },
-          { id: "COMPLIANCE", name: "Compliance & GST", active: true, monthly_price: 2999 },
-        ],
+        success: true,
+        customer: newCustomer,
+        license: newLicense,
+        invoice: {
+          invoice_no: `INV-${Date.now().toString().slice(-6)}`,
+          amount: newLicense.amount_charged,
+          date: new Date().toISOString(),
+        },
       },
     };
+  }
+
+  if (normUrl.startsWith("/commercial-onboarding/module-catalog")) {
+    const catalog = getStoredMockCatalog();
+    if (method === "put") {
+      const parts = normUrl.split("/").filter(Boolean);
+      const modId = parts[2];
+      const mod = catalog.find((m) => m.id === modId);
+      if (mod) {
+        if (data?.monthly_price !== undefined) mod.monthly_price = Number(data.monthly_price);
+        if (data?.active !== undefined) mod.active = Boolean(data.active);
+        if (data?.feature_prices && Array.isArray(mod.features)) {
+          mod.features.forEach((f) => {
+            if (data.feature_prices[f.id] !== undefined) {
+              f.monthly_price = Number(data.feature_prices[f.id]);
+            }
+          });
+        }
+        saveStoredMockCatalog(catalog);
+      }
+      return { status: 200, data: { success: true, module: mod } };
+    }
+    return {
+      status: 200,
+      data: {
+        modules: catalog,
+      },
+    };
+  }
+
+  if (normUrl.startsWith("/licensing/licenses/") && normUrl.endsWith("/status")) {
+    const parts = normUrl.split("/").filter(Boolean);
+    const licId = parts[2];
+    const newStatus = data?.status || "active";
+    const licenses = getStoredMockLicenses();
+    const lic = licenses.find((l) => l.id === licId);
+    if (lic) {
+      lic.status = newStatus;
+      lic.updated_at = new Date().toISOString();
+      saveStoredMockLicenses(licenses);
+    }
+    return { status: 200, data: { success: true, license: lic } };
+  }
+
+  if (normUrl.startsWith("/commercial-onboarding/licenses/") && normUrl.endsWith("/company") && method === "delete") {
+    const parts = normUrl.split("/").filter(Boolean);
+    const licId = decodeURIComponent(parts[2]);
+    let licenses = getStoredMockLicenses();
+    const lic = licenses.find((l) => l.id === licId);
+    const custId = lic?.customer_id;
+    licenses = licenses.filter((l) => l.id !== licId);
+    saveStoredMockLicenses(licenses);
+
+    if (custId) {
+      let customers = getStoredMockCustomers();
+      customers = customers.filter((c) => c.id !== custId);
+      saveStoredMockCustomers(customers);
+    }
+    return { status: 200, data: { success: true, message: "Company and license deleted successfully" } };
   }
 
   if (normUrl.startsWith("/commercial-onboarding/my-company")) {

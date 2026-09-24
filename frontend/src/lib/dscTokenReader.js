@@ -478,7 +478,7 @@ export async function readCertFromWebSmartCard(pin) {
 // SECTION 4 — Tier 2: Local DSC Agent (node index.js on localhost:7432)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DSC_AGENT_URL = 'http://127.0.0.1:7432';
+const DSC_AGENT_URL = (import.meta.env?.VITE_DSC_AGENT_URL || 'http://127.0.0.1:7432').replace(/\/+$/, '');
 
 export async function checkLocalAgent() {
   try {

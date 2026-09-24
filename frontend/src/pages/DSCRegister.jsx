@@ -36,6 +36,8 @@ import {
   diagnoseDscReader,
 } from '@/lib/dscTokenReader';
 
+const DSC_AGENT_ENDPOINT = (import.meta.env?.VITE_DSC_AGENT_URL || 'http://127.0.0.1:7432').replace(/\/+$/, '');
+
 // ─── Print styles ─────────────────────────────────────────────────────────────
 const PRINT_STYLE = `
 @media print {
@@ -715,7 +717,7 @@ function UsbDscPopup({ device, isDark, onDismiss, onSaved, clients = [] }) {
                       onClick={async () => {
                         setAgentAutoFetching(true);
                         try {
-                          const res = await fetch('http://127.0.0.1:7432/dsc-autofill', {
+                          const res = await fetch(`${DSC_AGENT_ENDPOINT}/dsc-autofill`, {
                             signal: AbortSignal.timeout(4000), cache: 'no-store',
                           });
                           if (res.ok) {
@@ -728,7 +730,7 @@ function UsbDscPopup({ device, isDark, onDismiss, onSaved, clients = [] }) {
                             }
                           }
                           // fallback to /dsc-status
-                          const r2 = await fetch('http://127.0.0.1:7432/dsc-status', {
+                          const r2 = await fetch(`${DSC_AGENT_ENDPOINT}/dsc-status`, {
                             signal: AbortSignal.timeout(3000), cache: 'no-store',
                           });
                           if (r2.ok) {

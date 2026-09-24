@@ -31,16 +31,13 @@ import {
   Clock, HardDriveUpload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { BACKEND_BASE_URL } from '@/lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BACKEND_URL = (() => {
-  let raw = import.meta.env.VITE_API_URL || 'https://final-taskosphere-backend.onrender.com';
-  raw = raw.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-  return raw;
-})();
+const BACKEND_URL = BACKEND_BASE_URL;
 
 function getAuthToken() {
   return localStorage.getItem('token') || sessionStorage.getItem('token');

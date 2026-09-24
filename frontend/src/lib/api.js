@@ -1,22 +1,18 @@
 import axios from "axios";
 import { useState, useEffect } from "react";
 import { handleMockRoute } from "./mockBackend";
+import { isPlatformOwner } from "./commercialPermissionMatrix";
 
 // ─────────────────────────────────────────────────────────────
 // API BASE URL
 // ─────────────────────────────────────────────────────────────
 
-// Commercial deployments must use VITE_API_URL so the frontend
-// can be connected to the separate commercial backend on Render.
-const CONFIGURED_API_URL =
-  (import.meta.env.VITE_API_URL || "").replace(
-    "tasko-commecial-backend.onrender.com",
-    "tasko-commercial-backend.onrender.com"
-  );
+// Commercial deployments can use VITE_API_URL so the frontend
+// can be connected to any self-hosted or cloud backend.
+const CONFIGURED_API_URL = (import.meta.env.VITE_API_URL || "").trim();
 
 // Local development backend fallback.
-const LOCAL_API_URL =
-  "http://localhost:7432";
+const LOCAL_API_URL = "http://localhost:7432";
 
 // Detect browser hostname.
 const _hostname =
@@ -28,26 +24,11 @@ const _isLocalHost =
   _hostname === "localhost" ||
   _hostname === "127.0.0.1";
 
-// ─────────────────────────────────────────────────────────────
-// API URL SELECTION
-// ─────────────────────────────────────────────────────────────
-//
-// Commercial Render deployment:
-//     VITE_API_URL
-//          ↓
-//     tasko-commecial-backend.onrender.com
-//
-// Local development:
-//     VITE_API_URL (if supplied)
-//          ↓
-//     otherwise localhost:7432
-//
-// There is intentionally NO hard-coded dependency on the live
-// Taskosphere production backend in this commercial repository.
-// ─────────────────────────────────────────────────────────────
-
-// Commercial Render backend default for deployed environments (e.g. Vercel, Render)
-const PRODUCTION_API_URL = "https://tasko-commercial-backend.onrender.com";
+// Default backend URL when deployed without an explicit VITE_API_URL
+const PRODUCTION_FALLBACK =
+  typeof window !== "undefined" && window.location?.origin
+    ? `${window.location.origin}/api`
+    : "http://localhost:7432";
 
 let BASE_URL;
 
@@ -56,9 +37,7 @@ if (CONFIGURED_API_URL) {
 } else if (_isLocalHost) {
   BASE_URL = LOCAL_API_URL;
 } else {
-  // When deployed on cloud environments (Vercel, Render, custom domains),
-  // default to the active commercial backend on Render.
-  BASE_URL = PRODUCTION_API_URL;
+  BASE_URL = PRODUCTION_FALLBACK;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -71,7 +50,9 @@ if (!BASE_URL.endsWith("/api")) {
   BASE_URL += "/api";
 }
 
-export { BASE_URL };
+const BACKEND_BASE_URL = BASE_URL.replace(/\/api$/, "");
+
+export { BASE_URL, BACKEND_BASE_URL };
 
 // ─────────────────────────────────────────────────────────────
 // TOKEN HELPERS
@@ -466,9 +447,7 @@ api.interceptors.response.use(
         const stored = typeof window !== "undefined" ? (localStorage.getItem("user") || sessionStorage.getItem("user")) : null;
         if (stored) {
           const u = JSON.parse(stored);
-          const email = String(u?.email || "").trim().toLowerCase();
-          const uid = String(u?.id || "").trim();
-          if (email === "info.taskosphere@gmail.com" || uid === "usr-admin-01" || uid === "saas-bootstrap-admin") {
+          if (isPlatformOwner(u)) {
             return Promise.reject(error);
           }
         }

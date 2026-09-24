@@ -850,9 +850,9 @@ function AccountingReportsInner() {
   return (
     <div className="space-y-5 w-full min-w-0">
 
-      {/* Accounting Reports header — filters only. */}
+      {/* Header — title row + two precisely aligned 7-column control rows. */}
       <div className="rounded-2xl overflow-hidden shadow-lg" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
-        <div className="p-3 md:p-4 text-white space-y-3">
+        <div className="p-3 md:p-4 text-white space-y-2">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center">
               <BarChart3 className="h-5 w-5" />
@@ -863,91 +863,129 @@ function AccountingReportsInner() {
             </div>
           </div>
 
-          <div className="grid w-full min-w-0 grid-cols-2 gap-2">
-            <Select value={companyId || '__all__'} onValueChange={onCompanyChange}>
-              <SelectTrigger className="h-9 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
-                <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-                <SelectValue placeholder="All Companies" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__all__">All Companies</SelectItem>
-                {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+          <div
+            className="grid w-full min-w-0 gap-2"
+            style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
+          >
+            <div className="min-w-0">
+              <Select value={companyId || '__all__'} onValueChange={onCompanyChange}>
+                <SelectTrigger className="h-8 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
+                  <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  <SelectValue placeholder="All Companies" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All Companies</SelectItem>
+                  {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select value={fyKey} onValueChange={onFyChange}>
-              <SelectTrigger className="h-9 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
-                <SelectValue placeholder="Financial year" />
-              </SelectTrigger>
-              <SelectContent>
-                {fyOptions.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
-                <SelectItem value="custom">Custom range…</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="min-w-0">
+              <Select value={fyKey} onValueChange={onFyChange}>
+                <SelectTrigger className="h-8 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
+                  <SelectValue placeholder="Financial year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fyOptions.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
+                  <SelectItem value="custom">Custom range…</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="min-w-0">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setFyKey('custom'); }}
+                className="h-8 w-full min-w-0 rounded-md px-2 bg-white/10 border border-white/25 text-white text-xs"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setFyKey('custom'); }}
+                className="h-8 w-full min-w-0 rounded-md px-2 bg-white/10 border border-white/25 text-white text-xs"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <Button onClick={applyDateFilters} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
+                Apply
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button onClick={() => setShowExistingRecords(true)} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
+                <ShieldCheck className="h-3.5 w-3.5 mr-1 shrink-0" /> Existing records
+              </Button>
+            </div>
+
+            <div aria-hidden="true" />
           </div>
 
-          <div className="grid w-full min-w-0 grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setFyKey('custom'); }}
-              className="h-9 w-full min-w-0 rounded-md px-2 bg-white/10 border border-white/25 text-white text-xs"
-            />
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setFyKey('custom'); }}
-              className="h-9 w-full min-w-0 rounded-md px-2 bg-white/10 border border-white/25 text-white text-xs"
-            />
-          </div>
-        </div>
-      </div>
+          <div
+            className="grid w-full min-w-0 gap-2"
+            style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
+          >
+            <div className="min-w-0">
+              <Button onClick={downloadActiveReport} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
+                <Download className="h-3.5 w-3.5 mr-1 shrink-0" /> Download
+              </Button>
+            </div>
 
-      {/* Action controls — separate from the blue header, four equal columns x two rows. */}
-      <div className="rounded-xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="grid w-full min-w-0 grid-cols-2 gap-2 lg:grid-cols-4">
-          <Button onClick={downloadActiveReport} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-xs">
-            <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Download
-          </Button>
-          <Button onClick={downloadGeneralLedger} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-xs">
-            <Download className="h-3.5 w-3.5 mr-1.5 shrink-0" /> General Ledger
-          </Button>
-          <Button onClick={() => downloadV2Export('xml')} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-amber-600 text-xs font-bold">
-            Tally ERP XML
-          </Button>
-          <Button onClick={() => downloadV2Export('pdf')} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-emerald-600 text-xs font-bold">
-            Corporate PDF
-          </Button>
-          <Button onClick={() => downloadV2Export('json')} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-blue-600 text-xs font-bold">
-            Structured JSON
-          </Button>
-          <Button
-            onClick={() => {
-              const fyLabel = fyOptions.find((f) => f.value === fyKey)?.label?.replace(/^FY\s*/i, '') || '';
-              const params = new URLSearchParams();
-              if (companyId) params.set('company_id', companyId);
-              if (fyLabel) params.set('fy', fyLabel);
-              navigate(`/opening-balances${params.toString() ? `?${params.toString()}` : ''}`);
-            }}
-            size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-xs"
-          >
-            <Scale className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Add Opening Balance
-          </Button>
-          <Button
-            onClick={handleVerifyAndRefresh}
-            disabled={verifying}
-            size="sm" variant="outline"
-            className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-xs font-semibold"
-            title="Re-syncs every invoice, bill, and payment into the ledger and fixes accounts that drifted"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 shrink-0 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Verifying…' : 'Verify & Fix'}
-          </Button>
-          <Button onClick={() => setShowExistingRecords(true)} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap text-xs">
-            <ShieldCheck className="h-3.5 w-3.5 mr-1.5 shrink-0" /> Existing records
-          </Button>
-          <Button onClick={applyDateFilters} size="sm" variant="outline" className="h-9 w-full min-w-0 overflow-hidden whitespace-nowrap bg-blue-600 text-white border-blue-600 hover:bg-blue-700 text-xs font-semibold">
-            Apply
-          </Button>
+            <div className="min-w-0">
+              <Button onClick={downloadGeneralLedger} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
+                <Download className="h-3.5 w-3.5 mr-1 shrink-0" /> General Ledger
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button onClick={() => downloadV2Export('xml')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-amber-300 hover:bg-white/25 text-xs font-bold">
+                Tally ERP XML
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button onClick={() => downloadV2Export('pdf')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-emerald-300 hover:bg-white/25 text-xs font-bold">
+                Corporate PDF
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button onClick={() => downloadV2Export('json')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-blue-300 hover:bg-white/25 text-xs font-bold">
+                Structured JSON
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button
+                onClick={() => {
+                  const fyLabel = fyOptions.find((f) => f.value === fyKey)?.label?.replace(/^FY\s*/i, '') || '';
+                  const params = new URLSearchParams();
+                  if (companyId) params.set('company_id', companyId);
+                  if (fyLabel) params.set('fy', fyLabel);
+                  navigate(`/opening-balances${params.toString() ? `?${params.toString()}` : ''}`);
+                }}
+                size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs"
+              >
+                <Scale className="h-3.5 w-3.5 mr-1 shrink-0" /> Add Opening Balance
+              </Button>
+            </div>
+
+            <div className="min-w-0">
+              <Button
+                onClick={handleVerifyAndRefresh}
+                disabled={verifying}
+                size="sm" variant="outline"
+                className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs font-semibold"
+                title="Re-syncs every invoice, bill, and payment into the ledger and fixes accounts that drifted"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 mr-1 shrink-0 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Verifying…' : 'Verify & Fix'}
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 
