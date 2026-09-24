@@ -739,3 +739,143 @@ async def stats(user=Depends(get_current_user)):
       "freeAccountsResting":sum(bool(x.get("cooldown_until")) for x in free_accounts),
       "freeTierTokensUsedToday":free_daily_used,"freeExecutionsCount":free_executions,
       "freeExecutionShare":round(free_executions/len(e),4) if e else None}
+
+
+# ==============================================================================
+# AIWEAVE UNIVERSAL OMNI ROUTE (POST /api/aiweave/omni)
+# Single unified endpoint supporting auto model selection, fallback, and streaming
+# ==============================================================================
+from fastapi.responses import StreamingResponse
+from backend.ai.omni.models import OmniRequest, OmniResponse, OmniStreamChunk
+from backend.ai.omni.engine import FallbackEngine
+from backend.ai.omni.adapters.base import ProviderError
+
+async def _omni_record_execution(
+    response: OmniResponse,
+    req: OmniRequest,
+    account: Dict[str, Any],
+    model_cap: Any,
+    trail: List[Any],
+    user: Any,
+    scope_info: Dict[str, Any]
+):
+    inp = response.usage.input_tokens
+    out = response.usage.output_tokens
+    eid = f"exec-{uuid.uuid4().hex[:12]}"
+    prompt_snippet = req.prompt or ""
+    if not prompt_snippet and req.messages:
+        last_m = req.messages[-1]
+        prompt_snippet = str(last_m.get("content") if isinstance(last_m, dict) else getattr(last_m, "content", ""))
+
+    trail_dicts = [
+        t.model_dump() if hasattr(t, "model_dump") else t
+        for t in trail
+    ]
+    record = {
+        "id": eid,
+        "execution_id": eid,
+        "timestamp": now(),
+        "user": str(getattr(user, "full_name", None) or getattr(user, "email", None) or getattr(user, "id", "Current User")),
+        "user_id": str(getattr(user, "id", "")),
+        "tenant_id": scope_info["scope_id"],
+        "company_id": scope_info["company_id"],
+        "conversation_id": req.conversation_id,
+        "task_type": req.task_type,
+        "capability": req.required_capability or req.task_type,
+        "prompt": prompt_snippet[:500],
+        "provider": response.provider,
+        "providerName": response.provider_name or PROVIDER_MAP.get(response.provider, {}).get("name", response.provider),
+        "accountId": account.get("id"),
+        "accountName": account.get("name"),
+        "costTier": str(account.get("cost_tier") or "UNKNOWN").upper(),
+        "model": response.model,
+        "modelName": response.model_name or model_cap.name,
+        "status": "SUCCESS",
+        "latencyMs": response.latency_ms,
+        "tokens": inp + out,
+        "usage": {"input_tokens": inp, "output_tokens": out, "provider_reported": response.usage.provider_reported},
+        "cost": response.usage.estimated_cost_usd,
+        "fallbackTrail": trail_dicts,
+        "selectionReason": "Automatic fallback was used." if trail else "Primary eligible authorized account selected.",
+        "attempt_number": len(trail) + 1,
+        "output": response.content,
+    }
+    await db.aiweave_executions.insert_one({**scope_info, **record})
+
+    if req.conversation_id:
+        conv = await db.aiweave_conversations.find_one({**scope_info, "conversation_id": req.conversation_id})
+        if conv:
+            ts = now()
+            user_msg = {
+                "id": f"msg-{uuid.uuid4().hex[:12]}",
+                "role": "user",
+                "content": prompt_snippet,
+                "created_at": ts,
+                "attachments": req.files or []
+            }
+            assistant_msg = {
+                "id": f"msg-{uuid.uuid4().hex[:12]}",
+                "role": "assistant",
+                "content": response.content,
+                "created_at": ts,
+                "provider": response.provider,
+                "providerName": response.provider_name,
+                "model": response.model,
+                "modelName": response.model_name,
+                "accountName": account.get("name"),
+                "fallbackTrail": trail_dicts,
+                "tokens": inp + out,
+                "latencyMs": response.latency_ms
+            }
+            await db.aiweave_conversations.update_one(
+                {**scope_info, "conversation_id": req.conversation_id},
+                {
+                    "$push": {
+                        "messages": {"$each": [user_msg, assistant_msg]},
+                        "model_history": response.model,
+                        "provider_history": response.provider,
+                        "execution_history": eid,
+                        "fallback_history": {"$each": trail_dicts}
+                    },
+                    "$inc": {"token_usage.input_tokens": inp, "token_usage.output_tokens": out, "token_usage.total_tokens": inp + out},
+                    "$set": {"updated_at": ts, "status": "ACTIVE"}
+                }
+            )
+
+_omni_engine = FallbackEngine(
+    decrypt_fn=dec,
+    touch_account_fn=touch,
+    record_execution_fn=_omni_record_execution
+)
+
+@router.post("/omni")
+async def omni_route(payload: OmniRequest, user=Depends(get_current_user)):
+    """
+    Universal AIWeave Omni Route.
+    One normalized endpoint handling any provider, model="auto", automatic fallback, and streaming.
+    """
+    await ensure_env_accounts(user)
+    s = scope(user)
+    cfg = await routing(user)
+    accounts = await db.aiweave_provider_accounts.find(account_query(user), {"_id": 0}).to_list(500)
+    discovered = await db.aiweave_provider_models.find(s, {"_id": 0}).to_list(1000)
+
+    if payload.stream:
+        async def event_generator():
+            async for chunk in _omni_engine.stream_request(payload, accounts, discovered, cfg, user=user, scope_info=s):
+                yield f"data: {chunk.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    try:
+        response = await _omni_engine.execute_request(
+            payload, accounts, discovered, cfg, user=user, scope_info=s
+        )
+        return response
+    except ProviderError as pe:
+        raise HTTPException(status_code=pe.status_code, detail=f"[{pe.kind}] {pe.message}")
+    except Exception as ex:
+        logger.exception("AIWeave Omni Route execution failure: %s", str(ex))
+        raise HTTPException(status_code=500, detail=f"AIWeave Omni Route failed: {str(ex)}")
+

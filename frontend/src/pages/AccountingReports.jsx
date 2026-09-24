@@ -939,14 +939,14 @@ function AccountingReportsInner() {
               />
             </div>
 
-            <div className="min-w-0">
-              <label className="block text-[10px] uppercase font-bold text-transparent mb-1 select-none pointer-events-none" aria-hidden="true">
+            <div className="min-w-0 flex flex-col justify-end">
+              <label className="block text-[10px] uppercase font-bold text-transparent mb-1 select-none pointer-events-none hidden md:block" aria-hidden="true">
                 Action
               </label>
               <Button
                 onClick={applyDateFilters}
                 size="sm"
-                className="h-8 w-full min-w-0 bg-white text-[#0D3B66] hover:bg-blue-50 font-bold text-xs shadow-sm"
+                className="h-8 w-full min-w-0 bg-white text-[#0D3B66] hover:bg-blue-50 font-bold text-xs shadow-sm flex items-center justify-center"
               >
                 Apply Range
               </Button>

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import api from "@/lib/api";
 import {
   listProviders, listAccounts, getModels, getRoutingConfig, updateRoutingConfig,
-  getExecutionHistory, executeTask, getStats, listConversations,
+  getExecutionHistory, executeTask, executeOmni, getStats, listConversations,
   createConversation, getConversation, deleteConversation
 } from "@/lib/aiweaveApi";
 import { PROVIDERS, CAPABILITIES, ROUTING_STRATEGIES, COST_POLICIES } from "@/lib/aiweaveConstants";
@@ -83,20 +83,52 @@ export default function AIDocumentReader() {
         }).join("\\n\\n--- DOCUMENT BOUNDARY ---\\n\\n").slice(0,60000);
         if(errors.length)toast.warning(`${errors.length} document${errors.length===1?"":"s"} could not be processed.`);
       }
-      setStatus(selectedModel==="auto"?"AIWeave Auto is selecting the best available model...":`Using ${activeModel?.name||selectedModel}...`);
-      const result=await executeTask({
-        prompt:text,messages:[...messages,userMsg].slice(-30).map(x=>({role:x.role,content:x.content})),
-        conversationId:conv.id||conv.conversation_id,taskType:capability,requiredCapability:attachedFiles.length?"document_analysis":capability,
-        preferredProvider:provider,preferredModel:selectedModel,documentContext,
-        files:attachedFiles.map(x=>({name:x.name,type:x.type,size:x.size}))
-      });
-      const assistant={id:`a-${Date.now()}`,role:"assistant",content:result.output||"The model completed without returning text.",
-        created_at:new Date().toISOString(),providerName:result.providerName,modelName:result.modelName||result.model,
-        accountName:result.accountName,fallbackTrail:result.fallbackTrail||[],tokens:result.tokens,latencyMs:result.latencyMs};
-      setMessages(x=>[...x,assistant]);
-      setStatus(assistant.fallbackTrail.length?`AIWeave continued automatically after ${assistant.fallbackTrail.length} fallback event(s).`:`Completed with ${assistant.providerName||"AIWeave"}.`);
-      setFiles([]);await refresh();
-    }catch(e){const d=e?.response?.data?.detail||e?.message||"AIWeave could not complete this request.";setMessages(x=>[...x,{id:`e-${Date.now()}`,role:"error",content:d}]);setStatus("AIWeave could not complete this request.");toast.error(d);}
+      setStatus(selectedModel==="auto"?"AIWeave Omni is selecting the best available model...":`Using ${activeModel?.name||selectedModel}...`);
+      let result;
+      try {
+        result = await executeOmni({
+          prompt: text,
+          messages: [...messages, userMsg].slice(-30).map(x => ({ role: x.role, content: x.content })),
+          conversation_id: conv.id || conv.conversation_id,
+          task_type: capability,
+          required_capability: attachedFiles.length ? "document_analysis" : capability,
+          provider: provider,
+          model: selectedModel,
+          document_context: documentContext,
+          files: attachedFiles.map(x => ({ name: x.name, type: x.type, size: x.size }))
+        });
+      } catch (omniErr) {
+        // Fallback to legacy executeTask if needed
+        result = await executeTask({
+          prompt: text,
+          messages: [...messages, userMsg].slice(-30).map(x => ({ role: x.role, content: x.content })),
+          conversationId: conv.id || conv.conversation_id,
+          taskType: capability,
+          requiredCapability: attachedFiles.length ? "document_analysis" : capability,
+          preferredProvider: provider,
+          preferredModel: selectedModel,
+          documentContext,
+          files: attachedFiles.map(x => ({ name: x.name, type: x.type, size: x.size }))
+        });
+      }
+      const assistant = {
+        id: `a-${Date.now()}`,
+        role: "assistant",
+        content: result.content || result.output || "The model completed without returning text.",
+        created_at: new Date().toISOString(),
+        providerName: result.providerName || result.provider_name,
+        modelName: result.modelName || result.model_name || result.model,
+        accountName: result.accountName || result.account_name,
+        fallbackTrail: result.fallbackTrail || result.fallback_trail || [],
+        tokens: result.tokens || (result.usage ? result.usage.total_tokens : 0),
+        latencyMs: result.latencyMs || result.latency_ms
+      };
+      setMessages(x => [...x, assistant]);
+      setStatus(assistant.fallbackTrail.length ? `AIWeave Omni completed with automatic fallback (${assistant.fallbackTrail.length} event${assistant.fallbackTrail.length === 1 ? "" : "s"}).` : `Completed with ${assistant.providerName || "AIWeave Omni"}.`);
+      setFiles([]);
+      await refresh();
+    } catch (e) {
+const d=e?.response?.data?.detail||e?.message||"AIWeave could not complete this request.";setMessages(x=>[...x,{id:`e-${Date.now()}`,role:"error",content:d}]);setStatus("AIWeave could not complete this request.");toast.error(d);}
     finally{setRunning(false);}
   };
   const keyDown=(e)=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}};

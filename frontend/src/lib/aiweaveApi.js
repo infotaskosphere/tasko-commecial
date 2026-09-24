@@ -17,6 +17,7 @@ export const getRoutingConfig = async () => (await api.get("/aiweave/routing-con
 export const updateRoutingConfig = async (payload) => (await api.put("/aiweave/routing-config", payload)).data;
 export const getExecutionHistory = async () => (await api.get("/aiweave/executions")).data;
 export const executeTask = async (payload, config = {}) => (await api.post("/aiweave/execute", payload, config)).data;
+export const executeOmni = async (payload, config = {}) => (await api.post("/aiweave/omni", payload, config)).data;
 export const getStats = async () => (await api.get("/aiweave/stats")).data;
 
 export const listConversations = async () => (await api.get("/aiweave/conversations")).data;
@@ -27,6 +28,7 @@ export const deleteConversation = async (conversationId) => (await api.delete(`/
 export default {
   listProviders, listAccounts, connectAccount, testAccount, toggleAccount,
   updateAccount, deleteAccount, getModels, getRoutingConfig, updateRoutingConfig,
-  getExecutionHistory, executeTask, getStats, listConversations, createConversation,
+  getExecutionHistory, executeTask, executeOmni, getStats, listConversations, createConversation,
   getConversation, deleteConversation,
 };
+
