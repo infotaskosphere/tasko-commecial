@@ -893,11 +893,11 @@ function BankAccountsInner() {
       <div className="space-y-5 w-full">
         <div className="rounded-3xl overflow-hidden shadow-xl" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
           <div className="p-6 md:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-5 text-white">
-            <div className="flex items-start gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shadow-lg">
+            <div className="flex items-start gap-4 min-w-0 flex-1">
+              <div className="h-14 w-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shadow-lg shrink-0">
                 <Landmark className="h-7 w-7" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.25em] text-blue-100 font-bold">Accounts</p>
                 <h1 className="text-2xl md:text-3xl font-bold tracking-tight mt-1">Bank Accounts</h1>
                 <p className="text-sm text-blue-100 mt-1 max-w-2xl">
@@ -905,11 +905,11 @@ function BankAccountsInner() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button onClick={() => setShowNewAccount(true)} variant="outline" className="bg-white/10 border-white/25 text-white hover:bg-white/20">
+            <div className="flex flex-wrap items-center justify-end gap-2 shrink-0 lg:max-w-full">
+              <Button onClick={() => setShowNewAccount(true)} variant="outline" className="shrink-0 whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20">
                 <Plus className="h-4 w-4 mr-2" /> Add bank account
               </Button>
-              <Button onClick={fetchAccounts} variant="outline" className="bg-white/10 border-white/25 text-white hover:bg-white/20">
+              <Button onClick={fetchAccounts} variant="outline" className="shrink-0 whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20">
                 <RefreshCw className="h-4 w-4 mr-2" /> Refresh
               </Button>
             </div>
