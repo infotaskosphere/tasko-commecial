@@ -60,10 +60,9 @@ const getCachedBuilder = () => {
 };
 
 export default function WebsiteHome() {
-  if (typeof window !== "undefined" && (window.location.pathname === "/" || window.location.pathname === "/website")) {
-    return <ModernOneNexaHome />;
-  }
-
+  // The public website is driven by the same persisted Website Studio
+  // configuration. Keep the existing OneNexa landing page as the fallback
+  // only when no persisted builder configuration exists.
   // Use the last successfully saved website immediately. This prevents the
   // default builder from being painted first and then replaced by the saved
   // design after the public config request completes.
@@ -118,13 +117,17 @@ export default function WebsiteHome() {
     }
   }, [identity]);
 
-  if (!ready || !builder) {
+  if (!ready) {
     return (
-      <div className="min-h-screen bg-white text-slate-900" aria-label="Loading ONENEXA">
+      <div className="min-h-screen bg-white text-slate-900" aria-label="Loading website">
         <header className="h-[72px] border-b border-slate-200 bg-white" />
         <main className="min-h-[calc(100vh-72px)] bg-slate-50" />
       </div>
     );
+  }
+
+  if (!builder) {
+    return <ModernOneNexaHome />;
   }
 
   return <WebsiteRenderer builder={builder} identity={identity} />;
