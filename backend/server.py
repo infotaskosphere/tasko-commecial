@@ -16086,6 +16086,10 @@ for _path, _handler in (
     app.add_api_route(f"{_path}.aspx", _handler, methods=["GET", "POST"])
 app.include_router(whatsapp_hub_router, prefix="/api")
 
+# ── Commercial Console Control Center Router ──────────────────────────────────
+from backend.commercial_console_api import router as commercial_console_router
+app.include_router(commercial_console_router)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ROUTE SAFETY NET — collection endpoints must answer with AND without a
