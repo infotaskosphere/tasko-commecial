@@ -548,7 +548,7 @@ export default function WebsiteStudio() {
       : "w-full min-h-full";
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-100 text-slate-900">
+    <div className="flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-slate-100 text-slate-900">
       {/* Top App Bar */}
       <StudioTopBar
         siteName={identity.site_name}
@@ -570,7 +570,7 @@ export default function WebsiteStudio() {
       />
 
       {/* Main 3-Panel Workspace */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         {/* LEFT PANEL: Pages & Menu Navigator (Hidden in live preview mode) */}
         {!isPreviewMode && (
           <PageNavigator
@@ -591,7 +591,7 @@ export default function WebsiteStudio() {
         )}
 
         {/* CENTER CANVAS: Visual Website Canvas */}
-        <div className="flex flex-1 flex-col items-center overflow-y-auto bg-slate-100 p-0 transition-all">
+        <div className="min-w-0 flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto bg-slate-100 p-0 transition-all">
           <div className={`mx-auto bg-white transition-all duration-300 ${canvasWidthClass}`}>
             <WebsiteRenderer
               builder={config}
@@ -614,7 +614,7 @@ export default function WebsiteStudio() {
 
         {/* RIGHT PANEL: Visual Editing Drawer (Context-sensitive, hidden in preview) */}
         {!isPreviewMode && drawerType && (
-          <aside className="w-80 border-l border-slate-200 bg-white shadow-xl flex flex-col z-30 animate-in slide-in-from-right duration-200">
+          <aside className="w-80 min-w-0 shrink-0 border-l border-slate-200 bg-white shadow-xl flex flex-col z-30 animate-in slide-in-from-right duration-200">
             {drawerType === "section" && selectedSection && (
               <SectionPropertiesDrawer
                 section={selectedSection}
