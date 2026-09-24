@@ -96,6 +96,8 @@ export function downloadWebsiteConfigJSON(config, filename = "website-config.jso
   URL.revokeObjectURL(url);
 }
 
+export const downloadWebsiteConfig = downloadWebsiteConfigJSON;
+
 /**
  * Download website as a single self-contained HTML file (uncompressed, not zipped)
  */
