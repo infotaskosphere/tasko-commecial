@@ -8,8 +8,8 @@ environment for additional internal owners.
 
 import os
 
-# Canonical platform-owner identities. Keep this list centralized so every
-# user-management surface classifies the same accounts consistently.
+# Canonical platform-owner fallback identities. When PLATFORM_OWNER_EMAILS or
+# PLATFORM_OWNER_EMAIL environment variables are configured, they take precedence.
 DEFAULT_PLATFORM_OWNER_EMAILS = {
     "info.taskosphere@gmail.com",
     "infotaskosphere@gmail.com",
@@ -19,7 +19,7 @@ DEFAULT_PLATFORM_OWNER_EMAILS = {
 def platform_owner_emails() -> set[str]:
     configured = os.getenv("PLATFORM_OWNER_EMAILS", "") or os.getenv("PLATFORM_OWNER_EMAIL", "")
     values = {item.strip().lower() for item in configured.split(",") if item.strip()}
-    return (values | DEFAULT_PLATFORM_OWNER_EMAILS) if values else DEFAULT_PLATFORM_OWNER_EMAILS
+    return values if values else DEFAULT_PLATFORM_OWNER_EMAILS
 
 
 def _install_owner_auth_compat() -> None:

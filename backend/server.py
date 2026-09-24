@@ -3091,10 +3091,15 @@ async def login(credentials: UserLogin, request: Request):
             current_perms = user.get("permissions", UserPermissions().model_dump())
             if isinstance(current_perms, dict) and license_doc:
                 licensed_mods = set(license_doc.get("modules") or [])
-                for mod_key, flags in MODULE_HIERARCHY.items():
+                for mod_key, mod_def in MODULE_HIERARCHY.items():
                     if mod_key not in licensed_mods:
-                        for f in flags:
-                            current_perms[f] = False
+                        mod_flag = mod_def.get("flag")
+                        if mod_flag:
+                            current_perms[mod_flag] = False
+                        for p in mod_def.get("pages", []):
+                            p_flag = p.get("flag")
+                            if p_flag:
+                                current_perms[p_flag] = False
             user["permissions"] = current_perms
     except Exception as exc:
         logger.warning("Licensee admin login sync: %s", exc)

@@ -78,14 +78,38 @@ async def update_commercial_license(license_id: str, payload: Dict[str, Any], cu
             {"email": str(customer.get("email", "")).lower().strip()},
         ]
         user_match.extend({"company_id": company_id} for company_id in company_ids if company_id)
+        admin_match = [
+            {"email": str(customer.get("email", "")).lower().strip()},
+            {"role": "admin", "$or": [
+                {"company_id": customer_id},
+                {"commercial_customer_id": customer_id},
+                {"license_id": str(license_id)},
+            ] + ([{"company_id": cid} for cid in company_ids if cid])}
+        ]
         await db.users.update_many(
-            {"$or": user_match},
+            {"$or": admin_match},
             {"$set": {
                 "licensed_modules": modules,
                 "selected_features": selected_features,
                 "license_id": str(license_id),
                 "commercial_customer_id": customer_id,
                 "permissions": get_all_admin_permissions(updated),
+            }},
+        )
+        non_admin_match = [
+            {"role": {"$ne": "admin"}, "email": {"$ne": str(customer.get("email", "")).lower().strip()}, "$or": [
+                {"company_id": customer_id},
+                {"commercial_customer_id": customer_id},
+                {"license_id": str(license_id)},
+            ] + ([{"company_id": cid} for cid in company_ids if cid])}
+        ]
+        await db.users.update_many(
+            {"$or": non_admin_match},
+            {"$set": {
+                "licensed_modules": modules,
+                "selected_features": selected_features,
+                "license_id": str(license_id),
+                "commercial_customer_id": customer_id,
             }},
         )
     except Exception as exc:

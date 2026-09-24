@@ -2,18 +2,19 @@
  * Commercial permission matrix — single frontend authority for module/page visibility.
  */
 
-export const PLATFORM_OWNER_EMAIL = "info.taskosphere@gmail.com";
+export const PLATFORM_OWNER_EMAIL = import.meta.env?.VITE_PLATFORM_OWNER_EMAIL || "info.taskosphere@gmail.com";
 
 const getPlatformOwnerEmails = () => {
   const configured = [
     import.meta.env?.VITE_PLATFORM_OWNER_EMAIL,
     import.meta.env?.VITE_PLATFORM_OWNER_EMAILS,
   ].filter(Boolean).join(",");
-  const set = new Set([PLATFORM_OWNER_EMAIL, "infotaskosphere@gmail.com", "admin@taskosphere.com"]);
   if (configured) {
-    configured.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).forEach((e) => set.add(e));
+    const customSet = new Set();
+    configured.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).forEach((e) => customSet.add(e));
+    if (customSet.size > 0) return customSet;
   }
-  return set;
+  return new Set([PLATFORM_OWNER_EMAIL.toLowerCase(), "infotaskosphere@gmail.com", "admin@taskosphere.com"]);
 };
 
 export const MODULES = Object.freeze({

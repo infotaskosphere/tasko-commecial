@@ -213,7 +213,7 @@ async def ensure_licensee_admin(
         logger.info("Updated licensee admin %s for customer %s/license %s", email, customer_id, license_id)
         return updated
 
-    default_password = password or customer.get("password") or "Admin@123"
+    default_password = password or customer.get("password") or os.getenv("DEFAULT_TENANT_ADMIN_PASSWORD") or "Admin@123"
     user_doc = {
         "id": str(uuid.uuid4()),
         "email": email,
