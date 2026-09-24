@@ -852,8 +852,8 @@ function AccountingReportsInner() {
 
       {/* Header — compact so it doesn't dominate the page. Tabs sit below. */}
       <div className="rounded-2xl overflow-hidden shadow-lg" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
-        <div className="p-3 md:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-white">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="p-3 md:p-4 flex flex-col lg:flex-row lg:items-start justify-between gap-3 text-white">
+          <div className="flex items-center gap-3 min-w-0 lg:flex-[0_1_360px]">
             <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center">
               <BarChart3 className="h-5 w-5" />
             </div>
@@ -862,7 +862,7 @@ function AccountingReportsInner() {
               <p className="text-[11px] text-blue-100 truncate">Trial Balance, P&amp;L, and Balance Sheet — live from every posted journal entry.</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+          <div className="flex flex-1 min-w-0 flex-wrap items-center gap-2 lg:justify-end">
             <Select value={companyId || '__all__'} onValueChange={onCompanyChange}>
               <SelectTrigger className="h-8 min-w-[160px] bg-white/10 border-white/25 text-white text-xs">
                 <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0" />
