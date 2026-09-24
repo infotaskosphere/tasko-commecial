@@ -38,9 +38,9 @@ export default function StudioTopBar({
   saveStatus = "saved", // 'saved' | 'unsaved' | 'saving' | 'published'
 }) {
   return (
-    <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white px-4 shadow-[0_1px_10px_rgba(15,23,42,.03)] select-none">
+    <header className="sticky top-0 z-40 flex h-16 w-full min-w-0 items-center justify-between overflow-hidden border-b border-slate-200 bg-white px-3 sm:px-4 shadow-[0_1px_10px_rgba(15,23,42,.03)] select-none">
       {/* LEFT: Branding, Title & Page */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex min-w-0 shrink items-center gap-2 sm:gap-3">
         <Link
           to="/master-console"
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-900"
@@ -54,7 +54,7 @@ export default function StudioTopBar({
             WS
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 shrink-0 items-center gap-1.5 xl:gap-2">
               <span className="truncate text-sm font-extrabold tracking-tight text-slate-900">
                 {siteName}
               </span>
@@ -70,7 +70,7 @@ export default function StudioTopBar({
       </div>
 
       {/* CENTER: Responsive Device Modes & Live Preview */}
-      <div className="hidden md:flex items-center gap-2">
+      <div className="hidden lg:flex min-w-0 shrink-0 items-center gap-1.5 xl:gap-2">
         <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
           <button
             type="button"
@@ -126,7 +126,7 @@ export default function StudioTopBar({
       </div>
 
       {/* RIGHT: Actions, Undo/Redo, Status, AI, Save, Publish */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 xl:gap-2">
         {/* Status Indicator */}
         <div className="hidden lg:flex items-center gap-1.5 px-2 text-xs font-semibold text-slate-500">
           {saveStatus === "saving" && (
