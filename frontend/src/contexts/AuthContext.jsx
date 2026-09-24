@@ -71,7 +71,8 @@ export const AuthProvider = ({ children }) => {
       const isOwner = matrixIsPlatformOwner(userData);
       if (!isOwner) {
         localStorage.setItem("taskosphere_active_session_token", sessionToken);
-        if (email) localStorage.setItem("taskosphere_active_session_email", email);
+        const sessionEmail = String(userData?.email || "").trim().toLowerCase();
+        if (sessionEmail) localStorage.setItem("taskosphere_active_session_email", sessionEmail);
       }
     }
     api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
