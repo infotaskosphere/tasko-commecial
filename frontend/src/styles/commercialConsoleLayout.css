@@ -121,3 +121,291 @@ body .master-console-page .mc-registry-table {
     border-radius: 20px !important;
   }
 }
+
+/* Master Console layout upgrade — scoped only to the commercial console.
+   Keeps existing component behavior intact while preventing cramped cells,
+   broken words and navigation collisions at desktop and tablet widths. */
+.master-console-shell {
+  --mc-navy: #0D3B66;
+  --mc-blue: #1F6FB2;
+  --mc-border: #e2e8f0;
+  --mc-text: #172033;
+  --mc-muted: #64748b;
+  min-width: 0 !important;
+  width: 100% !important;
+  overflow-x: hidden !important;
+}
+
+.master-console-shell > aside {
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  flex: 0 0 260px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.master-console-shell > aside > div:first-child {
+  min-width: 0 !important;
+  padding: 18px 16px !important;
+}
+
+.master-console-shell > aside nav {
+  min-width: 0 !important;
+}
+
+.master-console-shell > aside nav button {
+  min-width: 0 !important;
+  width: 100% !important;
+  min-height: 42px !important;
+  box-sizing: border-box !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+
+.master-console-shell > aside nav button > div {
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+.master-console-shell > aside nav button > div > span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.master-console-shell > aside nav button > span,
+.master-console-shell > aside nav button .rounded-full,
+.master-console-shell > aside nav button .rounded {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+
+.master-console-shell > div.flex-1 {
+  min-width: 0 !important;
+  width: calc(100% - 260px) !important;
+  overflow-x: hidden !important;
+}
+
+.master-console-shell > div.flex-1 > header {
+  min-height: 68px !important;
+  padding: 12px 24px !important;
+  gap: 12px !important;
+  box-sizing: border-box !important;
+}
+
+.master-console-shell > div.flex-1 > header > div {
+  min-width: 0 !important;
+}
+
+.master-console-shell > div.flex-1 > header .relative,
+.master-console-shell > div.flex-1 > header input {
+  min-width: 0 !important;
+}
+
+.master-console-shell > div.flex-1 > main {
+  min-width: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 24px !important;
+}
+
+.master-console-shell > div.flex-1 > main > * {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Registry heading/search stays aligned without forcing either side to collide. */
+.master-console-shell .space-y-6 > div:first-child {
+  min-width: 0 !important;
+}
+
+.master-console-shell .space-y-6 > div:first-child > div:first-child {
+  min-width: 0 !important;
+}
+
+.master-console-shell .space-y-6 > div:first-child h2,
+.master-console-shell .space-y-6 > div:first-child p {
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  white-space: normal !important;
+}
+
+/* Registry table: preserve readable words and give action controls their own space. */
+.master-console-shell table {
+  table-layout: auto !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+}
+
+.master-console-shell table th,
+.master-console-shell table td {
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  hyphens: none !important;
+  vertical-align: middle !important;
+}
+
+.master-console-shell table th {
+  white-space: nowrap !important;
+  line-height: 1.25 !important;
+}
+
+.master-console-shell table td {
+  line-height: 1.35 !important;
+}
+
+.master-console-shell table td:first-child,
+.master-console-shell table td:nth-child(2) {
+  min-width: 165px !important;
+}
+
+.master-console-shell table td:nth-child(3) {
+  min-width: 170px !important;
+}
+
+.master-console-shell table td:nth-child(4) {
+  min-width: 175px !important;
+}
+
+.master-console-shell table td:last-child {
+  min-width: 275px !important;
+}
+
+.master-console-shell table td:last-child > div {
+  flex-wrap: wrap !important;
+  row-gap: 6px !important;
+  column-gap: 6px !important;
+}
+
+.master-console-shell table td:last-child button,
+.master-console-shell table td:last-child select {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.master-console-shell table td .font-mono {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+/* Module badges are compact but never split across lines. */
+.master-console-shell table td:nth-child(4) > div {
+  min-width: 0 !important;
+  max-width: 240px !important;
+  align-items: center !important;
+}
+
+.master-console-shell table td:nth-child(4) span {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  flex: 0 0 auto !important;
+}
+
+/* Prevent action/select text from being visually clipped. */
+.master-console-shell table select {
+  max-width: 120px !important;
+  min-height: 30px !important;
+}
+
+.master-console-shell button,
+.master-console-shell a,
+.master-console-shell select,
+.master-console-shell input {
+  box-sizing: border-box !important;
+}
+
+/* Catalog / modal content remains readable at narrower desktop widths. */
+.master-console-shell [role="dialog"] {
+  max-width: min(1100px, calc(100vw - 32px)) !important;
+}
+
+@media (max-width: 1200px) {
+  .master-console-shell > aside {
+    width: 232px !important;
+    min-width: 232px !important;
+    max-width: 232px !important;
+    flex-basis: 232px !important;
+  }
+
+  .master-console-shell > div.flex-1 {
+    width: calc(100% - 232px) !important;
+  }
+
+  .master-console-shell > div.flex-1 > main {
+    padding: 18px !important;
+  }
+
+  .master-console-shell > div.flex-1 > header {
+    padding: 10px 18px !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .master-console-shell {
+    overflow-x: visible !important;
+  }
+
+  .master-console-shell > aside {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 0 0 auto !important;
+    min-height: auto !important;
+    max-height: 330px !important;
+  }
+
+  .master-console-shell > div.flex-1 {
+    width: 100% !important;
+  }
+
+  .master-console-shell > div.flex-1 > header {
+    position: relative !important;
+  }
+
+  .master-console-shell > div.flex-1 > main {
+    padding: 16px !important;
+  }
+
+  .master-console-shell > aside nav {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+
+  .master-console-shell > aside nav button {
+    width: auto !important;
+    flex: 1 1 180px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .master-console-shell > div.flex-1 > header {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .master-console-shell > div.flex-1 > header > div {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .master-console-shell > div.flex-1 > header > div:last-child {
+    justify-content: flex-end !important;
+    flex-wrap: wrap !important;
+  }
+
+  .master-console-shell > div.flex-1 > main {
+    padding: 12px !important;
+  }
+
+  .master-console-shell .space-y-6 > div:first-child {
+    align-items: stretch !important;
+  }
+
+  .master-console-shell .space-y-6 > div:first-child .relative {
+    width: 100% !important;
+  }
+}
