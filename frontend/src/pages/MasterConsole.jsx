@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import {
   Building2, CheckCircle2, Copy, KeyRound, Plus, Search, ShieldCheck,
   Users, X, XCircle, Save, Trash2, ReceiptText, ChevronDown, ChevronRight,
-  Loader2, Settings2, Pencil, Globe, RefreshCw, Bell, Sliders, ExternalLink
+  Loader2, Settings2, Pencil, Globe, RefreshCw, Bell, Sliders, ExternalLink,
+  Mail
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -34,6 +35,12 @@ import PlansManagementTab from "@/components/commercial/PlansManagementTab.jsx";
 import ActivityAuditTab from "@/components/commercial/ActivityAuditTab.jsx";
 import AnalyticsUsageTab from "@/components/commercial/AnalyticsUsageTab.jsx";
 import CommercialCustomerEditor from "@/components/CommercialCustomerEditor.jsx";
+
+import EmailConfigTab from "@/components/commercial/EmailConfigTab.jsx";
+import EmailTemplatesTab from "@/components/commercial/EmailTemplatesTab.jsx";
+import EmailDeliveryLogsTab from "@/components/commercial/EmailDeliveryLogsTab.jsx";
+import AccountRecoveryTab from "@/components/commercial/AccountRecoveryTab.jsx";
+import LicenseeEmailModal from "@/components/commercial/LicenseeEmailModal.jsx";
 
 const MODULE_LABELS = Object.freeze({
   taskosphere: "Taskosphere",
@@ -147,6 +154,7 @@ export default function MasterConsole() {
   const [domains, setDomains] = useState([]);
   const [plans, setPlans] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [licenseeEmailCustomer, setLicenseeEmailCustomer] = useState(null);
 
   const activeModules = useMemo(() => (Array.isArray(modules) ? modules : []).filter((m) => m.id !== "admin" && m.active !== false), [modules]);
   const defaultSelectedFeatures = useMemo(() => {
@@ -559,6 +567,14 @@ export default function MasterConsole() {
                                 >
                                   <Pencil size={11} /> Details
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setLicenseeEmailCustomer({ id: license.company_id || customer.id, name: license.company_name || customer.company_name })}
+                                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-blue-50 hover:text-[#0D3B66] transition"
+                                  title="Configure Licensee Email & Notifications"
+                                >
+                                  <Mail size={11} /> Email
+                                </button>
                                 <select
                                   aria-label="Change status"
                                   value=""
@@ -708,6 +724,22 @@ export default function MasterConsole() {
 
           {tab === "health" && (
             <SystemHealthTab health={systemHealth} onRefresh={refreshExtensions} loading={refreshing} />
+          )}
+
+          {tab === "email-config" && (
+            <EmailConfigTab />
+          )}
+
+          {tab === "email-templates" && (
+            <EmailTemplatesTab />
+          )}
+
+          {tab === "email-logs" && (
+            <EmailDeliveryLogsTab />
+          )}
+
+          {tab === "auth-recovery" && (
+            <AccountRecoveryTab />
           )}
         </main>
       </div>
@@ -989,6 +1021,16 @@ export default function MasterConsole() {
               licenses: current.licenses.map((item) => (item.id === license.id ? license : item)),
             }));
           }}
+        />
+      )}
+
+      {/* Licensee Email & Notification Settings Modal */}
+      {licenseeEmailCustomer && (
+        <LicenseeEmailModal
+          customerId={licenseeEmailCustomer.id}
+          customerName={licenseeEmailCustomer.name}
+          onClose={() => setLicenseeEmailCustomer(null)}
+          onUpdated={refreshCore}
         />
       )}
     </div>

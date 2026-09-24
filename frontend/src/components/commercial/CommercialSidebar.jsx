@@ -2,7 +2,7 @@ import React from "react";
 import {
   LayoutDashboard, Users, KeyRound, Layers, CreditCard,
   Globe, Sparkles, Activity, ShieldAlert, HeartPulse,
-  Sliders, ShieldCheck, ChevronRight
+  Sliders, ShieldCheck, ChevronRight, Mail, FileText, Send, Lock
 } from "lucide-react";
 
 export const SECTIONS = [
@@ -14,6 +14,11 @@ export const SECTIONS = [
   
   { id: "website", label: "Website & Domains", icon: Globe, category: "experience" },
   { id: "aiweave", label: "AIWeave & Omni", icon: Sparkles, category: "experience" },
+
+  { id: "email-config", label: "Email Settings", icon: Mail, category: "communication" },
+  { id: "email-templates", label: "Email Templates", icon: FileText, category: "communication" },
+  { id: "email-logs", label: "Delivery Logs", icon: Send, category: "communication" },
+  { id: "auth-recovery", label: "Account Recovery", icon: Lock, category: "communication" },
   
   { id: "analytics", label: "Usage & Telemetry", icon: Activity, category: "operations" },
   { id: "audit", label: "Activity Audit", icon: ShieldAlert, category: "operations" },
@@ -96,6 +101,32 @@ export default function CommercialSidebar({ currentTab, setTab, stats, unreadAle
                   {item.id === "aiweave" && (
                     <span className="text-[10px] px-2 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">Omni</span>
                   )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+
+        <div>
+          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Email & Auth Security</div>
+          <nav className="space-y-1">
+            {SECTIONS.filter(s => s.category === "communication").map(item => {
+              const Icon = item.icon;
+              const active = currentTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                    active
+                      ? "bg-[#0D3B66] text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Icon size={16} className={active ? "text-white" : "text-slate-400"} />
+                    <span>{item.label}</span>
+                  </div>
                 </button>
               );
             })}

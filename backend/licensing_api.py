@@ -233,6 +233,28 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
         "created_by": created_by,
     }
     await db.commercial_licenses.insert_one(dict(license_doc))
+
+    try:
+        from backend.email_service.service import email_service
+        recipient_email = customer.get("email")
+        if recipient_email:
+            await email_service.send_template_email(
+                to_email=recipient_email,
+                template_code="LICENSE_CREATED",
+                context={
+                    "licensee_name": customer.get("admin_name") or customer.get("company_name") or "Valued Partner",
+                    "company_name": customer.get("company_name") or "TaskoSphere",
+                    "license_key": license_doc["license_key"],
+                    "package_name": package.get("name") or "Enterprise",
+                    "max_users": max_users,
+                    "expiry_date": license_doc.get("expires_at", "Perpetual"),
+                    "login_url": "https://taskosphere.com/login",
+                },
+                licensee_id=customer.get("id"),
+            )
+    except Exception as lic_err:
+        logger.warning(f"Could not dispatch LICENSE_CREATED email: {lic_err}")
+
     return _public_license(license_doc)
 
 

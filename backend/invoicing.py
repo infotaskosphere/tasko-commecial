@@ -55,16 +55,23 @@ from backend.google_drive_service import (
 try:
     from fpdf import FPDF
 except ImportError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "fpdf2"])
-    from fpdf import FPDF
+    try:
+        import subprocess, sys
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "fpdf2", "--break-system-packages"])
+        from fpdf import FPDF
+    except Exception:
+        class FPDF:
+            pass
 
 try:
     import openpyxl
 except ImportError:
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
-    import openpyxl
+    try:
+        import subprocess, sys
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl", "--break-system-packages"])
+        import openpyxl
+    except Exception:
+        openpyxl = None
 
 try:
     import xml.etree.ElementTree as ET

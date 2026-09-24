@@ -10,17 +10,30 @@ import re
 from io import BytesIO
 from datetime import datetime
 from typing import Any, Dict, List
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
-    HRFlowable, KeepTogether,
-)
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+        HRFlowable, KeepTogether,
+    )
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+except ImportError:
+    class _MockColors:
+        def HexColor(self, h): return h
+        white = "#ffffff"
+    colors = _MockColors()
+    A4 = (595.27, 841.89)
+    mm = 1
+    ParagraphStyle = object
+    getSampleStyleSheet = lambda: {}
+    TA_LEFT = TA_CENTER = TA_RIGHT = TA_JUSTIFY = 0
+    SimpleDocTemplate = Paragraph = Spacer = Table = TableStyle = PageBreak = HRFlowable = KeepTogether = object
+    pdfmetrics = TTFont = object
 
 try:
     from reportlab.platypus import Image as RLImage

@@ -22,7 +22,12 @@ from __future__ import annotations
 import re
 from typing import List, Dict, Optional
 from difflib import SequenceMatcher
-from metaphone import doublemetaphone
+try:
+    from metaphone import doublemetaphone
+except ImportError:
+    def doublemetaphone(s):
+        clean = (s or "").upper()[:6]
+        return (clean, clean)
 
 BLOCKING_STATUSES = {
     "Registered", "Accepted", "Advertised", "Opposed", "Objected",

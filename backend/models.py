@@ -709,6 +709,16 @@ class User(BaseModel):
     license_key: Optional[str] = None
     licensed_modules: List[str] = Field(default_factory=list)
     selected_features: Dict[str, Any] = Field(default_factory=dict)
+    # ── Email & Recovery fields ──────────────────────────────────────────────
+    email_verified: bool = False
+    email_verified_at: Optional[Any] = None
+    recovery_email: Optional[str] = None
+    notification_email: Optional[str] = None
+    password_version: int = 1
+    password_changed_at: Optional[Any] = None
+    last_password_reset_at: Optional[Any] = None
+    email_status: Optional[str] = "active"
+    email_notifications_enabled: bool = True
     # ── Employment / Payroll fields ──────────────────────────────────────────
     joining_date: Optional[Any] = None          # Date the employee joined
     training_period_end: Optional[Any] = None   # End date of the training / probation period
@@ -751,6 +761,10 @@ class UserCreate(BaseModel):
     status: Optional[str] = "pending_approval"
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    recovery_email: Optional[str] = None
+    notification_email: Optional[str] = None
+    email_verified: bool = False
+    email_notifications_enabled: bool = True
     # ── Employment / Payroll fields ──────────────────────────────────────────
     joining_date: Optional[Any] = None
     training_period_end: Optional[Any] = None
@@ -774,6 +788,11 @@ class UserUpdate(BaseModel):
     telegram_id: Optional[int] = None
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    recovery_email: Optional[str] = None
+    notification_email: Optional[str] = None
+    email_verified: Optional[bool] = None
+    email_status: Optional[str] = None
+    email_notifications_enabled: Optional[bool] = None
     # ── Employment / Payroll fields ──────────────────────────────────────────
     joining_date: Optional[Any] = None
     training_period_end: Optional[Any] = None

@@ -182,7 +182,21 @@ export default function Login() {
                 <form onSubmit={handleSubmit} className="space-y-5">
                   <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.08em] text-slate-500">Email address</span><Input autoComplete="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" className="h-12 rounded-none border-slate-200 bg-slate-50 px-4 text-sm" /></label>
                   <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-[.08em] text-slate-500">Password</span><div className="relative"><Input autoComplete="current-password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" className="h-12 rounded-none border-slate-200 bg-slate-50 px-4 pr-11 text-sm" /><button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-3 text-slate-400 hover:text-slate-700">{showPassword ? <EyeOff size={19} /> : <Eye size={19} />}</button></div></label>
-                  <div className="flex items-center justify-between gap-3"><label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500"><input type="checkbox" checked={keepSignedIn} onChange={(e) => setKeepSignedIn(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />Remember me</label><Link to="/forgot-password" className="text-xs font-bold text-[#1769ff]">Forgot password?</Link></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-500">
+                      <input type="checkbox" checked={keepSignedIn} onChange={(e) => setKeepSignedIn(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+                      Remember me
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Link to="/forgot-email" className="text-xs font-semibold text-slate-500 hover:text-[#102f62] transition">
+                        Forgot Email?
+                      </Link>
+                      <span className="text-slate-300 text-xs">·</span>
+                      <Link to="/forgot-password" className="text-xs font-bold text-[#1769ff]">
+                        Forgot password?
+                      </Link>
+                    </div>
+                  </div>
                   <motion.button type="submit" disabled={loading} whileTap={{ scale: .985 }} className="flex h-12 w-full items-center justify-center gap-2 bg-[#102f62] text-sm font-bold text-white transition hover:bg-[#0b2855] disabled:opacity-60">{loading ? "Signing in…" : <>Sign in <ArrowRight size={17} /></>}</motion.button>
                 </form>
                 <AnimatePresence>{serverWaking && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-4 overflow-hidden"><div className="border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">Server is waking up{wakingDots}. This may take a few seconds.</div></motion.div>}</AnimatePresence>

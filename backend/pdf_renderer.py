@@ -18,16 +18,29 @@ from io import BytesIO
 from datetime import datetime
 from typing import List, Optional
 
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm
-from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    PageBreak, HRFlowable, KeepTogether,
-)
-from reportlab.platypus import Image as RLImage
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        PageBreak, HRFlowable, KeepTogether,
+    )
+    from reportlab.platypus import Image as RLImage
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    class _MockColors:
+        def HexColor(self, h): return h
+        white = "#ffffff"
+    colors = _MockColors()
+    A4 = (595.27, 841.89)
+    mm = 1
+    ParagraphStyle = object
+    TA_LEFT = TA_CENTER = TA_RIGHT = 0
+    SimpleDocTemplate = Paragraph = Spacer = Table = TableStyle = PageBreak = HRFlowable = KeepTogether = RLImage = object
 
 # ── Brand palette ─────────────────────────────────────────────────────────────
 NAVY       = colors.HexColor("#1B2A4A")

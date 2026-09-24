@@ -1451,10 +1451,24 @@ async def _brevo_send(
     body_html: str = None,
     attachments: list = None,
 ):
-    """Core Brevo HTTP API sender — async, non-blocking.
-    Sender email/name: DB active_sender setting → env vars fallback.
-    `attachments` is an optional list of {"name": str, "content": base64str}.
+    """Core Email sender — routes through Taskosphere Centralized EmailService.
+    Preserves fallback to direct Brevo HTTP API for seamless backward compatibility.
     """
+    try:
+        from backend.email_service.service import email_service
+        sent = await email_service.send_email(
+            to_email=to_email,
+            subject=subject,
+            body_plain=body_plain,
+            body_html=body_html,
+            attachments=attachments,
+            email_type="transactional",
+        )
+        if sent:
+            return
+    except Exception as ex:
+        logger.warning(f"Central email service attempt failed: {ex}. Falling back to direct Brevo dispatch.")
+
     api_key = (os.getenv("BREVO_API_KEY") or "").strip()
     # Try DB active sender first, fall back to env vars
     try:
@@ -3133,10 +3147,35 @@ async def login(credentials: UserLogin, request: Request):
     except Exception:
         logger.warning("Session tracking / audit log failed on login; continuing.")
 
-    token_data = {"sub": user_obj.id, "email": normalized_email}
+    token_data = {
+        "sub": user_obj.id,
+        "email": normalized_email,
+        "pwd_ver": getattr(user_obj, "password_version", 1) or 1,
+    }
     if session_token:
         token_data["sid"] = session_token
     access_token = create_access_token(token_data)
+
+    # Discretionary New Login Alert based on Commercial Console recovery policy
+    try:
+        from backend.email_service.recovery_service import AccountRecoveryService
+        rec_settings = await AccountRecoveryService.get_recovery_settings()
+        if rec_settings.enable_new_login_alerts and user_obj.email:
+            from backend.email_service.service import email_service
+            await email_service.send_template_email(
+                to_email=user_obj.email,
+                template_code="NEW_LOGIN",
+                context={
+                    "user_name": user_obj.full_name or "Valued User",
+                    "email": user_obj.email,
+                    "ip_address": client_ip,
+                    "device_info": (request.headers.get("user-agent") or "Browser")[:75],
+                    "time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+                },
+                related_user_id=user_obj.id,
+            )
+    except Exception as nle:
+        logger.warning(f"New login notification dispatch ignored: {nle}")
 
     return {
         "access_token": access_token,
@@ -3204,6 +3243,69 @@ async def security_events(
     return await AuditSecurity.get_recent_security_events(limit=limit)
 
 
+# ── Forgot Email ID / Username Recovery ───────────────────────────────────────
+
+class ForgotEmailBody(BaseModel):
+    identifier: str
+
+
+@api_router.post("/auth/forgot-email")
+async def forgot_email_endpoint(data: ForgotEmailBody, request: Request):
+    """
+    Recovers registered login email without account enumeration.
+    Always returns a generic reassuring message.
+    """
+    from backend.email_service.recovery_service import AccountRecoveryService
+    client_ip = request.client.host if request and request.client else "unknown"
+    return await AccountRecoveryService.recover_forgot_email_id(data.identifier, client_ip=client_ip)
+
+
+@app.post("/auth/forgot-email")
+async def forgot_email_root_endpoint(data: ForgotEmailBody, request: Request):
+    """Mirror route at root /auth/forgot-email."""
+    from backend.email_service.recovery_service import AccountRecoveryService
+    client_ip = request.client.host if request and request.client else "unknown"
+    return await AccountRecoveryService.recover_forgot_email_id(data.identifier, client_ip=client_ip)
+
+
+# ── Email Verification Endpoints ──────────────────────────────────────────────
+
+@api_router.get("/auth/verify-email")
+async def verify_email_endpoint(token: str = Query(...)):
+    """Verifies user email via secure single-use token."""
+    from backend.email_service.recovery_service import AccountRecoveryService
+    result = await AccountRecoveryService.verify_email_token(token)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@app.get("/auth/verify-email")
+async def verify_email_root_endpoint(token: str = Query(...)):
+    """Mirror route at root /auth/verify-email."""
+    from backend.email_service.recovery_service import AccountRecoveryService
+    result = await AccountRecoveryService.verify_email_token(token)
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result
+
+
+@api_router.post("/auth/send-verification")
+async def send_verification_endpoint(
+    request: Request,
+    current_user: User = Depends(get_current_user)
+):
+    """Logged in user requests verification email."""
+    from backend.email_service.recovery_service import AccountRecoveryService
+    base_url = (request.base_url._url if request and request.base_url else "http://localhost:3000").rstrip("/")
+    user_dict = current_user.model_dump()
+    sent = await AccountRecoveryService.send_verification_email(user_dict, origin_url=base_url)
+    if not sent:
+        raise HTTPException(status_code=500, detail="Failed to dispatch verification email.")
+    return {"status": "success", "message": f"Verification email sent to {current_user.email}."}
+
+
+
 # ── Forgot / Reset Password → moved to backend/auth_password_reset.py ─────────
 # NOTE: POST /auth/sync-permissions moved to permission_governance.py
 
@@ -3258,6 +3360,22 @@ async def approve_user(user_id: str, current_user: User = Depends(get_current_us
     await create_audit_log(
         current_user, "APPROVE_USER", "user", user_id, existing, update_data
     )
+
+    try:
+        from backend.email_service.service import email_service
+        if existing.get("email"):
+            await email_service.send_template_email(
+                to_email=existing["email"],
+                template_code="AUTH_WELCOME",
+                context={
+                    "user_name": existing.get("full_name") or "Valued User",
+                    "email": existing["email"],
+                    "login_url": "https://taskosphere.com/login",
+                },
+                related_user_id=user_id,
+            )
+    except Exception as em_err:
+        logger.warning(f"Could not dispatch welcome email on approval: {em_err}")
 
     return {"message": "User approved successfully"}
 

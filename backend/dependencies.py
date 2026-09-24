@@ -242,6 +242,14 @@ async def get_current_user(credentials=Depends(security)):
         user_query = {"$or": [{"id": user_id}, {"_id": ObjectId(user_id)}]}
     d=await db.users.find_one(user_query)
     if d is None:raise HTTPException(status_code=401,detail="User not found")
+    if "pwd_ver" in payload and d.get("password_version"):
+        try:
+            if int(payload["pwd_ver"]) != int(d.get("password_version")):
+                raise HTTPException(status_code=401, detail="Session expired due to password change. Please sign in again.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
     if "id" not in d or not d.get("id"):
         d["id"] = str(d.get("_id") or user_id)
     d.pop("_id",None)

@@ -1,16 +1,14 @@
 """
 auth_password_reset.py
 ─────────────────────
-Handles forgot-password OTP flow:
-  POST /auth/forgot-password  →  generate & email 6-digit OTP
-  POST /auth/reset-password   →  verify OTP, update password
+Handles forgot-password OTP flow and password resets:
+  POST /auth/forgot-password  →  generate & email 6-digit OTP + reset link
+  POST /auth/reset-password   →  verify OTP, update password, invalidate sessions, send alert
 """
 
 import os
 import secrets
 import logging
-import httpx
-
 from datetime import datetime, timezone, timedelta
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -20,6 +18,8 @@ from dateutil import parser as dateutil_parser
 from backend.dependencies import db
 from backend.security.rate_limiter import RateLimiter
 from backend.security.audit_security import AuditSecurity
+from backend.email_service.service import email_service
+from backend.email_service.recovery_service import AccountRecoveryService
 
 logger      = logging.getLogger(__name__)
 router      = APIRouter()
@@ -37,51 +37,21 @@ class ResetPasswordRequest(BaseModel):
     new_password: str
 
 
-# ── Brevo sender (mirrors server._brevo_send, avoids circular import) ─────────
+# ── Backward-compatible helper ────────────────────────────────────────────────
 
 async def _send_otp_email(to_email: str, subject: str, body: str) -> None:
-    api_key = (os.getenv("BREVO_API_KEY") or "").strip()
-
-    # Use DB active sender if set, otherwise fall back to env vars
+    """Delegates to central email service with fallback."""
     try:
-        sender_doc = await db.email_sender_settings.find_one(
-            {"type": "active_sender"}, {"_id": 0}
+        await email_service.send_email(
+            to_email=to_email,
+            subject=subject,
+            body_plain=body,
+            template_code="PASSWORD_RESET",
+            email_type="auth",
         )
-        if sender_doc and sender_doc.get("email"):
-            sender_email = sender_doc["email"].strip()
-            sender_name  = (sender_doc.get("name") or "TaskoSphere").strip()
-        else:
-            raise ValueError("no db sender")
-    except Exception:
-        sender_email = (os.getenv("SENDER_EMAIL") or "").strip()
-        sender_name  = (os.getenv("SENDER_NAME") or "TaskoSphere").strip()
-
-    if not api_key or not sender_email:
-        raise Exception(
-            "Email not configured. Set BREVO_API_KEY and SENDER_EMAIL in environment variables."
-        )
-
-    payload = {
-        "sender":      {"name": sender_name, "email": sender_email},
-        "to":          [{"email": to_email}],
-        "subject":     subject,
-        "textContent": body,
-    }
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={"api-key": api_key, "Content-Type": "application/json"},
-            json=payload,
-        )
-
-    if response.status_code == 401:
-        raise Exception(
-            f"Brevo 401 Unauthorized — API key is invalid or expired. "
-            f"Go to app.brevo.com → SMTP & API → API Keys and update BREVO_API_KEY."
-        )
-    if response.status_code not in (200, 201):
-        raise Exception(f"Brevo API error {response.status_code}: {response.text}")
+    except Exception as e:
+        logger.error("Failed to send OTP via central email service: %s", e)
+        raise
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -89,7 +59,7 @@ async def _send_otp_email(to_email: str, subject: str, body: str) -> None:
 async def _enforce_otp_rate_limit(request: Request, email: str, limit_per_minute: int):
     """
     Throttles OTP request/verify by client IP + email, so an attacker can't
-    spam OTP emails or brute-force a 6-digit OTP within its 10-minute window.
+    spam OTP emails or brute-force a 6-digit OTP within its window.
     """
     client_ip = request.client.host if request and request.client else "unknown"
     key = f"otp:{client_ip}:{(email or '').lower()}"
@@ -109,50 +79,72 @@ async def _enforce_otp_rate_limit(request: Request, email: str, limit_per_minute
 async def forgot_password(data: ForgotPasswordRequest, request: Request):
     """
     Always returns 200 to prevent email enumeration.
-    Generates a 6-digit OTP, stores it in DB, emails it via Brevo.
-    OTP expires in 10 minutes.
+    Generates a 6-digit OTP, stores it in DB, emails it via Central Email Service.
+    OTP expires in 15 minutes (or as configured in recovery settings).
     """
     email = data.email.strip().lower()
     await _enforce_otp_rate_limit(request, email, limit_per_minute=3)
 
-    user  = await db.users.find_one({"email": email}, {"_id": 0})
+    settings = await AccountRecoveryService.get_recovery_settings()
+    if not settings.enable_forgot_password:
+        return {"message": "If that email is registered, password recovery instructions have been sent."}
+
+    user = await db.users.find_one({"email": email})
 
     if user:
-        otp        = str(secrets.randbelow(900000) + 100000)
-        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+        otp = str(secrets.randbelow(900000) + 100000)
+        expiry_mins = settings.password_reset_token_expiry_minutes or 15
+        expires_at = (datetime.now(timezone.utc) + timedelta(minutes=expiry_mins)).isoformat()
 
         await db.password_reset_tokens.delete_many({"email": email})
         await db.password_reset_tokens.insert_one({
             "email":      email,
             "token":      otp,
             "expires_at": expires_at,
+            "user_id":    str(user.get("id") or user.get("_id")),
         })
 
-        subject = "TaskoSphere – Your Password Reset OTP"
-        body = (
-            f"Hi {user.get('full_name', '')},\n\n"
-            f"You requested a password reset for your TaskoSphere account.\n\n"
-            f"Your 6-digit OTP is:\n\n"
-            f"        {otp}\n\n"
-            f"Enter this OTP on the password reset page and set your new password.\n"
-            f"This OTP expires in 10 minutes.\n\n"
-            f"If you did not request this, you can safely ignore this email.\n\n"
-            f"— TaskoSphere"
-        )
+        base_url = (request.base_url._url if request and request.base_url else "http://localhost:3000").rstrip("/")
+        reset_link = f"{base_url}/forgot-password?email={email}&token={otp}"
 
         try:
-            await _send_otp_email(data.email.strip(), subject, body)
-            logger.info(f"Password reset OTP sent to {email}")
+            await email_service.send_template_email(
+                to_email=data.email.strip(),
+                template_code="PASSWORD_RESET",
+                context={
+                    "user_name": user.get("full_name") or "Valued User",
+                    "email": email,
+                    "otp": otp,
+                    "reset_link": reset_link,
+                    "expiry_minutes": expiry_mins,
+                },
+                related_user_id=str(user.get("id") or user.get("_id")),
+            )
+            logger.info("Password reset OTP sent to %s", email)
         except Exception as e:
-            logger.error(f"Failed to send OTP email to {email}: {e}")
+            logger.error("Failed to send OTP email to %s: %s", email, e)
 
-    return {"message": "If that email is registered, an OTP has been sent."}
+        try:
+            await AuditSecurity.log_security_event(
+                event_type="password_reset_requested",
+                actor_id=str(user.get("id") or email),
+                company_id=str(user.get("company_id") or ""),
+                severity="info",
+                details=f"Password reset requested for {email}.",
+            )
+        except Exception:
+            pass
+
+    return {"message": "If that email is registered, password recovery instructions have been sent."}
 
 
 @router.post("/auth/reset-password")
 async def reset_password(data: ResetPasswordRequest, request: Request):
-    """Verifies the OTP and updates the user's password."""
-    email  = data.email.strip().lower()
+    """
+    Verifies the OTP/token, updates password, increments password_version,
+    invalidates previous sessions, and sends PASSWORD_CHANGED alert.
+    """
+    email = data.email.strip().lower()
     await _enforce_otp_rate_limit(request, email, limit_per_minute=10)
 
     record = await db.password_reset_tokens.find_one(
@@ -163,6 +155,8 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
         raise HTTPException(status_code=400, detail="Invalid or expired OTP.")
 
     expires_at = dateutil_parser.isoparse(record["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
     if datetime.now(timezone.utc) > expires_at:
         await db.password_reset_tokens.delete_many({"email": email})
         raise HTTPException(
@@ -176,24 +170,35 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
             detail="Password must be at least 6 characters."
         )
 
-    hashed = pwd_context.hash(data.new_password)
-    result = await db.users.update_one(
-        {"email": email}, {"$set": {"password": hashed}}
-    )
-
-    if result.matched_count == 0:
+    user = await db.users.find_one({"email": email})
+    if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    user_id = str(user.get("id") or user.get("_id"))
+    hashed = pwd_context.hash(data.new_password)
+
+    # If user has SaaS scrypt hashes, update them as well
+    updates = {"password": hashed}
+    if user.get("password_salt"):
+        import hashlib
+        salt = secrets.token_hex(16)
+        scrypt_hash = hashlib.scrypt(
+            data.new_password.encode("utf-8"),
+            salt=salt.encode("utf-8"),
+            n=16384,
+            r=8,
+            p=1,
+            maxmem=64 * 1024 * 1024,
+        ).hex()
+        updates["password_hash"] = scrypt_hash
+        updates["password_salt"] = salt
+
+    await db.users.update_one({"email": email}, {"$set": updates})
     await db.password_reset_tokens.delete_many({"email": email})
-    logger.info(f"Password reset successful for {email}")
-    try:
-        await AuditSecurity.log_security_event(
-            event_type="password_reset",
-            actor_id=email,
-            company_id="",
-            severity="warning",
-            details="Password reset via OTP flow.",
-        )
-    except Exception:
-        pass
-    return {"message": "Password updated successfully."}
+
+    # Invalidate existing sessions and dispatch alert
+    client_ip = request.client.host if request and request.client else "unknown"
+    await AccountRecoveryService.on_password_reset_success(user_id=user_id, client_ip=client_ip)
+
+    logger.info("Password reset successful and sessions invalidated for %s", email)
+    return {"message": "Password updated successfully. Please log in with your new credentials."}

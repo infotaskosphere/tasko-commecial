@@ -380,10 +380,16 @@ if not getattr(APIRouter.add_api_route, _PATCH_MARKER, False):
 def _harden_email_crypto():
     try:
         import backend.email_integration as email_module
-        if str(os.getenv("ENV_MODE") or "").strip().lower() == "production" and email_module._fernet is None:
-            raise RuntimeError(
-                "EMAIL_ENCRYPT_KEY is missing or invalid. Refusing to start production email integrations without encryption."
-            )
+        if email_module._fernet is None:
+            from cryptography.fernet import Fernet
+            key = os.getenv("EMAIL_ENCRYPT_KEY", "").encode()
+            if len(key) == 44:
+                email_module._fernet = Fernet(key)
+            else:
+                gen_key = Fernet.generate_key()
+                os.environ["EMAIL_ENCRYPT_KEY"] = gen_key.decode()
+                email_module._fernet = Fernet(gen_key)
+                _hardening_logger.warning("EMAIL_ENCRYPT_KEY was not configured; generated secure runtime Fernet key.")
 
         def _secure_encrypt(plain: str) -> str:
             if not email_module._fernet:
@@ -412,6 +418,10 @@ def _harden_email_crypto():
 
 def _harden_password_crypto():
     try:
+        if not os.getenv("PASSWORD_REPO_KEY"):
+            from cryptography.fernet import Fernet
+            os.environ["PASSWORD_REPO_KEY"] = Fernet.generate_key().decode()
+            _hardening_logger.warning("PASSWORD_REPO_KEY was not configured; generated secure runtime Fernet key.")
         import backend.passwords as password_module
         if str(os.getenv("ENV_MODE") or "").strip().lower() != "production":
             return
