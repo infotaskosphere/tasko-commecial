@@ -10,7 +10,8 @@ import {
 import ExistingRecordsPanel from '@/components/ExistingRecordsPanel.jsx';
 import { ContentLoader } from '@/components/ui/GifLoader.jsx';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { FinixTabsList, FinixTabsTrigger } from '@/components/ui/finix-tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import api from '@/lib/api';
@@ -942,21 +943,21 @@ function AccountingReportsInner() {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid grid-cols-6 w-full h-auto min-h-11 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 gap-1 border border-slate-200/50 dark:border-slate-700/50">
-          <TabsTrigger value="trial-balance" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">Trial Balance</TabsTrigger>
-          <TabsTrigger value="pnl" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">Profit &amp; Loss</TabsTrigger>
-          <TabsTrigger value="balance-sheet" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">Balance Sheet</TabsTrigger>
-          <TabsTrigger value="party-ledger" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">Party Ledger</TabsTrigger>
-          <TabsTrigger value="mis-compliance" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">MIS &amp; Compliance</TabsTrigger>
-          <TabsTrigger value="fix-errors" className="h-auto min-h-9 py-1.5 text-[10px] xs:text-[11px] sm:text-xs md:text-sm font-semibold rounded-lg transition-all whitespace-normal break-words leading-tight flex items-center justify-center text-center px-1 gap-1 data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 dark:data-[state=active]:bg-slate-700 dark:data-[state=active]:text-white">
+        <FinixTabsList>
+          <FinixTabsTrigger value="trial-balance">Trial Balance</FinixTabsTrigger>
+          <FinixTabsTrigger value="pnl">Profit &amp; Loss</FinixTabsTrigger>
+          <FinixTabsTrigger value="balance-sheet">Balance Sheet</FinixTabsTrigger>
+          <FinixTabsTrigger value="party-ledger">Party Ledger</FinixTabsTrigger>
+          <FinixTabsTrigger value="mis-compliance">MIS &amp; Compliance</FinixTabsTrigger>
+          <FinixTabsTrigger value="fix-errors">
             Fix Errors
             {validationMismatchCount > 0 && (
               <span className="inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[9px] font-bold leading-none">
                 {validationMismatchCount}
               </span>
             )}
-          </TabsTrigger>
-        </TabsList>
+          </FinixTabsTrigger>
+        </FinixTabsList>
 
         {/* ── Trial Balance ── */}
         <TabsContent value="trial-balance" className="mt-4">
