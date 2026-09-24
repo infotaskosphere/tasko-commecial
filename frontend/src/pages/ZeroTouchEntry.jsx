@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent } from '@/components/ui/tabs';
+import { FinixTabsList, FinixTabsTrigger } from '@/components/ui/finix-tabs';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -270,25 +271,31 @@ function ZeroTouchEntryInner() {
   const settled = docs.filter(d => d.settled).length;
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-slate-900' : 'bg-slate-50'}`}>
-      <div className="p-4 md:p-6 space-y-5 max-w-[1300px] mx-auto">
-        {/* Header */}
-        <div className="rounded-3xl overflow-hidden shadow-xl" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
-          <div className="p-6 md:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-5 text-white">
-            <div className="flex items-start gap-4">
-              <div className="h-14 w-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center shadow-lg">
-                <ScanLine className="h-7 w-7" />
+    // NOTE: DashboardLayout already applies page padding + max-width + background.
+    // Do NOT add min-h-screen / p-* / max-w-* here or the hero drifts out of
+    // alignment with the sidebar and the Accounting Reports page.
+    <div className="w-full min-w-0">
+      <div className="space-y-5 w-full min-w-0">
+        {/* Header — compact (same scale as Accounting Reports). Tabs sit below. */}
+        <div className="finix-hero rounded-2xl overflow-hidden shadow-lg" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
+          <div className="p-3 md:p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-white">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center">
+                <ScanLine className="h-5 w-5" />
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-blue-100 font-bold">AI Accounting · Module 1</p>
-                <h1 className="text-2xl md:text-3xl font-bold tracking-tight mt-1">Zero-Touch Entry Engine</h1>
-                <p className="text-sm text-blue-100 mt-1 max-w-2xl">Upload an invoice or receipt — an AI reads it, detects the company &amp; currency, converts to INR, classifies it, and posts a balanced journal entry automatically.</p>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-blue-100 font-bold leading-none">AI Accounting · Module 1</p>
+                <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1 truncate">Zero-Touch Entry Engine</h1>
+                <p
+                  className="text-[11px] leading-snug text-blue-100 mt-0.5 line-clamp-2"
+                  title="Upload an invoice or receipt — an AI reads it, detects the company & currency, converts to INR, classifies it, and posts a balanced journal entry automatically."
+                >Upload an invoice or receipt — an AI reads it, detects the company &amp; currency, converts to INR, classifies it, and posts a balanced journal entry automatically.</p>
               </div>
             </div>
-            <div className="flex flex-col gap-2 items-end">
+            <div className="finix-hero-actions flex flex-col gap-1 items-end">
               <div className="flex gap-2" data-header-actions="true">
                 <select
-                  className="text-sm rounded-md border border-white/25 bg-white/10 text-white px-2 py-2"
+                  className="text-xs rounded-md border border-white/25 bg-white/10 text-white px-2"
                   value={uploadCompanyId}
                   onChange={(e) => setUploadCompanyId(e.target.value)}
                 >
@@ -296,11 +303,11 @@ function ZeroTouchEntryInner() {
                   {companies.map((c) => <option key={c.id} value={c.id} className="text-slate-900">{c.name}</option>)}
                 </select>
                 <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" onChange={handleFileChange} />
-                <Button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="bg-white text-blue-900 hover:bg-blue-50">
+                <Button onClick={() => fileInputRef.current?.click()} disabled={uploading} size="sm" className="bg-white text-blue-900 hover:bg-blue-50 text-xs">
                   {uploading ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <UploadCloud className="h-4 w-4 mr-2" />}
                   {uploading ? 'Reading document…' : 'Upload Invoice / Receipt'}
                 </Button>
-                <Button onClick={fetchAll} variant="outline" className="bg-white/10 border-white/25 text-white hover:bg-white/20">
+                <Button onClick={fetchAll} variant="outline" size="sm" className="bg-white/10 border-white/25 text-white hover:bg-white/20">
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               </div>
@@ -333,10 +340,10 @@ function ZeroTouchEntryInner() {
         </div>
 
         <Tabs defaultValue="documents">
-          <TabsList>
-            <TabsTrigger value="documents">Processed Documents</TabsTrigger>
-            <TabsTrigger value="rules">Vendor Categorisation Rules</TabsTrigger>
-          </TabsList>
+          <FinixTabsList>
+            <FinixTabsTrigger value="documents">Processed Documents</FinixTabsTrigger>
+            <FinixTabsTrigger value="rules">Vendor Categorisation Rules</FinixTabsTrigger>
+          </FinixTabsList>
 
           <TabsContent value="documents" className="mt-4">
             <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
