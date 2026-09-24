@@ -47,15 +47,8 @@ export async function getAdminWebsiteConfig() {
 }
 
 export async function saveWebsiteConfig(config) {
-  let savedData = config;
-  try {
-    const response = await api.put("/website-config", config);
-    if (response?.data) {
-      savedData = response.data;
-    }
-  } catch (err) {
-    console.warn("Save API failed or offline, saving to localStorage:", err);
-  }
+  const response = await api.put("/website-config", config);
+  const savedData = response?.data || config;
 
   if (typeof window !== "undefined" && window.localStorage) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(savedData));
