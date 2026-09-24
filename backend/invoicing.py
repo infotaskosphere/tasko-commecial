@@ -2752,7 +2752,7 @@ async def list_purchase_invoices(
     client_id: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=1000),
+    page_size: int = Query(100, ge=1, le=2000),
     company_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user)
 ):
