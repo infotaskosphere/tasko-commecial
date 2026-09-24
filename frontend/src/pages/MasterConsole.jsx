@@ -148,7 +148,7 @@ export default function MasterConsole() {
   const [plans, setPlans] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  const activeModules = useMemo(() => modules.filter((m) => m.id !== "admin" && m.active !== false), [modules]);
+  const activeModules = useMemo(() => (Array.isArray(modules) ? modules : []).filter((m) => m.id !== "admin" && m.active !== false), [modules]);
   const defaultSelectedFeatures = useMemo(() => {
     return Object.fromEntries(
       activeModules.map((module) => [
@@ -166,11 +166,12 @@ export default function MasterConsole() {
         fetchCompanyList(),
       ]);
       setState({
-        licenses: licensePayload.licenses || [],
-        customers: licensePayload.customers || [],
+        licenses: Array.isArray(licensePayload?.licenses) ? licensePayload.licenses : [],
+        customers: Array.isArray(licensePayload?.customers) ? licensePayload.customers : [],
       });
-      setModules(catalog || []);
-      setInvoiceCompanies(companies || []);
+      const resolvedCatalog = Array.isArray(catalog) ? catalog : (catalog?.modules || []);
+      setModules(resolvedCatalog);
+      setInvoiceCompanies(Array.isArray(companies) ? companies : []);
     } catch (err) {
       toast.error("Unable to load commercial licensing records.");
     }
@@ -610,7 +611,7 @@ export default function MasterConsole() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {modules.map((module) => (
+                {(Array.isArray(modules) ? modules : []).map((module) => (
                   <div key={module.id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>

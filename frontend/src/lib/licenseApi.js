@@ -67,7 +67,10 @@ export const updateLicenseStatus = async (id, status) => (await licensingApi.pat
 export const deleteCommercialCompany = async (licenseId) => (await licensingApi.delete(`/commercial-onboarding/licenses/${encodeURIComponent(licenseId)}/company`)).data;
 export const upgradeLicense = async (id, packageId) => (await licensingApi.patch(`/licensing/licenses/${id}/package`, { package_id: packageId })).data;
 export const savePackage = async (pkg) => (await licensingApi.put(`/licensing/packages/${pkg.id}`, pkg)).data;
-export const getCommercialModuleCatalog = async () => (await licensingApi.get("/commercial-onboarding/module-catalog")).data;
+export const getCommercialModuleCatalog = async () => {
+  const res = (await licensingApi.get("/commercial-onboarding/module-catalog")).data;
+  return Array.isArray(res) ? res : (res?.modules || []);
+};
 export const updateCommercialModulePrice = async (moduleId, monthlyPrice, active = true, featurePrices = undefined) => {
   const payload = { monthly_price: monthlyPrice, active };
   if (featurePrices !== undefined) payload.feature_prices = featurePrices;
