@@ -105,14 +105,21 @@ TENANT_COLLECTIONS.update(_ADDITIONAL_TENANT_COLLECTIONS)
 _ORIGINAL_COMMERCIAL_LICENSE = _guard._commercial_license
 
 
-async def _strict_commercial_license(user):
+async def _strict_commercial_license(user, *args, **kwargs):
     """Return the active customer license or stop the request.
 
     The legacy guard previously allowed an authenticated customer through when
     no active license could be resolved. Platform Owner remains exempt because
     it is not a commercial customer tenant.
+
+    IMPORTANT: commercial_module_guard calls this as
+    ``_commercial_license(user, request.url.path, request.method)``. The wrapper
+    must therefore accept and forward the extra arguments. A one-argument
+    signature raised ``TypeError`` on every authenticated request from a
+    licensed (non Platform Owner) user, which surfaced as HTTP 500 on /auth/me
+    and every dashboard endpoint.
     """
-    license_doc = await _ORIGINAL_COMMERCIAL_LICENSE(user)
+    license_doc = await _ORIGINAL_COMMERCIAL_LICENSE(user, *args, **kwargs)
     if license_doc is None and not is_platform_owner(user):
         raise HTTPException(
             status_code=403,
