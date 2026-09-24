@@ -63,9 +63,23 @@ body.website-builder-surface #root header .p-2{width:36px!important;height:36px!
 body.website-builder-surface #root header [data-user-menu] > button{height:36px!important;min-height:36px!important;padding-top:4px!important;padding-bottom:4px!important}
 body.website-builder-surface #root header [data-user-menu] > button > div:first-child{width:28px!important;height:28px!important}
 body.website-builder-surface #root header [data-user-menu] img{border-radius:9999px!important}
-body.website-builder-surface #root header + div{height:40px!important;min-height:40px!important;background:#fff!important;border-top:0!important;border-bottom:1px solid #e2e8f0!important;border-radius:0!important;box-shadow:none!important}
-body.website-builder-surface #root header + div button,body.website-builder-surface #root header + div a,body.website-builder-surface #root [data-section-switcher] button,body.website-builder-surface #root [data-section-switcher] a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
-body.website-builder-surface #root header + div button:hover,body.website-builder-surface #root header + div a:hover,body.website-builder-surface #root [data-section-switcher] button:hover,body.website-builder-surface #root [data-section-switcher] a:hover{background:#f6f8fb!important;color:#0D3B66!important}
+body.website-builder-surface #root #top-module-switcher-bar{height:40px!important;min-height:40px!important;background:#fff!important;border-top:0!important;border-bottom:1px solid #e2e8f0!important;border-radius:0!important;box-shadow:none!important}
+body.website-builder-surface #root #top-module-switcher-bar button,
+body.website-builder-surface #root #top-module-switcher-bar a{height:40px!important;min-height:40px!important;border-radius:0!important;background:transparent!important;color:#1F6FB2!important;box-shadow:none!important;transform:none!important}
+body.website-builder-surface #root #top-module-switcher-bar button:hover,
+body.website-builder-surface #root #top-module-switcher-bar a:hover{background:#f6f8fb!important;color:#0D3B66!important}
+
+/* Website Studio owns its editor canvas. Do not let global application
+   navigation sizing rules resize website links/buttons into 40px cards. */
+body.website-builder-surface #root .website-studio-shell{min-width:0!important;min-height:0!important;width:100%!important;overflow:hidden!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas{min-width:0!important;min-height:0!important;overflow:auto!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas a,
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas button{height:auto!important;min-height:0!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas main{display:block!important;min-width:0!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas main > div{min-width:0!important;width:100%!important;position:relative!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas .grid{min-width:0!important}
+body.website-builder-surface #root .website-studio-shell .website-studio-canvas .grid > *{min-width:0!important}
+
 /* Match the normal Tasks/Dashboard app sidebar exactly; Website Studio content remains untouched. */
 body.website-builder-surface #root aside{border-radius:0!important;box-shadow:10px 0 30px rgba(0,0,0,.22)!important}
 body.website-builder-surface #root aside .sidebar-scroll{padding-top:10px!important;padding-bottom:10px!important}
