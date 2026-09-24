@@ -25,6 +25,23 @@ class HardeningStaticContractTests(unittest.TestCase):
         self.assertIn(marker, text)
         self.assertLess(text.index(marker), text.index("import backend.server")) if "import backend.server" in text else None
 
+    def test_strict_license_wrapper_accepts_guard_call_signature(self):
+        """commercial_module_guard calls _commercial_license(user, path, method).
+
+        The hardening wrapper must accept those extra arguments, otherwise every
+        authenticated licensed-user request fails with TypeError -> HTTP 500.
+        """
+        import ast
+
+        path = os.path.join(os.path.dirname(__file__), "backend", "production_hardening.py")
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        func = next(
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef) and node.name == "_strict_commercial_license"
+        )
+        self.assertIsNotNone(func.args.vararg, "wrapper must accept *args")
+        self.assertIsNotNone(func.args.kwarg, "wrapper must accept **kwargs")
+
 
 if __name__ == "__main__":
     unittest.main()
