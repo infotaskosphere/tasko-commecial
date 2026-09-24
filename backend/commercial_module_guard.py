@@ -813,11 +813,19 @@ async def get_current_user_with_commercial_guard(
     if is_platform_owner(user):
         return user
 
-    commercial = await _commercial_license(
-        user,
-        request.url.path,
-        request.method,
-    )
+    try:
+        commercial = await _commercial_license(
+            user,
+            request.url.path,
+            request.method,
+        )
+    except TypeError as exc:
+        # Some compatibility layers may replace _commercial_license with the
+        # legacy one-argument resolver. Preserve the request-aware resolver
+        # when available, but remain compatible with that installed signature.
+        if "takes 1 positional argument" not in str(exc):
+            raise
+        commercial = await _commercial_license(user)
 
     if not commercial:
         return user
