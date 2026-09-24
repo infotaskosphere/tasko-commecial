@@ -939,7 +939,10 @@ function AccountingReportsInner() {
               />
             </div>
 
-            <div className="min-w-0 flex items-end">
+            <div className="min-w-0">
+              <label className="block text-[10px] uppercase font-bold text-transparent mb-1 select-none pointer-events-none" aria-hidden="true">
+                Action
+              </label>
               <Button
                 onClick={applyDateFilters}
                 size="sm"
