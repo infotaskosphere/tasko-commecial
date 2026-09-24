@@ -525,16 +525,22 @@ export default function WebsiteStudio() {
       await saveWebsiteConfig(payload);
       setSaveStatus("saved");
       toast.success("Website saved successfully!");
+      return true;
     } catch (err) {
       setSaveStatus("unsaved");
-      toast.error("Failed to save website configuration.");
+      toast.error(err?.response?.data?.detail || "Failed to save website configuration.");
+      throw err;
     }
   };
 
   // Publish Website to Public
   const handlePublish = async () => {
-    await handleSave();
-    setSaveStatus("published");
+    try {
+      const saved = await handleSave();
+      if (saved) setSaveStatus("published");
+    } catch {
+      // Save failure is already surfaced by handleSave; never mark a failed publish as published.
+    }
   };
 
   const selectedSection = activePage?.sections?.find((s) => s.id === selectedSectionId);
@@ -548,7 +554,7 @@ export default function WebsiteStudio() {
       : "w-full min-h-full";
 
   return (
-    <div className="flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-slate-100 text-slate-900">
+    <div className="website-studio-shell flex h-full w-full min-h-0 min-w-0 flex-col overflow-hidden bg-slate-100 text-slate-900">
       {/* Top App Bar */}
       <StudioTopBar
         siteName={identity.site_name}
@@ -591,7 +597,7 @@ export default function WebsiteStudio() {
         )}
 
         {/* CENTER CANVAS: Visual Website Canvas */}
-        <div className="min-w-0 flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto bg-slate-100 p-0 transition-all">
+        <div className="website-studio-canvas min-w-0 flex flex-1 flex-col items-center overflow-x-hidden overflow-y-auto bg-slate-100 p-0 transition-all">
           <div className={`mx-auto bg-white transition-all duration-300 ${canvasWidthClass}`}>
             <WebsiteRenderer
               builder={config}
