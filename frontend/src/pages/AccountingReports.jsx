@@ -847,27 +847,53 @@ function AccountingReportsInner() {
   // NOTE: DashboardLayout already applies page padding + max-width + background.
   // Do NOT wrap this in its own min-h-screen / max-w container or the header
   // shifts out of alignment with the sidebar and Dashboard page.
+  const cardCls = isDark ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200';
+  const groupLabelCls = isDark ? 'text-slate-400' : 'text-slate-500';
+
   return (
     <div className="space-y-5 w-full min-w-0">
 
-      {/* Header — title row + two precisely aligned 7-column control rows. */}
+      {/* Header — clean blue banner keeping only Company, FY and Dates filter */}
       <div className="rounded-2xl overflow-hidden shadow-lg" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
-        <div className="p-3 md:p-4 text-white space-y-2">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center">
-              <BarChart3 className="h-5 w-5" />
+        <div className="p-3 md:p-4 text-white space-y-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 shrink-0 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h1 className="text-lg md:text-xl font-bold tracking-tight truncate">Accounting Reports</h1>
+                <p className="text-[11px] text-blue-100 truncate">Trial Balance, P&amp;L, and Balance Sheet — live from every posted journal entry.</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <h1 className="text-lg md:text-xl font-bold tracking-tight truncate">Accounting Reports</h1>
-              <p className="text-[11px] text-blue-100 truncate">Trial Balance, P&amp;L, and Balance Sheet — live from every posted journal entry.</p>
+
+            {/* Quick Actions in header */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                onClick={() => setShowExistingRecords(true)}
+                size="sm"
+                variant="outline"
+                className="h-8 bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs shadow-sm"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 mr-1 shrink-0" /> Existing records
+              </Button>
+              <Button
+                onClick={handleVerifyAndRefresh}
+                disabled={verifying}
+                size="sm"
+                variant="outline"
+                className="h-8 bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs font-semibold shadow-sm"
+                title="Re-syncs every invoice, bill, and payment into the ledger and fixes accounts that drifted"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 mr-1 shrink-0 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Verifying…' : 'Refresh'}
+              </Button>
             </div>
           </div>
 
-          <div
-            className="grid w-full min-w-0 gap-2"
-            style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
-          >
+          {/* Clean date & company filters row inside blue header */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-1 border-t border-white/15">
             <div className="min-w-0">
+              <label className="block text-[10px] uppercase font-bold text-blue-200 mb-1">Company</label>
               <Select value={companyId || '__all__'} onValueChange={onCompanyChange}>
                 <SelectTrigger className="h-8 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
                   <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0" />
@@ -881,6 +907,7 @@ function AccountingReportsInner() {
             </div>
 
             <div className="min-w-0">
+              <label className="block text-[10px] uppercase font-bold text-blue-200 mb-1">Financial Year</label>
               <Select value={fyKey} onValueChange={onFyChange}>
                 <SelectTrigger className="h-8 w-full min-w-0 bg-white/10 border-white/25 text-white text-xs">
                   <SelectValue placeholder="Financial year" />
@@ -893,6 +920,7 @@ function AccountingReportsInner() {
             </div>
 
             <div className="min-w-0">
+              <label className="block text-[10px] uppercase font-bold text-blue-200 mb-1">From Date</label>
               <input
                 type="date"
                 value={dateFrom}
@@ -902,6 +930,7 @@ function AccountingReportsInner() {
             </div>
 
             <div className="min-w-0">
+              <label className="block text-[10px] uppercase font-bold text-blue-200 mb-1">To Date</label>
               <input
                 type="date"
                 value={dateTo}
@@ -910,81 +939,58 @@ function AccountingReportsInner() {
               />
             </div>
 
-            <div className="min-w-0">
-              <Button onClick={applyDateFilters} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
-                Apply
+            <div className="min-w-0 flex items-end">
+              <Button
+                onClick={applyDateFilters}
+                size="sm"
+                className="h-8 w-full min-w-0 bg-white text-[#0D3B66] hover:bg-blue-50 font-bold text-xs shadow-sm"
+              >
+                Apply Range
               </Button>
             </div>
+          </div>
+        </div>
+      </div>
 
-            <div className="min-w-0">
-              <Button onClick={() => setShowExistingRecords(true)} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
-                <ShieldCheck className="h-3.5 w-3.5 mr-1 shrink-0" /> Existing records
-              </Button>
-            </div>
-
-            <div aria-hidden="true" />
+      {/* Action Bar Below Blue Header — Downloads & Tools organized cleanly */}
+      <div className={`rounded-2xl border p-3 md:p-4 shadow-sm ${cardCls}`}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs font-bold uppercase tracking-wider ${groupLabelCls} mr-1`}>
+              Export &amp; Tools:
+            </span>
+            <Button onClick={downloadActiveReport} size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 shadow-sm">
+              <Download className="h-3.5 w-3.5 text-blue-600" /> Export Active Report
+            </Button>
+            <Button onClick={downloadGeneralLedger} size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 shadow-sm">
+              <Download className="h-3.5 w-3.5 text-emerald-600" /> General Ledger
+            </Button>
+            <Button onClick={() => downloadV2Export('xml')} size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 border-amber-300 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/30 shadow-sm">
+              Tally ERP XML
+            </Button>
+            <Button onClick={() => downloadV2Export('pdf')} size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 border-emerald-300 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 shadow-sm">
+              Corporate PDF
+            </Button>
+            <Button onClick={() => downloadV2Export('json')} size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 border-blue-300 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-950/30 shadow-sm">
+              Structured JSON
+            </Button>
           </div>
 
-          <div
-            className="grid w-full min-w-0 gap-2"
-            style={{ gridTemplateColumns: 'repeat(7, minmax(0, 1fr))' }}
-          >
-            <div className="min-w-0">
-              <Button onClick={downloadActiveReport} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
-                <Download className="h-3.5 w-3.5 mr-1 shrink-0" /> Download
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button onClick={downloadGeneralLedger} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs">
-                <Download className="h-3.5 w-3.5 mr-1 shrink-0" /> General Ledger
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button onClick={() => downloadV2Export('xml')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-amber-300 hover:bg-white/25 text-xs font-bold">
-                Tally ERP XML
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button onClick={() => downloadV2Export('pdf')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-emerald-300 hover:bg-white/25 text-xs font-bold">
-                Corporate PDF
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button onClick={() => downloadV2Export('json')} size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-blue-300 hover:bg-white/25 text-xs font-bold">
-                Structured JSON
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button
-                onClick={() => {
-                  const fyLabel = fyOptions.find((f) => f.value === fyKey)?.label?.replace(/^FY\s*/i, '') || '';
-                  const params = new URLSearchParams();
-                  if (companyId) params.set('company_id', companyId);
-                  if (fyLabel) params.set('fy', fyLabel);
-                  navigate(`/opening-balances${params.toString() ? `?${params.toString()}` : ''}`);
-                }}
-                size="sm" variant="outline" className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs"
-              >
-                <Scale className="h-3.5 w-3.5 mr-1 shrink-0" /> Add Opening Balance
-              </Button>
-            </div>
-
-            <div className="min-w-0">
-              <Button
-                onClick={handleVerifyAndRefresh}
-                disabled={verifying}
-                size="sm" variant="outline"
-                className="h-8 w-full min-w-0 overflow-hidden whitespace-nowrap bg-white/10 border-white/25 text-white hover:bg-white/20 text-xs font-semibold"
-                title="Re-syncs every invoice, bill, and payment into the ledger and fixes accounts that drifted"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 mr-1 shrink-0 ${verifying ? 'animate-spin' : ''}`} /> {verifying ? 'Verifying…' : 'Verify & Fix'}
-              </Button>
-            </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => {
+                const fyLabel = fyOptions.find((f) => f.value === fyKey)?.label?.replace(/^FY\s*/i, '') || '';
+                const params = new URLSearchParams();
+                if (companyId) params.set('company_id', companyId);
+                if (fyLabel) params.set('fy', fyLabel);
+                navigate(`/opening-balances${params.toString() ? `?${params.toString()}` : ''}`);
+              }}
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs font-semibold gap-1.5 shadow-sm"
+            >
+              <Scale className="h-3.5 w-3.5 text-indigo-600" /> Add Opening Balance
+            </Button>
           </div>
         </div>
       </div>
