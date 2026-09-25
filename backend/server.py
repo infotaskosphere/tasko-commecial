@@ -247,6 +247,7 @@ from backend.server_modules.holiday_jobs import fetch_indian_holidays_task, conf
 from backend.server_modules.attendance_jobs import _mark_absent_for_date, mark_absent_users_task, _force_punch_out_at_7pm, force_punch_out_11pm_task, configure_event_loop as configure_attendance_event_loop
 from backend.server_modules.helpers import safe_dt, sanitize_user_data, convert_objectids, is_own_record, create_audit_log, _expected_hours_pure, calculate_expected_hours
 from backend.server_modules.task_analytics import get_task_analytics as _get_task_analytics
+from backend.server_modules.website_activity import get_website_activity, track_website
 from backend.server_modules.task_popup import create_task_assigned_popup
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
@@ -1811,67 +1812,6 @@ async def send_email(to_email: str, subject: str, body: str):
 # Website activity
 # ===========================================================
 
-
-@api_router.get("/activity/websites")
-async def get_website_activity(current_user: User = Depends(get_current_user)):
-    try:
-        pipeline = [
-            {"$match": {"user_id": current_user.id, "type": "website"}},
-            {
-                "$group": {
-                    "_id": "$user_id",
-                    "websites": {
-                        "$push": {
-                            "url": "$url",
-                            "domain": "$domain",
-                            "title": "$title",
-                            "duration": "$duration",
-                            "timestamp": "$timestamp",
-                        }
-                    },
-                }
-            },
-            {"$project": {"_id": 0, "user_id": "$_id", "websites": 1}},
-        ]
-
-        data = await db.staff_activity.aggregate(pipeline).to_list(100)
-
-        return data
-
-    except Exception as e:
-        logger.error(f"Fetch website activity error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch website activity")
-
-
-@api_router.post("/activity/track-website")
-async def track_website(data: dict, current_user: User = Depends(get_current_user)):
-    try:
-        url = data.get("url")
-        domain = data.get("domain")
-
-        if not url or not domain:
-            raise HTTPException(status_code=400, detail="Invalid website data")
-
-        activity = {
-            "id": str(uuid.uuid4()),
-            "user_id": current_user.id,
-            "type": "website",
-            "url": url,
-            "domain": domain,
-            "title": data.get("title", ""),
-            "timestamp": datetime.now(timezone.utc),
-            "duration": int(data.get("duration", 0)),
-        }
-
-        await db.staff_activity.insert_one(activity)
-
-        return {"status": "tracked"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Website tracking error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Tracking failed")
 
 
 # ===========================================================
