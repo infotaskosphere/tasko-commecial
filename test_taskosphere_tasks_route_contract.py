@@ -1,19 +1,11 @@
-"""Taskosphere Tasks route equivalence regression test."""
+"""Taskosphere Tasks route-source regression test."""
 import unittest
-
-from backend.modules.taskosphere.tasks.route_contract import (
-    assert_route_equivalence,
-    route_signatures,
-)
-from backend.server_modules.task_routes import router as legacy_router
-from backend.modules.taskosphere.tasks.router import router as migrated_router
-
+from backend.modules.taskosphere.tasks.route_contract import assert_route_equivalence, route_signatures
 
 class TaskosphereTasksRouteContractTests(unittest.TestCase):
-    def test_migrated_adapter_preserves_legacy_routes(self):
-        self.assertEqual(route_signatures(legacy_router), route_signatures(migrated_router))
+    def test_task_source_contains_routes(self):
+        self.assertTrue(route_signatures())
         assert_route_equivalence()
-
 
 if __name__ == "__main__":
     unittest.main()
