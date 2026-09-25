@@ -1,9 +1,8 @@
 """Canonical LeadSense lead Pydantic models."""
-from typing import Optional, Any
+from typing import Optional, Any, List
 import uuid
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
-class LeadBase(BaseModel):
     company_name: str
     contact_name: Optional[str] = None
     email: Optional[EmailStr] = None
