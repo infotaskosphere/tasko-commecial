@@ -63,6 +63,7 @@ PyJWT==2.8.0
 # HTTP Clients
 # =========================
 requests==2.31.0
+chardet==5.2.0
 httpx==0.27.0
 aiohttp==3.9.5
 
