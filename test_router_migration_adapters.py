@@ -4,30 +4,30 @@ import unittest
 from fastapi import APIRouter
 
 from backend.modules.router_registry import RouterBinding, register_router_bindings
-from backend.modules.taskosphere.tasks.router import router as task_router
-from backend.modules.taskosphere.attendance.router import router as attendance_router
-from backend.modules.compligenie.compliance.router import router as compliance_router
-from backend.modules.leadsense.leads.router import router as leads_router
-from backend.modules.people_matrix.permissions.router import router as permission_router
+from backend.modules.taskosphere.tasks.router import register as task_register
+from backend.modules.taskosphere.attendance.router import register as attendance_register
+from backend.modules.compligenie.compliance.router import register as compliance_register
+from backend.modules.leadsense.leads.router import register as leads_register
+from backend.modules.people_matrix.permissions.router import register as permission_register
 
 
 class RouterMigrationAdapterTests(unittest.TestCase):
-    def test_adapters_expose_real_fastapi_routers(self):
-        for router in (
-            task_router,
-            attendance_router,
-            compliance_router,
-            leads_router,
-            permission_router,
+    def test_adapters_expose_registration_callables(self):
+        for register in (
+            task_register,
+            attendance_register,
+            compliance_register,
+            leads_register,
+            permission_register,
         ):
-            self.assertIsInstance(router, APIRouter)
+            self.assertTrue(callable(register))
 
     def test_registry_registers_explicit_bindings(self):
         from fastapi import FastAPI
         app = FastAPI()
         bindings = (
-            RouterBinding("taskosphere", "tasks", lambda: task_router),
-            RouterBinding("taskosphere", "attendance", lambda: attendance_router),
+            RouterBinding("taskosphere", "tasks", lambda: APIRouter()),
+            RouterBinding("taskosphere", "attendance", lambda: APIRouter()),
         )
         register_router_bindings(app, bindings)
         paths = {route.path for route in app.routes}
