@@ -1,0 +1,1 @@
+"""AIWeave provider package boundary. Existing adapters remain authoritative."""
