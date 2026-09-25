@@ -1,3 +1,4 @@
+// Permission Matrix: canonical governance UI shared with Users permissions.
 // PermissionMatrix.jsx — Admin → Permission Matrix.
 // Uses the same Access Governance module tree as Users → Permissions and exposes
 // the same six permission scopes: Modules, View, Operations, Edit, Cross-User, Clients.
