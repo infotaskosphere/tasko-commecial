@@ -125,15 +125,6 @@ const TRANSFER_OPTIONS = [
   { key: 'transfer_leads',     label: 'Leads',     desc: 'Sales leads & prospects',      icon: Target,          color: '#F97316', countKey: 'leads'     },
 ];
 
-const permTabs = [
-  { id: 'modules', label: 'Modules',    icon: Zap       },
-  { id: 'view',    label: 'View',        icon: Eye       },
-  { id: 'ops',     label: 'Operations',  icon: Settings  },
-  { id: 'edit',    label: 'Edit',        icon: Pencil    },
-  { id: 'cross',   label: 'Cross-User',  icon: UsersIcon },
-  { id: 'clients', label: 'Clients',     icon: Briefcase },
-];
-
 // ── Identix helpers ───────────────────────────────────────────────────────────
 const fmtTime = (iso) => {
   try { return format(new Date(iso), 'MMM dd, yyyy  hh:mm a'); }
