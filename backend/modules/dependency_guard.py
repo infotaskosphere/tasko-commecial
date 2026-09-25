@@ -11,7 +11,8 @@ from pathlib import Path
 from backend.modules.dependencies import MODULE_DEPENDENCIES
 
 MODULE_ROOT = Path(__file__).resolve().parent
-# Shared migration infrastructure is intentionally outside domain ownership.\nALLOWED_SHARED_INFRASTRUCTURE = {"runtime_switch"}
+# Shared migration infrastructure is intentionally outside domain ownership.
+ALLOWED_SHARED_INFRASTRUCTURE = {"runtime_switch"}
 
 
 def _module_name(path: Path) -> str | None:
