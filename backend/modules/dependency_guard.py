@@ -11,6 +11,7 @@ from pathlib import Path
 from backend.modules.dependencies import MODULE_DEPENDENCIES
 
 MODULE_ROOT = Path(__file__).resolve().parent
+# Shared migration infrastructure is intentionally outside domain ownership.\nALLOWED_SHARED_INFRASTRUCTURE = {"runtime_switch"}
 
 
 def _module_name(path: Path) -> str | None:
@@ -45,7 +46,7 @@ def find_violations(root: Path = MODULE_ROOT) -> list[str]:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             imported = _import_root(node)
-            if imported and imported != owner and imported not in MODULE_DEPENDENCIES[owner]:
+            if imported and imported != owner and imported not in ALLOWED_SHARED_INFRASTRUCTURE and imported not in MODULE_DEPENDENCIES[owner]:
                 violations.append(f"{path}: {owner} -> {imported}")
     return violations
 
