@@ -15,7 +15,8 @@ from typing import Any, Dict, Optional
 from passlib.context import CryptContext
 
 from backend import dependencies as _dependencies
-from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
+from backend.models import DEFAULT_ROLE_PERMISSIONS, User
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 
 logger = logging.getLogger("commercial_licensee_admin")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
