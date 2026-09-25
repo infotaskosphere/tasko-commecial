@@ -1,7 +1,7 @@
 """Shared commercial dashboard entitlement normalization."""
 from typing import Dict, List
 
-from backend.models import MODULE_HIERARCHY
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 
 DASHBOARD_FLAG_BY_MODULE = {
     "taskosphere": "can_view_dashboard",
