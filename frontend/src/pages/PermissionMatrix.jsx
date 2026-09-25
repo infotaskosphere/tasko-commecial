@@ -28,15 +28,6 @@ import { GLOBAL_PERMS, OPS_PERMS, EDIT_PERMS, permTabs as PERM_TABS, MODULE_PERM
 const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
 const initialOf = (u) => (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
 
-const EDIT_PERMS = [
-  { key: 'can_edit_tasks', label: 'Modify Tasks', desc: 'Update and delete task definitions', icon: Pencil },
-  { key: 'can_edit_clients', label: 'Modify Clients', desc: 'Update client master data records', icon: Edit },
-  { key: 'can_edit_dsc', label: 'Modify DSC', desc: 'Update certificate details and metadata', icon: Fingerprint },
-  { key: 'can_edit_documents', label: 'Modify Documents', desc: 'Change document records', icon: FileText },
-  { key: 'can_edit_due_dates', label: 'Modify Due Dates', desc: 'Add, edit and delete due dates', icon: Calendar },
-  { key: 'can_edit_users', label: 'Modify Users', desc: 'Update user profiles and settings', icon: UserIcon },
-];
-
 function PermissionMatrixSummary({ permissions }) {
   const moduleKeys = [
     'can_access_taskosphere', 'can_access_finix', 'can_access_aiweave',
