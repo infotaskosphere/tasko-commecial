@@ -344,73 +344,51 @@ app.add_api_route(
 )
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LEGACY ROUTER COMPATIBILITY MOUNTS
-# Phase 2 extracted the application runtime from server.py, but a number of
-# pre-existing feature routers were only imported here and were no longer
-# attached to the live FastAPI app. Their frontend modules therefore returned
-# 404 even though the endpoint implementations still existed.
-#
-# Keep these mounts explicit and production-safe. The original prefixes and
-# router business logic are preserved exactly. include_in_schema=False avoids
-# duplicating already-present OpenAPI entries where a subsystem has also been
-# reached through the legacy api_router.
-# ─────────────────────────────────────────────────────────────────────────────
+from backend.legacy_router_mounts import register_legacy_router_mounts
 
-# Routers that historically lived under the /api parent router.
-for _legacy_router in (
-    invoicing_router,
-    accounting_router,
-    party_ledgers_router,
-    accounting_ext_router,
-    bank_accounts_router,
-    permission_governance_router,
-    roles_admin_router,
-    compliance_router,
-    roc_sphere_router,
-    gst_reconciliation_router,
-    mis_report_router,
-    passwords_router,
-    auth_password_reset_router,
-    website_tracking_router,
-    quotation_router,
-    purchases_router,
-    telegram_router,
-    leads_router,
-    client_activity_router,
-    automation_router,
-    service_expiry_router,
-    recruitment_router,
-    notification_router,
-    email_router,
-    activity_monitor_router,
-    desktop_agent_router,
-    client_portal_router,
-    reminders_router,
-    whatsapp_router,
-    trademark_sphere_router,
-):
-    app.include_router(
-        _legacy_router,
-        prefix="/api",
-        include_in_schema=False,
-    )
-
-# Routers that already carry their own /api/... prefix.
-for _legacy_root_router in (
-    zero_touch_entry_router,
-    learning_router,
-    gst_portal_sync_router,
-    accounting_lock_router,
-    ai_document_reader_router,
-    aiweave_router,
-    trademark_portals_router,
-    salary_slip_router,
-    google_auth_router,
-):
-    app.include_router(
-        _legacy_root_router,
-        include_in_schema=False,
-    )
-
-
+register_legacy_router_mounts(
+    app,
+    (
+        invoicing_router,
+        accounting_router,
+        party_ledgers_router,
+        accounting_ext_router,
+        bank_accounts_router,
+        permission_governance_router,
+        roles_admin_router,
+        compliance_router,
+        roc_sphere_router,
+        gst_reconciliation_router,
+        mis_report_router,
+        passwords_router,
+        auth_password_reset_router,
+        website_tracking_router,
+        quotation_router,
+        purchases_router,
+        telegram_router,
+        leads_router,
+        client_activity_router,
+        automation_router,
+        service_expiry_router,
+        recruitment_router,
+        notification_router,
+        email_router,
+        activity_monitor_router,
+        desktop_agent_router,
+        client_portal_router,
+        reminders_router,
+        whatsapp_router,
+        trademark_sphere_router,
+    ),
+    (
+        zero_touch_entry_router,
+        learning_router,
+        gst_portal_sync_router,
+        accounting_lock_router,
+        ai_document_reader_router,
+        aiweave_router,
+        trademark_portals_router,
+        salary_slip_router,
+        google_auth_router,
+    ),
+)
