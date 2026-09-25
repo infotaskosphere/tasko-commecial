@@ -304,7 +304,8 @@ const PermissionMatrixSummary = ({ permissions }) => {
   );
 };
 
-const PermToggleRow = ({ permKey, label, desc, icon: Icon, permissions, setPermissions }) => {
+const PermToggleRow = ({ permKey, label, desc, icon, permissions, setPermissions }) => {
+  const Icon = typeof icon === 'string' ? (PERMISSION_ICON_MAP[icon] || FileText) : icon;
   const isOn = !!permissions[permKey];
   return (
     <div className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 sm:px-4 py-3.5 rounded-xl border transition-all min-w-0 overflow-hidden ${
