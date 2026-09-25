@@ -1,22 +1,14 @@
-"""Taskosphere Tasks controlled runtime adapter.
-
-This adapter is intentionally passive. It exposes the migrated router and
-its legacy source through one object so the composition root can switch
-ownership only after route equivalence is verified.
-"""
-from __future__ import annotations
-
+"""Taskosphere Tasks controlled runtime adapter."""
 from dataclasses import dataclass
+from typing import Callable
 
-from fastapi import APIRouter
-
-from backend.modules.taskosphere.tasks.router import router as migrated_router
+from backend.modules.taskosphere.tasks.router import register
 
 
 @dataclass(frozen=True)
 class TaskRouterRuntime:
-    router: APIRouter = migrated_router
+    register: Callable
     legacy_source: str = "backend.server_modules.task_routes"
 
 
-TASK_ROUTER_RUNTIME = TaskRouterRuntime()
+TASK_ROUTER_RUNTIME = TaskRouterRuntime(register=register)
