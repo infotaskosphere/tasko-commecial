@@ -752,6 +752,15 @@ async def roc_dump_events(company_id: str, current_user: User = Depends(VIEW)):
     return {"count": len(events), "events": events}
 
 
+
+@router.get("/companies/{company_id}/roc-dump/share-transfers")
+async def roc_dump_share_transfers(company_id: str, current_user: User = Depends(VIEW)):
+    company = await COMPANIES.find_one({"id": company_id}, {"share_transfers": 1, "id": 1})
+    if not company:
+        raise HTTPException(404, "Company not found")
+    return {"count": len(company.get("share_transfers") or []), "items": company.get("share_transfers") or []}
+
+
 @router.get("/companies/{company_id}/roc-dump/{filing_id}")
 async def get_roc_dump_filing(company_id: str, filing_id: str, current_user: User = Depends(VIEW)):
     filing = await DUMP.find_one({"id": filing_id, "company_id": company_id})
