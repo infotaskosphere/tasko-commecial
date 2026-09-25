@@ -264,7 +264,7 @@ _last_reminder_date_cache: Optional[str] = None
 
 # ====================== APP ======================
 from backend.server_modules.lifecycle import register_shutdown_handler
-from backend.server_modules.holiday_jobs import fetch_indian_holidays_task
+from backend.server_modules.holiday_jobs import fetch_indian_holidays_task, configure_event_loop as configure_holiday_event_loop
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 register_shutdown_handler(app, scheduler)
@@ -684,6 +684,7 @@ async def startup_event():
     import backend.server as _self
 
     _self.app_event_loop = asyncio.get_event_loop()
+    configure_holiday_event_loop(_self.app_event_loop)
     try:
         await db.tasks.create_index("assigned_to")
         # ── Activity Timeline & Automation Engine indexes ──────────────────
