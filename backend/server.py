@@ -317,6 +317,33 @@ app.include_router(email_router, prefix="/api")
 app.include_router(website_config_router, prefix="/api")
 app.include_router(client_portal_router, prefix="/api")
 
+# LeadSense Client Discussion collection compatibility.
+# The LeadSense hub requests a collection-level /api/client-discussion feed.
+# The existing client_activity router is intentionally client-scoped, so it
+# cannot satisfy that collection endpoint. Expose a read-only aggregate feed
+# from the same client_activities collection without changing the existing
+# client activity APIs.
+async def _leadsense_client_discussion_feed(current_user=Depends(get_current_user)):
+    items = await db.client_activities.find(
+        {},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(500).to_list(500)
+    return items
+
+app.add_api_route(
+    "/api/client-discussion",
+    _leadsense_client_discussion_feed,
+    methods=["GET"],
+    include_in_schema=False,
+)
+app.add_api_route(
+    "/api/client-discussion/",
+    _leadsense_client_discussion_feed,
+    methods=["GET"],
+    include_in_schema=False,
+)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # LEGACY ROUTER COMPATIBILITY MOUNTS
 # Phase 2 extracted the application runtime from server.py, but a number of
