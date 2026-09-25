@@ -299,3 +299,20 @@ for _register_phase2_routes in _PHASE2_ROUTE_MODULES:
 
 
 register_application_runtime(globals())
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LATE ROUTER MOUNTS
+# The legacy api_router is mounted by holiday_trademark_misc.py before the
+# remaining Phase 2 runtime routers are appended to api_router. FastAPI copies
+# router routes at include time, so those later additions would otherwise 404.
+# Mount the affected legacy routers directly on the app after the full runtime
+# registration. This preserves the existing route modules and avoids changing
+# their prefixes or business logic.
+# ─────────────────────────────────────────────────────────────────────────────
+from backend.website_config import router as website_config_router
+
+app.include_router(notification_router, prefix="/api")
+app.include_router(visits_router, prefix="/api")
+app.include_router(email_router, prefix="/api")
+app.include_router(website_config_router, prefix="/api")
+
