@@ -24,36 +24,7 @@ from backend.modules.people_matrix.models_users import (
 # ======================
 # TODOS & TASKS
 # ======================
-# ======================
-# TODOS & TASKS
-# ======================
-class Todo(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    title: str
-    description: Optional[str] = None
-    is_completed: bool = False
-    status: str = "pending"
-    due_date: Optional[Any] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    completed_at: Optional[Any] = None
-
-
-class TodoCreate(BaseModel):
-    title: str
-    description: Optional[str] = None
-    due_date: Optional[datetime] = None
-    is_completed: bool = False
-    status: str = "pending"
-    source: Optional[str] = "manual"      # 'manual' | 'email_sync' | 'auto'
-    auto_imported: Optional[bool] = False
-
-
-class TaskBase_import_marker(BaseModel):
-    """Compatibility marker; task models are re-exported below."""
-    pass
+from backend.modules.taskosphere.tasks.models_todos import Todo, TodoCreate
 
 from backend.modules.taskosphere.tasks.models_tasks import TaskBase, TaskCreate, BulkTaskCreate, Task
 
@@ -131,9 +102,7 @@ from backend.modules.leadsense.leads.models_leads import LeadBase, LeadCreate, L
 # ======================
 from backend.modules.compligenie.due_dates.models_due_dates import DueDateBase, DueDateCreate, DueDate
 
-class BirthdayEmailRequest(BaseModel):
-
-    client_id: str
+from backend.platform.models_birthday import BirthdayEmailRequest
 
 
 # ======================
