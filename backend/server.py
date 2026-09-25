@@ -249,6 +249,7 @@ from backend.server_modules.helpers import safe_dt, sanitize_user_data, convert_
 from backend.server_modules.task_analytics import get_task_analytics as _get_task_analytics
 from backend.server_modules.website_activity import get_website_activity, track_website
 from backend.server_modules.task_popup import create_task_assigned_popup
+from backend.server_modules.scheduler_jobs import register_scheduler_jobs
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 register_shutdown_handler(app, scheduler)
@@ -638,112 +639,20 @@ async def startup_event():
 
     # Scheduled jobs=====================================================================
     try:
-        scheduler.add_job(fetch_indian_holidays_task, "cron", day=1, hour=0, minute=5)
-        # Also run immediately on startup so holidays are available from day 1
-        scheduler.add_job(
-            fetch_indian_holidays_task,
-            "date",
-            run_date=datetime.now(pytz.timezone("Asia/Kolkata")),
+        register_scheduler_jobs(
+            scheduler,
+            fetch_indian_holidays_task=fetch_indian_holidays_task,
+            mark_absent_users_task=mark_absent_users_task,
+            force_punch_out_11pm_task=force_punch_out_11pm_task,
+            birthday_automation_job=birthday_automation_job,
+            festival_greeting_job=festival_greeting_job,
+            service_expiry_alert_job=service_expiry_alert_job,
+            follow_up_reminder_job=follow_up_reminder_job,
+            wa_dsc_expiry_job=wa_dsc_expiry_job,
+            wa_compliance_job=wa_compliance_job,
+            wa_scheduled_bulk_job=wa_scheduled_bulk_job,
+            wa_bridge_keepalive_job=wa_bridge_keepalive_job,
         )
-        # Absent marking job — fires every working day at 19:00 IST
-        scheduler.add_job(
-            mark_absent_users_task,
-            "cron",
-            hour=19,
-            minute=0,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="mark_absent_daily",
-            replace_existing=True,
-        )
-        # Auto punch-out job — fires at 23:00 IST; records punch_out = 7 PM for
-        # any user who punched in today but never manually punched out.
-        scheduler.add_job(
-            force_punch_out_11pm_task,
-            "cron",
-            hour=23,
-            minute=0,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="force_punch_out_11pm",
-            replace_existing=True,
-        )
-
-        # ── Automation Engine jobs ────────────────────────────────────────
-        # Supersedes the old WA-only wa_birthday_job: handles WhatsApp +
-        # Email birthdays, the admin approval gate, and timeline logging.
-        scheduler.add_job(
-            birthday_automation_job,
-            "cron",
-            hour=9,
-            minute=0,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="birthday_automation",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            festival_greeting_job,
-            "cron",
-            hour=9,
-            minute=5,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="festival_greetings",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            service_expiry_alert_job,
-            "cron",
-            hour=9,
-            minute=45,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="service_expiry_alerts",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            follow_up_reminder_job,
-            "cron",
-            hour=10,
-            minute=15,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="follow_up_reminders",
-            replace_existing=True,
-        )
-
-        # ── WhatsApp notification jobs ────────────────────────────────────
-        scheduler.add_job(
-            wa_dsc_expiry_job,
-            "cron",
-            hour=9,
-            minute=30,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="wa_dsc_expiry_alerts",
-            replace_existing=True,
-        )
-        scheduler.add_job(
-            wa_compliance_job,
-            "cron",
-            hour=10,
-            minute=0,
-            timezone=pytz.timezone("Asia/Kolkata"),
-            id="wa_compliance_reminders",
-            replace_existing=True,
-        )
-        # Scheduled bulk send runner — checks every minute for due jobs
-        scheduler.add_job(
-            wa_scheduled_bulk_job,
-            "interval",
-            minutes=1,
-            id="wa_scheduled_bulk",
-            replace_existing=True,
-        )
-        # Keep wa-bridge warm so Render's free instance never spins down —
-        # fixes the 429/CORS/502 cascade caused by cold-start request bursts.
-        scheduler.add_job(
-            wa_bridge_keepalive_job,
-            "interval",
-            minutes=5,
-            id="wa_bridge_keepalive",
-            replace_existing=True,
-        )
-
         scheduler.start()
         logger.info("APScheduler started successfully.")
     except Exception as e:
