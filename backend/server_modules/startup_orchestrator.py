@@ -34,4 +34,4 @@ async def run_startup_orchestration(*, server_module, db, configure_holiday_even
     except Exception as e:
         logger.error(f"APScheduler startup failed: {e}")
 
-    start_bootstrap_tasks(db=db, logger_instance=logger)
+    await start_bootstrap_tasks(db=db, logger_instance=logger)
