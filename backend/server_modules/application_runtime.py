@@ -8,7 +8,12 @@ def register_application_runtime(namespace):
     exec(SOURCE, namespace, namespace)
     return namespace
 
-SOURCE = r'''# ====================== CORS CONFIG ======================
+SOURCE = r'''# Early legacy compatibility mount for quotation-owned /api/quotations
+# and /api/companies routes. This must run before runtime safety checks.
+if 'quotation_router' in globals():
+    app.include_router(quotation_router, prefix='/api', include_in_schema=False)
+
+# ====================== CORS CONFIG ======================
 # Supports:
 # - Taskosphere production domains
 # - Vercel production and preview deployments
