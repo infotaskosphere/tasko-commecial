@@ -1,0 +1,1 @@
+"""AIWeave Omni package boundary. Existing implementation remains authoritative."""
