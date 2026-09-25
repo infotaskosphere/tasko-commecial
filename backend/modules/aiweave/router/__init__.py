@@ -1,0 +1,1 @@
+"""AIWeave router package boundary. Existing router remains authoritative."""
