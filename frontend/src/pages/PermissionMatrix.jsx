@@ -418,48 +418,115 @@ export default function PermissionMatrix() {
                   </div>
                 </GovCard>
 
-                {activePermTab === 'modules' && (
+                <GovCard
+                  icon={Zap}
+                  title="Modules — Page — Action Governance"
+                  badge="Complete"
+                  color={HUB_COLORS.mediumBlue}
+                  bodyClassName="p-3"
+                >
                   <AccessGovernancePanel
-                    key={selectedUserId}
+                    key={`modules-${selectedUserId}`}
                     userId={selectedUserId}
                     value={permissions}
                     onChange={setPermissions}
                     isAdminUser={isAdminUser}
                     showSave={false}
                   />
-                )}
+                </GovCard>
 
-                {activePermTab === 'view' && (
-                  <GovCard icon={Eye} title="View Permissions" badge={GLOBAL_PERMS.filter((p) => permissions[p.key]).length}>
-                    <div className="p-3 space-y-2">
-                      {GLOBAL_PERMS.map((item) => <PermToggleRow key={item.key} item={item} permissions={permissions} setPermissions={setPermissions} disabled={isEditingDisabled} />)}
-                    </div>
-                  </GovCard>
-                )}
+                <GovCard
+                  icon={Eye}
+                  title="View Permissions"
+                  badge={GLOBAL_PERMS.filter((p) => permissions[p.key]).length}
+                  color={HUB_COLORS.mediumBlue}
+                >
+                  <div className="p-3 space-y-2">
+                    {GLOBAL_PERMS.map((item) => (
+                      <PermToggleRow
+                        key={item.key}
+                        item={item}
+                        permissions={permissions}
+                        setPermissions={setPermissions}
+                        disabled={isEditingDisabled}
+                      />
+                    ))}
+                  </div>
+                </GovCard>
 
-                {activePermTab === 'ops' && (
-                  <GovCard icon={Settings} title="Operational Controls" badge={OPS_PERMS.filter((p) => permissions[p.key]).length} color="#7C3AED">
-                    <div className="p-3 space-y-2">
-                      {OPS_PERMS.map((item) => <PermToggleRow key={item.key} item={item} permissions={permissions} setPermissions={setPermissions} disabled={isEditingDisabled} />)}
-                    </div>
-                  </GovCard>
-                )}
+                <GovCard
+                  icon={Settings}
+                  title="Operations Permissions"
+                  badge={OPS_PERMS.filter((p) => permissions[p.key]).length}
+                  color="#7C3AED"
+                >
+                  <div className="p-3 space-y-2">
+                    {OPS_PERMS.map((item) => (
+                      <PermToggleRow
+                        key={item.key}
+                        item={item}
+                        permissions={permissions}
+                        setPermissions={setPermissions}
+                        disabled={isEditingDisabled}
+                      />
+                    ))}
+                  </div>
+                </GovCard>
 
-                {activePermTab === 'edit' && (
-                  <GovCard icon={Pencil} title="Modification Rights" badge={EDIT_PERMS.filter((p) => permissions[p.key]).length} color="#F59E0B">
-                    <div className="p-3 space-y-2">
-                      {EDIT_PERMS.map((item) => <PermToggleRow key={item.key} item={item} permissions={permissions} setPermissions={setPermissions} disabled={isEditingDisabled} />)}
-                    </div>
-                  </GovCard>
-                )}
+                <GovCard
+                  icon={Pencil}
+                  title="Edit Permissions"
+                  badge={EDIT_PERMS.filter((p) => permissions[p.key]).length}
+                  color="#F59E0B"
+                >
+                  <div className="p-3 space-y-2">
+                    {EDIT_PERMS.map((item) => (
+                      <PermToggleRow
+                        key={item.key}
+                        item={item}
+                        permissions={permissions}
+                        setPermissions={setPermissions}
+                        disabled={isEditingDisabled}
+                      />
+                    ))}
+                  </div>
+                </GovCard>
 
-                {activePermTab === 'cross' && (
-                  <CrossUserTab permissions={permissions} users={users} selectedUserId={selectedUserId} setPermissions={setPermissions} isDark={isDark} disabled={isEditingDisabled} />
-                )}
+                <GovCard
+                  icon={UsersIcon}
+                  title="Cross-User Permissions"
+                  badge="User Data Access"
+                  color={HUB_COLORS.emeraldGreen}
+                >
+                  <div className="p-3">
+                    <CrossUserTab
+                      permissions={permissions}
+                      users={users}
+                      selectedUserId={selectedUserId}
+                      setPermissions={setPermissions}
+                      isDark={isDark}
+                      disabled={isEditingDisabled}
+                    />
+                  </div>
+                </GovCard>
 
-                {activePermTab === 'clients' && (
-                  <ClientsTab permissions={permissions} clients={clients} setPermissions={setPermissions} search={clientSearch} setSearch={setClientSearch} disabled={isEditingDisabled} />
-                )}
+                <GovCard
+                  icon={Briefcase}
+                  title="Client Permissions"
+                  badge={(permissions?.assigned_clients || []).length}
+                  color="#0F766E"
+                >
+                  <div className="p-3">
+                    <ClientsTab
+                      permissions={permissions}
+                      clients={clients}
+                      setPermissions={setPermissions}
+                      search={clientSearch}
+                      setSearch={setClientSearch}
+                      disabled={isEditingDisabled}
+                    />
+                  </div>
+                </GovCard>
               </>
             )}
           </div>
