@@ -11,7 +11,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-def start_bootstrap_tasks(*, db, logger_instance=None):
+async def start_bootstrap_tasks(*, db, logger_instance=None):
     """Start the existing non-blocking startup/bootstrap tasks.
 
     The returned tasks are intentionally fire-and-forget, matching the
