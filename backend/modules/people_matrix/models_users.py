@@ -1,3 +1,9 @@
+from enum import Enum
+from typing import Optional, List, Dict, Any
+from datetime import date
+import re
+from pydantic import BaseModel, Field, ConfigDict, EmailStr, field_validator
+
 """Canonical People Matrix user and permission models.
 
 Extracted verbatim from the legacy model module while preserving the public
