@@ -1,7 +1,7 @@
 """Canonical platform notification and audit Pydantic models."""
-from typing import Optional
+from typing import Optional, Any
 import uuid
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 # NOTIFICATIONS & AUDIT
 # ======================
