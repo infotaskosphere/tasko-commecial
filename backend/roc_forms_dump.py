@@ -726,6 +726,32 @@ async def list_roc_dump(company_id: str, current_user: User = Depends(VIEW)):
     return {"count": len(filings), "items": filings}
 
 
+@router.get("/companies/{company_id}/roc-dump/summary")
+async def roc_dump_summary(company_id: str, current_user: User = Depends(VIEW)):
+    filings = [x async for x in DUMP.find({"company_id": company_id}).sort("metadata.filing_date", 1)]
+    company = await COMPANIES.find_one({"id": company_id})
+    if not company:
+        raise HTTPException(404, "Company not found")
+    events = []
+    for filing in filings:
+        events.extend(filing.get("events") or [])
+    return _summary_sections(company, filings, events)
+
+
+@router.get("/companies/{company_id}/roc-dump/events")
+async def roc_dump_events(company_id: str, current_user: User = Depends(VIEW)):
+    filings = [x async for x in DUMP.find({"company_id": company_id}).sort("metadata.filing_date", 1)]
+    events = []
+    for filing in filings:
+        for event in filing.get("events") or []:
+            item = dict(event)
+            item["filing_id"] = filing.get("id")
+            item["form_number"] = filing.get("form_number")
+            item["source_filename"] = filing.get("filename")
+            events.append(item)
+    return {"count": len(events), "events": events}
+
+
 @router.get("/companies/{company_id}/roc-dump/{filing_id}")
 async def get_roc_dump_filing(company_id: str, filing_id: str, current_user: User = Depends(VIEW)):
     filing = await DUMP.find_one({"id": filing_id, "company_id": company_id})
@@ -780,37 +806,3 @@ async def review_roc_dump_filing(
 async def rebuild_roc_dump_summary(company_id: str, current_user: User = Depends(EDIT)):
     summary, events, doc = await _rebuild(company_id, _who(current_user))
     return {"summary": summary, "event_count": len(events), "summary_document_id": doc["id"]}
-
-
-@router.get("/companies/{company_id}/roc-dump/summary")
-async def roc_dump_summary(company_id: str, current_user: User = Depends(VIEW)):
-    filings = [x async for x in DUMP.find({"company_id": company_id}).sort("metadata.filing_date", 1)]
-    company = await COMPANIES.find_one({"id": company_id})
-    if not company:
-        raise HTTPException(404, "Company not found")
-    events = []
-    for filing in filings:
-        events.extend(filing.get("events") or [])
-    return _summary_sections(company, filings, events)
-
-
-@router.get("/companies/{company_id}/roc-dump/events")
-async def roc_dump_events(company_id: str, current_user: User = Depends(VIEW)):
-    filings = [x async for x in DUMP.find({"company_id": company_id}).sort("metadata.filing_date", 1)]
-    events = []
-    for filing in filings:
-        for event in filing.get("events") or []:
-            item = dict(event)
-            item["filing_id"] = filing.get("id")
-            item["form_number"] = filing.get("form_number")
-            item["source_filename"] = filing.get("filename")
-            events.append(item)
-    return {"count": len(events), "events": events}
-
-
-@router.get("/companies/{company_id}/roc-dump/share-transfers")
-async def roc_dump_share_transfers(company_id: str, current_user: User = Depends(VIEW)):
-    company = await COMPANIES.find_one({"id": company_id}, {"share_transfers": 1, "id": 1})
-    if not company:
-        raise HTTPException(404, "Company not found")
-    return {"count": len(company.get("share_transfers") or []), "items": company.get("share_transfers") or []}
