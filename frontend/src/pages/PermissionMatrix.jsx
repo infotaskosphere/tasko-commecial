@@ -391,7 +391,7 @@ export default function PermissionMatrix() {
             ) : (
               <>
                 <PermissionMatrixSummary permissions={permissions} />
-                <div className="sticky md:top-[190px] top-0 z-20 -mx-1 px-1 py-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700">
+                <div className="w-full min-w-0 max-w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2">
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Reset:</span>
                     {PERMISSION_TEMPLATE_ROLES.map((role) => (
