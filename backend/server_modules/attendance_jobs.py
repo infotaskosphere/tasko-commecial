@@ -481,9 +481,7 @@ def mark_absent_users_task():
     Uses run_coroutine_threadsafe so Motor futures stay on the main event loop.
     """
     try:
-        import backend.server as _self
-
-        loop = _self.app_event_loop
+        loop = _event_loop
         if loop is None or loop.is_closed():
             logger.warning(
                 "mark_absent_users_task: main event loop not ready, skipping."
@@ -607,9 +605,7 @@ def force_punch_out_11pm_task():
     Uses run_coroutine_threadsafe so Motor futures stay on the main event loop.
     """
     try:
-        import backend.server as _self
-
-        loop = _self.app_event_loop
+        loop = _event_loop
         if loop is None or loop.is_closed():
             logger.warning(
                 "force_punch_out_11pm_task: main event loop not ready, skipping."
