@@ -411,6 +411,11 @@ def _summary_sections(company, filings, events):
             "paid_up_capital": company.get("paid_up_capital"),
             "authorized_capital": company.get("authorized_capital"),
         },
+        "current_directors": company.get("directors") or company.get("designated_partners") or [],
+        "current_shareholders": company.get("shareholders") or [],
+        "current_auditor": company.get("auditor") or {},
+        "current_net_worth": (company.get("financial_data") or {}).get("net_worth"),
+        "current_loans_and_dpt3": company.get("dpt3_data") or {},
         "incorporation_history": incorporation,
         "directors_and_kmp_history": directors,
         "share_transfer_history": transfers,
@@ -472,14 +477,14 @@ def _build_summary_doc(company, summary, prepared_by):
 
     section("1. Company Master", summary["company"])
     section("2. Incorporation History", summary["incorporation_history"])
-    section("3. Directors / KMP History", summary["directors_and_kmp_history"])
-    section("4. Share Transfer History", summary["share_transfer_history"])
-    section("5. Financial / Net Worth History", summary["financial_history"])
-    section("6. Loans / Charges History", summary["loans_and_charges_history"])
-    section("7. Auditor History", summary["auditor_history"])
-    section("8. Registered Office History", summary["registered_office_history"])
-    section("9. ROC Forms Inventory", summary["filing_inventory"])
-    section("10. Review / Exceptions", summary["review_items"])
+    section("3. Current Directors / KMP", summary["current_directors"])\n    section("4. Current Shareholders", summary["current_shareholders"])\n    section("5. Current Auditor", summary["current_auditor"])\n    section("6. Current Net Worth", summary["current_net_worth"])\n    section("7. Current Loans / DPT-3 Data", summary["current_loans_and_dpt3"])\n    section("8. Directors / KMP History", summary["directors_and_kmp_history"])
+    section("9. Share Transfer History", summary["share_transfer_history"])
+    section("10. Financial / Net Worth History", summary["financial_history"])
+    section("11. Loans / Charges History", summary["loans_and_charges_history"])
+    section("12. Auditor History", summary["auditor_history"])
+    section("13. Registered Office History", summary["registered_office_history"])
+    section("14. ROC Forms Inventory", summary["filing_inventory"])
+    section("15. Review / Exceptions", summary["review_items"])
     doc.add_paragraph(
         "This document is an evidence-based working summary generated from uploaded ROC forms. "
         "Values with low extraction confidence or unresolved conflicts remain review items and are not "
