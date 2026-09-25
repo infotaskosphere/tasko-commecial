@@ -3,6 +3,7 @@ from typing import Optional, Any, List
 import uuid
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
+class LeadBase(BaseModel):
     company_name: str
     contact_name: Optional[str] = None
     email: Optional[EmailStr] = None
