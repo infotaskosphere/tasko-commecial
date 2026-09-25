@@ -17,7 +17,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 
 from backend.dependencies import create_access_token, db, get_current_user, require_admin
-from backend.models import DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY, User
+from backend.models import DEFAULT_ROLE_PERMISSIONS, User
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.licensing_api import create_license_record, _expiry_reason, _find_license, _now, _public_license
 
 # ---------------------------------------------------------------------------
