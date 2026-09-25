@@ -1,7 +1,17 @@
 """Finix domain models extracted from backend/accounting_extended.py."""
-from datetime import date
+import io
+import uuid
+import pandas as pd
+from datetime import date, datetime, timezone
 from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from pydantic import BaseModel, Field, ConfigDict
+
+from backend.dependencies import db, get_current_user
+from backend.models import User
+from backend.accounting_core import get_default_account_id
+
+router = APIRouter(tags=["Accounting Extended"])
 
 class OpeningBalanceLine(BaseModel):
     account_id: str
