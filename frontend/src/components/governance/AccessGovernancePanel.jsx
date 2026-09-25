@@ -418,6 +418,41 @@ export default function AccessGovernancePanel({
         </div>
       </div>
 
+      {moduleTree.length > 0 && !searching && (
+        <GovCard
+          icon={Layers}
+          title="All Permission Modules"
+          badge={moduleTree.length}
+          color={HUB_COLORS.mediumBlue}
+          bodyClassName="p-3"
+        >
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {moduleTree.map((module) => {
+              const moduleOn = !!permissions[module.flag];
+              const moduleId = `gov-mod-${module.module}`;
+              return (
+                <button
+                  key={module.module}
+                  type="button"
+                  onClick={() => {
+                    setExpanded((prev) => ({ ...prev, [module.module]: true }));
+                    requestAnimationFrame(() => document.getElementById(moduleId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                  }}
+                  className={`min-w-0 text-left px-3 py-2 border transition-colors ${moduleOn
+                    ? 'border-[#1F6FB2]/40 bg-[#1F6FB2]/5 text-[#0D3B66] dark:text-sky-300'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500'}`}
+                >
+                  <span style={TXT} className="block text-xs font-bold truncate">{module.label}</span>
+                  <span className="text-[10px] text-slate-400">
+                    {(module.pages || []).filter((page) => permissions[page.flag]).length}/{(module.pages || []).length} pages
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </GovCard>
+      )}
+
       {filtered.length === 0 && (
         <GuidanceNote tone="warning" icon={Search}>
           <span style={TXT}>No modules or pages match &ldquo;{search}&rdquo;.</span>
