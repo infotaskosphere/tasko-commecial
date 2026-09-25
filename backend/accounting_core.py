@@ -24,6 +24,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend.dependencies import db, get_current_user
+from backend.modules.finix_ai.accounting.models_accounting import AccountCreate, JournalLine, JournalEntryCreate
+
 from backend.models import User
 
 router = APIRouter(tags=["Accounting"])
@@ -191,29 +193,7 @@ async def ensure_default_chart_of_accounts(company_id: str, created_by: str):
 
 
 # ── Models ────────────────────────────────────────────────────────────────
-class AccountCreate(BaseModel):
-    company_id: str = ""
-    code: str
-    name: str
-    type: str  # asset | liability | equity | income | expense
-    sub_type: str = ""
 
-
-class JournalLine(BaseModel):
-    account_id: str
-    account_name: str = ""
-    debit: float = 0.0
-    credit: float = 0.0
-    memo: str = ""
-
-
-class JournalEntryCreate(BaseModel):
-    company_id: str = ""
-    entry_date: str = Field(default_factory=lambda: date.today().isoformat())
-    narration: str = ""
-    source: str = "manual"          # manual | purchase | sale | bank
-    source_id: Optional[str] = None
-    lines: List[JournalLine]
 
 
 # ── Chart of Accounts routes ─────────────────────────────────────────────
