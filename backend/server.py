@@ -263,7 +263,10 @@ scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
 _last_reminder_date_cache: Optional[str] = None
 
 # ====================== APP ======================
+from backend.server_modules.lifecycle import register_shutdown_handler
+
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
+register_shutdown_handler(app, scheduler)
 
 # ====================== CORS CONFIG ======================
 # Supports:
