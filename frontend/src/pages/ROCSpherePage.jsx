@@ -152,7 +152,7 @@ const NAV_GROUPS = [
     tabs: [
       { key: 'upload', label: 'Upload ROC Forms', icon: Upload },
       { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
-      { key: 'documents', label: 'Document Vault', icon: ScrollText },
+      { key: 'documents', label: 'Document Vault', icon: ScrollText },\n      { key: 'roc-dump', label: 'ROC Forms Dump', icon: FileUp },
     ],
   },
   {
@@ -487,7 +487,7 @@ export default function ROCSpherePage() {
                   {tab === 'checklist' && <ChecklistTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'applicable' && <ApplicableCompliancesTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'filing' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
-                  {tab === 'documents' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}
+                  {tab === 'documents' && <FilingDeskTab company={company} prep={filingPrep} docs={generatedDocs} loading={filingLoading} isDark={isDark} text={text} muted={muted} onRefresh={() => loadFilingDesk(company.id)} />}\n                  {tab === 'roc-dump' && <ROCFormsDumpTab company={company} isDark={isDark} text={text} muted={muted} />}
                   {tab === 'cspractice' && <CSPracticeAutomationTab company={company} plan={csPlan} tasks={csTasks} users={csUsers} loading={csLoading} isDark={isDark} input={input} text={text} muted={muted} onRefresh={(fy) => loadCSPractice(company.id, fy)} />}
                   {tab === 'upload' && <UploadTab company={company} isDark={isDark} input={input} text={text} muted={muted} onApplied={() => loadOne(company.id)} />}
                 </div>
