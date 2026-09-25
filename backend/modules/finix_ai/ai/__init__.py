@@ -1,0 +1,1 @@
+"""Finix AI domain package boundary. Phase C: boundary only."""
