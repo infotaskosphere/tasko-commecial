@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, HTTPException
 
 from backend.dependencies import get_current_user, get_user_permissions
-from backend.models import MODULE_HIERARCHY, User
+from backend.models import User
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 
 _MODULE_FLAGS = {
     key: definition["flag"]
