@@ -317,7 +317,7 @@ app.include_router(visits_router, prefix="/api")
 app.include_router(email_router, prefix="/api")
 app.include_router(website_config_router, prefix="/api")
 app.include_router(client_portal_router, prefix="/api")
-app.include_router(roc_forms_dump_router, prefix="/api")
+app.include_router(roc_forms_dump_router, prefix="/api/roc-sphere")
 
 # LeadSense Client Discussion collection compatibility.
 # The LeadSense hub requests a collection-level /api/client-discussion feed.
