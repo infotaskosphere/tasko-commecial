@@ -1,0 +1,1 @@
+"""AIWeave routing package boundary. Existing selector remains authoritative."""
