@@ -366,27 +366,52 @@ export default function PermissionMatrix() {
               <LoadingState label="Loading access governance…" />
             ) : (
               <>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap gap-1.5 min-w-0">
-                    {PERM_TABS.map((tab) => {
-                      const TabIcon = tab.icon;
-                      return (
-                        <button key={tab.id} type="button" onClick={() => setActivePermTab(tab.id)}
-                          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap ${activePermTab === tab.id ? 'text-white shadow-md' : isDark ? 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200' : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'}`}
-                          style={activePermTab === tab.id ? { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' } : {}}>
-                          <TabIcon className="h-3.5 w-3.5" />{tab.label}
-                        </button>
-                      );
-                    })}
+                <GovCard
+                  icon={KeyRound}
+                  title="Permission Scopes"
+                  badge={PERM_TABS.length}
+                  color={HUB_COLORS.mediumBlue}
+                  bodyClassName="p-3"
+                >
+                  <div className="flex flex-col gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                      {PERM_TABS.map((tab) => {
+                        const TabIcon = tab.icon;
+                        const active = activePermTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActivePermTab(tab.id)}
+                            aria-current={active ? 'page' : undefined}
+                            className={`min-h-10 w-full flex items-center justify-center gap-1.5 px-3 py-2 border text-xs font-bold transition-all whitespace-nowrap ${active
+                              ? 'text-white border-[#1F6FB2] shadow-sm'
+                              : isDark
+                                ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}
+                            style={active ? { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' } : undefined}
+                          >
+                            <TabIcon className="h-3.5 w-3.5 shrink-0" />
+                            <span style={TXT}>{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-700">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                        <span style={TXT}>
+                          Editing <strong className="text-slate-700 dark:text-slate-200">{editingName}</strong>
+                        </span>
+                        {changes > 0 && <span className="font-bold text-amber-600">{changes} unsaved</span>}
+                      </div>
+                      <Button type="button" onClick={handleSave} disabled={saving || changes === 0} className="whitespace-nowrap">
+                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                        Save Permissions
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {changes > 0 && <span className="text-[11px] font-bold text-amber-600">{changes} unsaved</span>}
-                    <Button type="button" onClick={handleSave} disabled={saving || changes === 0} className="whitespace-nowrap">
-                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                      Save Permissions
-                    </Button>
-                  </div>
-                </div>
+                </GovCard>
 
                 {activePermTab === 'modules' && (
                   <AccessGovernancePanel
