@@ -460,6 +460,15 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 
+# FIX: universal_exception_handler was previously defined but never actually
+# registered with FastAPI (the decorator that should have registered it was
+# accidentally left attached to an unrelated route in holiday_trademark_misc.py
+# after a prior automated code-split truncated that file -- see the fix note
+# there). Register it explicitly here so uncaught exceptions anywhere in the
+# app get the CORS-safe JSON response above instead of a raw/opaque 500.
+app.add_exception_handler(Exception, universal_exception_handler)
+
+
 # Api Router
 api_router.include_router(invoicing_router)
 api_router.include_router(accounting_router)
