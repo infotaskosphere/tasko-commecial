@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from datetime import date
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
-from backend.modules.people_matrix.models_users import User
+from backend.models import User
 
 PAISE = Decimal("0.01")
 
