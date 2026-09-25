@@ -4,7 +4,7 @@
 // the same six permission scopes: Modules, View, Operations, Edit, Cross-User, Clients.
 // The admin page edits the same /users/{id}/permissions payload used by Users.jsx.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, ShieldCheck, Users as UsersIcon, KeyRound, UserCog,
   Zap, Eye, Settings, Pencil, Briefcase, Layers, Fingerprint, FileText,
@@ -207,6 +207,29 @@ export default function PermissionMatrix() {
   const [saving, setSaving] = useState(false);
   const [permissionTemplates] = useState(DEFAULT_ROLE_PERMISSIONS);
 
+  // Refs for the six always-visible governance sections. These power the
+  // "Quick Reset" row's tab strip below as an in-page jump-to nav — every
+  // section stays rendered on screen at once (no tab hides a category); the
+  // buttons just scroll the already-visible section into view.
+  const modulesSectionRef = useRef(null);
+  const viewSectionRef = useRef(null);
+  const opsSectionRef = useRef(null);
+  const editSectionRef = useRef(null);
+  const crossSectionRef = useRef(null);
+  const clientsSectionRef = useRef(null);
+  const sectionRefsById = {
+    modules: modulesSectionRef,
+    view: viewSectionRef,
+    ops: opsSectionRef,
+    edit: editSectionRef,
+    cross: crossSectionRef,
+    clients: clientsSectionRef,
+  };
+  const jumpToSection = (id) => {
+    setActivePermTab(id);
+    sectionRefsById[id]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -387,8 +410,9 @@ export default function PermissionMatrix() {
                           <button
                             key={tab.id}
                             type="button"
-                            onClick={() => setActivePermTab(tab.id)}
+                            onClick={() => jumpToSection(tab.id)}
                             aria-current={active ? 'page' : undefined}
+                            title={`Jump to ${tab.label}`}
                             className={`min-h-10 w-full flex items-center justify-center gap-1.5 px-3 py-2 border text-xs font-bold transition-all whitespace-nowrap ${active
                               ? 'text-white border-[#1F6FB2] shadow-sm'
                               : isDark
@@ -418,115 +442,127 @@ export default function PermissionMatrix() {
                   </div>
                 </GovCard>
 
-                <GovCard
-                  icon={Zap}
-                  title="Modules — Page — Action Governance"
-                  badge="Complete"
-                  color={HUB_COLORS.mediumBlue}
-                  bodyClassName="p-3"
-                >
-                  <AccessGovernancePanel
-                    key={`modules-${selectedUserId}`}
-                    userId={selectedUserId}
-                    value={permissions}
-                    onChange={setPermissions}
-                    isAdminUser={isAdminUser}
-                    showSave={false}
-                  />
-                </GovCard>
-
-                <GovCard
-                  icon={Eye}
-                  title="View Permissions"
-                  badge={GLOBAL_PERMS.filter((p) => permissions[p.key]).length}
-                  color={HUB_COLORS.mediumBlue}
-                >
-                  <div className="p-3 space-y-2">
-                    {GLOBAL_PERMS.map((item) => (
-                      <PermToggleRow
-                        key={item.key}
-                        item={item}
-                        permissions={permissions}
-                        setPermissions={setPermissions}
-                        disabled={isEditingDisabled}
-                      />
-                    ))}
-                  </div>
-                </GovCard>
-
-                <GovCard
-                  icon={Settings}
-                  title="Operations Permissions"
-                  badge={OPS_PERMS.filter((p) => permissions[p.key]).length}
-                  color="#7C3AED"
-                >
-                  <div className="p-3 space-y-2">
-                    {OPS_PERMS.map((item) => (
-                      <PermToggleRow
-                        key={item.key}
-                        item={item}
-                        permissions={permissions}
-                        setPermissions={setPermissions}
-                        disabled={isEditingDisabled}
-                      />
-                    ))}
-                  </div>
-                </GovCard>
-
-                <GovCard
-                  icon={Pencil}
-                  title="Edit Permissions"
-                  badge={EDIT_PERMS.filter((p) => permissions[p.key]).length}
-                  color="#F59E0B"
-                >
-                  <div className="p-3 space-y-2">
-                    {EDIT_PERMS.map((item) => (
-                      <PermToggleRow
-                        key={item.key}
-                        item={item}
-                        permissions={permissions}
-                        setPermissions={setPermissions}
-                        disabled={isEditingDisabled}
-                      />
-                    ))}
-                  </div>
-                </GovCard>
-
-                <GovCard
-                  icon={UsersIcon}
-                  title="Cross-User Permissions"
-                  badge="User Data Access"
-                  color={HUB_COLORS.emeraldGreen}
-                >
-                  <div className="p-3">
-                    <CrossUserTab
-                      permissions={permissions}
-                      users={users}
-                      selectedUserId={selectedUserId}
-                      setPermissions={setPermissions}
-                      isDark={isDark}
-                      disabled={isEditingDisabled}
+                <div ref={modulesSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={Zap}
+                    title="Modules — Page — Action Governance"
+                    badge="Complete"
+                    color={HUB_COLORS.mediumBlue}
+                    bodyClassName="p-3"
+                  >
+                    <AccessGovernancePanel
+                      key={`modules-${selectedUserId}`}
+                      userId={selectedUserId}
+                      value={permissions}
+                      onChange={setPermissions}
+                      isAdminUser={isAdminUser}
+                      showSave={false}
                     />
-                  </div>
-                </GovCard>
+                  </GovCard>
+                </div>
 
-                <GovCard
-                  icon={Briefcase}
-                  title="Client Permissions"
-                  badge={(permissions?.assigned_clients || []).length}
-                  color="#0F766E"
-                >
-                  <div className="p-3">
-                    <ClientsTab
-                      permissions={permissions}
-                      clients={clients}
-                      setPermissions={setPermissions}
-                      search={clientSearch}
-                      setSearch={setClientSearch}
-                      disabled={isEditingDisabled}
-                    />
-                  </div>
-                </GovCard>
+                <div ref={viewSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={Eye}
+                    title="View Permissions"
+                    badge={GLOBAL_PERMS.filter((p) => permissions[p.key]).length}
+                    color={HUB_COLORS.mediumBlue}
+                  >
+                    <div className="p-3 space-y-2">
+                      {GLOBAL_PERMS.map((item) => (
+                        <PermToggleRow
+                          key={item.key}
+                          item={item}
+                          permissions={permissions}
+                          setPermissions={setPermissions}
+                          disabled={isEditingDisabled}
+                        />
+                      ))}
+                    </div>
+                  </GovCard>
+                </div>
+
+                <div ref={opsSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={Settings}
+                    title="Operations Permissions"
+                    badge={OPS_PERMS.filter((p) => permissions[p.key]).length}
+                    color="#7C3AED"
+                  >
+                    <div className="p-3 space-y-2">
+                      {OPS_PERMS.map((item) => (
+                        <PermToggleRow
+                          key={item.key}
+                          item={item}
+                          permissions={permissions}
+                          setPermissions={setPermissions}
+                          disabled={isEditingDisabled}
+                        />
+                      ))}
+                    </div>
+                  </GovCard>
+                </div>
+
+                <div ref={editSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={Pencil}
+                    title="Edit Permissions"
+                    badge={EDIT_PERMS.filter((p) => permissions[p.key]).length}
+                    color="#F59E0B"
+                  >
+                    <div className="p-3 space-y-2">
+                      {EDIT_PERMS.map((item) => (
+                        <PermToggleRow
+                          key={item.key}
+                          item={item}
+                          permissions={permissions}
+                          setPermissions={setPermissions}
+                          disabled={isEditingDisabled}
+                        />
+                      ))}
+                    </div>
+                  </GovCard>
+                </div>
+
+                <div ref={crossSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={UsersIcon}
+                    title="Cross-User Permissions"
+                    badge="User Data Access"
+                    color={HUB_COLORS.emeraldGreen}
+                  >
+                    <div className="p-3">
+                      <CrossUserTab
+                        permissions={permissions}
+                        users={users}
+                        selectedUserId={selectedUserId}
+                        setPermissions={setPermissions}
+                        isDark={isDark}
+                        disabled={isEditingDisabled}
+                      />
+                    </div>
+                  </GovCard>
+                </div>
+
+                <div ref={clientsSectionRef} className="scroll-mt-4">
+                  <GovCard
+                    icon={Briefcase}
+                    title="Client Permissions"
+                    badge={(permissions?.assigned_clients || []).length}
+                    color="#0F766E"
+                  >
+                    <div className="p-3">
+                      <ClientsTab
+                        permissions={permissions}
+                        clients={clients}
+                        setPermissions={setPermissions}
+                        search={clientSearch}
+                        setSearch={setClientSearch}
+                        disabled={isEditingDisabled}
+                      />
+                    </div>
+                  </GovCard>
+                </div>
               </>
             )}
           </div>
