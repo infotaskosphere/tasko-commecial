@@ -384,97 +384,60 @@ export default function PermissionMatrix() {
             ) : (
               <>
                 <PermissionMatrixSummary permissions={permissions} />
-                <GovCard
-                  icon={KeyRound}
-                  title="Permission Scopes"
-                  badge={PERM_TABS.length}
-                  color={HUB_COLORS.mediumBlue}
-                  bodyClassName="p-3"
-                >
-                  <div className="flex flex-col gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Reset:</span>
-                      {PERMISSION_TEMPLATE_ROLES.map((role) => (
-                        <button key={role} type="button" onClick={() => applyPermissionTemplate(role)}
-                          className="px-3 py-1.5 text-xs font-semibold border-2 transition-all"
-                        >
-                          {role === 'admin' ? 'Admin' : role === 'manager' ? 'Manager' : 'Staff'} Template
-                        </button>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                      {PERM_TABS.map((tab) => {
-                        const TabIcon = tab.icon;
-                        const active = activePermTab === tab.id;
-                        return (
-                          <button
-                            key={tab.id}
-                            type="button"
-                            onClick={() => jumpToSection(tab.id)}
-                            aria-current={active ? 'page' : undefined}
-                            title={`Jump to ${tab.label}`}
-                            className={`min-h-10 w-full flex items-center justify-center gap-1.5 px-3 py-2 border text-xs font-bold transition-all whitespace-nowrap ${active
-                              ? 'text-white border-[#1F6FB2] shadow-sm'
-                              : isDark
-                                ? 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}
-                            style={active ? { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' } : undefined}
-                          >
-                            <TabIcon className="h-3.5 w-3.5 shrink-0" />
-                            <span style={TXT}>{tab.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100 dark:border-slate-700">
-                      <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                        <span style={TXT}>
-                          Editing <strong className="text-slate-700 dark:text-slate-200">{editingName}</strong>
-                        </span>
-                        {changes > 0 && <span className="font-bold text-amber-600">{changes} unsaved</span>}
-                      </div>
-                      <Button type="button" onClick={handleSave} disabled={saving || changes === 0} className="whitespace-nowrap">
-                        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                        Save Permissions
-                      </Button>
-                    </div>
-                  </div>
-                </GovCard>
-
-                <div className="flex flex-wrap gap-1.5 pb-1 w-full min-w-0">
-                  {PERM_TABS.map((tab) => {
-                    const TabIcon = tab.icon;
-                    return (
+                <div className="sticky md:top-[190px] top-0 z-20 -mx-1 px-1 py-2 bg-white/95 dark:bg-slate-900/95 backdrop-blur border-b border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Reset:</span>
+                    {PERMISSION_TEMPLATE_ROLES.map((role) => (
                       <button
-                        key={tab.id}
+                        key={role}
                         type="button"
-                        onClick={() => {
-                          setActivePermTab(tab.id);
-                          const refs = {
-                            modules: modulesSectionRef,
-                            view: viewSectionRef,
-                            ops: opsSectionRef,
-                            edit: editSectionRef,
-                            cross: crossSectionRef,
-                            clients: clientsSectionRef,
-                          };
-                          requestAnimationFrame(() => refs[tab.id]?.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-                        }}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap ${
-                          activePermTab === tab.id
-                            ? 'text-white shadow-md'
-                            : isDark
-                              ? 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
-                        }`}
-                        style={activePermTab === tab.id ? { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' } : {}}
+                        onClick={() => applyPermissionTemplate(role)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all hover:shadow-sm capitalize"
                       >
-                        <TabIcon className="h-3.5 w-3.5 shrink-0" />
-                        <span>{tab.label}</span>
+                        {role === 'admin' ? 'Admin' : role === 'manager' ? 'Manager' : 'Staff'} Template
                       </button>
-                    );
-                  })}
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 w-full min-w-0">
+                    {PERM_TABS.map((tab) => {
+                      const TabIcon = tab.icon;
+                      const active = activePermTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActivePermTab(tab.id)}
+                          aria-current={active ? 'page' : undefined}
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap ${
+                            active
+                              ? 'text-white shadow-md'
+                              : isDark
+                                ? 'bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 hover:border-slate-600'
+                                : 'bg-white text-slate-600 border border-slate-200 hover:border-slate-300'
+                          }`}
+                          style={active ? { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' } : {}}
+                        >
+                          <TabIcon className="h-3.5 w-3.5 shrink-0" />
+                          <span>{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 mt-2 border-t border-slate-100 dark:border-slate-700">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                      <span style={TXT}>
+                        Editing <strong className="text-slate-700 dark:text-slate-200">{editingName}</strong>
+                      </span>
+                      {changes > 0 && <span className="font-bold text-amber-600">{changes} unsaved</span>}
+                    </div>
+                    <Button type="button" onClick={handleSave} disabled={saving || changes === 0} className="whitespace-nowrap">
+                      {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                      Save Permissions
+                    </Button>
+                  </div>
                 </div>
 
                 {activePermTab === 'modules' && (
