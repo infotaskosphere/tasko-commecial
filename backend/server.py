@@ -246,6 +246,7 @@ from backend.server_modules.lifecycle import register_shutdown_handler
 from backend.server_modules.holiday_jobs import fetch_indian_holidays_task, configure_event_loop as configure_holiday_event_loop
 from backend.server_modules.attendance_jobs import _mark_absent_for_date, mark_absent_users_task, _force_punch_out_at_7pm, force_punch_out_11pm_task, configure_event_loop as configure_attendance_event_loop
 from backend.server_modules.helpers import safe_dt, sanitize_user_data, convert_objectids, is_own_record, create_audit_log, _expected_hours_pure, calculate_expected_hours
+from backend.server_modules.task_analytics import get_task_analytics as _get_task_analytics
 from backend.server_modules.task_popup import create_task_assigned_popup
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
@@ -1307,44 +1308,12 @@ async def test_email_service(current_user: User = Depends(get_current_user)):
 
 
 # Task Analytics
+# Task Analytics
 @api_router.get("/tasks/analytics")
 async def get_task_analytics(
     month: str, current_user: User = Depends(check_module_permission("tasks", "view"))
 ):
-    """Get task analytics for a specific month (YYYY-MM)"""
-    query = {}
-    if current_user.role != "admin":
-        query["$or"] = [
-            {"assigned_to": current_user.id},
-            {"sub_assignees": current_user.id},
-            {"created_by": current_user.id},
-        ]
-    tasks = await db.tasks.find(query, {"_id": 0}).to_list(1000)
-    total = 0
-    completed = 0
-    pending = 0
-    for task in tasks:
-        created = task.get("created_at")
-        if isinstance(created, str):
-            if created.startswith(month):
-                total += 1
-                if task.get("status") == "completed":
-                    completed += 1
-                elif task.get("status") == "pending":
-                    pending += 1
-        elif isinstance(created, datetime):
-            if created.strftime("%Y-%m") == month:
-                total += 1
-                if task.get("status") == "completed":
-                    completed += 1
-                elif task.get("status") == "pending":
-                    pending += 1
-    return {
-        "month": month,
-        "total_tasks": total,
-        "completed_tasks": completed,
-        "pending_tasks": pending,
-    }
+    return await _get_task_analytics(month, current_user)
 
 
 # ── AI: Detect Duplicate Tasks ─────────────────────────────────────────────────
