@@ -42,6 +42,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel
 
 from backend.dependencies import db, get_current_user
+from backend.modules.finix_ai.banking.models_banking import BankAccountCreate, ManualMatchInput, UnmatchInput, AIAutoMatchInput, IgnoreInput, BankRulePayload, ManualReconcilePayload, BackfillSuspenseInput
+
 from backend.models import User
 from backend.accounting_core import get_default_account_id, try_auto_post
 
@@ -103,25 +105,6 @@ def _perm_match_bank(user: User) -> bool:
 
 
 # ── Models ────────────────────────────────────────────────────────────────
-class BankAccountCreate(BaseModel):
-    company_id: str = ""
-    bank_name: str
-    account_holder: str = ""
-    account_number: str = ""   # stored masked (last 4 shown) — full number never returned by list endpoints
-    ifsc: str = ""
-    branch: str = ""
-    account_type: str = "current"  # current | savings | od | cc
-    opening_balance: float = 0.0
-    upi_id: str = ""
-    notes: str = ""
-
-
-def _mask_account_number(acc_no: str) -> str:
-    acc_no = re.sub(r"\s+", "", acc_no or "")
-    if len(acc_no) <= 4:
-        return acc_no
-    return "•" * (len(acc_no) - 4) + acc_no[-4:]
-
 
 # ── Cross-place sync helpers ────────────────────────────────────────────────
 # Bank details are entered in three places: this Bank Accounts page, Invoice
@@ -1397,102 +1380,7 @@ async def get_bank_account_intelligence(bank_account_id: str, current_user: User
     return {"statistics": statistics, "anomalies": anomalies}
 
 
-class ManualMatchInput(BaseModel):
-    matched_type: str  # purchase | sale | expense | suspense
-    matched_id: str    # for purchase/sale: invoice id; for expense/suspense: chart_of_accounts.id
-    matched_label: str = ""
-    post_journal: bool = True
-    confidence: Optional[float] = None   # smart-suggestion confidence % shown to the user at match time, for the audit trail
-    reason: str = ""                     # optional note — required by nothing, but stored on the audit entry when given
 
-
-class UnmatchInput(BaseModel):
-    reason: str = ""
-
-
-async def _log_recon_audit(
-    txn: dict, action: str, current_user: User,
-    previous_match: Optional[dict] = None, new_match: Optional[dict] = None,
-    confidence: Optional[float] = None, reason: str = "",
-):
-    """Writes one audit entry to the same bank_reconciliation_audit collection
-    the Bank Accounts 'Audit' dialog already reads from (via
-    GET /bank-transactions/{id}/audit-trail → ReconciliationAudit.get_audit_trail).
-    action is one of 'matched' | 'edited' | 'unmatched'."""
-    from backend.bank_ai.bank_storage import BankStorage
-    record = {
-        "bank_transaction_id": txn.get("id"),
-        "bank_account_id": txn.get("bank_account_id"),
-        "action": action,
-        "match_type": "manual",
-        "transaction_details": {
-            "date": txn.get("date"),
-            "narration": txn.get("description"),
-            "reference": txn.get("reference"),
-            "amount": txn.get("debit") or txn.get("credit"),
-            "type": "debit" if txn.get("debit") else "credit",
-        },
-        "previous_match": previous_match,
-        "new_match": new_match,
-        "confidence": confidence,
-        "reasons": [reason] if reason else ([f"{action.capitalize()} by user."]),
-        "reason": reason,
-        "matched_by_user": current_user.id,
-        "performed_by_name": getattr(current_user, "name", None) or getattr(current_user, "email", None),
-    }
-    if action == "matched":
-        record["matched_by"] = current_user.id
-        record["matched_on"] = datetime.now(timezone.utc).isoformat()
-    elif action == "edited":
-        record["edited_by"] = current_user.id
-        record["edited_on"] = datetime.now(timezone.utc).isoformat()
-    elif action == "unmatched":
-        record["unmatched_by"] = current_user.id
-        record["unmatched_on"] = datetime.now(timezone.utc).isoformat()
-    try:
-        await BankStorage.log_audit_trail(record)
-    except Exception:
-        pass  # audit logging is best-effort — never blocks the reconciliation action itself
-
-
-async def auto_match_similar_transactions(
-    company_id: str, description: str, matched_type: str, matched_id: str, matched_label: str,
-    post_journal: bool, user_id: str
-):
-    norm_target = normalize_description(description)
-    if not norm_target:
-        return
-        
-    # Find all unmatched transactions for this company
-    unmatched_txns = await db.bank_transactions.find({
-        "company_id": company_id,
-        "matched_type": {"$in": [None, ""]}
-    }).to_list(100000)
-    
-    for txn in unmatched_txns:
-        txn_desc = txn.get("description", "")
-        c_norm = normalize_description(txn_desc)
-        
-        # Check if description matches exactly, or fuzzy sub-string
-        is_similar = (c_norm == norm_target) or (
-            len(c_norm) > 4 and len(norm_target) > 4 and (c_norm in norm_target or norm_target in c_norm)
-        )
-        
-        if is_similar:
-            suggested_match = {
-                "matched_type": matched_type,
-                "matched_id": matched_id,
-                "matched_label": matched_label,
-                "pending_approval": True
-            }
-            await db.bank_transactions.update_one(
-                {"id": txn["id"]},
-                {"$set": {"suggested_match": suggested_match}}
-            )
-
-
-class AIAutoMatchInput(BaseModel):
-    bank_account_id: Optional[str] = None
 
 
 @router.post("/bank-transactions/ai-auto-match")
@@ -1794,9 +1682,6 @@ async def unmatch_transaction(txn_id: str, payload: UnmatchInput = UnmatchInput(
     return {"success": True}
 
 
-class IgnoreInput(BaseModel):
-    ignored: bool = True
-
 
 @router.post("/bank-transactions/{txn_id}/ignore")
 async def ignore_transaction(txn_id: str, payload: IgnoreInput = IgnoreInput(), current_user: User = Depends(get_current_user)):
@@ -1844,21 +1729,6 @@ async def delete_transaction(txn_id: str, current_user: User = Depends(get_curre
 # PHASE 8 – BANK INTELLIGENCE & AUTO RECONCILIATION ROUTER
 # ═══════════════════════════════════════════════════════════
 
-class BankRulePayload(BaseModel):
-    name: str
-    pattern: str
-    category: str
-    account_id: Optional[str] = None
-    account_name: Optional[str] = None
-    priority: int = 10
-
-
-class ManualReconcilePayload(BaseModel):
-    matched_record_id: Optional[str] = None
-    matched_record_type: Optional[str] = None
-    category: Optional[str] = None
-    coa_account_id: Optional[str] = None
-    company_id: str = ""
 
 
 @router.post("/bank-accounts/{bank_account_id}/process-statement")
@@ -2073,9 +1943,6 @@ async def get_reconciliation_audit_trail_api(txn_id: str, current_user: User = D
     audit = await ReconciliationAudit.get_audit_trail(txn_id)
     return audit
 
-
-class BackfillSuspenseInput(BaseModel):
-    company_id: Optional[str] = None  # omit to backfill every company
 
 
 @router.post("/bank-transactions/backfill-unmatched-to-suspense")
