@@ -1,5 +1,5 @@
 """Finix domain models extracted from backend/gst_reconciliation.py."""
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
