@@ -973,6 +973,19 @@ async def list_passwords(
     return result
 
 
+# Frontend compatibility: the application intentionally uses redirect_slashes=False,
+# while the existing Password Vault client requests the collection URL with a
+# trailing slash. Register the slash variant explicitly so GET /api/passwords/
+# resolves to the same handler without changing global routing behavior.
+router.add_api_route(
+    "/",
+    list_passwords,
+    methods=["GET"],
+    response_model=List[PasswordEntry],
+    include_in_schema=False,
+)
+
+
 @router.post("", response_model=PasswordEntry, status_code=201)
 async def create_password(
     data: PasswordEntryCreate,
