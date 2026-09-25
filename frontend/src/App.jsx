@@ -50,6 +50,7 @@ const ROUTE_PREFETCHERS = {
   "/reports": () => import("./pages/Reports.jsx"),
   "/users": () => import("./pages/Users.jsx"),
   "/master-console": () => import("./pages/MasterConsole.jsx"),
+  "/automation/approvals": () => import("@/components/PendingApprovalsPanel.jsx"),
   "/activate-license": () => import("./pages/LicenseActivation.jsx"),
 };
 
@@ -93,7 +94,7 @@ const BUSINESS_PAGE_TITLES = {
   "/compliance": "Compliance Tracker", "/gst-reconciliation": "GST Reconciliation", "/trademark-sphere": "Trademark Sphere", "/roc-sphere": "ROC Sphere", "/mis-report": "MIS Report", "/salary-slips": "Salary Slip Generator",
   "/records-dashboard": "Records Dashboard", "/client-approvals": "Client Approvals", "/dsc": "DSC Register", "/documents": "Document Register", "/clients": "Clients", "/passwords": "Password Vault",
   "/client-proposals-dashboard": "LeadSense Dashboard", "/leads": "Lead Management", "/quotations": "Quotations", "/finix-dashboard": "Finix", "/invoicing": "Sales & Invoicing", "/purchase": "Purchase", "/bank-accounts": "Bank Accounts", "/chart-of-accounts": "Chart of Accounts", "/journal-entries": "Journal Entries", "/accounting-reports": "Accounting Reports",
-  "/people-matrix": "People Matrix", "/users": "Users", "/leave": "Leave", "/payroll": "Payroll", "/hr": "Human Resources", "/recruitment": "Recruitment", "/reports": "Reports", "/settings/general": "General Settings", "/settings/email": "Email Accounts", "/settings/whatsapp": "Message Automation", "/settings/backup": "Backup & Restore", "/admin-dashboard": "Admin Dashboard", "/permission-matrix": "Permission Matrix", "/master-data": "Master Data", "/roles": "Roles & Access", "/contact-details": "Contact Details", "/master-console": "Commercial Console", "/master-console/website": "Website Studio",
+  "/people-matrix": "People Matrix", "/users": "Users", "/leave": "Leave", "/payroll": "Payroll", "/hr": "Human Resources", "/recruitment": "Recruitment", "/reports": "Reports", "/settings/general": "General Settings", "/settings/email": "Email Accounts", "/settings/whatsapp": "Message Automation", "/settings/backup": "Backup & Restore", "/admin-dashboard": "Admin Dashboard", "/permission-matrix": "Permission Matrix", "/master-data": "Master Data", "/roles": "Roles & Access", "/contact-details": "Contact Details", "/master-console": "Commercial Console", "/master-console/website": "Website Studio", "/automation/approvals": "Automation Approvals",
 };
 
 const BUSINESS_LANDING_PATHS = new Set(["/dashboard", "/finix-dashboard", "/compliance-dashboard", "/records-dashboard", "/client-proposals-dashboard", "/people-matrix", "/admin-dashboard", "/master-console"]);
