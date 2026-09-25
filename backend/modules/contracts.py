@@ -34,8 +34,8 @@ def _contract(
 
 
 TASKOSPHERE = _contract(
-    owns=("tasks", "attendance", "holidays", "dsc_register", "documents"),
-    consumes=("users", "clients", "audit_logs"),
+    owns=("tasks", "attendance", "holidays", "dsc_register"),
+    consumes=("users", "clients", "audit_logs", "documents"),
     current_sources=(
         "backend/server_modules/task_routes.py",
         "backend/server_modules/attendance_routes.py",
