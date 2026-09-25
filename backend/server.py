@@ -252,6 +252,7 @@ from backend.server_modules.task_popup import create_task_assigned_popup
 from backend.server_modules.scheduler_jobs import register_scheduler_jobs
 from backend.server_modules.startup_indexes import initialize_startup_indexes
 from backend.server_modules.startup_bootstrap import start_bootstrap_tasks
+from backend.server_modules.startup_orchestrator import run_startup_orchestration
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 register_shutdown_handler(app, scheduler)
@@ -374,50 +375,42 @@ app.add_middleware(
 
 
 async def startup_event():
-    import backend.server as _self
-
-    _self.app_event_loop = asyncio.get_event_loop()
-    configure_holiday_event_loop(_self.app_event_loop)
-    configure_attendance_event_loop(_self.app_event_loop)
-    try:
-        await initialize_startup_indexes(
-            db,
-            create_compliance_indexes=create_compliance_indexes,
-            create_salary_slip_indexes=create_salary_slip_indexes,
-            create_gst_reconciliation_indexes=create_gst_reconciliation_indexes,
-            create_zte_indexes=create_zte_indexes,
-            create_aiweave_indexes=create_aiweave_indexes,
-            create_gst_portal_sync_indexes=create_gst_portal_sync_indexes,
-            create_accounting_integrity_indexes=create_accounting_integrity_indexes,
-            create_accounting_extended_indexes=create_accounting_extended_indexes,
-            create_desktop_indexes=create_desktop_indexes,
-        )
-    except Exception as e:
-        # Log index creation errors but do NOT crash the server
-        logger.warning(f"Index creation warning (non-fatal): {e}")
-
-    # Scheduled jobs=====================================================================
-    try:
-        register_scheduler_jobs(
-            scheduler,
-            fetch_indian_holidays_task=fetch_indian_holidays_task,
-            mark_absent_users_task=mark_absent_users_task,
-            force_punch_out_11pm_task=force_punch_out_11pm_task,
-            birthday_automation_job=birthday_automation_job,
-            festival_greeting_job=festival_greeting_job,
-            service_expiry_alert_job=service_expiry_alert_job,
-            follow_up_reminder_job=follow_up_reminder_job,
-            wa_dsc_expiry_job=wa_dsc_expiry_job,
-            wa_compliance_job=wa_compliance_job,
-            wa_scheduled_bulk_job=wa_scheduled_bulk_job,
-            wa_bridge_keepalive_job=wa_bridge_keepalive_job,
-        )
-        scheduler.start()
-        logger.info("APScheduler started successfully.")
-    except Exception as e:
-        logger.error(f"APScheduler startup failed: {e}")
-
-    start_bootstrap_tasks(db=db, logger_instance=logger)
+    await run_startup_orchestration(
+        server_module=__import__("backend.server", fromlist=["*"]),
+        db=db,
+        configure_holiday_event_loop=configure_holiday_event_loop,
+        configure_attendance_event_loop=configure_attendance_event_loop,
+        initialize_startup_indexes=initialize_startup_indexes,
+        register_scheduler_jobs=register_scheduler_jobs,
+        start_bootstrap_tasks=start_bootstrap_tasks,
+        scheduler=scheduler,
+        startup_dependencies={
+            "index_factories": {
+                "create_compliance_indexes": create_compliance_indexes,
+                "create_salary_slip_indexes": create_salary_slip_indexes,
+                "create_gst_reconciliation_indexes": create_gst_reconciliation_indexes,
+                "create_zte_indexes": create_zte_indexes,
+                "create_aiweave_indexes": create_aiweave_indexes,
+                "create_gst_portal_sync_indexes": create_gst_portal_sync_indexes,
+                "create_accounting_integrity_indexes": create_accounting_integrity_indexes,
+                "create_accounting_extended_indexes": create_accounting_extended_indexes,
+                "create_desktop_indexes": create_desktop_indexes,
+            },
+            "scheduler_jobs": {
+                "fetch_indian_holidays_task": fetch_indian_holidays_task,
+                "mark_absent_users_task": mark_absent_users_task,
+                "force_punch_out_11pm_task": force_punch_out_11pm_task,
+                "birthday_automation_job": birthday_automation_job,
+                "festival_greeting_job": festival_greeting_job,
+                "service_expiry_alert_job": service_expiry_alert_job,
+                "follow_up_reminder_job": follow_up_reminder_job,
+                "wa_dsc_expiry_job": wa_dsc_expiry_job,
+                "wa_compliance_job": wa_compliance_job,
+                "wa_scheduled_bulk_job": wa_scheduled_bulk_job,
+                "wa_bridge_keepalive_job": wa_bridge_keepalive_job,
+            },
+        },
+    )
 
 
 
