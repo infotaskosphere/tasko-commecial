@@ -12,9 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend" / "src"
 BACKEND = ROOT / "backend"
 
-CALL_RE = re.compile(r'\\b(?:api|licensingApi|axios)\\.(?:get|post|put|patch|delete)\\(\\s*[\\\"]([^\\\"]+)')
-ROUTE_RE = re.compile(r'@(?:api_router|router|app)\\.(?:get|post|put|patch|delete|options|head)\\(\\s*[\\\"]([^\\\"]+)')
-SOURCE_ROUTE_RE = re.compile(r'@api_router\\.(?:get|post|put|patch|delete|options|head)\\([\\\"]([^\\\"]+)')
+CALL_RE = re.compile(r'\b(?:api|licensingApi|axios)\.(?:get|post|put|patch|delete)\(\s*[\"]([^\"]+)')
+ROUTE_RE = re.compile(r'@(?:api_router|router|app)\.(?:get|post|put|patch|delete|options|head)\(\s*[\"]([^\"]+)')
+SOURCE_ROUTE_RE = re.compile(r'@api_router\.(?:get|post|put|patch|delete|options|head)\([\"]([^\"]+)')
 
 def frontend_calls():
     calls = {}
