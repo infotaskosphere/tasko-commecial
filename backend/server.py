@@ -229,6 +229,17 @@ from backend.dependencies import (
     get_user_permissions,   # moved to dependencies — single source of truth
     personal_birthday_candidates,
 )
+from backend.server_modules.helpers import (
+    safe_dt, sanitize_user_data, convert_objectids, is_own_record,
+    create_audit_log, _expected_hours_pure, calculate_expected_hours,
+)
+from backend.server_modules.attendance_jobs import (
+    create_task_assigned_popup, _mark_absent_for_date, mark_absent_users_task,
+    _force_punch_out_at_7pm, force_punch_out_11pm_task,
+    configure_event_loop as configure_attendance_event_loop,
+)
+from backend.server_modules.startup import register_startup_event
+from backend.server_modules.health import _health_route_paths, health, root
 
 # External Services
 from fpdf import FPDF
@@ -258,12 +269,18 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ====================== SCHEDULER ======================
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Kolkata"))
+def _set_app_event_loop(loop):
+    global app_event_loop
+    app_event_loop = loop
+    configure_attendance_event_loop(loop)
+
 
 # IN-MEMORY CACHE for daily reminder (avoids DB query on every request)
 _last_reminder_date_cache: Optional[str] = None
 
 # ====================== APP ======================
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
+register_startup_event(app, scheduler, _set_app_event_loop)
 
 # ====================== CORS CONFIG ======================
 # Supports:
