@@ -1,6 +1,6 @@
 """Canonical platform password repository Pydantic models."""
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 # PASSWORD REPOSITORY MODELS
 # ======================
