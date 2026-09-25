@@ -247,7 +247,7 @@ from backend.server_modules.holiday_jobs import fetch_indian_holidays_task, conf
 from backend.server_modules.attendance_jobs import _mark_absent_for_date, mark_absent_users_task, _force_punch_out_at_7pm, force_punch_out_11pm_task, configure_event_loop as configure_attendance_event_loop
 from backend.server_modules.helpers import safe_dt, sanitize_user_data, convert_objectids, is_own_record, create_audit_log, _expected_hours_pure, calculate_expected_hours
 from backend.server_modules.task_analytics import get_task_analytics as _get_task_analytics
-from backend.server_modules.website_activity import get_website_activity, track_website
+from backend.server_modules.website_activity import register_website_activity
 from backend.server_modules.task_popup import create_task_assigned_popup
 from backend.server_modules.scheduler_jobs import register_scheduler_jobs
 from backend.server_modules.startup_indexes import initialize_startup_indexes
@@ -289,6 +289,7 @@ _PHASE2_ROUTE_MODULES = [
     register_client_management,
     register_dashboard_ops,
     register_holiday_trademark_misc,
+    register_website_activity,
 ]
 
 for _register_phase2_routes in _PHASE2_ROUTE_MODULES:
