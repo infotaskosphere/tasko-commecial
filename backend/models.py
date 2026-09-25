@@ -125,6 +125,19 @@ from backend.modules.taskosphere.dashboard.models_dashboard import DashboardStat
 from backend.modules.taskosphere.attendance.models_holidays import HolidayCreate, HolidayResponse
 
 # ======================
+# DSC MANAGEMENT
+# ======================
+from backend.modules.taskosphere.dsc.models_dsc import (
+    DSCBase,
+    DSCCreate,
+    DSC,
+    DSCMovement,
+    DSCListResponse,
+    DSCMovementRequest,
+    MovementUpdateRequest,
+)
+
+# ======================
 # ======================
 # EMAIL INTEGRATION MODELS
 # ======================
