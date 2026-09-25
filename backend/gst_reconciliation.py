@@ -30,6 +30,8 @@ from fastapi import (
 from pydantic import BaseModel, Field, ConfigDict
 
 from backend.dependencies import db, get_current_user, build_client_query
+from backend.modules.finix_ai.reconciliation.models_gst import ReconciliationSession, SessionSaveBody, GSTR3BBody, ITCReversalBody, VendorCommunicationBody, GSTINBatchBody, TradeNameBody, TradeNamesBatchBody, SessionUpdateBody, AIInsightBody
+
 from backend.models import User
 
 logger   = logging.getLogger(__name__)
@@ -778,36 +780,10 @@ async def _log_audit(action, user, details):
 
 # ─── PYDANTIC SCHEMAS ─────────────────────────────────────────────────────────
 
-class ReconciliationSession(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str; period: Optional[str]=None; portal_filename: str; books_filename: str
-    created_at: datetime; created_by: str; created_by_name: Optional[str]=None
-    summary: Dict[str,Any]=Field(default_factory=dict)
 
-class SessionSaveBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    period: Optional[str]=None; client_id: Optional[str]=None
-    client_name: Optional[str]=None; client_gstin: Optional[str]=None
-    portal_filename: str=""; books_filename: str=""
-    summary: Dict[str,Any]=Field(default_factory=dict)
-    full_result: Optional[Dict[str,Any]]=None
-    company: Optional[Dict[str,Any]]=None
 
-class GSTR3BBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    period: Optional[str]=None; client_id: Optional[str]=None; client_name: Optional[str]=None
-    gstr3b_igst: float=0.0; gstr3b_cgst: float=0.0; gstr3b_sgst: float=0.0
-    gstr2b_igst: float=0.0; gstr2b_cgst: float=0.0; gstr2b_sgst: float=0.0
 
-class ITCReversalBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    period: str; reversal_reason: str; client_id: Optional[str]=None; notes: Optional[str]=None
-    igst_reversed: float=0.0; cgst_reversed: float=0.0; sgst_reversed: float=0.0
 
-class VendorCommunicationBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    gstin: str; trade_name: Optional[str]=None
-    issues: List[str]=Field(default_factory=list); period: Optional[str]=None
 
 # ─── ENDPOINTS ────────────────────────────────────────────────────────────────
 
@@ -1181,8 +1157,6 @@ async def gstin_name_lookup(gstin: str, current_user: User = Depends(get_current
                 "error": str(exc)[:120]}
 
 
-class GSTINBatchBody(BaseModel):
-    gstins: List[str] = Field(default_factory=list)
 
 @router.post("/gstin-lookup-batch")
 async def gstin_name_lookup_batch(body: GSTINBatchBody, current_user: User = Depends(get_current_user)):
@@ -1244,14 +1218,7 @@ async def delete_session(session_id:str, current_user: User=Depends(get_current_
 
 # ─── SHARED TRADE NAMES (NEW) — one user updates = all users see it ───────────
 
-class TradeNameBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    gstin: str
-    name: str
 
-class TradeNamesBatchBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    names: Dict[str, str] = Field(default_factory=dict)
 
 @router.get("/trade-names")
 async def get_trade_names(current_user: User = Depends(get_current_user)):
@@ -1302,20 +1269,6 @@ async def save_trade_names_batch(body: TradeNamesBatchBody, current_user: User =
 
 
 # ─── UPDATE SESSION METADATA ─────────────────────────────────────────────────
-
-class SessionUpdateBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    period:       Optional[str]          = None
-    client_id:    Optional[str]          = None
-    client_name:  Optional[str]          = None
-    client_gstin: Optional[str]          = None
-    company:      Optional[Dict[str,Any]]= None
-    portal_filename: Optional[str]       = None
-    books_filename:  Optional[str]       = None
-    # NEW: allow the frontend "Update" button to overwrite the saved snapshot
-    # with the latest edited reconciliation result.
-    summary:      Optional[Dict[str,Any]]= None
-    full_result:  Optional[Dict[str,Any]]= None
 
 
 @router.patch("/history/{session_id}")
@@ -1504,18 +1457,6 @@ async def dashboard_summary(current_user: User=Depends(get_current_user)):
 
 
 # ─── AI INSIGHTS ENDPOINT (Grok / xAI) ───────────────────────────────────────
-
-class AIInsightBody(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    summary: Dict[str, Any] = Field(default_factory=dict)
-    mismatch_count: int = 0
-    portal_only_count: int = 0
-    books_only_count: int = 0
-    high_risk_vendors: int = 0
-    itc_eligible_total: float = 0.0
-    itc_at_risk_total: float = 0.0
-    period: Optional[str] = None
-    top_mismatches: Optional[List[Dict[str, Any]]] = None
 
 
 @router.post("/ai-insights")
