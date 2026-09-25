@@ -22,6 +22,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import db, get_current_user
+from backend.modules.finix_ai.accounting.models_party_ledgers import RenameRequest
+
 from backend.models import User
 from backend.accounting_core import ensure_default_chart_of_accounts
 
@@ -190,9 +192,6 @@ async def get_party_ledger(party_type: str, party_id: str, current_user: User = 
         "documents": docs, "ledger": ledger_rows,
     }
 
-
-class RenameRequest(dict):
-    pass
 
 
 @router.put("/party-ledgers/{party_type}/{party_id}/rename")
