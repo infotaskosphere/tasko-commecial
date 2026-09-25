@@ -1,7 +1,16 @@
 """Finix domain models extracted from backend/bank_accounts.py."""
-from datetime import date
+import re
+import uuid
+from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field, ConfigDict
+
+from backend.dependencies import db, get_current_user
+from backend.models import User
+from backend.accounting_core import get_default_account_id, try_auto_post
+
+router = APIRouter(tags=["Bank Accounts"])
 
 class BankAccountCreate(BaseModel):
     company_id: str = ""
