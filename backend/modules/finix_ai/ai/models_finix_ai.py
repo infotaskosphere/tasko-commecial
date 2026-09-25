@@ -1,7 +1,15 @@
 """Finix domain models extracted from backend/accounting_ai/finix_ai_router.py."""
+from __future__ import annotations
+
+import re
+from decimal import Decimal, ROUND_HALF_UP
+from fastapi import HTTPException
 from datetime import date
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
+from backend.modules.people_matrix.models_users import User
+
+PAISE = Decimal("0.01")
 
 class FinixAIRequest(BaseModel):
     text: str = Field(..., min_length=2, max_length=4000)
