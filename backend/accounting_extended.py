@@ -64,6 +64,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, U
 from pydantic import BaseModel, Field
 
 from backend.dependencies import db, get_current_user
+from backend.modules.finix_ai.accounting.models_extended import OpeningBalanceLine, OpeningBalanceRequest, MatchRequest, FixedAssetRequest, TDSTCSEntry, BulkJournalLine, BulkJournalEntry, BulkImportRequest
+
 from backend.models import User
 from backend.accounting_core import get_default_account_id
 
@@ -869,16 +871,6 @@ async def yearly_summary(
 # Opening Balances
 # ─────────────────────────────────────────────────────────────────────────────
 
-class OpeningBalanceLine(BaseModel):
-    account_id: str
-    debit: float = 0.0
-    credit: float = 0.0
-
-class OpeningBalanceRequest(BaseModel):
-    company_id: str = ""
-    fy: str          # e.g. "2024-25"
-    date: str        # YYYY-MM-DD, typically April 1 of FY start
-    lines: List[OpeningBalanceLine]
 
 
 @router.get("/opening-balances")
@@ -1185,11 +1177,6 @@ async def get_reconciliation(
     }
 
 
-class MatchRequest(BaseModel):
-    statement_id: str
-    row_id: str
-    entry_id: str
-    line_id: str = ""
 
 @router.post("/bank-reconciliation/{bank_account_id}/match")
 async def match_reconciliation(
@@ -1239,17 +1226,6 @@ async def unmatch_reconciliation(
 # ─────────────────────────────────────────────────────────────────────────────
 # Depreciation
 # ─────────────────────────────────────────────────────────────────────────────
-
-class FixedAssetRequest(BaseModel):
-    company_id: str = ""
-    name: str
-    purchase_date: str
-    cost: float
-    salvage_value: float = 0.0
-    useful_life_years: int = 5
-    method: str = "straight_line"   # straight_line | declining_balance | wdv
-    asset_account_id: str = ""      # COA account for the fixed asset
-    depreciation_account_id: str = ""  # COA account for depreciation expense
 
 
 @router.post("/depreciation/asset")
@@ -1411,19 +1387,6 @@ async def run_depreciation(
 # TDS / TCS
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TDSTCSEntry(BaseModel):
-    company_id: str = ""
-    entry_date: str
-    party_name: str
-    party_pan: str = ""
-    section: str    # e.g. "194C", "194J", "1%TCS"
-    base_amount: float
-    tds_rate: float   # percent e.g. 10 for 10%
-    tds_amount: float
-    payment_type: str = "tds"  # tds | tcs
-    status: str = "deducted"   # deducted | deposited
-    challan_no: str = ""
-
 
 @router.post("/tds-tcs/entry")
 async def record_tds_tcs(
@@ -1539,77 +1502,7 @@ async def audit_trail(
 # Bulk Import — async background processing
 # ─────────────────────────────────────────────────────────────────────────────
 
-class BulkJournalLine(BaseModel):
-    account_id: str
-    debit: float = 0.0
-    credit: float = 0.0
-    memo: str = ""
 
-class BulkJournalEntry(BaseModel):
-    entry_date: str
-    narration: str
-    ref_no: str = ""
-    source: str = "bulk_import"
-    lines: List[BulkJournalLine]
-    idempotency_key: str = ""
-
-class BulkImportRequest(BaseModel):
-    company_id: str = ""
-    fy: str = ""
-    entries: List[BulkJournalEntry]
-
-
-async def _run_bulk_import(job_id: str, company_id: str, fy: str, entries: list, posted_by: str):
-    """Background task: process bulk journal entries one by one, idempotent."""
-    total = len(entries)
-    done = skipped = errors = 0
-    now_iso = datetime.now(timezone.utc).isoformat()
-
-    for e in entries:
-        try:
-            # Validate balance
-            dr = _round2(sum(l.get("debit", 0) for l in e["lines"]))
-            cr = _round2(sum(l.get("credit", 0) for l in e["lines"]))
-            if abs(dr - cr) > 0.05:
-                errors += 1
-                continue
-
-            # Idempotency check
-            ik = e.get("idempotency_key") or f"bulk_{company_id}_{e['entry_date']}_{e['narration'][:30]}"
-            existing = await db.journal_entries.find_one({"idempotency_key": ik})
-            if existing:
-                skipped += 1
-                continue
-
-            entry_id = str(uuid.uuid4())
-            await db.journal_entries.insert_one({
-                "id": entry_id, "company_id": company_id, "fy": fy,
-                "entry_date": e["entry_date"], "narration": e["narration"],
-                "ref_no": e.get("ref_no", ""), "source": e.get("source", "bulk_import"),
-                "idempotency_key": ik, "posted_by": posted_by,
-                "created_at": now_iso,
-            })
-            for line in e["lines"]:
-                if line.get("debit", 0) == 0 and line.get("credit", 0) == 0:
-                    continue
-                await db.journal_lines.insert_one({
-                    "id": str(uuid.uuid4()), "entry_id": entry_id, "company_id": company_id,
-                    "account_id": line["account_id"],
-                    "debit": _round2(line.get("debit", 0)),
-                    "credit": _round2(line.get("credit", 0)),
-                    "entry_date": e["entry_date"], "memo": line.get("memo", ""),
-                    "created_at": now_iso,
-                })
-            done += 1
-        except Exception as ex:
-            errors += 1
-            import logging
-            logging.getLogger(__name__).warning(f"[bulk_import] {job_id} error: {ex}")
-
-    await db.bulk_import_jobs.update_one(
-        {"job_id": job_id},
-        {"$set": {"status": "done", "done": done, "skipped": skipped, "errors": errors, "finished_at": datetime.now(timezone.utc).isoformat()}},
-    )
 
 
 @router.post("/bulk-import/journals")
