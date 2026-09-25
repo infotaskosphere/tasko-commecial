@@ -315,4 +315,5 @@ app.include_router(notification_router, prefix="/api")
 app.include_router(visits_router, prefix="/api")
 app.include_router(email_router, prefix="/api")
 app.include_router(website_config_router, prefix="/api")
+app.include_router(client_portal_router, prefix="/api")
 
