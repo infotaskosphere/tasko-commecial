@@ -1,4 +1,15 @@
-from __future__ import annotations
+"""Phase 2 extracted subsystem: website activity.
+
+The route implementation is preserved and executed only after backend.server has
+created api_router. This prevents import-time decorator evaluation from
+requiring server globals before they exist.
+"""
+
+def register_website_activity(namespace):
+    exec(SOURCE, namespace, namespace)
+    return namespace
+
+SOURCE = r'''from __future__ import annotations
 
 import logging
 import uuid
@@ -72,3 +83,4 @@ async def track_website(data: dict, current_user: User = Depends(get_current_use
     except Exception as e:
         logger.error(f"Website tracking error: {str(e)}")
         raise HTTPException(status_code=500, detail="Tracking failed")
+'''
