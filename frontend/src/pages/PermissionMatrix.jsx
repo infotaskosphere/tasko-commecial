@@ -85,6 +85,50 @@ const EDIT_PERMS = [
   { key: 'can_edit_users', label: 'Modify Users', desc: 'Update user profiles and settings', icon: UserIcon },
 ];
 
+function PermissionMatrixSummary({ permissions }) {
+  const moduleKeys = [
+    'can_access_taskosphere', 'can_access_finix', 'can_access_aiweave',
+    'can_access_compliance', 'can_access_records', 'can_access_proposals',
+    'can_access_people_matrix',
+    'can_manage_invoices', 'can_view_sale', 'can_view_purchase', 'can_view_bank',
+    'can_view_chart_of_accounts', 'can_manage_chart_of_accounts',
+    'can_view_journal_entries', 'can_post_journal_entries', 'can_match_bank',
+    'can_view_accounting_reports', 'can_view_passwords', 'can_edit_passwords',
+    'can_view_gst_reconciliation', 'can_view_trademark_sphere', 'can_view_client_portal',
+    'can_reset_client_passwords', 'can_manage_whatsapp', 'can_create_quotations',
+    'can_view_mis_report', 'can_manage_mis_report', 'can_view_salary_slips',
+    'can_manage_salary_slips', 'can_view_recruitment', 'can_manage_recruitment',
+  ];
+  const all = [...GLOBAL_PERMS, ...OPS_PERMS, ...EDIT_PERMS];
+  const granted = all.filter((p) => permissions?.[p.key]).length +
+    moduleKeys.filter((key) => permissions?.[key]).length;
+  const total = all.length + moduleKeys.length;
+  const pct = total ? Math.round((granted / total) * 100) : 0;
+  return (
+    <GovCard icon={ShieldCheck} title="Permission Coverage" badge={`${granted}/${total}`} color={HUB_COLORS.emeraldGreen}>
+      <div className="p-4 flex flex-wrap items-center gap-4">
+        <div className="relative w-16 h-16 shrink-0">
+          <svg className="w-full h-full -rotate-90" viewBox="0 0 48 48">
+            <circle cx="24" cy="24" r="20" fill="none" className="text-slate-200 dark:text-slate-700" stroke="currentColor" strokeWidth="5" />
+            <circle cx="24" cy="24" r="20" fill="none" className="text-emerald-500" stroke="currentColor" strokeWidth="5"
+              strokeDasharray={2 * Math.PI * 20}
+              strokeDashoffset={2 * Math.PI * 20 * (1 - pct / 100)}
+              strokeLinecap="round" />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-sm font-black text-slate-800 dark:text-slate-100">{pct}%</span>
+        </div>
+        <div className="min-w-[220px] flex-1">
+          <p className="text-lg font-bold text-slate-900 dark:text-white">Permission Coverage</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{granted} of {total} permissions enabled</p>
+          <div className="mt-2 h-1.5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-700">
+            <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+          </div>
+        </div>
+      </div>
+    </GovCard>
+  );
+}
+
 function PermToggleRow({ item, permissions, setPermissions, disabled }) {
   const Icon = item.icon;
   const enabled = permissions?.[item.key] === true;
@@ -366,6 +410,7 @@ export default function PermissionMatrix() {
               <LoadingState label="Loading access governance…" />
             ) : (
               <>
+                <PermissionMatrixSummary permissions={permissions} />
                 <GovCard
                   icon={KeyRound}
                   title="Permission Scopes"
