@@ -361,6 +361,7 @@ for _legacy_router in (
     client_portal_router,
     reminders_router,
     whatsapp_router,
+    trademark_sphere_router,
 ):
     app.include_router(
         _legacy_router,
