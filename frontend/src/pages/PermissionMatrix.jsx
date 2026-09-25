@@ -26,6 +26,13 @@ import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_TEMPLATE_ROLES } from '@/lib/permi
 import { GLOBAL_PERMS, OPS_PERMS, EDIT_PERMS, permTabs as PERM_TABS, MODULE_PERM_KEYS } from '@/lib/permissionCatalog';
 
 const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
+const PERMISSION_ICON_MAP = {
+  Layers, Briefcase, Fingerprint, FileText, Calendar, BarChart2, CheckCircle,
+  Activity, Target, UsersIcon, Eye, Star, UserIcon, ShieldCheck, Receipt,
+  MessageSquare, MessageCircle, ArrowUpRight, Clock, Edit, Bell, Download,
+  Settings, Trash2, XCircle, Inbox, MapPin, Pencil, Zap,
+};
+
 const initialOf = (u) => (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
 
 function PermissionMatrixSummary({ permissions }) {
@@ -73,7 +80,7 @@ function PermissionMatrixSummary({ permissions }) {
 }
 
 function PermToggleRow({ item, permissions, setPermissions, disabled }) {
-  const Icon = item.icon;
+  const Icon = PERMISSION_ICON_MAP[item.icon] || FileText;
   const enabled = permissions?.[item.key] === true;
   return (
     <div className="flex items-start gap-3 p-3 border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800/60">
@@ -401,7 +408,7 @@ export default function PermissionMatrix() {
 
                   <div className="flex flex-wrap gap-1.5 w-full min-w-0">
                     {PERM_TABS.map((tab) => {
-                      const TabIcon = tab.icon;
+                      const TabIcon = PERMISSION_ICON_MAP[tab.icon] || FileText;
                       const active = activePermTab === tab.id;
                       return (
                         <button
