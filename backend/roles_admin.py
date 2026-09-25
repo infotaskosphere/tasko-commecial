@@ -41,7 +41,8 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.dependencies import db, get_current_user, create_audit_log
-from backend.models import User, DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY
+from backend.models import User, DEFAULT_ROLE_PERMISSIONS
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 
 router = APIRouter(prefix="/role-admin", tags=["Roles Admin"])
 
