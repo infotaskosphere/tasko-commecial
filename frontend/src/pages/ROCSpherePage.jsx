@@ -152,7 +152,8 @@ const NAV_GROUPS = [
     tabs: [
       { key: 'upload', label: 'Upload ROC Forms', icon: Upload },
       { key: 'filing', label: 'Filing Desk', icon: FileSpreadsheet },
-      { key: 'documents', label: 'Document Vault', icon: ScrollText },\n      { key: 'roc-dump', label: 'ROC Forms Dump', icon: FileUp },
+      { key: 'documents', label: 'Document Vault', icon: ScrollText },
+      { key: 'roc-dump', label: 'ROC Forms Dump', icon: FileUp },
     ],
   },
   {
