@@ -1543,21 +1543,7 @@ class PerformanceMetric(BaseModel):
 # ======================
 # HOLIDAY MODELS
 # ======================
-class HolidayCreate(BaseModel):
-    date: Any
-    name: str
-    description: Optional[str] = None
-    type: str = "manual"
-    status: Optional[str] = "confirmed"
-
-
-class HolidayResponse(BaseModel):
-    date: Any
-    name: str
-    description: Optional[str] = None
-    status: str = "confirmed"
-    type: Optional[str] = "manual"
-
+from backend.modules.taskosphere.attendance.models_holidays import HolidayCreate, HolidayResponse
 
 # ======================
 # EMAIL INTEGRATION MODELS
