@@ -56,6 +56,13 @@ const COLORS = {
 
 const GRADIENT   = `linear-gradient(135deg, ${COLORS.deepBlue} 0%, ${COLORS.mediumBlue} 100%)`;
 const GRAD_GREEN = `linear-gradient(135deg, ${COLORS.emeraldGreen} 0%, ${COLORS.lightGreen} 100%)`;
+const PERMISSION_ICON_MAP = {
+  Layers, Briefcase, Fingerprint, FileText, Calendar, BarChart2, CheckCircle,
+  Activity, Target, UsersIcon, Eye, Star, UserIcon, ShieldCheck, Receipt,
+  MessageSquare, MessageCircle, ArrowUpRight, Clock, Edit, Bell, Download,
+  Settings, Trash2, XCircle, Inbox, MapPin, Pencil, Zap,
+};
+
 
 const slimScroll = {
   overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent',
@@ -3984,7 +3991,7 @@ export default function Users() {
             </div>
             <div className="flex flex-wrap gap-1.5 pb-1 w-full min-w-0">
               {permTabs.map(tab => {
-                const TabIcon = tab.icon;
+                const TabIcon = PERMISSION_ICON_MAP[tab.icon] || FileText;
                 return (
                   <button key={tab.id} onClick={() => setActivePermTab(tab.id)}
                     className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap ${
@@ -4008,7 +4015,7 @@ export default function Users() {
             {activePermTab === 'view' && (
               <div>
                 <SectionHeader icon={Eye} title="View Permissions" color="#3B82F6" count={GLOBAL_PERMS.filter(p => permissions[p.key]).length} />
-                <div className="space-y-2">{GLOBAL_PERMS.map(p => <PermToggleRow key={p.key} permKey={p.key} label={p.label} desc={p.desc} icon={p.icon} permissions={permissions} setPermissions={setPermissions} />)}</div>
+                <div className="space-y-2">{GLOBAL_PERMS.map(p => <PermToggleRow key={p.key} permKey={p.key} label={p.label} desc={p.desc} icon={PERMISSION_ICON_MAP[p.icon] || FileText} permissions={permissions} setPermissions={setPermissions} />)}</div>
               </div>
             )}
             {activePermTab === 'ops' && (
