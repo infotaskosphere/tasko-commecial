@@ -272,6 +272,11 @@ from backend.server_modules.application_runtime import register_application_runt
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
 api_router = APIRouter(prefix="/api")
+
+# Early compatibility mount: quotations.py owns both /api/quotations and
+# /api/companies routes. Register before application-runtime safety checks so
+# these legacy endpoints are visible during startup route reconciliation.
+app.include_router(quotation_router, prefix="/api", include_in_schema=False)
 register_shutdown_handler(app, scheduler)
 
 _PHASE2_ROUTE_MODULES = [
@@ -363,7 +368,6 @@ register_legacy_router_mounts(
         passwords_router,
         auth_password_reset_router,
         website_tracking_router,
-        quotation_router,
         purchases_router,
         telegram_router,
         leads_router,
