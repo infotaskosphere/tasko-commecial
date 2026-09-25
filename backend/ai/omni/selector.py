@@ -151,6 +151,46 @@ class CandidateSelector:
                     score -= (prio - 1) * 5.0
                     candidates.append((score, acc, model_cap))
 
+        # If health metadata is stale/inconsistent, do not fail the entire
+        # Omni request before a provider gets a real execution attempt.
+        # This second pass only runs when the normal health gate produced zero
+        # candidates. It still requires an enabled account and a usable
+        # provider/model, while the execution engine remains responsible for
+        # marking failed credentials unhealthy and continuing fallback.
+        if not candidates:
+            logger.warning(
+                "AIWeave selector produced no healthy candidates; using connected-account recovery pass."
+            )
+            recovery_accounts = [
+                a for a in accounts
+                if a.get("enabled", True)
+                and str(a.get("status", "CONNECTED")).upper()
+                    not in {"DISABLED", "DISCONNECTED", "AUTH_REQUIRED"}
+                and ("*" in (a.get("allowed_task_types") or ["*"])
+                     or req.task_type in (a.get("allowed_task_types") or ["*"]))
+            ]
+            for acc in recovery_accounts:
+                pid = acc.get("provider")
+                provider_models = [
+                    m for m in MODEL_CATALOG.values() if m.provider == pid
+                ]
+                disc = [m for m in discovered_models if m.get("provider") == pid]
+                for d in disc:
+                    mid = d.get("id")
+                    if mid and mid not in MODEL_CATALOG:
+                        provider_models.append(get_model_capability(mid, pid))
+                if requested_model:
+                    provider_models = [m for m in provider_models if m.id == requested_model]
+                for model_cap in provider_models:
+                    score = self.score_model(
+                        model_cap,
+                        routing_mode,
+                        requirements,
+                        is_free=str(acc.get("cost_tier", "")).upper() == "FREE",
+                    )
+                    if score > -500.0:
+                        candidates.append((score, acc, model_cap))
+
         # Sort by score descending
         candidates.sort(key=lambda x: x[0], reverse=True)
         return [(acc, m) for (_, acc, m) in candidates]
