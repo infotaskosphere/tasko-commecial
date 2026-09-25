@@ -477,7 +477,12 @@ def _build_summary_doc(company, summary, prepared_by):
 
     section("1. Company Master", summary["company"])
     section("2. Incorporation History", summary["incorporation_history"])
-    section("3. Current Directors / KMP", summary["current_directors"])\n    section("4. Current Shareholders", summary["current_shareholders"])\n    section("5. Current Auditor", summary["current_auditor"])\n    section("6. Current Net Worth", summary["current_net_worth"])\n    section("7. Current Loans / DPT-3 Data", summary["current_loans_and_dpt3"])\n    section("8. Directors / KMP History", summary["directors_and_kmp_history"])
+    section("3. Current Directors / KMP", summary["current_directors"])
+    section("4. Current Shareholders", summary["current_shareholders"])
+    section("5. Current Auditor", summary["current_auditor"])
+    section("6. Current Net Worth", summary["current_net_worth"])
+    section("7. Current Loans / DPT-3 Data", summary["current_loans_and_dpt3"])
+    section("8. Directors / KMP History", summary["directors_and_kmp_history"])
     section("9. Share Transfer History", summary["share_transfer_history"])
     section("10. Financial / Net Worth History", summary["financial_history"])
     section("11. Loans / Charges History", summary["loans_and_charges_history"])
