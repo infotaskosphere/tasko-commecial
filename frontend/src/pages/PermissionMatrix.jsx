@@ -23,60 +23,10 @@ import {
 } from '@/components/ui/PageKit';
 import AccessGovernancePanel, { GovCard } from '@/components/governance/AccessGovernancePanel';
 import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_TEMPLATE_ROLES } from '@/lib/permissionTemplates';
+import { GLOBAL_PERMS, OPS_PERMS, EDIT_PERMS, permTabs as PERM_TABS, MODULE_PERM_KEYS } from '@/lib/permissionCatalog';
 
 const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
 const initialOf = (u) => (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
-
-const PERM_TABS = [
-  { id: 'modules', label: 'Modules', icon: Zap },
-  { id: 'view', label: 'View', icon: Eye },
-  { id: 'ops', label: 'Operations', icon: Settings },
-  { id: 'edit', label: 'Edit', icon: Pencil },
-  { id: 'cross', label: 'Cross-User', icon: UsersIcon },
-  { id: 'clients', label: 'Clients', icon: Briefcase },
-];
-
-const GLOBAL_PERMS = [
-  { key: 'can_view_all_tasks', label: 'Universal Task Access', desc: 'See tasks assigned to any user or department', icon: Layers },
-  { key: 'can_view_all_clients', label: 'Master Client List', desc: 'View all company legal entities', icon: Briefcase },
-  { key: 'can_view_all_dsc', label: 'DSC Vault Access', desc: 'View all Digital Signature Certificates', icon: Fingerprint },
-  { key: 'can_view_documents', label: 'Document Library', desc: 'Access physical document register', icon: FileText },
-  { key: 'can_view_all_duedates', label: 'Compliance Calendar', desc: 'View compliance due dates', icon: Calendar },
-  { key: 'can_view_reports', label: 'Analytics Dashboard', desc: 'View performance and system-wide reports', icon: BarChart2 },
-  { key: 'can_view_todo_dashboard', label: 'Todo Dashboard', desc: 'Access global team todo overview', icon: CheckCircle },
-  { key: 'can_view_audit_logs', label: 'System Audit Trail', desc: 'View activity logs and record histories', icon: Activity },
-  { key: 'can_view_all_leads', label: 'Leads Pipeline', desc: 'View the global leads dashboard', icon: Target },
-  { key: 'can_view_user_page', label: 'User Directory', desc: 'View team members directory', icon: UsersIcon },
-  { key: 'can_view_selected_users_reports', label: 'Team Reports Access', desc: 'View reports for selected users', icon: Eye },
-  { key: 'can_view_staff_rankings', label: 'Staff Rankings', desc: 'View performance leaderboard', icon: Star },
-  { key: 'can_view_own_data', label: 'View Own Data', desc: 'Access own attendance, tasks and reports', icon: UserIcon },
-  { key: 'can_view_compliance', label: 'Compliance Tracker', desc: 'Access the Compliance Tracker page', icon: Shield },
-  { key: 'can_view_gst_reconciliation', label: 'GST Reconciliation', desc: 'Access GST reconciliation', icon: FileText },
-  { key: 'can_create_quotations', label: 'Quotations Module', desc: 'Create, edit, export and share quotations', icon: Receipt },
-  { key: 'can_manage_whatsapp', label: 'WhatsApp Settings', desc: 'Access and configure WhatsApp integration settings', icon: MessageSquare },
-  { key: 'can_access_whatsapp_hub', label: 'WhatsApp Hub', desc: 'Access the WhatsApp Hub multi-account inbox', icon: MessageCircle },
-  { key: 'can_view_recruitment', label: 'Recruitment (view)', desc: 'Access recruitment candidate pipeline and interviews', icon: Briefcase },
-  { key: 'can_manage_recruitment', label: 'Recruitment (manage)', desc: 'Create, edit and delete candidates and convert hires', icon: Briefcase },
-];
-
-const OPS_PERMS = [
-  { key: 'can_assign_tasks', label: 'Task Delegation', desc: 'Assign tasks to other users', icon: ArrowUpRight },
-  { key: 'can_assign_clients', label: 'Client Assignment', desc: 'Assign and reassign users to clients', icon: Briefcase },
-  { key: 'can_manage_users', label: 'User Governance', desc: 'Manage team members and roles', icon: UsersIcon },
-  { key: 'can_view_attendance', label: 'Attendance Management', desc: 'Review punch timings and late reports', icon: Clock },
-  { key: 'can_edit_attendance', label: 'Edit Attendance', desc: 'Edit past attendance records', icon: Edit },
-  { key: 'can_send_reminders', label: 'Automated Reminders', desc: 'Trigger email/notification reminders', icon: Bell },
-  { key: 'can_receive_popup_reminders', label: 'Popup Reminders', desc: 'Receive on-screen popup reminders', icon: Bell },
-  { key: 'can_download_reports', label: 'Export Data', desc: 'Download CSV/PDF versions of reports', icon: Download },
-  { key: 'can_manage_settings', label: 'System Settings', desc: 'Modify global system configuration', icon: Settings },
-  { key: 'can_delete_data', label: 'Delete Records', desc: 'Permanently delete data entries', icon: Trash2 },
-  { key: 'can_delete_tasks', label: 'Delete Tasks', desc: 'Delete any task regardless of ownership', icon: XCircle },
-  { key: 'can_connect_email', label: 'Connect Email Accounts', desc: 'Link personal email via IMAP integration', icon: Inbox },
-  { key: 'can_view_all_visits', label: 'View All Visits', desc: 'See client visits logged by any user', icon: MapPin },
-  { key: 'can_edit_visits', label: 'Edit Visits', desc: 'Edit and update client visit records', icon: Edit },
-  { key: 'can_delete_visits', label: 'Delete Any Visit', desc: 'Delete visit records belonging to any user', icon: Trash2 },
-  { key: 'can_delete_own_visits', label: 'Delete Own Visits', desc: 'Delete only their own logged visit records', icon: XCircle },
-];
 
 const EDIT_PERMS = [
   { key: 'can_edit_tasks', label: 'Modify Tasks', desc: 'Update and delete task definitions', icon: Pencil },
@@ -103,8 +53,8 @@ function PermissionMatrixSummary({ permissions }) {
   ];
   const all = [...GLOBAL_PERMS, ...OPS_PERMS, ...EDIT_PERMS];
   const granted = all.filter((p) => permissions?.[p.key]).length +
-    moduleKeys.filter((key) => permissions?.[key]).length;
-  const total = all.length + moduleKeys.length;
+    MODULE_PERM_KEYS.filter((key) => permissions?.[key]).length;
+  const total = all.length + MODULE_PERM_KEYS.length;
   const pct = total ? Math.round((granted / total) * 100) : 0;
   return (
     <GovCard icon={ShieldCheck} title="Permission Coverage" badge={`${granted}/${total}`} color={HUB_COLORS.emeraldGreen}>
