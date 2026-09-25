@@ -33,7 +33,8 @@ from backend.dependencies import (
     get_team_user_ids,
     create_audit_log,
 )
-from backend.models import User, DEFAULT_ROLE_PERMISSIONS, MODULE_HIERARCHY
+from backend.models import User, DEFAULT_ROLE_PERMISSIONS
+from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.governance_core import ALL_ACTIONS
 from backend.dependencies import _normalize_permissions
 from backend.commercial_licensee_admin import LICENSE_MODULE_ALIASES
