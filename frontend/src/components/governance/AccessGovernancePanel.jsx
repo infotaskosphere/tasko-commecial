@@ -35,7 +35,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronDown, Check, X, ShieldAlert, Info, Save, Loader2, Search,
-  ChevronsDownUp, ChevronsUpDown,
+  ChevronsDownUp, ChevronsUpDown, Layers,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
