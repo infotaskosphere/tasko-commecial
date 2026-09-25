@@ -1,3 +1,10 @@
+import {
+  Layers, Briefcase, Fingerprint, FileText, Calendar, BarChart2, CheckCircle,
+  Activity, Target, Users as UsersIcon, Eye, Star, User as UserIcon,
+  ShieldCheck, Receipt, MessageSquare, MessageCircle, ArrowUpRight, Clock,
+  Edit, Bell, Download, Settings, Trash2, XCircle, Inbox, MapPin, Pencil, Zap,
+} from 'lucide-react';
+
 // Canonical permission catalog shared by People Matrix → Users → Permissions and Admin → Permission Matrix.
 
 export const GLOBAL_PERMS = [
