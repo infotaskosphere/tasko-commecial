@@ -17,5 +17,9 @@ class ModuleArchitectureTests(unittest.TestCase):
         self.assertEqual(find_violations(), [])
 
 
+    def test_runtime_ownership_modules_are_importable(self):
+        for registration in MODULE_REGISTRATIONS:
+            __import__(registration.package)
+
 if __name__ == "__main__":
     unittest.main()
