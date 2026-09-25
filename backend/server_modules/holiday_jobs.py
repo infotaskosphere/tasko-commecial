@@ -11,6 +11,12 @@ from backend.dependencies import db
 
 logger = logging.getLogger(__name__)
 IST = pytz.timezone("Asia/Kolkata")
+_event_loop = None
+
+
+def configure_event_loop(loop):
+    global _event_loop
+    _event_loop = loop
 
 
 def fetch_indian_holidays_task():
@@ -53,9 +59,7 @@ def fetch_indian_holidays_task():
             logger.error(f"Holiday Autofetch Failed: {str(e)}")
 
     try:
-        import backend.server as _self
-
-        loop = _self.app_event_loop
+        loop = _event_loop
         if loop is None or loop.is_closed():
             logger.warning(
                 "fetch_indian_holidays_task: main event loop not ready, skipping."
