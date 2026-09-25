@@ -21,6 +21,7 @@ import {
   PageShell, PageBanner, StatRow, LoadingState, EmptyState, HUB_COLORS,
 } from '@/components/ui/PageKit';
 import AccessGovernancePanel, { GovCard } from '@/components/governance/AccessGovernancePanel';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSION_TEMPLATE_ROLES } from '@/lib/permissionTemplates';
 
 const TXT = { overflowWrap: 'break-word', wordBreak: 'normal' };
 const initialOf = (u) => (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
@@ -262,6 +263,7 @@ export default function PermissionMatrix() {
   const [baseline, setBaseline] = useState({});
   const [activePermTab, setActivePermTab] = useState('modules');
   const [saving, setSaving] = useState(false);
+  const [permissionTemplates] = useState(DEFAULT_ROLE_PERMISSIONS);
 
   useEffect(() => {
     (async () => {
@@ -352,7 +354,13 @@ export default function PermissionMatrix() {
     }
   };
 
-  const isEditingDisabled = isAdminUser && activePermTab !== 'modules' ? true : false;
+  const isEditingDisabled = false;
+
+  const applyPermissionTemplate = (role) => {
+    const template = permissionTemplates?.[role] || DEFAULT_ROLE_PERMISSIONS?.[role] || {};
+    setPermissions({ ...template });
+    toast.info(`Reset to ${role} template — click Save changes to apply`);
+  };
 
   return (
     <PageShell>
@@ -419,6 +427,16 @@ export default function PermissionMatrix() {
                   bodyClassName="p-3"
                 >
                   <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Quick Reset:</span>
+                      {PERMISSION_TEMPLATE_ROLES.map((role) => (
+                        <button key={role} type="button" onClick={() => applyPermissionTemplate(role)}
+                          className="px-3 py-1.5 text-xs font-semibold border-2 transition-all"
+                        >
+                          {role === 'admin' ? 'Admin' : role === 'manager' ? 'Manager' : 'Staff'} Template
+                        </button>
+                      ))}
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                       {PERM_TABS.map((tab) => {
                         const TabIcon = tab.icon;
