@@ -814,9 +814,3 @@ app.include_router(google_auth_router)
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLIENT MERGE — merge two or more duplicate clients into one
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-    """Quick self-check: confirms which /api paths this process actually serves."""
-    return sorted(
-        {r.path for r in _iter_api_routes(app.routes) if r.path.startswith("/api")}
-    )
