@@ -1,7 +1,39 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, Download, Loader2, Upload } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, Download, FolderUp, Loader2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+
+const ACCEPTED_EXT = '.pdf,.xlsx,.xlsm,.xls,.csv,.docx,.doc,.zip';
+
+const CLASSIFICATION_OPTIONS = [
+  ['share_transfer', 'Share transfer'],
+  ['director_change', 'Director change'],
+  ['director_resignation', 'Director resignation'],
+  ['share_allotment', 'Share allotment'],
+  ['financial', 'Financial (AOC-4)'],
+  ['annual_return', 'Annual return'],
+  ['loan_deposit', 'Loan / deposit'],
+  ['charge', 'Charge'],
+  ['auditor', 'Auditor'],
+  ['registered_office', 'Registered office'],
+  ['resolution', 'Resolution'],
+  ['director_kyc', 'Director KYC'],
+  ['incorporation', 'Incorporation'],
+  ['other', 'Other'],
+];
+
+function mergeFiles(existing, incoming) {
+  const seen = new Set(existing.map((f) => `${f.webkitRelativePath || f.name}:${f.size}`));
+  const merged = [...existing];
+  incoming.forEach((file) => {
+    const key = `${file.webkitRelativePath || file.name}:${file.size}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(file);
+    }
+  });
+  return merged;
+}
 
 async function parseBlobError(err) {
   try {
@@ -32,6 +64,8 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
   const [summary, setSummary] = useState(null);
   const [busy, setBusy] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [correctingId, setCorrectingId] = useState(null);
+  const folderInputRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!company?.id) return;
@@ -100,9 +134,29 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
       form.append('review_status', status);
       await api.post(`/roc-sphere/companies/${company.id}/roc-dump/${item.id}/review`, form);
       await load();
-      toast.success(`Filing marked ${status}`);
+      toast.success(status === 'VERIFIED'
+        ? 'Filing verified — this pattern is now reinforced for future classification'
+        : `Filing marked ${status}`);
     } catch (err) {
       toast.error(await parseBlobError(err) || 'Review update failed');
+    }
+  };
+
+  const correctClassification = async (item, classification) => {
+    if (!classification || classification === item.classification) {
+      setCorrectingId(null);
+      return;
+    }
+    try {
+      const form = new FormData();
+      form.append('classification', classification);
+      await api.post(`/roc-sphere/companies/${company.id}/roc-dump/${item.id}/correct-classification`, form);
+      await load();
+      toast.success('Correction saved — the classifier learns from this for future uploads');
+    } catch (err) {
+      toast.error(await parseBlobError(err) || 'Correction failed');
+    } finally {
+      setCorrectingId(null);
     }
   };
 
@@ -127,20 +181,42 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
           <div className="p-4 space-y-4">
             <div className={`rounded-lg border p-3 ${isDark ? 'border-blue-800 bg-blue-950/20' : 'border-blue-200 bg-blue-50'}`}>
               <p className={`text-xs ${text}`}>
-                Upload the company's ROC forms from incorporation to date. Files are retained,
-                classified, extracted and marked for review when the source cannot be read confidently.
+                Upload the company's ROC forms from incorporation to date — individual files, a whole
+                folder, or a ZIP archive. PDFs, Excel/CSV sheets and Word (.docx) documents are all read
+                and interpreted automatically; files inside ZIPs and folders (including nested subfolders)
+                are extracted and processed the same way. Every filing is retained, classified and
+                extracted, and marked for review when the source can't be read confidently. Verifying a
+                filing (or correcting a wrong classification) feeds a learned pattern table that improves
+                future auto-classification — the archive gets more accurate the more it's used.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <input type="file" multiple accept=".pdf,.xlsx,.xlsm,.xls,.csv"
-                onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                className={`roc-forms-dump-file-input block w-full text-xs ${muted} file:mr-3 file:px-3 file:py-1.5 file:border file:border-slate-300 file:bg-slate-50 file:text-slate-700 file:font-semibold file:cursor-pointer`} />
+              <input type="file" multiple accept={ACCEPTED_EXT}
+                onChange={(e) => setFiles((prev) => mergeFiles(prev, Array.from(e.target.files || [])))}
+                className={`roc-forms-dump-file-input block text-xs ${muted} file:mr-3 file:px-3 file:py-1.5 file:border file:border-slate-300 file:bg-slate-50 file:text-slate-700 file:font-semibold file:cursor-pointer`} />
+              <input ref={folderInputRef} type="file" multiple
+                webkitdirectory="" directory="" mozdirectory=""
+                onChange={(e) => setFiles((prev) => mergeFiles(prev, Array.from(e.target.files || [])))}
+                className="hidden" />
+              <button type="button" onClick={() => folderInputRef.current?.click()}
+                className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-semibold flex items-center gap-1.5">
+                <FolderUp size={13} /> Choose folder
+              </button>
+              {files.length > 0 && (
+                <span className={`text-[11px] ${muted}`}>{files.length} file(s) selected</span>
+              )}
               <button type="button" disabled={busy || !files.length} onClick={upload}
                 className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5">
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
                 {busy ? 'Processing…' : `Upload${files.length ? ` (${files.length})` : ''}`}
               </button>
+              {files.length > 0 && (
+                <button type="button" disabled={busy} onClick={() => setFiles([])}
+                  className="px-2 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700">
+                  Clear
+                </button>
+              )}
               <button type="button" disabled={busy} onClick={rebuild}
                 className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-semibold disabled:opacity-50">
                 Rebuild Summary
@@ -187,7 +263,14 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
                         <td className={`px-3 py-2 max-w-[280px] truncate ${muted}`} title={item.filename}>{item.filename}</td>
                         <td className={`px-3 py-2 ${muted}`}>{item.metadata?.financial_year || '—'}</td>
                         <td className={`px-3 py-2 ${muted}`}>{item.review?.status || item.status}</td>
-                        <td className={`px-3 py-2 ${muted}`}>{Math.round((item.confidence || 0) * 100)}%</td>
+                        <td className={`px-3 py-2 ${muted}`}>
+                          {Math.round((item.confidence || 0) * 100)}%
+                          {item.classified_by_learning && (
+                            <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-purple-100 text-purple-700" title="Classified from learned reviewer patterns, not a fixed rule">
+                              learned
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-right whitespace-nowrap">
                           <button type="button" onClick={() => download(item)} className="px-2 py-1 rounded border border-slate-300 mr-1">
                             <Download size={12} className="inline" />
@@ -195,9 +278,25 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
                           <button type="button" onClick={() => review(item, 'VERIFIED')} className="px-2 py-1 rounded bg-emerald-600 text-white text-[11px] mr-1">
                             Verify
                           </button>
-                          <button type="button" onClick={() => review(item, 'NEEDS_REVIEW')} className="px-2 py-1 rounded bg-amber-500 text-white text-[11px]">
+                          <button type="button" onClick={() => review(item, 'NEEDS_REVIEW')} className="px-2 py-1 rounded bg-amber-500 text-white text-[11px] mr-1">
                             Review
                           </button>
+                          {correctingId === item.id ? (
+                            <select autoFocus defaultValue={item.classification || 'other'}
+                              onBlur={(e) => correctClassification(item, e.target.value)}
+                              onChange={(e) => correctClassification(item, e.target.value)}
+                              className="px-1 py-1 rounded border border-slate-300 text-[11px]">
+                              {CLASSIFICATION_OPTIONS.map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <button type="button" onClick={() => setCorrectingId(item.id)}
+                              className="px-2 py-1 rounded border border-slate-300 text-[11px]"
+                              title="Correct classification — this trains future auto-classification">
+                              Fix type
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
