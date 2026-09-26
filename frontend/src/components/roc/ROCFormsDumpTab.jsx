@@ -135,7 +135,7 @@ function ROCFormsDumpTab({ company, isDark, text, muted }) {
             <div className="flex flex-wrap items-center gap-2">
               <input type="file" multiple accept=".pdf,.xlsx,.xlsm,.xls,.csv"
                 onChange={(e) => setFiles(Array.from(e.target.files || []))}
-                className={`block w-full text-xs ${muted} file:mr-3 file:px-3 file:py-1.5 file:border file:border-slate-300 file:bg-slate-50 file:text-slate-700 file:font-semibold file:cursor-pointer`} />
+                className={`roc-forms-dump-file-input block w-full text-xs ${muted} file:mr-3 file:px-3 file:py-1.5 file:border file:border-slate-300 file:bg-slate-50 file:text-slate-700 file:font-semibold file:cursor-pointer`} />
               <button type="button" disabled={busy || !files.length} onClick={upload}
                 className="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5">
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
