@@ -12,7 +12,6 @@ import "./message-automation-commercial.css";
 import "./master-data-ui.css";
 import "./commercial-final-overrides.css";
 import "./roles-page-visibility-fix.css";
-import "./roc-sphere-upload-tabs.css";
 // Explicit extensions for Vite
 import App from "./App.jsx";
 
