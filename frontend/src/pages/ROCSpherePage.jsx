@@ -463,12 +463,13 @@ export default function ROCSpherePage() {
                     );
                   })}
                 </div>
-                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-50/70'}`}>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-50/70'} ${(NAV_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) || NAV_GROUPS[0]).key === 'filings' ? 'roc-sphere-filing-tabs' : ''}`}>
                   {(NAV_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) || NAV_GROUPS[0]).tabs.map((t) => {
                     const Icon = t.icon;
                     const active = tab === t.key;
                     return (
                       <button key={t.key} onClick={() => setTab(t.key)} title={t.label}
+                        data-active={active ? "true" : "false"}
                         className={`min-w-0 px-3 py-2.5 text-[11px] font-medium border-b-2 flex items-center justify-center gap-1.5 transition text-center
                           ${active ? 'border-blue-600 text-blue-600 bg-white dark:bg-slate-800' : `border-transparent ${muted} hover:text-blue-500`}`}>
                         <Icon size={13} className="shrink-0" /><span className="truncate">{t.label}</span>
