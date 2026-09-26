@@ -15,8 +15,10 @@ import json
 import logging
 import re
 import uuid
+import zipfile
+from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -39,11 +41,26 @@ COMPANIES = db.roc_companies
 DUMP = db.roc_form_dump
 CHUNKS = db.roc_form_dump_chunks
 DOCS = db.roc_documents
+# Persistent, per-classification keyword-weight table. This is what lets the
+# classifier improve as reviewers verify or correct filings — a genuine
+# incremental (Naive-Bayes-style) learning loop, not a marketing label.
+LEARNING = db.roc_form_dump_learning
 
-ALLOWED_EXT = (".pdf", ".xlsx", ".xlsm", ".xls", ".csv")
+# Files accepted directly. ZIP archives are expanded and every eligible
+# member inside (including nested folders and nested .zip files) is run
+# through the same pipeline as a directly uploaded file.
+ALLOWED_EXT = (".pdf", ".xlsx", ".xlsm", ".xls", ".csv", ".docx")
+ARCHIVE_EXT = (".zip",)
+# .doc (legacy binary Word) and password-protected/scanned files cannot be
+# read reliably without extra OCR/conversion infrastructure; they are still
+# accepted and archived, just flagged NEEDS_REVIEW instead of silently
+# rejected.
+UNREADABLE_BUT_ACCEPTED_EXT = (".doc",)
 CHUNK_SIZE = 512 * 1024
 MAX_BATCH = 200 * 1024 * 1024
 MAX_TEXT_STORE = 150_000
+MAX_ZIP_MEMBERS = 500
+MAX_ZIP_NESTING = 2
 
 
 def _now():
@@ -107,16 +124,82 @@ def _extract_workbook_text(filename, raw):
         return "", 0
 
 
+def _extract_docx_text(raw):
+    """Read a Word (.docx) ROC form: body paragraphs plus any tables, in
+    document order, so downstream regex extraction sees the same layout a
+    reviewer would."""
+    try:
+        doc = DocxDocument(io.BytesIO(raw))
+        lines = []
+        for para in doc.paragraphs:
+            text = _clean_text(para.text)
+            if text:
+                lines.append(text)
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [_clean_text(cell.text) for cell in row.cells]
+                cells = [c for c in cells if c]
+                if cells:
+                    lines.append(" | ".join(cells))
+        return "\n".join(lines), 0
+    except Exception as exc:
+        logger.warning("ROC dump .docx extraction failed: %s", exc)
+        return "", 0
+
+
 def _extract_text(filename, raw):
     name = str(filename or "").lower()
     if name.endswith(".pdf"):
         return _extract_pdf_text(raw)
     if name.endswith((".xlsx", ".xlsm", ".xls")):
         return _extract_workbook_text(name, raw)
+    if name.endswith(".docx"):
+        return _extract_docx_text(raw)
+    if name.endswith(UNREADABLE_BUT_ACCEPTED_EXT):
+        # Legacy binary .doc — retained and archived, but not parsed.
+        return "", 0
     try:
         return raw.decode("utf-8", errors="replace"), 0
     except Exception:
         return "", 0
+
+
+def _iter_archive_members(raw: bytes, path_prefix: str = "", depth: int = 0) -> List[Tuple[str, bytes]]:
+    """Expand a .zip (folder upload or archive) into (relative_filename, raw_bytes)
+    pairs for every eligible member, recursing into nested zips up to
+    MAX_ZIP_NESTING deep. Directories, hidden/system files (__MACOSX,
+    .DS_Store, Thumbs.db) and anything outside ALLOWED_EXT/ARCHIVE_EXT are
+    skipped rather than rejected, so a mixed folder upload doesn't fail as a
+    whole."""
+    members: List[Tuple[str, bytes]] = []
+    if depth > MAX_ZIP_NESTING:
+        return members
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+            infos = [i for i in zf.infolist() if not i.is_dir()][:MAX_ZIP_MEMBERS]
+            for info in infos:
+                name = info.filename
+                base = name.rsplit("/", 1)[-1]
+                if not base or base.startswith("."):
+                    continue
+                if "__MACOSX" in name or base.lower() in {"thumbs.db", "desktop.ini"}:
+                    continue
+                lower = base.lower()
+                try:
+                    member_raw = zf.read(info)
+                except Exception as exc:
+                    logger.warning("ROC dump zip member unreadable %s: %s", name, exc)
+                    continue
+                relative_name = f"{path_prefix}{name}" if path_prefix else name
+                if lower.endswith(ARCHIVE_EXT):
+                    members.extend(_iter_archive_members(member_raw, f"{relative_name}/", depth + 1))
+                elif lower.endswith(ALLOWED_EXT + UNREADABLE_BUT_ACCEPTED_EXT):
+                    members.append((relative_name, member_raw))
+                # Anything else inside the archive (images, readme, etc.) is
+                # silently skipped — it isn't an ROC filing to extract.
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"not a valid ZIP archive ({exc})") from exc
+    return members
 
 
 def _form_number(filename, text):
@@ -170,6 +253,114 @@ def _classify(form, text):
     if re.search(r"\bspice|inc[- ]?7|inc[- ]?20|inc[- ]?32|inc[- ]?33|inc[- ]?34\b|certificate of incorporation", hay):
         return "incorporation"
     return "other"
+
+
+CLASSIFICATION_LABELS = (
+    "share_transfer", "director_change", "director_resignation", "share_allotment",
+    "financial", "annual_return", "loan_deposit", "charge", "auditor",
+    "registered_office", "resolution", "director_kyc", "incorporation", "other",
+)
+_TOKEN_RE = re.compile(r"[a-z]{4,}")
+
+
+def _tokenize(text: str) -> List[str]:
+    # Common words carry no classification signal and would just dilute the
+    # learned weight table, so they're dropped before counting.
+    stop = {
+        "shall", "form", "company", "companies", "pursuant", "section", "rules",
+        "please", "signature", "date", "number", "name", "registrar", "office",
+        "under", "with", "that", "this", "have", "been", "were", "from", "their",
+    }
+    return [t for t in _TOKEN_RE.findall((text or "").lower()) if t not in stop]
+
+
+async def _learned_weights(company_id: Optional[str] = None) -> Dict[str, Counter]:
+    """Load the persistent keyword-weight table. Company-scoped weights are
+    blended with the global table so patterns learned on one client's filings
+    also help classify a brand-new client's forms from day one."""
+    weights: Dict[str, Counter] = {label: Counter() for label in CLASSIFICATION_LABELS}
+    async for doc in LEARNING.find({"scope": {"$in": ["global"] + ([company_id] if company_id else [])}}):
+        counts = doc.get("token_counts") or {}
+        bucket = weights.setdefault(doc.get("classification", "other"), Counter())
+        for token, count in counts.items():
+            bucket[token] += int(count or 0)
+    return weights
+
+
+def _learning_boost(text: str, weights: Dict[str, Counter]) -> Tuple[Optional[str], float]:
+    """Score the document's tokens against everything learned from prior
+    reviewer corrections/confirmations. Returns the best-matching learned
+    classification and a 0..1 confidence contribution — this is what lets
+    the archive keep getting more accurate the more it is used, without any
+    hardcoded regex for the pattern reviewers just confirmed."""
+    tokens = _tokenize(text[:20000])
+    if not tokens:
+        return None, 0.0
+    token_counts = Counter(tokens)
+    scores: Dict[str, float] = {}
+    for label, bucket in weights.items():
+        if not bucket:
+            continue
+        total = sum(bucket.values()) or 1
+        score = sum(token_counts[t] * (bucket.get(t, 0) / total) for t in token_counts)
+        if score:
+            scores[label] = score
+    if not scores:
+        return None, 0.0
+    best_label = max(scores, key=scores.get)
+    top = scores[best_label]
+    runner_up = sorted(scores.values(), reverse=True)[1] if len(scores) > 1 else 0.0
+    margin = (top - runner_up) / top if top else 0.0
+    return best_label, min(0.25, round(margin * 0.25, 3))
+
+
+async def _classify_with_learning(form: str, text: str, company_id: Optional[str] = None):
+    """Static regex classification is the reliable baseline; the learned
+    table only steps in when the regexes found nothing (classification ==
+    'other') and only if it has already seen enough confirmed examples of a
+    pattern to be useful."""
+    base = _classify(form, text)
+    weights = await _learned_weights(company_id)
+    learned_label, boost = _learning_boost(text, weights)
+    if base == "other" and learned_label and learned_label != "other" and boost > 0.05:
+        return learned_label, boost, True
+    return base, 0.0, False
+
+
+async def _record_learning_feedback(company_id: str, classification: str, text: str,
+                                     previous_classification: Optional[str] = None):
+    """Feed a confirmed (or reviewer-corrected) classification back into the
+    persistent weight table, at both the company and global scope. This is
+    the mechanism by which the archive 'evolves': every VERIFIED filing or
+    manual correction makes the next similarly-worded filing easier to
+    classify automatically."""
+    if classification not in CLASSIFICATION_LABELS or classification == "other":
+        return
+    tokens = _tokenize(text[:20000])
+    if not tokens:
+        return
+    counts = dict(Counter(tokens))
+    now = _now()
+    for scope in (company_id, "global"):
+        await LEARNING.update_one(
+            {"scope": scope, "classification": classification},
+            {
+                "$inc": {f"token_counts.{tok}": n for tok, n in counts.items()},
+                "$set": {"updated_at": now},
+                "$setOnInsert": {"scope": scope, "classification": classification, "created_at": now},
+            },
+            upsert=True,
+        )
+    # A correction is a stronger, explicit negative signal than an
+    # unreviewed guess — down-weight the tokens under whichever label the
+    # heuristics/learning had wrongly proposed, so the same mistake is less
+    # likely next time.
+    if previous_classification and previous_classification != classification and previous_classification in CLASSIFICATION_LABELS:
+        for scope in (company_id, "global"):
+            await LEARNING.update_one(
+                {"scope": scope, "classification": previous_classification},
+                {"$inc": {f"token_counts.{tok}": -max(1, n // 2) for tok, n in counts.items()}},
+            )
 
 
 def _find(patterns, text, flags=re.I | re.S):
@@ -374,7 +565,7 @@ def _events_for(form_type, form_number, extracted, metadata):
     return events
 
 
-def _confidence(extracted, text, form_type):
+def _confidence(extracted, text, form_type, learning_boost: float = 0.0):
     score = 0.35
     if text.strip():
         score += 0.20
@@ -386,6 +577,11 @@ def _confidence(extracted, text, form_type):
         score += 0.10
     if extracted.get("events"):
         score += 0.10
+    # Filings classified purely from learned reviewer patterns (no static
+    # regex match) get a smaller, capped boost rather than the full +0.10 a
+    # confident regex match earns — the system is still less sure than a
+    # hand-written rule until more examples accumulate.
+    score += learning_boost
     return min(score, 0.99)
 
 
@@ -611,12 +807,32 @@ async def upload_roc_dump(
     results = []
     now = _now()
 
+    # First pass: read every upload and expand any .zip (a zipped folder or
+    # a plain archive of scanned/typed ROC forms) into its individual member
+    # files, so a folder upload is processed exactly like selecting all of
+    # its files directly. This also makes the endpoint accept ZIPs full of
+    # PDFs, Excel sheets, CSVs and Word documents in one request.
+    entries: List[Tuple[str, bytes]] = []
     for uploaded in files:
         filename = uploaded.filename or "roc-form"
-        if not filename.lower().endswith(ALLOWED_EXT):
+        raw = await uploaded.read()
+        if filename.lower().endswith(ARCHIVE_EXT):
+            try:
+                expanded = _iter_archive_members(raw)
+            except ValueError as exc:
+                results.append({"filename": filename, "status": "FAILED", "error": str(exc)})
+                continue
+            if not expanded:
+                results.append({"filename": filename, "status": "FAILED", "error": "Archive contained no supported ROC form files"})
+                continue
+            entries.extend(expanded)
+        else:
+            entries.append((filename, raw))
+
+    for filename, raw in entries:
+        if not filename.lower().endswith(ALLOWED_EXT + UNREADABLE_BUT_ACCEPTED_EXT):
             results.append({"filename": filename, "status": "FAILED", "error": "Unsupported file type"})
             continue
-        raw = await uploaded.read()
         total += len(raw)
         if total > MAX_BATCH:
             results.append({"filename": filename, "status": "FAILED", "error": "Batch exceeds 200 MB"})
@@ -639,7 +855,7 @@ async def upload_roc_dump(
         filing_id = _uid()
         text, page_count = _extract_text(filename, raw)
         form_number, prefix, number = _form_number(filename, text)
-        classification = _classify(form_number, text)
+        classification, learning_boost, learned = await _classify_with_learning(form_number, text, company_id)
         metadata = _extract_metadata(form_number, text)
         company_extract = _extract_company(text)
         extracted = {"company": company_extract, "metadata": metadata}
@@ -668,10 +884,17 @@ async def upload_roc_dump(
             warnings.append("Form number could not be classified; the complete file is retained as UNKNOWN for manual review.")
         if classification == "other":
             warnings.append("No specialized parser matched this form. Generic metadata and source text were retained.")
+        elif learned:
+            warnings.append("Classified from patterns learned out of previously reviewed filings (no static rule matched); please verify.")
         if text and not extracted.get("company", {}).get("cin"):
             warnings.append("CIN/LLPIN was not confidently identified.")
         status = "SUCCESS" if text.strip() and form_number != "UNKNOWN" else "NEEDS_REVIEW"
-        confidence = _confidence(extracted, text, classification)
+        confidence = _confidence(extracted, text, classification, learning_boost)
+        if classification != "other" and confidence >= 0.75:
+            # A confidently auto-classified filing is itself training signal
+            # — this is the "evolves on its own" loop: no reviewer action
+            # required for well-matched forms to reinforce the pattern.
+            await _record_learning_feedback(company_id, classification, text)
 
         events = _events_for(classification, form_number, extracted, metadata)
         filing = {
@@ -686,6 +909,7 @@ async def upload_roc_dump(
             "form_prefix": prefix,
             "form_numeric": number,
             "classification": classification,
+            "classified_by_learning": learned,
             "metadata": metadata,
             "extracted": extracted,
             "raw_text": text[:MAX_TEXT_STORE],
@@ -818,7 +1042,46 @@ async def review_roc_dump_filing(
     )
     if not result.modified_count:
         raise HTTPException(404, "ROC dump filing not found")
+    if review_status == "VERIFIED":
+        # A human confirming the filing's classification is the strongest
+        # possible training signal — reinforce it immediately.
+        filing = await DUMP.find_one({"id": filing_id, "company_id": company_id},
+                                      {"classification": 1, "raw_text": 1})
+        if filing and filing.get("classification") and filing.get("raw_text"):
+            await _record_learning_feedback(company_id, filing["classification"], filing["raw_text"])
     return {"updated": True, "review_status": review_status}
+
+
+@router.post("/companies/{company_id}/roc-dump/{filing_id}/correct-classification")
+async def correct_roc_dump_classification(
+    company_id: str,
+    filing_id: str,
+    classification: str = Form(...),
+    current_user: User = Depends(EDIT),
+):
+    """Let a reviewer correct a wrong auto-classification. The correction is
+    saved on the filing AND fed back into the learned weight table (with the
+    original guess down-weighted), which is how the classifier's accuracy
+    compounds over time instead of repeating the same mistake."""
+    if classification not in CLASSIFICATION_LABELS:
+        raise HTTPException(400, f"Unknown classification. Use one of: {', '.join(CLASSIFICATION_LABELS)}")
+    filing = await DUMP.find_one({"id": filing_id, "company_id": company_id},
+                                  {"classification": 1, "raw_text": 1})
+    if not filing:
+        raise HTTPException(404, "ROC dump filing not found")
+    previous = filing.get("classification")
+    await DUMP.update_one(
+        {"id": filing_id, "company_id": company_id},
+        {"$set": {
+            "classification": classification,
+            "classified_by_learning": False,
+            "review": {"status": "VERIFIED", "note": f"Reclassified from {previous or 'other'}",
+                       "reviewed_at": _now(), "reviewed_by": _who(current_user)},
+        }},
+    )
+    if filing.get("raw_text"):
+        await _record_learning_feedback(company_id, classification, filing["raw_text"], previous_classification=previous)
+    return {"updated": True, "classification": classification, "previous_classification": previous}
 
 
 @router.post("/companies/{company_id}/roc-dump/rebuild-summary")
