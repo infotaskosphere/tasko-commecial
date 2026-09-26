@@ -1,0 +1,94 @@
+/* ROC Sphere upload lanes — screenshot-2 tab treatment.
+   Scoped to the ROC upload tablist only so the rest of ROC Sphere and
+   the global dashboard remain untouched. */
+.roc-sphere-upload-tabs {
+  display: flex;
+  width: 100%;
+  align-items: stretch;
+  border-bottom: 1px solid #cbd5e1;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.roc-sphere-upload-tabs > button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 50px;
+  padding: 12px 14px;
+  border: 0;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.roc-sphere-upload-tabs > button:last-child {
+  border-right: 0;
+}
+
+.roc-sphere-upload-tabs > button:hover {
+  background: #dbeafe;
+  color: #0d3b66;
+}
+
+.roc-sphere-upload-tabs > button[data-active="true"] {
+  background: #2563eb;
+  color: #ffffff;
+  border-bottom-color: #2563eb;
+}
+
+.roc-sphere-upload-tabs > button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.dark .roc-sphere-upload-tabs {
+  border-bottom-color: #334155;
+  background: #1e293b;
+}
+
+.dark .roc-sphere-upload-tabs > button {
+  border-right-color: #334155;
+  color: #cbd5e1;
+}
+
+.dark .roc-sphere-upload-tabs > button:hover {
+  background: #334155;
+  color: #ffffff;
+}
+
+.dark .roc-sphere-upload-tabs > button[data-active="true"] {
+  background: #2563eb;
+  color: #ffffff;
+  border-bottom-color: #2563eb;
+}
+
+@media (max-width: 820px) {
+  .roc-sphere-upload-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .roc-sphere-upload-tabs > button {
+    border-right: 0;
+    border-bottom: 1px solid #cbd5e1;
+    min-height: 44px;
+  }
+
+  .roc-sphere-upload-tabs > button[data-active="true"] {
+    border-bottom-color: #2563eb;
+  }
+
+  .dark .roc-sphere-upload-tabs > button {
+    border-bottom-color: #334155;
+  }
+}
