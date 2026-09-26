@@ -92,3 +92,65 @@
     border-bottom-color: #334155;
   }
 }
+
+/* Filing & Documents navigation — matches the reference screenshot.
+   Scoped so no other ROC Sphere tab group is changed. */
+.roc-sphere-filing-tabs {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  border-bottom: 1px solid #cbd5e1 !important;
+  background: #e2e8f0 !important;
+  overflow: hidden;
+}
+.roc-sphere-filing-tabs > button {
+  min-width: 0 !important;
+  min-height: 50px;
+  padding: 12px 14px !important;
+  border: 0 !important;
+  border-right: 1px solid #cbd5e1 !important;
+  border-bottom: 3px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #334155 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+  white-space: normal !important;
+  overflow-wrap: normal;
+  word-break: normal !important;
+  text-align: center;
+}
+.roc-sphere-filing-tabs > button:last-child {
+  border-right: 0 !important;
+}
+.roc-sphere-filing-tabs > button:hover {
+  background: #dbeafe !important;
+  color: #0d3b66 !important;
+}
+.roc-sphere-filing-tabs > button[data-active="true"] {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-bottom-color: #2563eb !important;
+}
+.dark .roc-sphere-filing-tabs {
+  background: #1e293b !important;
+  border-bottom-color: #334155 !important;
+}
+.dark .roc-sphere-filing-tabs > button {
+  border-right-color: #334155 !important;
+  color: #cbd5e1 !important;
+}
+.dark .roc-sphere-filing-tabs > button[data-active="true"] {
+  background: #2563eb !important;
+  color: #fff !important;
+}
+@media (max-width: 820px) {
+  .roc-sphere-filing-tabs {
+    grid-template-columns: 1fr !important;
+  }
+  .roc-sphere-filing-tabs > button {
+    border-right: 0 !important;
+    border-bottom: 1px solid #cbd5e1 !important;
+  }
+}
