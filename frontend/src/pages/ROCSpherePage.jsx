@@ -2533,13 +2533,16 @@ function UploadTab({ company, isDark, input, text, muted, onApplied }) {
         For the MCA Company/LLP Master Data export (PDF/XLSX/CSV), use the <strong>Master Data</strong> tab instead.
       </p>
 
-      <div className="flex border-b border-slate-200 dark:border-slate-700" role="tablist" aria-label="Upload lane">
+      <div className="roc-sphere-upload-tabs" role="tablist" aria-label="Upload lane">
         {availableCategories.map((c) => (
-          <button key={c.key} onClick={() => switchCategory(c.key)} role="tab" aria-selected={category === c.key}
-            className={`px-3 py-2 text-[11px] font-semibold border-b-2 transition
-              ${category === c.key
-                ? 'bg-blue-600 border-blue-600 text-white'
-                : isDark ? 'border-slate-700 text-slate-300 hover:border-blue-500/60' : 'border-slate-300 text-slate-600 hover:border-blue-400'}`}>
+          <button
+            key={c.key}
+            type="button"
+            onClick={() => switchCategory(c.key)}
+            role="tab"
+            aria-selected={category === c.key}
+            data-active={category === c.key ? "true" : "false"}
+          >
             {c.label}
           </button>
         ))}
