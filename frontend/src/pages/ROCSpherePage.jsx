@@ -463,7 +463,7 @@ export default function ROCSpherePage() {
                     );
                   })}
                 </div>
-                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-50/70'} ${(NAV_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) || NAV_GROUPS[0]).key === 'filings' ? 'roc-sphere-filing-tabs' : ''}`}>
+                <div className={`grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 border-b ${isDark ? 'border-slate-800 bg-slate-900/30' : 'border-slate-200 bg-slate-50/70'}`}>
                   {(NAV_GROUPS.find((g) => g.tabs.some((t) => t.key === tab)) || NAV_GROUPS[0]).tabs.map((t) => {
                     const Icon = t.icon;
                     const active = tab === t.key;
