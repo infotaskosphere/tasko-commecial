@@ -2,6 +2,7 @@ import React, { Suspense, memo, useEffect } from "react";
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { BackupProvider } from "@/contexts/BackupContext";
 import { Toaster } from "@/components/ui/sonner";
 import AppRoutes from "./AppRoutes.jsx";
 import { useLoading } from "./lib/api";
@@ -135,5 +136,5 @@ function WebsiteSurfaceScope() {
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><ROCDumpUploadProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><ROCDumpUploadDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></ROCDumpUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><BackupProvider><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><ROCDumpUploadProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><ROCDumpUploadDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></ROCDumpUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BackupProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }
