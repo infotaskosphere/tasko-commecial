@@ -196,11 +196,17 @@ def _scope_query(query: Any) -> dict[str, Any]:
     if in_platform_owner_context():
         if _is_commercial_control_context():
             return base
-        # If platform owner explicitly queries a specific company_id, permit it
-        if base.get(COMPANY_FIELD):
-            return base
-        # When platform owner operates inside normal operational modules for own practice (Tenant #1),
-        # automatically isolate queries to owner's dedicated company workspace
+        # Operational modules (Sales, Purchases, Banking, Accounting, Clients,
+        # etc.) must always stay in the Platform Owner's own workspace.
+        # Never let a caller-supplied company_id switch the owner into a
+        # licensee's tenant. Cross-tenant management belongs only to the
+        # explicitly trusted commercial control-plane paths above.
+        requested = base.get(COMPANY_FIELD)
+        if requested is not None and company_id and str(requested) != str(company_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own company",
+            )
         if company_id:
             base[COMPANY_FIELD] = company_id
         return base
