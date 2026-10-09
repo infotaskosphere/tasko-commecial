@@ -74,7 +74,20 @@ async def get_todos(
     # Enforce tenant scope explicitly even for the admin "all users" view.
     query = {"$and": [query, {"company_id": tenant_company_id}]}
     todos = await db.todos.find(query).to_list(1000)
+    # Resolve Todo owners only within this company. A historical foreign/deleted
+    # user reference is not treated as a member of this workspace.
+    todo_user_ids = {str(t.get("user_id")) for t in todos if t.get("user_id")}
+    visible_todo_user_ids = set()
+    if todo_user_ids:
+        visible_users = await db.users.find(
+            {"id": {"$in": list(todo_user_ids)}}, {"_id": 0, "id": 1}
+        ).to_list(len(todo_user_ids))
+        visible_todo_user_ids = {
+            str(user["id"]) for user in visible_users if user.get("id")
+        }
     for t in todos:
+        if t.get("user_id") and str(t["user_id"]) not in visible_todo_user_ids:
+            t["user_id"] = None
         t["id"] = str(t["_id"])
         del t["_id"]
     return todos
@@ -98,7 +111,12 @@ async def get_todo_dashboard(current_user: User = Depends(get_current_user)):
         grouped_todos = {}
         all_todos_flat = []
         for todo in todos:
-            user_name = user_name_map.get(todo["user_id"], "Unknown User")
+            if todo.get("user_id") not in user_name_map:
+                # Hide an orphaned or cross-tenant owner link from this workspace.
+                todo["user_id"] = None
+                user_name = "Unassigned / inaccessible owner"
+            else:
+                user_name = user_name_map.get(todo["user_id"], "Unknown User")
             if user_name not in grouped_todos:
                 grouped_todos[user_name] = []
             todo["_id"] = str(todo["_id"])
@@ -123,7 +141,13 @@ async def get_todo_dashboard(current_user: User = Depends(get_current_user)):
             "company_id": tenant_company_id,
             "user_id": {"$in": query_ids},
         }).to_list(2000)
+        visible_users = await db.users.find(
+            {"id": {"$in": query_ids}}, {"_id": 0, "id": 1}
+        ).to_list(len(query_ids) or 1)
+        visible_user_ids = {str(user["id"]) for user in visible_users if user.get("id")}
         for todo in todos:
+            if todo.get("user_id") and str(todo["user_id"]) not in visible_user_ids:
+                todo["user_id"] = None
             todo["_id"] = str(todo["_id"])
         return {"role": current_user.role, "todos": todos}
 
