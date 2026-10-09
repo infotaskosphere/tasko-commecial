@@ -184,7 +184,6 @@ def _is_commercial_control_context() -> bool:
             or module_name.startswith("backend.licensing_")
             or module_name.startswith("backend.platform_owner")
             or module_name == "backend.backup_restore"
-            or (module_name == "backend.invoicing" and frame_info.function in {"create_invoice", "_next_invoice_no", "recalculate_invoice_accounting"})
         ):
             return True
     return False
@@ -296,10 +295,19 @@ def _scope_replacement(replacement: Any) -> Any:
         return replacement
     result = dict(replacement)
     if in_platform_owner_context():
-        if _is_commercial_control_context() and result.get(COMPANY_FIELD):
-            return result
-        # For platform owner operating in normal modules, stamp owner's dedicated company_id
-        if not result.get(COMPANY_FIELD) and company_id:
+        if _is_commercial_control_context():
+            if result.get(COMPANY_FIELD):
+                return result
+        # Platform-owner business records must stay in the owner's own
+        # operational workspace, including inserts from invoicing and banking.
+        # Only trusted commercial control-plane operations may write cross-tenant.
+        requested = result.get(COMPANY_FIELD)
+        if requested is not None and company_id and str(requested) != str(company_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own company",
+            )
+        if not requested and company_id:
             result[COMPANY_FIELD] = company_id
         return result
     if not company_id:
