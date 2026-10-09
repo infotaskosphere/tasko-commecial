@@ -65,6 +65,12 @@ const NAV_GROUPS = [
     { path: '/settings/email', icon: Mail, label: 'Email Accounts' }, { path: '/settings/general', icon: Settings, label: 'General Settings' }, { path: '/settings/whatsapp', icon: MessageCircle, label: 'Message Automation' },
   ]},
 ];
+// Backup & Restore belongs exclusively to Admin, never to Settings.
+// Keep this explicit guard so stale/merged navigation entries cannot reappear in Settings.
+const settingsNavigationGroup = NAV_GROUPS.find((group) => group.id === 'settings');
+if (settingsNavigationGroup) {
+  settingsNavigationGroup.items = settingsNavigationGroup.items.filter((item) => item.path !== '/settings/backup');
+}
 // Hard invariant: a nav path can only ever exist once per group. Earlier code only had a
 // *comment* claiming this was protected — no code actually enforced it, which is exactly why
 // "Backup & Restore" (and potentially any other item) could render twice in the sidebar if it
