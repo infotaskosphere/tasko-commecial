@@ -186,6 +186,7 @@ async def promote_todo(
         else None,
         "type": "task",
         "created_by": current_user.id,
+        "company_id": str(current_user.company_id),
         "created_at": now,
         "updated_at": now,
     }
