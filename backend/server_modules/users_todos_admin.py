@@ -17,6 +17,9 @@ async def create_todo(
     now = datetime.now(timezone.utc)
     todo = Todo(user_id=current_user.id, **todo_data.model_dump())
     doc = todo.model_dump()
+    if not getattr(current_user, "company_id", None):
+        raise HTTPException(status_code=403, detail="A company workspace is required.")
+    doc["company_id"] = str(current_user.company_id)
 
     # Safe conversion with fallback
     doc["created_at"] = (doc.get("created_at") or now).isoformat()
@@ -65,6 +68,11 @@ async def get_todos(
             visible_ids = list(set(allowed_others + [current_user.id]))
             query = {"user_id": {"$in": visible_ids}}
 
+    tenant_company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    if not tenant_company_id:
+        raise HTTPException(status_code=403, detail="A company workspace is required.")
+    # Enforce tenant scope explicitly even for the admin "all users" view.
+    query = {"$and": [query, {"company_id": tenant_company_id}]}
     todos = await db.todos.find(query).to_list(1000)
     for t in todos:
         t["id"] = str(t["_id"])
@@ -75,8 +83,11 @@ async def get_todos(
 @api_router.get("/dashboard/todo-overview")
 async def get_todo_dashboard(current_user: User = Depends(get_current_user)):
     is_admin = current_user.role == "admin"
+    tenant_company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    if not tenant_company_id:
+        raise HTTPException(status_code=403, detail="A company workspace is required.")
     if is_admin:
-        todos = await db.todos.find().to_list(2000)
+        todos = await db.todos.find({"company_id": tenant_company_id}).to_list(2000)
         # Replaced N+1 user queries with a single batch lookup
         user_ids = list({t["user_id"] for t in todos if t.get("user_id")})
         users_raw = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0}).to_list(
@@ -108,7 +119,10 @@ async def get_todo_dashboard(current_user: User = Depends(get_current_user)):
             team_ids = await get_team_user_ids(current_user.id)
             allowed_users = list(set(allowed_users + team_ids))
         query_ids = list(set(allowed_users + [current_user.id]))
-        todos = await db.todos.find({"user_id": {"$in": query_ids}}).to_list(2000)
+        todos = await db.todos.find({
+            "company_id": tenant_company_id,
+            "user_id": {"$in": query_ids},
+        }).to_list(2000)
         for todo in todos:
             todo["_id"] = str(todo["_id"])
         return {"role": current_user.role, "todos": todos}
@@ -132,6 +146,14 @@ async def promote_todo(
         )
     now = datetime.now(IST)
 
+    # A Todo may only be promoted into a Task linked to users/clients in the
+    # same tenant, even when a platform or tenant administrator initiates it.
+    await _assert_task_tenant_references(
+        current_user,
+        assigned_to=task_data.get("assigned_to") or todo["user_id"],
+        sub_assignees=task_data.get("sub_assignees") or [],
+        client_id=task_data.get("client_id") or None,
+    )
     # Use edited form data from request body; fall back to todo values if not provided
     assigned_to = task_data.get("assigned_to") or todo["user_id"]
     due_date_raw = task_data.get("due_date")
@@ -171,7 +193,10 @@ async def promote_todo(
 
         async def cb(session):
             await db.tasks.insert_one(new_task, session=session)
-            await db.todos.delete_one({"_id": ObjectId(todo_id)}, session=session)
+            await db.todos.delete_one({
+                "_id": ObjectId(todo_id),
+                "company_id": str(current_user.company_id),
+            }, session=session)
 
         await session.with_transaction(cb)
     return {"message": "Todo promoted to task successfully"}
@@ -188,7 +213,10 @@ async def delete_todo(todo_id: str, current_user: User = Depends(get_current_use
         raise HTTPException(status_code=404, detail="Todo not found")
     if current_user.role != "admin" and todo["user_id"] != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
-    await db.todos.delete_one({"_id": obj_id})
+    await db.todos.delete_one({
+        "_id": obj_id,
+        "company_id": str(current_user.company_id),
+    })
     return {"message": "Todo deleted successfully"}
 
 
@@ -208,7 +236,16 @@ async def update_todo(
     if updates.get("is_completed") is True:
         updates["completed_at"] = now
     updates["updated_at"] = now
-    await db.todos.update_one({"_id": ObjectId(todo_id)}, {"$set": updates})
+    # Do not allow arbitrary payloads to transfer a Todo or rewrite its tenant.
+    for protected_field in (
+        "id", "_id", "user_id", "company_id", "commercial_customer_id",
+        "license_id", "licensee_uid", "identity_org_uid", "created_by", "created_at",
+    ):
+        updates.pop(protected_field, None)
+    await db.todos.update_one(
+        {"_id": ObjectId(todo_id), "company_id": str(current_user.company_id)},
+        {"$set": updates},
+    )
     return {"message": "Todo updated successfully"}
 
 
