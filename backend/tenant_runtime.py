@@ -500,7 +500,9 @@ class TenantAwareCollection:
 
     async def update_many(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
-        if enabled: query, update = _scope_query(query), _scope_update(update)
+        if enabled:
+            query = _scope_query(query)
+            update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.update_many(query, update, *args, **kwargs)
 
@@ -516,13 +518,17 @@ class TenantAwareCollection:
 
     async def find_one_and_update(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
-        if enabled: query, update = _scope_query(query), _scope_update(update)
+        if enabled:
+            query = _scope_query(query)
+            update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.find_one_and_update(query, update, *args, **kwargs)
 
     async def find_one_and_replace(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
-        if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
+        if enabled:
+            query = _scope_query(query)
+            replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
