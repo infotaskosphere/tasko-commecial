@@ -377,3 +377,44 @@ def test_platform_owner_legacy_id_alias_maps_to_canonical_owner_company_only():
         tr.reset_platform_owner_company_ids(allowed_token)
         tr.reset_platform_owner(owner_token)
         tr.reset_authenticated_company(company_token)
+
+
+def test_configured_legacy_owner_company_id_normalizes_only_with_resolved_allow_list(monkeypatch):
+    from backend import tenant_runtime as tr
+
+    monkeypatch.setenv("PLATFORM_OWNER_WORKSPACE_ID", "owner-b")
+    monkeypatch.setenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS", "old-owner-id")
+    company_token = tr.set_authenticated_company("owner-a")
+    owner_token = tr.set_platform_owner(True)
+    allowed_token = tr.set_platform_owner_company_ids({"owner-a", "owner-b"})
+    alias_token = tr.set_platform_owner_company_aliases({})
+    try:
+        assert tr._scope_query({"company_id": "old-owner-id"}) == {"company_id": "owner-b"}
+        with pytest.raises(Exception):
+            tr._scope_query({"company_id": "unconfigured-unknown-id"})
+    finally:
+        tr.reset_platform_owner_company_aliases(alias_token)
+        tr.reset_platform_owner_company_ids(allowed_token)
+        tr.reset_platform_owner(owner_token)
+        tr.reset_authenticated_company(company_token)
+
+
+def test_configured_legacy_owner_alias_fails_closed_without_resolved_allow_list(monkeypatch):
+    from backend import tenant_runtime as tr
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("PLATFORM_OWNER_WORKSPACE_ID", "owner-b")
+    monkeypatch.setenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS", "old-owner-id")
+    company_token = tr.set_authenticated_company("platform-owner-synthetic")
+    owner_token = tr.set_platform_owner(True)
+    allowed_token = tr.set_platform_owner_company_ids(set())
+    alias_token = tr.set_platform_owner_company_aliases({})
+    try:
+        with pytest.raises(HTTPException) as exc:
+            tr._scope_query({"company_id": "old-owner-id"})
+        assert exc.value.status_code == 403
+    finally:
+        tr.reset_platform_owner_company_aliases(alias_token)
+        tr.reset_platform_owner_company_ids(allowed_token)
+        tr.reset_platform_owner(owner_token)
+        tr.reset_authenticated_company(company_token)
