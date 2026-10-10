@@ -84,6 +84,12 @@ COMPANY_REGISTRY_COLLECTION = "companies"
 
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
 _current_platform_owner: ContextVar[bool] = ContextVar("taskosphere_platform_owner", default=False)
+# A Platform Owner may operate multiple companies created/owned in Master Data.
+# This allow-list is filled from server-derived, owner-scoped company records
+# during authentication; it never comes from a request parameter.
+_current_platform_owner_company_ids: ContextVar[frozenset[str]] = ContextVar(
+    "taskosphere_platform_owner_company_ids", default=frozenset()
+)
 _system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
 
 
@@ -108,6 +114,50 @@ def set_platform_owner(value: bool = True):
 
 def reset_platform_owner(token) -> None:
     _current_platform_owner.reset(token)
+
+
+def set_platform_owner_company_ids(company_ids: Any):
+    """Set server-resolved operational companies available to this owner request."""
+    values = frozenset(
+        str(value).strip()
+        for value in (company_ids or [])
+        if value is not None and str(value).strip()
+    )
+    return _current_platform_owner_company_ids.set(values)
+
+
+def reset_platform_owner_company_ids(token) -> None:
+    _current_platform_owner_company_ids.reset(token)
+
+
+def platform_owner_company_ids() -> frozenset[str]:
+    return _current_platform_owner_company_ids.get()
+
+
+def _owner_company_value_allowed(value: Any) -> bool:
+    """Validate an owner-selected company against its server-side allow-list."""
+    if value is None or isinstance(value, (dict, list, tuple, set)):
+        return False
+    candidate = str(value).strip()
+    if not candidate:
+        return False
+    allowed = platform_owner_company_ids()
+    # Backward-compatible strict fallback when authentication could not
+    # resolve the owner's company registry; never widen to arbitrary IDs.
+    if not allowed:
+        return candidate == str(authenticated_company_id() or "").strip()
+    return candidate in allowed
+
+
+def _owner_company_filter_allowed(value: Any) -> bool:
+    if isinstance(value, dict):
+        if set(value) == {"$eq"}:
+            return _owner_company_value_allowed(value["$eq"])
+        if set(value) == {"$in"} and isinstance(value["$in"], (list, tuple, set)):
+            candidates = list(value["$in"])
+            return bool(candidates) and all(_owner_company_value_allowed(item) for item in candidates)
+        return False
+    return _owner_company_value_allowed(value)
 
 
 def in_platform_owner_context() -> bool:
@@ -239,13 +289,20 @@ def _scope_query(query: Any) -> dict[str, Any]:
         # licensee's tenant. Cross-tenant management belongs only to the
         # explicitly trusted commercial control-plane paths above.
         requested = base.get(COMPANY_FIELD)
-        if requested is not None and company_id and str(requested) != str(company_id):
+        if requested is not None and not _owner_company_filter_allowed(requested):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Platform Owner operational data is restricted to its own company",
+                detail="Platform Owner operational data is restricted to its own companies",
             )
-        if company_id:
-            base[COMPANY_FIELD] = company_id
+        if requested is None:
+            if company_id and _owner_company_value_allowed(company_id):
+                base[COMPANY_FIELD] = company_id
+            elif platform_owner_company_ids():
+                # Do not silently widen an owner request if its current identity
+                # is stale and no explicit, allowed company was supplied.
+                base[COMPANY_FIELD] = "__no_platform_owner_company_scope__"
+            elif company_id:
+                base[COMPANY_FIELD] = company_id
         return base
     if not company_id:
         return base
@@ -302,18 +359,39 @@ def _scope_company_registry_update(update: Any) -> Any:
     return result
 
 
-def _scope_update(update: Any) -> Any:
+def _scope_update(update: Any, query: Any = None) -> Any:
     company_id = authenticated_company_id()
     if not isinstance(update, dict):
         return update
     result = dict(update)
     set_values = dict(result.get("$set") or {})
     if in_platform_owner_context():
-        if _is_commercial_control_context() and (COMPANY_FIELD in set_values or COMPANY_FIELD in result):
+        has_company_update = COMPANY_FIELD in set_values or COMPANY_FIELD in result
+        if _is_commercial_control_context() and has_company_update:
             return update
-        if not set_values.get(COMPANY_FIELD) and COMPANY_FIELD not in result and company_id:
-            set_values[COMPANY_FIELD] = company_id
-            result["$set"] = set_values
+        requested_update_company = set_values.get(COMPANY_FIELD, result.get(COMPANY_FIELD))
+        if requested_update_company is not None and not _owner_company_value_allowed(requested_update_company):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own companies",
+            )
+        query_company = query.get(COMPANY_FIELD) if isinstance(query, dict) else None
+        if query_company is not None and not _owner_company_filter_allowed(query_company):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own companies",
+            )
+        # The query is already company-scoped. Do not overwrite its selected
+        # owner company with the login's default company during an update.
+        if not has_company_update and query_company is None and company_id:
+            if _owner_company_value_allowed(company_id):
+                set_values[COMPANY_FIELD] = company_id
+                result["$set"] = set_values
+            elif platform_owner_company_ids():
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Platform Owner has no valid operational company context",
+                )
         return result
     if not company_id:
         return update
@@ -329,7 +407,7 @@ def _scope_update(update: Any) -> Any:
     return result
 
 
-def _scope_replacement(replacement: Any) -> Any:
+def _scope_replacement(replacement: Any, query: Any = None) -> Any:
     company_id = authenticated_company_id()
     if not isinstance(replacement, dict):
         return replacement
@@ -340,17 +418,26 @@ def _scope_replacement(replacement: Any) -> Any:
                 return result
         elif COMPANY_FIELD in result and _blank_company_filter(result.get(COMPANY_FIELD)):
             result.pop(COMPANY_FIELD, None)
-        # Platform-owner business records must stay in the owner's own
-        # operational workspace, including inserts from invoicing and banking.
-        # Only trusted commercial control-plane operations may write cross-tenant.
         requested = result.get(COMPANY_FIELD)
-        if requested is not None and company_id and str(requested) != str(company_id):
+        query_company = query.get(COMPANY_FIELD) if isinstance(query, dict) else None
+        if requested is not None and not _owner_company_value_allowed(requested):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Platform Owner operational data is restricted to its own company",
+                detail="Platform Owner operational data is restricted to its own companies",
             )
-        if not requested and company_id:
-            result[COMPANY_FIELD] = company_id
+        if query_company is not None and not _owner_company_filter_allowed(query_company):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own companies",
+            )
+        selected = requested or query_company or company_id
+        if selected is not None:
+            if not _owner_company_filter_allowed(selected):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Platform Owner has no valid operational company context",
+                )
+            result[COMPANY_FIELD] = selected
         return result
     if not company_id:
         return result
@@ -405,7 +492,9 @@ class TenantAwareCollection:
 
     async def update_one(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
-        if enabled: query, update = _scope_query(query), _scope_update(update)
+        if enabled:
+            query = _scope_query(query)
+            update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         return await self._collection.update_one(query, update, *args, **kwargs)
 
@@ -417,7 +506,9 @@ class TenantAwareCollection:
 
     async def replace_one(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
-        if enabled: query, replacement = _scope_query(query), _scope_replacement(replacement)
+        if enabled:
+            query = _scope_query(query)
+            replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
@@ -458,7 +549,10 @@ class TenantAwareCollection:
             if in_platform_owner_context():
                 if _is_commercial_control_context():
                     return self._collection.aggregate(pipeline, *args, **kwargs)
-                if authenticated_company_id():
+                allowed = platform_owner_company_ids()
+                if allowed:
+                    pipeline.insert(0, {"$match": {COMPANY_FIELD: {"$in": sorted(allowed)}}})
+                elif authenticated_company_id():
                     pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
                 return self._collection.aggregate(pipeline, *args, **kwargs)
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
