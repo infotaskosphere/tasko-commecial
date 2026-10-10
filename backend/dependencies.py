@@ -452,10 +452,13 @@ async def _canonicalize_platform_owner_company(user):
         if str(row.get("id") or "").strip()
     }
 
-    # When the owner-company selector helper cannot see the explicitly
-    # configured workspace (for example, a legacy marker/source mismatch),
-    # recover that single target directly from the raw registry. Require the
-    # canonical marker, owner-identity linkage, and no commercial/license link.
+    # When the general owner-company selector filters out the explicitly
+    # configured workspace, re-verify that exact workspace from the raw registry.
+    # The original implementation required its creator ID to equal the *current
+    # session user's* ID. That fails for legacy owner sessions whose account ID
+    # differs from the owner account that created the workspace. Instead verify
+    # the creator as an independent Platform Owner identity, then enforce every
+    # company/license marker before admitting the single configured target.
     if configured_id and configured_id not in company_by_id:
         try:
             candidate = await raw_db.companies.find_one(
@@ -467,20 +470,44 @@ async def _canonicalize_platform_owner_company(user):
                 {"_id": 0},
             )
             if candidate:
-                email = str(getattr(user, "email", "") or "").strip().lower()
-                stored_owner = await raw_db.users.find_one(
-                    {"email": email}, {"_id": 1, "id": 1}
-                ) if email else None
-                owner_ids = {
-                    str(getattr(user, "id", "") or "").strip(),
-                    str((stored_owner or {}).get("id") or "").strip(),
-                    str(getattr(user, "_id", "") or "").strip(),
-                    str((stored_owner or {}).get("_id") or "").strip(),
-                } - {""}
-                creator_ids = {
+                configured_name_matches = (
+                    not configured_name
+                    or _workspace_name_key(candidate.get("name")) == _workspace_name_key(configured_name)
+                )
+                creator_candidates = [
                     str(candidate.get("created_by") or "").strip(),
                     str(candidate.get("owner_user_id") or "").strip(),
-                } - {""}
+                ]
+                creator_is_owner = False
+                for creator_id in dict.fromkeys(value for value in creator_candidates if value):
+                    creator = await raw_db.users.find_one(
+                        {"id": creator_id},
+                        {
+                            "_id": 1, "id": 1, "email": 1, "role": 1, "company_id": 1,
+                            "is_platform_owner": 1, "isPlatformOwner": 1,
+                            "identity_type": 1, "licensee_uid": 1,
+                            "commercial_customer_id": 1, "license_id": 1,
+                            "platform_owner_uid": 1, "identity_org_uid": 1, "user_uid": 1,
+                        },
+                    )
+                    if not creator:
+                        try:
+                            creator = await raw_db.users.find_one(
+                                {"_id": ObjectId(creator_id)},
+                                {
+                                    "_id": 1, "id": 1, "email": 1, "role": 1, "company_id": 1,
+                                    "is_platform_owner": 1, "isPlatformOwner": 1,
+                                    "identity_type": 1, "licensee_uid": 1,
+                                    "commercial_customer_id": 1, "license_id": 1,
+                                    "platform_owner_uid": 1, "identity_org_uid": 1, "user_uid": 1,
+                                },
+                            )
+                        except Exception:
+                            creator = None
+                    if creator and is_platform_owner(creator):
+                        creator_is_owner = True
+                        break
+
                 source = str(candidate.get("source") or "").strip().lower()
                 customer_id = str(candidate.get("commercial_customer_id") or "").strip()
                 license_id = str(candidate.get("license_id") or "").strip()
@@ -503,22 +530,22 @@ async def _canonicalize_platform_owner_company(user):
                     customer_id in {"", "platform-owner"}
                     and license_id in {"", "platform-owner-license"}
                 )
-                linked_to_owner = bool(creator_ids.intersection(owner_ids))
                 if (
-                    not source_is_commercial
+                    configured_name_matches
+                    and creator_is_owner
+                    and not source_is_commercial
                     and owner_markers_only
                     and not license_ref
-                    and linked_to_owner
                 ):
                     companies = [*companies, candidate]
                     company_by_id[configured_id] = candidate
                     logger.warning(
-                        "Recovered configured Platform Owner workspace from raw company registry; company_id=%s",
+                        "Recovered configured Platform Owner workspace via verified owner creator; company_id=%s",
                         configured_id,
                     )
                 else:
                     logger.error(
-                        "Configured Platform Owner workspace failed ownership/license checks; not adding it to owner scope"
+                        "Configured Platform Owner workspace failed creator/name/license checks; not adding it to owner scope"
                     )
         except Exception:
             logger.exception("Could not recover configured Platform Owner workspace from raw company registry")
