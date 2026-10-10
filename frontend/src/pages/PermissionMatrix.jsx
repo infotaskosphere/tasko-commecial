@@ -414,7 +414,7 @@ export default function PermissionMatrix() {
                         <button
                           key={tab.id}
                           type="button"
-                          onClick={() => setActivePermTab(tab.id)}
+                          onClick={() => jumpToSection(tab.id)}
                           aria-current={active ? 'page' : undefined}
                           className={`flex items-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-xs transition-all whitespace-nowrap ${
                             active
@@ -447,7 +447,7 @@ export default function PermissionMatrix() {
                   </div>
                 </div>
 
-                {activePermTab === 'modules' && (
+                {(
                   <div ref={modulesSectionRef} className="scroll-mt-4">
                     <GovCard icon={Zap} title="Modules — Page — Action Governance" badge="Complete" color={HUB_COLORS.mediumBlue} bodyClassName="p-3">
                       <AccessGovernancePanel
@@ -462,7 +462,7 @@ export default function PermissionMatrix() {
                   </div>
                 )}
 
-                {activePermTab === 'view' && (
+                {(
                   <div ref={viewSectionRef} className="scroll-mt-4">
                     <GovCard icon={Eye} title="View Permissions" badge={GLOBAL_PERMS.filter((p) => permissions[p.key]).length} color={HUB_COLORS.mediumBlue}>
                       <div className="p-3 space-y-2">
@@ -472,7 +472,7 @@ export default function PermissionMatrix() {
                   </div>
                 )}
 
-                {activePermTab === 'ops' && (
+                {(
                   <div ref={opsSectionRef} className="scroll-mt-4">
                     <GovCard icon={Settings} title="Operations Permissions" badge={OPS_PERMS.filter((p) => permissions[p.key]).length} color="#7C3AED">
                       <div className="p-3 space-y-2">
@@ -482,7 +482,7 @@ export default function PermissionMatrix() {
                   </div>
                 )}
 
-                {activePermTab === 'edit' && (
+                {(
                   <div ref={editSectionRef} className="scroll-mt-4">
                     <GovCard icon={Pencil} title="Edit Permissions" badge={EDIT_PERMS.filter((p) => permissions[p.key]).length} color="#F59E0B">
                       <div className="p-3 space-y-2">
@@ -492,7 +492,7 @@ export default function PermissionMatrix() {
                   </div>
                 )}
 
-                {activePermTab === 'cross' && (
+                {(
                   <div ref={crossSectionRef} className="scroll-mt-4">
                     <GovCard icon={UsersIcon} title="Cross-User Permissions" badge="User Data Access" color={HUB_COLORS.emeraldGreen}>
                       <div className="p-3">
@@ -502,7 +502,7 @@ export default function PermissionMatrix() {
                   </div>
                 )}
 
-                {activePermTab === 'clients' && (
+                {(
                   <div ref={clientsSectionRef} className="scroll-mt-4">
                     <GovCard icon={Briefcase} title="Client Permissions" badge={(permissions?.assigned_clients || []).length} color="#0F766E">
                       <div className="p-3">
