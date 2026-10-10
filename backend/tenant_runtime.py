@@ -215,12 +215,24 @@ def _is_commercial_control_context() -> bool:
     return False
 
 
+def _blank_company_filter(value: Any) -> bool:
+    """True for an absent/blank company filter such as ``company_id=""``.
+
+    Pages call endpoints like ``/chart-of-accounts?company_id=`` before a firm is
+    picked. A blank filter means "my own company", never "another company", so it
+    is replaced by the authenticated company instead of raising 403.
+    """
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
 def _scope_query(query: Any) -> dict[str, Any]:
     company_id = authenticated_company_id()
     base = dict(query or {}) if isinstance(query, dict) else {}
     if in_platform_owner_context():
         if _is_commercial_control_context():
             return base
+        if COMPANY_FIELD in base and _blank_company_filter(base.get(COMPANY_FIELD)):
+            base.pop(COMPANY_FIELD, None)
         # Operational modules (Sales, Purchases, Banking, Accounting, Clients,
         # etc.) must always stay in the Platform Owner's own workspace.
         # Never let a caller-supplied company_id switch the owner into a
@@ -237,6 +249,8 @@ def _scope_query(query: Any) -> dict[str, Any]:
         return base
     if not company_id:
         return base
+    if COMPANY_FIELD in base and _blank_company_filter(base.get(COMPANY_FIELD)):
+        base.pop(COMPANY_FIELD, None)
     requested = base.get(COMPANY_FIELD)
     if requested is not None and str(requested) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
@@ -324,6 +338,8 @@ def _scope_replacement(replacement: Any) -> Any:
         if _is_commercial_control_context():
             if result.get(COMPANY_FIELD):
                 return result
+        elif COMPANY_FIELD in result and _blank_company_filter(result.get(COMPANY_FIELD)):
+            result.pop(COMPANY_FIELD, None)
         # Platform-owner business records must stay in the owner's own
         # operational workspace, including inserts from invoicing and banking.
         # Only trusted commercial control-plane operations may write cross-tenant.
@@ -338,6 +354,8 @@ def _scope_replacement(replacement: Any) -> Any:
         return result
     if not company_id:
         return result
+    if COMPANY_FIELD in result and _blank_company_filter(result.get(COMPANY_FIELD)):
+        result.pop(COMPANY_FIELD, None)
     if result.get(COMPANY_FIELD) is not None and str(result[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
     result[COMPANY_FIELD] = company_id
