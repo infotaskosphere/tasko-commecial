@@ -543,9 +543,22 @@ def test_configured_owner_workspace_recovers_when_creator_id_differs_from_sessio
     async def scenario():
         resolved = await deps._canonicalize_platform_owner_company(user)
         assert resolved.company_id == workspace_id
-        assert workspace_id in tr.platform_owner_company_ids()
-        assert tr.platform_owner_company_aliases()[stale_id] == workspace_id
-        normalized = tr._scope_query({"company_id": stale_id})
-        assert normalized == {"company_id": workspace_id}
+        allowed_ids = set(tr.platform_owner_company_ids())
+        aliases = tr.platform_owner_company_aliases()
+        assert workspace_id in allowed_ids
+        assert aliases[stale_id] == workspace_id
+
+        company_token = tr.set_authenticated_company(workspace_id)
+        owner_token = tr.set_platform_owner(True)
+        allowed_token = tr.set_platform_owner_company_ids(allowed_ids)
+        alias_token = tr.set_platform_owner_company_aliases(aliases)
+        try:
+            normalized = tr._scope_query({"company_id": stale_id})
+            assert normalized == {"company_id": workspace_id}
+        finally:
+            tr.reset_platform_owner_company_aliases(alias_token)
+            tr.reset_platform_owner_company_ids(allowed_token)
+            tr.reset_platform_owner(owner_token)
+            tr.reset_authenticated_company(company_token)
 
     asyncio.run(scenario())
