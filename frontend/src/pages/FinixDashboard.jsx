@@ -23,7 +23,7 @@ import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { runVerifyAndFix, describeValidationResult } from '@/lib/verifyAndFixLedger';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import { isCommercialTenant } from '@/lib/commercialPermissionMatrix';
+import { isCommercialTenant, isPlatformOwner } from '@/lib/commercialPermissionMatrix';
 import FinixAICommandCenter from '@/components/finix/FinixAICommandCenter.jsx';
 
 const fmtC = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -116,7 +116,9 @@ function FinixDashboardInner() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const isPlatformOwnerUser = isPlatformOwner(user);
   const tenantCompanyId = isCommercialTenant(user) ? String(user?.company_id || '') : '';
+  const ownerCompanyId = isPlatformOwnerUser ? String(user?.company_id || user?.company?.id || '') : '';
   const tenantCompanyName = user?.company_name || user?.company?.name || 'My Company';
 
   const [loading, setLoading] = useState(true);
@@ -178,20 +180,30 @@ function FinixDashboardInner() {
 
   const scopeCompanies = (list) => {
     const rows = Array.isArray(list) ? list : [];
-    // Platform Owner / non-commercial users must never see commercial-license
-    // tenant companies in operational company selectors. Licensee users are
-    // separately restricted to their own tenant company below.
-    const operational = rows.filter((c) => {
+    // A Platform Owner's operational Finix selector must use the same canonical
+    // company ID injected by authentication. Do not default to the first company
+    // returned by the registry: that may be a different workspace or a licensee.
+    if (isPlatformOwnerUser) {
+      const ownId = ownerCompanyId.trim();
+      if (!ownId) return [];
+      const own = rows.filter((c) => c && typeof c === 'object' && String(c.id || '') === ownId);
+      return own.length ? own : [{ id: ownId, name: tenantCompanyName }];
+    }
+
+    // Licensees can operate only inside their authenticated tenant workspace.
+    if (tenantCompanyId) {
+      const own = rows.filter((c) => c && typeof c === 'object' && String(c.id || '') === tenantCompanyId);
+      return own.length ? own : [{ id: tenantCompanyId, name: tenantCompanyName }];
+    }
+
+    // Non-commercial users must not see commercial-license company records.
+    return rows.filter((c) => {
       if (!c || typeof c !== 'object') return false;
-      if (tenantCompanyId) return true;
       if (c.source === 'commercial-license' || c.source === 'commercial' || c.source === 'license') return false;
       if (c.commercial_customer_id && c.commercial_customer_id !== 'platform-owner') return false;
       if (c.license_id && c.license_id !== 'platform-owner-license') return false;
       return true;
     });
-    if (!tenantCompanyId) return operational;
-    const own = operational.filter((c) => c && c.id === tenantCompanyId);
-    return own.length ? own : [{ id: tenantCompanyId, name: tenantCompanyName }];
   };
 
   const fetchCompanies = async () => {
