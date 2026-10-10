@@ -54,7 +54,7 @@ python-multipart==0.0.31
 # =========================
 # Authentication / Security
 # =========================
-python-jose==3.3.0
+python-jose>=3.4.0,<4.0.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 PyJWT==2.15.0
@@ -145,6 +145,8 @@ pyzk==0.9
 # =========================
 # PyKCS11==1.5.13 (optional, excluded to avoid native swig build dependency)
 cryptography>=42.0.0
+# Security override: keep the transitive ecdsa package at a patched release.
+ecdsa>=0.19.3
 
 # =========================
 # TM Sync Agent (Trademark Sphere)
