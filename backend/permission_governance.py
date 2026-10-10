@@ -75,7 +75,13 @@ GOVERNED_MODULES = {
 # regardless of what the client sends.
 # =============================================================================
 _MODULE_TO_PAGE_FLAGS = {
-    m["flag"]: [p["flag"] for p in m["pages"]] for m in MODULE_HIERARCHY.values()
+    m["flag"]: [p["flag"] for p in m["pages"]]
+    for module_id, m in MODULE_HIERARCHY.items()
+    # Admin is the tenant control plane, not a licensed operational module.
+    # Its core pages (Users, Reports, Settings, etc.) are independently
+    # permissioned; the can_access_admin convenience switch must not erase
+    # otherwise-explicit core grants during API normalization.
+    if module_id != "admin"
 }
 
 # Modules that are always open to every authenticated user and therefore
