@@ -352,3 +352,28 @@ def test_platform_owner_updates_keep_the_selected_owned_company():
         tr.reset_platform_owner_company_ids(allowed_token)
         tr.reset_platform_owner(owner_token)
         tr.reset_authenticated_company(company_token)
+
+
+def test_platform_owner_legacy_id_alias_maps_to_canonical_owner_company_only():
+    from backend import tenant_runtime as tr
+    from fastapi import HTTPException
+
+    company_token = tr.set_authenticated_company("owner-a")
+    owner_token = tr.set_platform_owner(True)
+    allowed_token = tr.set_platform_owner_company_ids({"owner-a", "owner-b"})
+    alias_token = tr.set_platform_owner_company_aliases({"verified-old-owner-id": "owner-b"})
+    try:
+        assert tr._scope_query({"company_id": "verified-old-owner-id"}) == {
+            "company_id": "owner-b"
+        }
+        assert tr._scope_query({
+            "company_id": {"$in": ["owner-a", "verified-old-owner-id"]}
+        }) == {"company_id": {"$in": ["owner-a", "owner-b"]}}
+        with pytest.raises(HTTPException) as exc:
+            tr._scope_query({"company_id": "licensee-company"})
+        assert exc.value.status_code == 403
+    finally:
+        tr.reset_platform_owner_company_aliases(alias_token)
+        tr.reset_platform_owner_company_ids(allowed_token)
+        tr.reset_platform_owner(owner_token)
+        tr.reset_authenticated_company(company_token)
