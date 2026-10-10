@@ -387,7 +387,7 @@ def test_configured_legacy_owner_company_id_normalizes_only_with_resolved_allow_
     company_token = tr.set_authenticated_company("owner-a")
     owner_token = tr.set_platform_owner(True)
     allowed_token = tr.set_platform_owner_company_ids({"owner-a", "owner-b"})
-    alias_token = tr.set_platform_owner_company_aliases({})
+    alias_token = tr.set_platform_owner_company_aliases({"old-owner-id": "owner-b"})
     try:
         assert tr._scope_query({"company_id": "old-owner-id"}) == {"company_id": "owner-b"}
         with pytest.raises(Exception):
