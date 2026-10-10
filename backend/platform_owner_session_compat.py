@@ -40,19 +40,93 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
     user_company_id = str(user.get("company_id") or "").strip()
     session_company_id = str((session or {}).get("company_id") or "").strip()
 
-    # Prefer an already-existing owner workspace. This also preserves an
-    # existing owner company if the licensee/customer registry entry was
-    # removed separately.
-    owner_workspace_id = _owner_workspace_id(user)
-    company = await raw_db.companies.find_one(
-        {"id": owner_workspace_id, "status": "active"}
-    )
+    # Keep the public/stable owner account ID distinct from Mongo's internal
+    # ObjectId. Company records created by Master Data store the stable ID in
+    # created_by, so confusing these IDs makes legitimate owner firms disappear.
+    owner_ids = {
+        str(user.get("id") or "").strip(),
+        str(user.get("_id") or "").strip(),
+    } - {""}
+    configured_workspace_id = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    owner_workspace_id = configured_workspace_id or _owner_workspace_id(user)
+    company = None
+
+    # Highest precedence: a deployment-configured workspace ID, but only if
+    # the existing record is explicitly marked as the owner workspace and is
+    # not linked to a commercial customer/license.
+    if configured_workspace_id:
+        candidate = await raw_db.companies.find_one(
+            {"id": configured_workspace_id, "is_platform_owner_workspace": True,
+             "status": {"$nin": ["deleted", "inactive", "disabled"]}}
+        )
+        if candidate:
+            customer_id = str(candidate.get("commercial_customer_id") or "").strip()
+            license_id = str(candidate.get("license_id") or "").strip()
+            if customer_id not in {"", "platform-owner"} or license_id not in {"", "platform-owner-license"}:
+                raise RuntimeError(
+                    "PLATFORM_OWNER_WORKSPACE_ID points to a commercial tenant company; refusing to reuse it"
+                )
+            if customer_id:
+                active_license = await raw_db.commercial_licenses.find_one(
+                    {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
+                    {"_id": 1},
+                )
+                if active_license:
+                    raise RuntimeError(
+                        "PLATFORM_OWNER_WORKSPACE_ID is linked to an active commercial license"
+                    )
+            company = candidate
+
+    # Existing marked Master Data firms do not necessarily have source='platform-owner'.
+    # Reuse a unique marker-backed company only when creator/owner metadata proves
+    # it belongs to the authenticated Platform Owner, and it is not license-linked.
+    if not company:
+        marked_rows = await raw_db.companies.find(
+            {"is_platform_owner_workspace": True,
+             "status": {"$nin": ["deleted", "inactive", "disabled"]}},
+            {"_id": 0},
+        ).to_list(100)
+        owned_marked = []
+        for candidate in marked_rows:
+            creator = str(candidate.get("created_by") or "").strip()
+            owner_user_id = str(candidate.get("owner_user_id") or "").strip()
+            if creator not in owner_ids and owner_user_id not in owner_ids:
+                continue
+            customer_id = str(candidate.get("commercial_customer_id") or "").strip()
+            license_id = str(candidate.get("license_id") or "").strip()
+            if customer_id not in {"", "platform-owner"} or license_id not in {"", "platform-owner-license"}:
+                continue
+            if customer_id:
+                active_license = await raw_db.commercial_licenses.find_one(
+                    {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
+                    {"_id": 1},
+                )
+                if active_license:
+                    continue
+            if license_id and license_id != "platform-owner-license":
+                active_license = await raw_db.commercial_licenses.find_one(
+                    {"id": license_id, "status": {"$in": ["active", "trial"]}},
+                    {"_id": 1},
+                )
+                if active_license:
+                    continue
+            owned_marked.append(candidate)
+        if len(owned_marked) == 1:
+            company = owned_marked[0]
+
+    # Backward-compatible exact generated workspace, when already present.
+    if not company:
+        company = await raw_db.companies.find_one(
+            {"id": owner_workspace_id, "status": "active"}
+        )
     if not company:
         company = await raw_db.companies.find_one(
             {"source": "platform-owner", "is_platform_owner_workspace": True, "status": "active"}
         )
         if company:
             owner_workspace_id = str(company.get("id"))
+    if company:
+        owner_workspace_id = str(company.get("id") or owner_workspace_id)
 
     # If the owner still points at an existing company, keep that workspace
     # rather than unnecessarily moving the owner's operational data. Only use
@@ -198,7 +272,7 @@ async def _owner_aware_saas_session_user(token: str):
         )
 
         user_data = {k: v for k, v in user.items() if k != "_id"}
-        user_data["id"] = str(user.get("_id") or user.get("id"))
+        user_data["id"] = str(user.get("id") or user.get("_id"))
         user_data["company_id"] = str(company_id)
         user_data["company_name"] = company.get("name") or "Taskosphere Platform Owner"
         user_data["status"] = "active"
