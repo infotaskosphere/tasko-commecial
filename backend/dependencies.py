@@ -10,7 +10,7 @@ import jwt
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from backend.models import User, AuditLog
-from backend.tenant_runtime import set_authenticated_company, set_platform_owner, set_platform_owner_company_ids, platform_owner_company_ids, TenantAwareDatabase
+from backend.tenant_runtime import set_authenticated_company, set_platform_owner, set_platform_owner_company_ids, platform_owner_company_ids, set_platform_owner_company_aliases, TenantAwareDatabase
 from backend.platform_owner import is_platform_owner
 logger=logging.getLogger("dependencies")
 def personal_birthday_candidates(client):
@@ -262,7 +262,9 @@ async def _get_saas_session_user(token: str):
         if is_platform_owner(user):
             await _touch_saas_session_if_due(raw_db, session)
             user_data={k:v for k,v in user.items() if k != "_id"}
-            user_data["id"]=str(user.get("_id") or user.get("id"))
+            # Prefer the stable public application ID. Mongo's ObjectId is an
+            # internal storage key and does not match created_by/user_id links.
+            user_data["id"]=str(user.get("id") or user.get("_id"))
             user_data["company_id"]=None
             user_data["company_name"]=None
             user_data=_normalize_permissions(user_data)
@@ -425,6 +427,7 @@ async def _canonicalize_platform_owner_company(user):
     """
     if not is_platform_owner(user):
         set_platform_owner_company_ids([])
+        set_platform_owner_company_aliases({})
         return user
 
     raw_db = globals().get("_raw_db", db)
@@ -506,6 +509,24 @@ async def _canonicalize_platform_owner_company(user):
     if not canonical_id:
         return user
 
+    # A legacy owner account may still send its previous company_id from an
+    # old login/JWT or another open browser tab. Alias it only if the ID is
+    # absent from BOTH the company registry and commercial license registry.
+    # If it names a real company/license/customer (especially a licensee), do
+    # not translate it and preserve the 403 isolation boundary.
+    verified_aliases = {}
+    if current_id and current_id != canonical_id and current_id not in allowed_ids:
+        legacy_company = await raw_db.companies.find_one(
+            {"id": current_id}, {"_id": 0, "id": 1}
+        )
+        license_reference = await raw_db.commercial_licenses.find_one(
+            {"$or": [{"id": current_id}, {"company_id": current_id}, {"customer_id": current_id}]},
+            {"_id": 0, "id": 1, "company_id": 1, "customer_id": 1},
+        )
+        if not legacy_company and not license_reference:
+            verified_aliases[current_id] = canonical_id
+    set_platform_owner_company_aliases(verified_aliases)
+
     # Keep exactly one canonical marker among companies this owner is allowed
     # to operate. Do not touch any licensee company record.
     try:
@@ -565,6 +586,7 @@ async def get_current_user(credentials=Depends(security)):
         owner_context = is_platform_owner(saas_user)
         if not owner_context:
             set_platform_owner_company_ids([])
+            set_platform_owner_company_aliases({})
         set_authenticated_company(saas_user.company_id)
         set_platform_owner(owner_context)
         return saas_user
@@ -661,6 +683,7 @@ async def get_current_user(credentials=Depends(security)):
     owner_context = is_platform_owner(user)
     if not owner_context:
         set_platform_owner_company_ids([])
+        set_platform_owner_company_aliases({})
     set_authenticated_company(company_id)
     set_platform_owner(owner_context)
     if not owner_context and company_id:
