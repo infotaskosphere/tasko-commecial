@@ -191,11 +191,13 @@ def _owner_default_company_id() -> str | None:
     """Select an owner-scoped default without trusting the request parameter."""
     current = str(authenticated_company_id() or "").strip()
     allowed = platform_owner_company_ids()
-    if current and (not allowed or current in allowed):
+    if current and allowed and current in allowed:
         return current
     canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
     if in_platform_owner_context() and canonical and (not allowed or canonical in allowed):
         return canonical
+    if current and not allowed:
+        return current
     return current or None
 
 
