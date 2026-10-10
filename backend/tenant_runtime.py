@@ -161,44 +161,11 @@ def reset_platform_owner_company_aliases(token) -> None:
 
 
 def platform_owner_company_aliases() -> dict[str, str]:
-    """Aliases from authenticated context plus deployment-configured stale IDs.
-
-    The environment mapping is explicitly controlled by deployment operators
-    and only applies while a request/task is running in Platform Owner context.
-    It is used for known historical company IDs that have been verified absent
-    from both the company registry and commercial-license registry.
-    """
-    aliases = dict(_current_platform_owner_company_aliases.get())
-    canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
-    configured_legacy_ids = {
-        value.strip()
-        for value in str(os.getenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS") or "").split(",")
-        if value.strip()
-    }
-    if in_platform_owner_context() and canonical:
-        allowed = platform_owner_company_ids()
-        # A static legacy alias is valid only after authentication has resolved
-        # the configured target into this request's owner-company allow-list.
-        # An empty/unresolved list must fail closed, even for configured IDs.
-        if canonical in allowed:
-            for old_id in configured_legacy_ids:
-                if old_id != canonical:
-                    aliases.setdefault(old_id, canonical)
-    return aliases
-
-
-def _owner_default_company_id() -> str | None:
-    """Select an owner-scoped default without trusting the request parameter."""
-    current = str(authenticated_company_id() or "").strip()
-    allowed = platform_owner_company_ids()
-    if current and allowed and current in allowed:
-        return current
-    canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
-    if in_platform_owner_context() and canonical and (not allowed or canonical in allowed):
-        return canonical
-    if current and not allowed:
-        return current
-    return current or None
+    # Aliases must come from authentication's async database verification.
+    # Do not activate a deployment-configured legacy ID directly here: this
+    # synchronous database guard cannot verify whether an ID has since become
+    # a registered licensee company.
+    return dict(_current_platform_owner_company_aliases.get())
 
 
 def _normalize_owner_company_filter(value: Any) -> Any:
