@@ -34,7 +34,7 @@ def _in_commercial_control_context() -> bool:
         return True
     for frame_info in inspect.stack(context=0):
         module_name = str(frame_info.frame.f_globals.get("__name__") or "")
-        if module_name in {_SELF, "backend.tenant_runtime"}:
+        if module_name == _SELF or module_name in tenant_runtime.ISOLATION_PLUMBING_MODULES:
             continue
         if (
             module_name.startswith("backend.commercial_")
