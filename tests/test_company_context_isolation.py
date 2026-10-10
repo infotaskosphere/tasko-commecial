@@ -214,3 +214,77 @@ def test_owner_created_company_appears_in_dropdown_list_too(q):
     db = q._tenant_raw_db()
     db.companies.rows.append({"id": "own-new", "name": "Just Added", "created_by": "owner-1"})
     assert "own-new" in names(asyncio.run(q.list_companies(OWNER)))
+
+
+def test_platform_owner_auth_uses_unique_canonical_workspace(monkeypatch):
+    """Legacy owner company_id must not override the marked Master Data workspace."""
+    from backend import dependencies as deps
+
+    class Cursor:
+        def __init__(self, rows): self.rows = rows
+        def limit(self, n): self.rows = self.rows[:n]; return self
+        async def to_list(self, n=None): return self.rows[:n] if n is not None else self.rows
+
+    class Companies:
+        def find(self, query, projection=None):
+            rows = [
+                {"id": "owner-workspace", "name": "Prodigist Ventures P Ltd",
+                 "is_platform_owner_workspace": True, "status": "active"},
+                {"id": "legacy-practice", "name": "Manthan Desai And Associates",
+                 "status": "active"},
+            ]
+            return Cursor([r for r in rows if all(r.get(k) == v for k, v in query.items())])
+
+    class FakeDB:
+        companies = Companies()
+
+    class FakeUser:
+        def __init__(self, company_id):
+            self.company_id = company_id
+        def model_dump(self):
+            return {"id": "owner-1", "role": "admin", "company_id": self.company_id}
+        @classmethod
+        def model_validate(cls, data):
+            return cls(data.get("company_id"))
+
+    monkeypatch.setattr(deps, "is_platform_owner", lambda user: True)
+    monkeypatch.setattr(deps, "db", FakeDB())
+    monkeypatch.setattr(deps, "_raw_db", FakeDB(), raising=False)
+    monkeypatch.setattr(deps, "User", FakeUser)
+
+    resolved = asyncio.run(deps._canonicalize_platform_owner_company(FakeUser("legacy-practice")))
+    assert resolved.company_id == "owner-workspace"
+
+
+def test_platform_owner_auth_does_not_guess_between_duplicate_workspaces(monkeypatch):
+    """Duplicate canonical markers fail closed instead of selecting an arbitrary company."""
+    from backend import dependencies as deps
+
+    class Cursor:
+        def __init__(self, rows): self.rows = rows
+        def limit(self, n): self.rows = self.rows[:n]; return self
+        async def to_list(self, n=None): return self.rows[:n] if n is not None else self.rows
+
+    class Companies:
+        def find(self, query, projection=None):
+            return Cursor([
+                {"id": "owner-a", "is_platform_owner_workspace": True, "status": "active"},
+                {"id": "owner-b", "is_platform_owner_workspace": True, "status": "active"},
+            ])
+
+    class FakeDB:
+        companies = Companies()
+
+    class FakeUser:
+        def __init__(self, company_id): self.company_id = company_id
+        def model_dump(self): return {"id": "owner-1", "role": "admin", "company_id": self.company_id}
+        @classmethod
+        def model_validate(cls, data): return cls(data.get("company_id"))
+
+    monkeypatch.setattr(deps, "is_platform_owner", lambda user: True)
+    monkeypatch.setattr(deps, "db", FakeDB())
+    monkeypatch.setattr(deps, "_raw_db", FakeDB(), raising=False)
+    monkeypatch.setattr(deps, "User", FakeUser)
+
+    resolved = asyncio.run(deps._canonicalize_platform_owner_company(FakeUser("legacy-practice")))
+    assert resolved.company_id == "legacy-practice"
