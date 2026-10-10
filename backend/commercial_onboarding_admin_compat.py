@@ -19,6 +19,7 @@ from backend import dependencies as _dependencies
 from backend.dependencies import create_access_token, get_current_user
 from backend.models import User
 from backend.licensing_api import _expiry_reason, _find_license, _now, _public_license
+from backend.platform_owner import platform_owner_emails
 from backend.commercial_onboarding import (
     _apply_license_entitlements,
     _ensure_company_master,
@@ -107,6 +108,16 @@ async def create_customer_admin_fixed(payload: Dict[str, Any]):
     password = str(payload.get("password") or "")
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
+
+    # Platform Owner addresses are reserved identities. This public, license-key
+    # gated setup call must never be able to bind one to a licensee tenant:
+    # is_platform_owner() trusts the reserved-email list, so a licensee admin
+    # registered with an owner address would be treated as the Platform Owner.
+    if email in platform_owner_emails():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account already exists for this email address. Use a different email for the licensed administrator.",
+        )
 
     if existing_admin:
         existing_admin_email = str(existing_admin.get("email") or "").strip().lower()
