@@ -177,10 +177,10 @@ def platform_owner_company_aliases() -> dict[str, str]:
     }
     if in_platform_owner_context() and canonical:
         allowed = platform_owner_company_ids()
-        # If the per-request allow-list is populated, the canonical destination
-        # must be on it. An empty list is tolerated only for this exact,
-        # deployment-configured alias and never broadens access to other IDs.
-        if not allowed or canonical in allowed:
+        # A static legacy alias is valid only after authentication has resolved
+        # the configured target into this request's owner-company allow-list.
+        # An empty/unresolved list must fail closed, even for configured IDs.
+        if canonical in allowed:
             for old_id in configured_legacy_ids:
                 if old_id != canonical:
                     aliases.setdefault(old_id, canonical)
