@@ -247,9 +247,17 @@ def test_platform_owner_auth_uses_unique_canonical_workspace(monkeypatch):
         def model_validate(cls, data):
             return cls(data.get("company_id"))
 
+    fake_db = FakeDB()
+    async def owner_companies(_user):
+        return [
+            {"id": "owner-workspace", "name": "Prodigist Ventures P Ltd",
+             "is_platform_owner_workspace": True, "status": "active"},
+            {"id": "legacy-practice", "name": "Manthan Desai And Associates", "status": "active"},
+        ]
+    monkeypatch.setattr(deps, "_owner_operational_companies", owner_companies)
     monkeypatch.setattr(deps, "is_platform_owner", lambda user: True)
-    monkeypatch.setattr(deps, "db", FakeDB())
-    monkeypatch.setattr(deps, "_raw_db", FakeDB(), raising=False)
+    monkeypatch.setattr(deps, "db", fake_db)
+    monkeypatch.setattr(deps, "_raw_db", fake_db, raising=False)
     monkeypatch.setattr(deps, "User", FakeUser)
 
     resolved = asyncio.run(deps._canonicalize_platform_owner_company(FakeUser("legacy-practice")))
@@ -281,10 +289,58 @@ def test_platform_owner_auth_does_not_guess_between_duplicate_workspaces(monkeyp
         @classmethod
         def model_validate(cls, data): return cls(data.get("company_id"))
 
+    fake_db = FakeDB()
+    async def owner_companies(_user):
+        return [
+            {"id": "owner-a", "is_platform_owner_workspace": True, "status": "active"},
+            {"id": "owner-b", "is_platform_owner_workspace": True, "status": "active"},
+        ]
+    monkeypatch.setattr(deps, "_owner_operational_companies", owner_companies)
     monkeypatch.setattr(deps, "is_platform_owner", lambda user: True)
-    monkeypatch.setattr(deps, "db", FakeDB())
-    monkeypatch.setattr(deps, "_raw_db", FakeDB(), raising=False)
+    monkeypatch.setattr(deps, "db", fake_db)
+    monkeypatch.setattr(deps, "_raw_db", fake_db, raising=False)
     monkeypatch.setattr(deps, "User", FakeUser)
 
     resolved = asyncio.run(deps._canonicalize_platform_owner_company(FakeUser("legacy-practice")))
     assert resolved.company_id == "legacy-practice"
+
+
+def test_platform_owner_guard_allows_only_server_resolved_owner_companies():
+    from backend import tenant_runtime as tr
+    from fastapi import HTTPException
+
+    company_token = tr.set_authenticated_company("owner-a")
+    owner_token = tr.set_platform_owner(True)
+    allowed_token = tr.set_platform_owner_company_ids({"owner-a", "owner-b"})
+    try:
+        assert tr._scope_query({"company_id": "owner-b"}) == {"company_id": "owner-b"}
+        assert tr._scope_query({"company_id": {"$in": ["owner-a", "owner-b"]}}) == {
+            "company_id": {"$in": ["owner-a", "owner-b"]}
+        }
+        with pytest.raises(HTTPException) as exc:
+            tr._scope_query({"company_id": "licensee-company"})
+        assert exc.value.status_code == 403
+        with pytest.raises(HTTPException):
+            tr._scope_query({"company_id": {"$in": ["owner-a", "licensee-company"]}})
+    finally:
+        tr.reset_platform_owner_company_ids(allowed_token)
+        tr.reset_platform_owner(owner_token)
+        tr.reset_authenticated_company(company_token)
+
+
+def test_platform_owner_updates_keep_the_selected_owned_company():
+    from backend import tenant_runtime as tr
+
+    company_token = tr.set_authenticated_company("owner-a")
+    owner_token = tr.set_platform_owner(True)
+    allowed_token = tr.set_platform_owner_company_ids({"owner-a", "owner-b"})
+    try:
+        scoped_query = tr._scope_query({"company_id": "owner-b"})
+        update = tr._scope_update({"$set": {"memo": "updated"}}, scoped_query)
+        assert update == {"$set": {"memo": "updated"}}
+        replacement = tr._scope_replacement({"memo": "replacement"}, scoped_query)
+        assert replacement["company_id"] == "owner-b"
+    finally:
+        tr.reset_platform_owner_company_ids(allowed_token)
+        tr.reset_platform_owner(owner_token)
+        tr.reset_authenticated_company(company_token)
