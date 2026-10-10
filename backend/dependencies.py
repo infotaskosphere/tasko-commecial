@@ -432,6 +432,14 @@ async def _canonicalize_platform_owner_company(user):
 
     raw_db = globals().get("_raw_db", db)
     current_id = str(getattr(user, "company_id", "") or "").strip()
+    configured_id = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
+    configured_legacy_ids = {
+        value.strip()
+        for value in str(os.getenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS") or "").split(",")
+        if value.strip()
+    }
+
     try:
         companies = await _owner_operational_companies(user)
     except Exception:
@@ -443,11 +451,80 @@ async def _canonicalize_platform_owner_company(user):
         for row in companies
         if str(row.get("id") or "").strip()
     }
+
+    # When the owner-company selector helper cannot see the explicitly
+    # configured workspace (for example, a legacy marker/source mismatch),
+    # recover that single target directly from the raw registry. Require the
+    # canonical marker, owner-identity linkage, and no commercial/license link.
+    if configured_id and configured_id not in company_by_id:
+        try:
+            candidate = await raw_db.companies.find_one(
+                {
+                    "id": configured_id,
+                    "is_platform_owner_workspace": True,
+                    "status": {"$nin": ["deleted", "inactive", "disabled"]},
+                },
+                {"_id": 0},
+            )
+            if candidate:
+                email = str(getattr(user, "email", "") or "").strip().lower()
+                stored_owner = await raw_db.users.find_one(
+                    {"email": email}, {"_id": 1, "id": 1}
+                ) if email else None
+                owner_ids = {
+                    str(getattr(user, "id", "") or "").strip(),
+                    str((stored_owner or {}).get("id") or "").strip(),
+                    str(getattr(user, "_id", "") or "").strip(),
+                    str((stored_owner or {}).get("_id") or "").strip(),
+                } - {""}
+                creator_ids = {
+                    str(candidate.get("created_by") or "").strip(),
+                    str(candidate.get("owner_user_id") or "").strip(),
+                } - {""}
+                source = str(candidate.get("source") or "").strip().lower()
+                customer_id = str(candidate.get("commercial_customer_id") or "").strip()
+                license_id = str(candidate.get("license_id") or "").strip()
+                license_ref = await raw_db.commercial_licenses.find_one(
+                    {
+                        "$or": [
+                            {"id": configured_id},
+                            {"company_id": configured_id},
+                            {"customer_id": configured_id},
+                            {"id": license_id} if license_id else {"id": "__no_license__"},
+                            {"customer_id": customer_id} if customer_id else {"customer_id": "__no_customer__"},
+                        ]
+                    },
+                    {"_id": 0, "id": 1},
+                )
+                source_is_commercial = source in {
+                    "commercial-license", "commercial", "license", "commercial-customer"
+                }
+                owner_markers_only = (
+                    customer_id in {"", "platform-owner"}
+                    and license_id in {"", "platform-owner-license"}
+                )
+                linked_to_owner = bool(creator_ids.intersection(owner_ids))
+                if (
+                    not source_is_commercial
+                    and owner_markers_only
+                    and not license_ref
+                    and linked_to_owner
+                ):
+                    companies = [*companies, candidate]
+                    company_by_id[configured_id] = candidate
+                    logger.warning(
+                        "Recovered configured Platform Owner workspace from raw company registry; company_id=%s",
+                        configured_id,
+                    )
+                else:
+                    logger.error(
+                        "Configured Platform Owner workspace failed ownership/license checks; not adding it to owner scope"
+                    )
+        except Exception:
+            logger.exception("Could not recover configured Platform Owner workspace from raw company registry")
+
     allowed_ids = set(company_by_id)
     set_platform_owner_company_ids(allowed_ids)
-
-    configured_id = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
-    configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
     selected = None
 
     if configured_id:
@@ -515,17 +592,27 @@ async def _canonicalize_platform_owner_company(user):
     # If it names a real company/license/customer (especially a licensee), do
     # not translate it and preserve the 403 isolation boundary.
     verified_aliases = {}
-    if current_id and current_id != canonical_id and current_id not in allowed_ids:
+    alias_candidates = set(configured_legacy_ids)
+    if current_id and current_id != canonical_id:
+        alias_candidates.add(current_id)
+    for legacy_id in sorted(alias_candidates):
+        if not legacy_id or legacy_id == canonical_id or legacy_id in allowed_ids:
+            continue
         try:
             legacy_company = await raw_db.companies.find_one(
-                {"id": current_id}, {"_id": 0, "id": 1}
+                {"id": legacy_id}, {"_id": 0, "id": 1}
             )
             license_reference = await raw_db.commercial_licenses.find_one(
-                {"$or": [{"id": current_id}, {"company_id": current_id}, {"customer_id": current_id}]},
+                {"$or": [{"id": legacy_id}, {"company_id": legacy_id}, {"customer_id": legacy_id}]},
                 {"_id": 0, "id": 1, "company_id": 1, "customer_id": 1},
             )
             if not legacy_company and not license_reference:
-                verified_aliases[current_id] = canonical_id
+                verified_aliases[legacy_id] = canonical_id
+            else:
+                logger.warning(
+                    "Legacy Platform Owner ID alias rejected because it is still registered: legacy_id=%s",
+                    legacy_id,
+                )
         except Exception:
             # If the registry cannot prove the stale ID is unowned, keep the
             # strict 403 behavior. Do not guess under a DB failure.
