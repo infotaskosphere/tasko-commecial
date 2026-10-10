@@ -18,6 +18,11 @@ TENANT_COLLECTIONS = {
     # Identity / user master data
     "users",
     "backup_jobs",
+    # Audit trail. Previously unscoped: a licensee admin calling /audit-logs
+    # received every tenant's (and the Platform Owner's) audit rows, including
+    # old_data/new_data permission payloads. Rows are now stamped with and
+    # filtered by company_id like every other tenant collection.
+    "audit_logs",
     # Additional tenant business / operational collections discovered by static audit
     "activity_logs", "api_usage", "automation_settings", "bank_learned_mappings",
     "billing_history", "client", "client_email_templates", "client_portal_reset_tokens",
@@ -173,12 +178,33 @@ def assert_record_company(current_user: Any, record: Mapping[str, Any] | None) -
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
 
 
+# Modules that only WRAP TenantAwareCollection methods. Their frames sit on the
+# call stack of every tenant query, so they must never count as "the caller is
+# the commercial control plane". Before this list existed,
+# backend.commercial_tenant_scope.find (a wrapper whose module name starts with
+# "backend.commercial_") made every Platform Owner query look like a control-
+# plane call, so the owner's operational reads (tasks, invoices, clients, ...)
+# were returned unscoped across ALL licensees.
+ISOLATION_PLUMBING_MODULES = frozenset({
+    "backend.tenant_runtime",
+    "backend.commercial_tenant_scope",
+    "backend.commercial_user_company_scope",
+    "backend.commercial_guard_request_compat",
+    "backend.commercial_legacy_company_scope_compat",
+    "backend.commercial_license_user_limit",
+    "backend.commercial_company_registry_visibility",
+    "backend.user_projection_compat",
+})
+
+
 def _is_commercial_control_context() -> bool:
     """Return True for commercial control-plane, licensing, and system setup operations."""
     if in_system_context():
         return True
     for frame_info in inspect.stack(context=0):
         module_name = str(frame_info.frame.f_globals.get("__name__") or "")
+        if module_name in ISOLATION_PLUMBING_MODULES:
+            continue
         if (
             module_name.startswith("backend.commercial_")
             or module_name.startswith("backend.licensing_")
