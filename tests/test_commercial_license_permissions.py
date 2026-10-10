@@ -110,3 +110,51 @@ def test_legacy_module_only_finix_license_remains_compatible():
     assert permissions["can_view_sale"] is True
     assert permissions["can_view_purchase"] is True
     assert permissions["can_view_accounting_reports"] is True
+
+
+
+def test_permission_catalog_includes_operational_pages_and_admin_controls():
+    from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
+
+    records = {page["flag"] for page in MODULE_HIERARCHY["records"]["pages"]}
+    people = {page["flag"] for page in MODULE_HIERARCHY["people_matrix"]["pages"]}
+    admin = {page["flag"] for page in MODULE_HIERARCHY["admin"]["pages"]}
+
+    assert "can_access_whatsapp_hub" in records
+    assert "can_view_automation_approvals" in records
+    assert "can_view_performance" in people
+    assert {
+        "can_view_reports",
+        "can_download_reports",
+        "can_view_staff_activity",
+        "can_view_audit_logs",
+        "can_manage_permissions",
+    }.issubset(admin)
+
+
+def test_permission_matrix_enforces_admin_catalog_actions_on_core_routes():
+    from types import SimpleNamespace
+    from backend.commercial_module_guard import _matrix_denied_action
+
+    staff = SimpleNamespace(
+        role="staff",
+        permissions={
+            "governance_matrix": {
+                "admin.can_view_user_page": ["view"],
+            },
+        },
+    )
+
+    assert _matrix_denied_action(
+        staff, "core", "can_view_user_page", "GET", "/api/users"
+    ) is None
+    assert _matrix_denied_action(
+        staff, "core", "can_view_user_page", "POST", "/api/users"
+    ) == "create"
+
+
+def test_clients_routes_use_the_explicit_clients_page_flag():
+    from backend.commercial_module_guard import feature_for_path
+
+    assert feature_for_path("/api/clients") == ("records", "can_view_clients_page")
+    assert feature_for_path("/api/clients/abc") == ("records", "can_view_clients_page")
