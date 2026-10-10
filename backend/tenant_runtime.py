@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Mapping
@@ -10,6 +11,8 @@ from typing import Any, Mapping
 from fastapi import HTTPException, status
 
 from backend.platform_owner import is_platform_owner
+
+logger = logging.getLogger(__name__)
 
 COMPANY_FIELD = "company_id"
 COMPANY_ID_FIELD = "id"
@@ -90,6 +93,11 @@ _current_platform_owner: ContextVar[bool] = ContextVar("taskosphere_platform_own
 _current_platform_owner_company_ids: ContextVar[frozenset[str]] = ContextVar(
     "taskosphere_platform_owner_company_ids", default=frozenset()
 )
+# Verified aliases map a stale Platform Owner legacy ID to its canonical
+# company. They are constructed from authenticated DB state, never request data.
+_current_platform_owner_company_aliases: ContextVar[dict[str, str]] = ContextVar(
+    "taskosphere_platform_owner_company_aliases", default={}
+)
 _system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
 
 
@@ -134,6 +142,41 @@ def platform_owner_company_ids() -> frozenset[str]:
     return _current_platform_owner_company_ids.get()
 
 
+def set_platform_owner_company_aliases(aliases: Any):
+    """Set verified aliases for stale IDs from this authenticated owner identity."""
+    allowed = platform_owner_company_ids()
+    resolved = {}
+    if isinstance(aliases, Mapping):
+        for alias, canonical in aliases.items():
+            old_id = str(alias or "").strip()
+            new_id = str(canonical or "").strip()
+            if old_id and new_id and old_id != new_id and new_id in allowed:
+                resolved[old_id] = new_id
+    return _current_platform_owner_company_aliases.set(resolved)
+
+
+def reset_platform_owner_company_aliases(token) -> None:
+    _current_platform_owner_company_aliases.reset(token)
+
+
+def platform_owner_company_aliases() -> dict[str, str]:
+    return dict(_current_platform_owner_company_aliases.get())
+
+
+def _normalize_owner_company_filter(value: Any) -> Any:
+    aliases = platform_owner_company_aliases()
+    if isinstance(value, dict):
+        if set(value) == {"$eq"}:
+            raw = value["$eq"]
+            return {"$eq": aliases.get(str(raw).strip(), raw)}
+        if set(value) == {"$in"} and isinstance(value["$in"], (list, tuple, set)):
+            return {"$in": [aliases.get(str(item).strip(), item) for item in value["$in"]]}
+        return value
+    if value is None:
+        return value
+    return aliases.get(str(value).strip(), value)
+
+
 def _owner_company_value_allowed(value: Any) -> bool:
     """Validate an owner-selected company against its server-side allow-list."""
     if value is None or isinstance(value, (dict, list, tuple, set)):
@@ -142,6 +185,9 @@ def _owner_company_value_allowed(value: Any) -> bool:
     if not candidate:
         return False
     allowed = platform_owner_company_ids()
+    aliases = platform_owner_company_aliases()
+    if candidate in aliases:
+        return aliases[candidate] in allowed
     # Backward-compatible strict fallback when authentication could not
     # resolve the owner's company registry; never widen to arbitrary IDs.
     if not allowed:
@@ -290,10 +336,16 @@ def _scope_query(query: Any) -> dict[str, Any]:
         # explicitly trusted commercial control-plane paths above.
         requested = base.get(COMPANY_FIELD)
         if requested is not None and not _owner_company_filter_allowed(requested):
+            logger.warning(
+                "Platform Owner tenant scope denied requested=%r authenticated_company_id=%r owner_company_ids=%s",
+                requested, company_id, sorted(platform_owner_company_ids()),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Platform Owner operational data is restricted to its own companies",
             )
+        if requested is not None:
+            base[COMPANY_FIELD] = _normalize_owner_company_filter(requested)
         if requested is None:
             if company_id and _owner_company_value_allowed(company_id):
                 base[COMPANY_FIELD] = company_id
@@ -325,10 +377,16 @@ def _scope_company_registry_query(query: Any) -> dict[str, Any]:
             allowed = frozenset({str(authenticated_company_id())})
         requested = base.get(COMPANY_ID_FIELD)
         if requested is not None and not _owner_company_filter_allowed(requested):
+            logger.warning(
+                "Platform Owner registry scope denied requested=%r owner_company_ids=%s",
+                requested, sorted(allowed),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Platform Owner operational data is restricted to its own companies",
             )
+        if requested is not None:
+            base[COMPANY_ID_FIELD] = _normalize_owner_company_filter(requested)
         if requested is None:
             base[COMPANY_ID_FIELD] = {"$in": sorted(allowed)} if allowed else "__no_platform_owner_company_scope__"
         return base
