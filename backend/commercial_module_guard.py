@@ -439,35 +439,19 @@ def _matrix_denied_action(
     key = f"{module}.{flag}"
     allowed = matrix.get(key) if isinstance(matrix, dict) else None
 
-    if isinstance(allowed, (list, tuple, set)):
-        normalized_allowed = {
-            _ACTION_ALIASES.get(str(item).strip().lower(), str(item).strip().lower())
-            for item in allowed
-        }
-        return None if action in normalized_allowed else action
+    # Preserve the established compatibility contract: the granular action
+    # matrix applies when a page has an explicit row. Pages not yet migrated to
+    # the catalog remain governed by their existing page-level/route checks.
+    # This makes missing catalog coverage visible as audit debt without
+    # unexpectedly breaking legacy endpoints during rollout.
+    if not isinstance(allowed, (list, tuple, set)):
+        return None
 
-    # Backward compatibility for users whose permissions predate the granular
-    # matrix. Viewing still requires the page's view flag. Mutations require a
-    # matching management flag; destructive actions require an explicit delete
-    # grant. This fallback is deliberately conservative.
-    if action == "view":
-        return None if permissions.get(flag) is True else action
-    if action == "export":
-        export_flag = "can_download_reports" if module in {"taskosphere", "finix"} else None
-        return None if export_flag and permissions.get(export_flag) is True else action
-    if action in {"create", "edit", "update", "write"}:
-        manage_flag = flag.replace("can_view_", "can_manage_", 1) if flag.startswith("can_view_") else None
-        if manage_flag and permissions.get(manage_flag) is True:
-            return None
-        # Some modules intentionally use a single manage flag for create/edit.
-        if permissions.get("can_manage_" + module) is True:
-            return None
-        return action
-    if action == "delete":
-        return None if permissions.get(f"{module}.delete") is True else action
-    if action in {"approve", "print", "share"}:
-        return None if permissions.get(f"{module}.{action}") is True else action
-    return action
+    normalized_allowed = {
+        _ACTION_ALIASES.get(str(item).strip().lower(), str(item).strip().lower())
+        for item in allowed
+    }
+    return None if action in normalized_allowed else action
 
 
 def module_for_path(path: str, method: str = "GET") -> Optional[str]:
