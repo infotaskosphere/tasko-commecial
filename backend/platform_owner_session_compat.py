@@ -66,6 +66,10 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
             # recognized as a Platform Owner, and no commercial-license linkage
             # exists. Never infer ownership from company name alone.
             configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
+            source = str(candidate.get("source") or "").strip().lower()
+            is_commercial_source = source in {
+                "commercial-license", "commercial", "license", "commercial-customer"
+            }
             import re
             def _name_key(value: Any) -> str:
                 tokens = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).split()
@@ -88,7 +92,8 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
                     except Exception:
                         creator = None
             if not (
-                configured_name
+                not is_commercial_source
+                and configured_name
                 and _name_key(candidate.get("name")) == _name_key(configured_name)
                 and creator
                 and is_platform_owner(creator)
