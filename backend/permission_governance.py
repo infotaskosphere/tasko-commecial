@@ -38,7 +38,13 @@ from backend.models import User, DEFAULT_ROLE_PERMISSIONS
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.governance_core import ALL_ACTIONS
 from backend.dependencies import _normalize_permissions
-from backend.commercial_licensee_admin import LICENSE_MODULE_ALIASES
+from backend.commercial_licensee_admin import (
+    LICENSE_MODULE_ALIASES,
+    COMMERCIAL_LEGACY_PAGE_FLAGS,
+    get_all_admin_permissions,
+    normalize_license_selected_features,
+    resolve_license_modules,
+)
 
 router = APIRouter(tags=["Permission Governance"])
 
@@ -118,9 +124,9 @@ async def _resolve_actor_licensed_modules(actor: User) -> set[str]:
     }
 
 
-async def _cap_permissions_to_license(permissions: dict, actor: User) -> dict:
-    """Licensee admins may only grant modules their active license contains.
-    Internal/platform admins are intentionally uncapped here."""
+async def _legacy_module_cap(permissions: dict, actor: User) -> dict:
+    """Module-level cap kept only for company-scoped accounts that carry no
+    commercial license markers. Commercial accounts use the page/action cap."""
     if not _commercial_actor(actor):
         return dict(permissions or {})
 
@@ -137,6 +143,110 @@ async def _cap_permissions_to_license(permissions: dict, actor: User) -> dict:
         for page in module_def.get("pages", []):
             result[page["flag"]] = False
             matrix.pop(f"{module_id}.{page['flag']}", None)
+    result["governance_matrix"] = matrix
+    return result
+
+
+def _has_commercial_markers(user) -> bool:
+    identity_type = str(getattr(user, "identity_type", "") or "").strip().lower()
+    return bool(
+        str(getattr(user, "license_id", "") or "").strip()
+        or str(getattr(user, "commercial_customer_id", "") or "").strip()
+        or str(getattr(user, "licensee_uid", "") or "").strip()
+        or identity_type.startswith("licensee")
+        or identity_type == "commercial"
+    )
+
+
+async def _resolve_actor_license(actor: User):
+    """The single license linked to the actor's tenant (explicit link first)."""
+    from backend import commercial_module_guard as _guard
+
+    return await _guard._commercial_license(actor)
+
+
+async def _cap_permissions_to_license(
+    permissions: dict,
+    actor: User,
+    actor_permissions: Optional[dict] = None,
+) -> dict:
+    """Cap a Permission Matrix payload to the actor's license ceiling.
+
+    Commercial license = maximum. The licensee admin (and any manager acting
+    for them) can only grant pages the Platform Owner selected and only the
+    actions the catalog defines for that page. Unlicensed pages are forced off,
+    their matrix rows removed, and unknown matrix keys are dropped. If the
+    license cannot be resolved the save is refused (fail closed) instead of
+    being written uncapped. Internal/platform admins are not capped here.
+    """
+    result = dict(permissions or {})
+    if not _commercial_actor(actor):
+        return result
+    if not _has_commercial_markers(actor):
+        return await _legacy_module_cap(result, actor)
+
+    license_doc = await _resolve_actor_license(actor)
+    if not license_doc:
+        raise HTTPException(
+            status_code=403,
+            detail="Your company's commercial license is inactive or could not be resolved; permissions cannot be changed.",
+        )
+
+    licensed = resolve_license_modules(license_doc)
+    selected = normalize_license_selected_features(license_doc)
+    raw_matrix = result.get("governance_matrix") or {}
+    matrix = {
+        str(key): [str(a) for a in value]
+        for key, value in (raw_matrix.items() if isinstance(raw_matrix, dict) else [])
+        if isinstance(value, (list, tuple, set))
+    }
+    known_keys = set()
+
+    for module_id, module_def in MODULE_HIERARCHY.items():
+        is_admin_module = module_id == "admin"
+        module_ok = is_admin_module or (
+            module_id in licensed and bool(selected.get(module_id))
+        )
+        chosen = set() if is_admin_module else set(selected.get(module_id) or [])
+        module_flag = module_def.get("flag")
+        if module_flag and not module_ok:
+            result[module_flag] = False
+
+        for page in module_def.get("pages", []) or []:
+            flag = page.get("flag")
+            if not flag:
+                continue
+            key = f"{module_id}.{flag}"
+            known_keys.add(key)
+            page_ok = is_admin_module or (module_ok and flag in chosen)
+            if not page_ok:
+                result[flag] = False
+                matrix.pop(key, None)
+                continue
+            if key in matrix:
+                catalog_actions = {str(a) for a in (page.get("actions") or [])}
+                matrix[key] = [a for a in matrix[key] if a in catalog_actions]
+
+    for key in list(matrix):
+        if key not in known_keys:
+            matrix.pop(key, None)
+
+    # Legacy action flags (can_manage_invoices, can_edit_clients, ...) follow
+    # the same license ceiling as the canonical page flags.
+    ceiling = get_all_admin_permissions(license_doc)
+    for flag in COMMERCIAL_LEGACY_PAGE_FLAGS:
+        if result.get(flag) and not ceiling.get(flag):
+            result[flag] = False
+
+    # A manager can never grant an action the manager does not hold.
+    if actor_permissions is not None:
+        actor_matrix = (actor_permissions or {}).get("governance_matrix") or {}
+        if isinstance(actor_matrix, dict):
+            for key, actions in list(matrix.items()):
+                held = actor_matrix.get(key)
+                if isinstance(held, (list, tuple, set)):
+                    matrix[key] = [a for a in actions if a in held]
+
     result["governance_matrix"] = matrix
     return result
 
@@ -344,6 +454,12 @@ async def approve_access_request(
     )
     if not scoped_target:
         raise HTTPException(status_code=404, detail="Requested user is outside your tenant scope.")
+    capped = await _cap_permissions_to_license({module["flag"]: True}, current_user)
+    if not capped.get(module["flag"]):
+        raise HTTPException(
+            status_code=403,
+            detail="This page is not part of your commercial license, so access cannot be granted.",
+        )
     await _apply_flag(reqdoc["user_id"], module["flag"], True, current_user)
     now = datetime.now(timezone.utc).isoformat()
     await db.access_requests.update_one(
@@ -613,6 +729,11 @@ async def update_user_permissions(
         old_permissions = existing.get("permissions", {})
         # Same hierarchy guarantee as the admin path above.
         safe_permissions = _enforce_module_hierarchy(safe_permissions)
+        # Managers are capped by the license too, and cannot hand out actions
+        # (view/create/edit/delete/...) they do not hold themselves.
+        safe_permissions = await _cap_permissions_to_license(
+            safe_permissions, current_user, manager_perms
+        )
         await db.users.update_one(
             {"id": user_id}, {"$set": {"permissions": safe_permissions}}
         )
