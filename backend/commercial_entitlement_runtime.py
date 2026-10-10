@@ -116,6 +116,42 @@ _MODULE_FLAGS = {
 }
 
 
+# Flags that belong to tenant administration, not to a purchasable module page.
+# The Users page is core/non-billable (see the catalog's "admin" module), so the
+# license cap must never switch it off for a tenant that did not buy HRMS.
+_CORE_FLAGS = {"can_view_user_page"}
+
+
+def _sync_pages_with_catalog() -> None:
+    """Extend the page lists with the canonical catalog.
+
+    The hard-coded lists above omitted ~12 catalog pages (for example
+    can_view_finix_dashboard, can_view_records_dashboard, can_view_quotations),
+    so those pages were never capped by the license in /auth/me. The catalog is
+    a pure-data module, so importing it here cannot create an import cycle.
+    """
+    from backend.modules.people_matrix.permissions.catalog import (
+        LEGACY_HIDDEN_LICENSE_FLAGS,
+        MODULE_HIERARCHY,
+    )
+
+    for module_id, definition in MODULE_HIERARCHY.items():
+        if module_id == "admin":
+            continue
+        merged = list(_MODULE_PAGES.get(module_id, ()))
+        for page in definition.get("pages", []) or []:
+            flag = page.get("flag")
+            if flag and flag not in merged:
+                merged.append(flag)
+        for flag in sorted(LEGACY_HIDDEN_LICENSE_FLAGS.get(module_id, ())):
+            if flag not in merged:
+                merged.append(flag)
+        _MODULE_PAGES[module_id] = tuple(merged)
+
+
+_sync_pages_with_catalog()
+
+
 def _normalized_modules(values: Iterable[Any]) -> set[str]:
     result: set[str] = set()
     for value in values or []:
@@ -173,11 +209,33 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
         return {str(flag).strip() for flag in values if str(flag).strip() in allowed}
 
     permissions = dict(normalized.get("permissions") or {})
+    existing = dict(permissions)
+
+    role_value = normalized.get("role")
+    role_value = getattr(role_value, "value", role_value)
+    is_admin = str(role_value or "").strip().lower() == "admin"
+
+    def cap(flag: str, licensed: bool, strict: bool = False) -> None:
+        """License = ceiling, never a grant.
+
+        The licensee admin gets what the license selected. Every other user
+        (and AIWeave, which must be granted explicitly even to the admin) keeps
+        only what was explicitly granted to them AND the license still allows.
+        Previously the license selection overwrote the user's own flags, so the
+        Permission Matrix UI showed every licensed page as enabled for everyone.
+        """
+        if is_admin and not strict:
+            permissions[flag] = bool(licensed)
+        else:
+            permissions[flag] = bool(licensed and existing.get(flag, False))
 
     for module_id, module_flag in _MODULE_FLAGS.items():
+        strict = module_id == "aiweave"
         if module_id not in modules:
             permissions[module_flag] = False
             for page_flag in _MODULE_PAGES[module_id]:
+                if page_flag in _CORE_FLAGS:
+                    continue
                 permissions[page_flag] = False
             continue
 
@@ -185,27 +243,31 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
 
         # Module visibility exists only when at least one page was explicitly
         # granted by the Platform Owner.
-        permissions[module_flag] = bool(selected)
+        cap(module_flag, bool(selected), strict)
 
         # No dashboard/report is derived from another selection. Every page is
         # individually controlled by selected_features.
         for page_flag in _MODULE_PAGES[module_id]:
-            permissions[page_flag] = page_flag in selected
+            if page_flag in _CORE_FLAGS:
+                continue
+            cap(page_flag, page_flag in selected, strict)
 
     # Keep legacy aliases synchronized with the same selected-page ceiling.
     finix = selected_for("finix")
     records = selected_for("records")
     proposals = selected_for("proposals")
-    permissions["can_manage_invoices"] = "can_view_sale" in finix
-    permissions["can_view_clients"] = "can_view_all_clients" in records
-    permissions["can_edit_clients"] = "can_edit_clients" in records
-    permissions["can_approve_clients"] = "can_approve_clients" in records
-    permissions["can_view_passwords"] = "can_view_passwords" in records
-    permissions["can_edit_passwords"] = "can_edit_passwords" in records
-    permissions["can_approve_whatsapp_wishes"] = "can_approve_whatsapp_wishes" in records
-    permissions["can_approve_email_wishes"] = "can_approve_email_wishes" in records
-    permissions["can_view_all_leads"] = "can_view_all_leads" in proposals
-    permissions["can_create_quotations"] = "can_create_quotations" in proposals
+    clients_page = bool({"can_view_clients_page", "can_view_all_clients"} & records)
+    cap("can_manage_invoices", "can_view_sale" in finix)
+    cap("can_view_clients", clients_page)
+    cap("can_view_all_clients", clients_page)
+    cap("can_edit_clients", clients_page or "can_edit_clients" in records)
+    cap("can_approve_clients", bool({"can_view_client_approvals", "can_approve_clients"} & records))
+    cap("can_view_passwords", "can_view_passwords" in records)
+    cap("can_edit_passwords", bool({"can_view_passwords", "can_edit_passwords"} & records))
+    cap("can_approve_whatsapp_wishes", "can_approve_whatsapp_wishes" in records)
+    cap("can_approve_email_wishes", "can_approve_email_wishes" in records)
+    cap("can_view_all_leads", "can_view_all_leads" in proposals)
+    cap("can_create_quotations", bool({"can_view_quotations", "can_create_quotations"} & proposals))
 
     normalized["permissions"] = permissions
     normalized["licensed_modules"] = sorted(modules)
