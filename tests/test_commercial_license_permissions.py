@@ -158,3 +158,18 @@ def test_clients_routes_use_the_explicit_clients_page_flag():
 
     assert feature_for_path("/api/clients") == ("records", "can_view_clients_page")
     assert feature_for_path("/api/clients/abc") == ("records", "can_view_clients_page")
+
+
+
+def test_admin_control_plane_toggle_does_not_erase_explicit_core_page_grants():
+    from backend.permission_governance import _enforce_module_hierarchy
+
+    permissions = _enforce_module_hierarchy({
+        "can_access_admin": False,
+        "can_view_reports": True,
+        "can_view_staff_activity": True,
+    })
+
+    assert permissions["can_access_admin"] is False
+    assert permissions["can_view_reports"] is True
+    assert permissions["can_view_staff_activity"] is True
