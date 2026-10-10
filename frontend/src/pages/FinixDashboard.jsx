@@ -46,7 +46,7 @@ const ALL_COMPANIES_ID = '__all__';
 const SS_METRICS_PREFIX = 'finix:metrics:';
 // Bump the cache namespace whenever company-visibility rules change so an
 // older browser session cannot retain a pre-isolation company list.
-const SS_COMPANIES_KEY = 'finix:companies:v3';
+const SS_COMPANIES_KEY = 'finix:companies:v4';
 
 function ssRead(key) {
   try {
@@ -184,10 +184,21 @@ function FinixDashboardInner() {
     // company ID injected by authentication. Do not default to the first company
     // returned by the registry: that may be a different workspace or a licensee.
     if (isPlatformOwnerUser) {
-      const ownId = ownerCompanyId.trim();
-      if (!ownId) return [];
-      const own = rows.filter((c) => c && typeof c === 'object' && String(c.id || '') === ownId);
-      return own.length ? own : [{ id: ownId, name: tenantCompanyName }];
+      // /companies is already owner-scoped by the backend. Preserve all
+      // returned owner-owned legal entities, while defensively excluding
+      // explicitly tenant-marked records from any stale cache. The canonical
+      // workspace marker determines the default selection, not the old
+      // company_id embedded in a long-lived login session.
+      return rows.filter((c) => {
+        if (!c || typeof c !== 'object' || !c.id) return false;
+        const source = String(c.source || '').trim().toLowerCase();
+        const customerId = String(c.commercial_customer_id || '').trim().toLowerCase();
+        const licenseId = String(c.license_id || '').trim().toLowerCase();
+        if (['commercial-license', 'commercial', 'license', 'commercial-customer'].includes(source)) return false;
+        if (customerId && !['platform-owner'].includes(customerId)) return false;
+        if (licenseId && !['platform-owner-license'].includes(licenseId)) return false;
+        return true;
+      });
     }
 
     // Licensees can operate only inside their authenticated tenant workspace.
@@ -208,13 +219,16 @@ function FinixDashboardInner() {
 
   const fetchCompanies = async () => {
     ensureCacheOwner(user?.id);
-    if (_companiesCache_finix.data && Date.now() - _companiesCache_finix.ts < COMPANIES_CACHE_TTL_MS) {
+    // Always refresh Platform Owner companies from the authoritative,
+    // owner-scoped API. A stale in-memory list must not hide the canonical
+    // workspace or survive a workspace marker correction.
+    if (!isPlatformOwnerUser && _companiesCache_finix.data && Date.now() - _companiesCache_finix.ts < COMPANIES_CACHE_TTL_MS) {
       const scoped = scopeCompanies(_companiesCache_finix.data);
       setCompanies(scoped);
       return scoped;
     }
     const cached = ssRead(SS_COMPANIES_KEY);
-    if (cached?.data && Date.now() - cached.ts < COMPANIES_CACHE_TTL_MS) {
+    if (!isPlatformOwnerUser && cached?.data && Date.now() - cached.ts < COMPANIES_CACHE_TTL_MS) {
       _companiesCache_finix.data = cached.data;
       _companiesCache_finix.ts = cached.ts;
       setCompanies(scopeCompanies(cached.data));
@@ -809,8 +823,16 @@ function FinixDashboardInner() {
       let initialCid = '';
       if (list.length) {
         const stored = localStorage.getItem('accountingReports:lastCompanyId') || '';
-        if (stored === ALL_COMPANIES_ID || (stored && list.some((c) => c.id === stored))) initialCid = stored;
-        else initialCid = list[0].id;
+        const canonicalOwnerCompany = isPlatformOwnerUser
+          ? list.find((c) => c.is_platform_owner_workspace === true)
+          : null;
+        if (isPlatformOwnerUser && canonicalOwnerCompany) {
+          initialCid = canonicalOwnerCompany.id;
+        } else if (stored === ALL_COMPANIES_ID || (stored && list.some((c) => c.id === stored))) {
+          initialCid = stored;
+        } else {
+          initialCid = list[0].id;
+        }
       }
       setCompanyId(initialCid);
       if (initialCid === ALL_COMPANIES_ID) {
