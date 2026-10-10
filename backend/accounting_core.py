@@ -201,6 +201,8 @@ async def ensure_default_chart_of_accounts(company_id: str, created_by: str):
 async def list_accounts(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
     if not _perm_view_coa(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    # No firm picked yet -> use the caller's own company (never another one).
+    company_id = (company_id or "").strip() or str(getattr(current_user, "company_id", "") or "")
     await ensure_default_chart_of_accounts(company_id, current_user.id)
     items = await db.chart_of_accounts.find({"company_id": company_id}, {"_id": 0}).sort("code", 1).to_list(2000)
     return items
