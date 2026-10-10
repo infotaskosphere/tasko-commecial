@@ -56,9 +56,44 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
     # not linked to a commercial customer/license.
     if configured_workspace_id:
         candidate = await raw_db.companies.find_one(
-            {"id": configured_workspace_id, "is_platform_owner_workspace": True,
+            {"id": configured_workspace_id,
              "status": {"$nin": ["deleted", "inactive", "disabled"]}}
         )
+        if candidate and candidate.get("is_platform_owner_workspace") is not True:
+            # Some legitimate owner workspaces pre-date the owner marker.
+            # Adopt one only when the deployment explicitly names its exact ID,
+            # its legal name matches configuration, its creator is independently
+            # recognized as a Platform Owner, and no commercial-license linkage
+            # exists. Never infer ownership from company name alone.
+            configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
+            import re
+            def _name_key(value: Any) -> str:
+                tokens = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).split()
+                aliases = {"private": "pvt", "p": "pvt", "limited": "ltd"}
+                return " ".join(aliases.get(token, token) for token in tokens)
+            creator_id = str(candidate.get("created_by") or "").strip()
+            creator = None
+            if creator_id:
+                creator = await raw_db.users.find_one(
+                    {"id": creator_id}, {"_id": 0, "id": 1, "email": 1, "role": 1,
+                     "is_platform_owner": 1, "isPlatformOwner": 1, "company_id": 1}
+                )
+                if not creator:
+                    try:
+                        creator = await raw_db.users.find_one(
+                            {"_id": ObjectId(creator_id)}, {"_id": 1, "id": 1, "email": 1,
+                             "role": 1, "is_platform_owner": 1, "isPlatformOwner": 1,
+                             "company_id": 1}
+                        )
+                    except Exception:
+                        creator = None
+            if not (
+                configured_name
+                and _name_key(candidate.get("name")) == _name_key(configured_name)
+                and creator
+                and is_platform_owner(creator)
+            ):
+                candidate = None
         if candidate:
             customer_id = str(candidate.get("commercial_customer_id") or "").strip()
             license_id = str(candidate.get("license_id") or "").strip()
