@@ -516,15 +516,20 @@ async def _canonicalize_platform_owner_company(user):
     # not translate it and preserve the 403 isolation boundary.
     verified_aliases = {}
     if current_id and current_id != canonical_id and current_id not in allowed_ids:
-        legacy_company = await raw_db.companies.find_one(
-            {"id": current_id}, {"_id": 0, "id": 1}
-        )
-        license_reference = await raw_db.commercial_licenses.find_one(
-            {"$or": [{"id": current_id}, {"company_id": current_id}, {"customer_id": current_id}]},
-            {"_id": 0, "id": 1, "company_id": 1, "customer_id": 1},
-        )
-        if not legacy_company and not license_reference:
-            verified_aliases[current_id] = canonical_id
+        try:
+            legacy_company = await raw_db.companies.find_one(
+                {"id": current_id}, {"_id": 0, "id": 1}
+            )
+            license_reference = await raw_db.commercial_licenses.find_one(
+                {"$or": [{"id": current_id}, {"company_id": current_id}, {"customer_id": current_id}]},
+                {"_id": 0, "id": 1, "company_id": 1, "customer_id": 1},
+            )
+            if not legacy_company and not license_reference:
+                verified_aliases[current_id] = canonical_id
+        except Exception:
+            # If the registry cannot prove the stale ID is unowned, keep the
+            # strict 403 behavior. Do not guess under a DB failure.
+            logger.exception("Could not validate a legacy owner company ID; leaving it unaliased")
     set_platform_owner_company_aliases(verified_aliases)
 
     # Keep exactly one canonical marker among companies this owner is allowed
