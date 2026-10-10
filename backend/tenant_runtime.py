@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Mapping
@@ -160,7 +161,42 @@ def reset_platform_owner_company_aliases(token) -> None:
 
 
 def platform_owner_company_aliases() -> dict[str, str]:
-    return dict(_current_platform_owner_company_aliases.get())
+    """Aliases from authenticated context plus deployment-configured stale IDs.
+
+    The environment mapping is explicitly controlled by deployment operators
+    and only applies while a request/task is running in Platform Owner context.
+    It is used for known historical company IDs that have been verified absent
+    from both the company registry and commercial-license registry.
+    """
+    aliases = dict(_current_platform_owner_company_aliases.get())
+    canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    configured_legacy_ids = {
+        value.strip()
+        for value in str(os.getenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS") or "").split(",")
+        if value.strip()
+    }
+    if in_platform_owner_context() and canonical:
+        allowed = platform_owner_company_ids()
+        # If the per-request allow-list is populated, the canonical destination
+        # must be on it. An empty list is tolerated only for this exact,
+        # deployment-configured alias and never broadens access to other IDs.
+        if not allowed or canonical in allowed:
+            for old_id in configured_legacy_ids:
+                if old_id != canonical:
+                    aliases.setdefault(old_id, canonical)
+    return aliases
+
+
+def _owner_default_company_id() -> str | None:
+    """Select an owner-scoped default without trusting the request parameter."""
+    current = str(authenticated_company_id() or "").strip()
+    allowed = platform_owner_company_ids()
+    if current and (not allowed or current in allowed):
+        return current
+    canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    if in_platform_owner_context() and canonical and (not allowed or canonical in allowed):
+        return canonical
+    return current or None
 
 
 def _normalize_owner_company_filter(value: Any) -> Any:
@@ -187,7 +223,13 @@ def _owner_company_value_allowed(value: Any) -> bool:
     allowed = platform_owner_company_ids()
     aliases = platform_owner_company_aliases()
     if candidate in aliases:
-        return aliases[candidate] in allowed
+        target = aliases[candidate]
+        if allowed:
+            return target in allowed
+        return bool(
+            in_platform_owner_context()
+            and target == str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+        )
     # Backward-compatible strict fallback when authentication could not
     # resolve the owner's company registry; never widen to arbitrary IDs.
     if not allowed:
@@ -347,14 +389,15 @@ def _scope_query(query: Any) -> dict[str, Any]:
         if requested is not None:
             base[COMPANY_FIELD] = _normalize_owner_company_filter(requested)
         if requested is None:
-            if company_id and _owner_company_value_allowed(company_id):
-                base[COMPANY_FIELD] = company_id
+            owner_default = _owner_default_company_id()
+            if owner_default and _owner_company_value_allowed(owner_default):
+                base[COMPANY_FIELD] = owner_default
             elif platform_owner_company_ids():
                 # Do not silently widen an owner request if its current identity
                 # is stale and no explicit, allowed company was supplied.
                 base[COMPANY_FIELD] = "__no_platform_owner_company_scope__"
-            elif company_id:
-                base[COMPANY_FIELD] = company_id
+            elif owner_default:
+                base[COMPANY_FIELD] = owner_default
         return base
     if not company_id:
         return base
@@ -520,7 +563,7 @@ def _scope_replacement(replacement: Any, query: Any = None) -> Any:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="An operational record cannot be moved between companies by changing company_id",
             )
-        selected = requested or query_company or company_id
+        selected = requested or query_company or _owner_default_company_id()
         if selected is not None:
             if not _owner_company_filter_allowed(selected):
                 raise HTTPException(
@@ -648,8 +691,10 @@ class TenantAwareCollection:
                 allowed = platform_owner_company_ids()
                 if allowed:
                     pipeline.insert(0, {"$match": {COMPANY_FIELD: {"$in": sorted(allowed)}}})
-                elif authenticated_company_id():
-                    pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
+                else:
+                    owner_default = _owner_default_company_id()
+                    if owner_default:
+                        pipeline.insert(0, {"$match": {COMPANY_FIELD: owner_default}})
                 return self._collection.aggregate(pipeline, *args, **kwargs)
             pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
         elif self._company_registry_enabled():
