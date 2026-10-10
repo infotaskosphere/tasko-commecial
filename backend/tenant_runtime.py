@@ -395,6 +395,15 @@ def _scope_update(update: Any, query: Any = None) -> Any:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Platform Owner operational data is restricted to its own companies",
             )
+        if (
+            requested_update_company is not None
+            and isinstance(query_company, str)
+            and str(requested_update_company).strip() != query_company
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="An operational record cannot be moved between companies by changing company_id",
+            )
         # The query is already company-scoped. Do not overwrite its selected
         # owner company with the login's default company during an update.
         if not has_company_update and query_company is None and company_id:
@@ -443,6 +452,15 @@ def _scope_replacement(replacement: Any, query: Any = None) -> Any:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Platform Owner operational data is restricted to its own companies",
+            )
+        if (
+            requested is not None
+            and isinstance(query_company, str)
+            and str(requested).strip() != query_company
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="An operational record cannot be moved between companies by changing company_id",
             )
         selected = requested or query_company or company_id
         if selected is not None:
