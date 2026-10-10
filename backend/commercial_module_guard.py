@@ -344,6 +344,102 @@ def _matches(path: str, prefixes: Tuple[str, ...]) -> bool:
     )
 
 
+def _has_commercial_markers(user: User) -> bool:
+    """True when the account was issued under a commercial license.
+
+    Internal (non-commercial) tenants carry none of these markers and keep the
+    historical behaviour. A marked account whose license cannot be resolved as
+    valid must be denied (fail closed), never treated as an unrestricted user.
+    """
+    identity_type = str(getattr(user, "identity_type", "") or "").strip().lower()
+    return bool(
+        str(getattr(user, "license_id", "") or "").strip()
+        or str(getattr(user, "commercial_customer_id", "") or "").strip()
+        or str(getattr(user, "licensee_uid", "") or "").strip()
+        or identity_type.startswith("licensee")
+        or identity_type == "commercial"
+    )
+
+
+# --- Permission Matrix action enforcement -----------------------------------
+# The Permission Matrix stores per-page actions in permissions.governance_matrix
+# ("<module>.<page_flag>": ["view", "create", "edit", "delete", ...]). The guard
+# below maps every request to one of those actions so a user set to "view only"
+# can no longer reach write routes of the same page.
+
+_ACTION_PATH_SEGMENTS = {
+    "export": "export",
+    "download": "export",
+    "print": "print",
+    "share": "share",
+    "approve": "approve",
+    "reject": "approve",
+}
+
+# POST endpoints that only read data. They require "view", not "create".
+_READ_ONLY_POST_SEGMENTS = {
+    "search", "query", "filter", "list", "lookup", "preview", "parse",
+    "validate", "calculate", "extract", "read", "fetch", "check", "verify",
+    "suggest", "autocomplete", "summary", "report",
+}
+
+_ACTION_ALIASES = {"update": "edit", "read": "view", "write": "edit", "add": "create", "remove": "delete"}
+
+
+def _required_action(method: str, path: str) -> Optional[str]:
+    method = str(method or "GET").upper()
+    normalized = str(path or "").split("?", 1)[0].lower()
+    segments = [segment for segment in normalized.split("/") if segment]
+    last = segments[-1] if segments else ""
+
+    if last in _ACTION_PATH_SEGMENTS:
+        return _ACTION_PATH_SEGMENTS[last]
+    if method in {"GET", "HEAD", "OPTIONS"}:
+        return "view"
+    if method == "POST":
+        return "view" if last in _READ_ONLY_POST_SEGMENTS else "create"
+    if method in {"PUT", "PATCH"}:
+        return "edit"
+    if method == "DELETE":
+        return "delete"
+    return None
+
+
+def _matrix_denied_action(
+    user: User,
+    module: str,
+    flag: str,
+    method: str,
+    path: str,
+) -> Optional[str]:
+    """Return the denied action name, or None when the request is allowed.
+
+    Only pages with an explicit Permission Matrix entry are restricted; a page
+    without an entry keeps its page-level behaviour. The licensee admin has no
+    matrix entries, so the admin keeps full actions inside the licensed pages.
+    """
+    action = _required_action(method, path)
+    if not action:
+        return None
+
+    permissions = getattr(user, "permissions", None)
+    if hasattr(permissions, "model_dump"):
+        permissions = permissions.model_dump()
+    if not isinstance(permissions, dict):
+        return None
+
+    matrix = permissions.get("governance_matrix") or {}
+    allowed = matrix.get(f"{module}.{flag}") if isinstance(matrix, dict) else None
+    if not isinstance(allowed, (list, tuple, set)):
+        return None
+
+    normalized_allowed = {
+        _ACTION_ALIASES.get(str(item).strip().lower(), str(item).strip().lower())
+        for item in allowed
+    }
+    return None if action in normalized_allowed else action
+
+
 def module_for_path(path: str, method: str = "GET") -> Optional[str]:
     normalized = path.split("?", 1)[0]
 
@@ -821,6 +917,20 @@ async def get_current_user_with_commercial_guard(
         commercial = await _commercial_license(user)
 
     if not commercial:
+        # Fail closed for commercial accounts. An expired, suspended, revoked or
+        # missing license used to return the user unrestricted here. Auth
+        # endpoints stay reachable so the client can show the licence message
+        # and sign the user out instead of looping.
+        if _has_commercial_markers(user):
+            blocked_path = str(request.url.path or "").split("?", 1)[0]
+            if blocked_path.startswith("/api"):
+                blocked_path = blocked_path[4:] or "/"
+            if not (blocked_path == "/auth" or blocked_path.startswith("/auth/")):
+                raise _deny(
+                    request,
+                    user,
+                    "Your company's commercial license is inactive, suspended, revoked or expired.",
+                )
         return user
 
     # Preserve the authenticated administrator's explicit AIWeave grant before
@@ -1060,6 +1170,23 @@ async def get_current_user_with_commercial_guard(
                 },
             )
 
+        # Permission Matrix action check (view / create / edit / delete / ...).
+        if not core_admin_shared:
+            denied_action = _matrix_denied_action(
+                user,
+                feature_module,
+                feature_flag,
+                request.method,
+                request.url.path,
+            )
+            if denied_action:
+                raise _deny(
+                    request,
+                    user,
+                    f"Your permission matrix does not allow '{denied_action}' on {feature_flag}.",
+                    commercial,
+                )
+
     elif module:
         raise _deny(
             request,
@@ -1071,7 +1198,7 @@ async def get_current_user_with_commercial_guard(
     return user
 
 
-GUARD_RULES_VERSION = "2026-10-09.shared-master-data"
+GUARD_RULES_VERSION = "2026-10-10.action-matrix-fail-closed"
 
 
 def install() -> None:
