@@ -123,6 +123,9 @@ function FinixDashboardInner() {
 
   const [loading, setLoading] = useState(true);
   const [companies, setCompanies] = useState([]);
+  // Keep the authoritative, freshly fetched company list available to async
+  // metric requests even before React commits the setCompanies state update.
+  const companyListRef = useRef([]);
   const [companyId, setCompanyId] = useState('');
 
   // Financial Metrics
@@ -224,6 +227,7 @@ function FinixDashboardInner() {
     // workspace or survive a workspace marker correction.
     if (!isPlatformOwnerUser && _companiesCache_finix.data && Date.now() - _companiesCache_finix.ts < COMPANIES_CACHE_TTL_MS) {
       const scoped = scopeCompanies(_companiesCache_finix.data);
+      companyListRef.current = scoped;
       setCompanies(scoped);
       return scoped;
     }
@@ -231,7 +235,9 @@ function FinixDashboardInner() {
     if (!isPlatformOwnerUser && cached?.data && Date.now() - cached.ts < COMPANIES_CACHE_TTL_MS) {
       _companiesCache_finix.data = cached.data;
       _companiesCache_finix.ts = cached.ts;
-      setCompanies(scopeCompanies(cached.data));
+      const cachedScoped = scopeCompanies(cached.data);
+      companyListRef.current = cachedScoped;
+      setCompanies(cachedScoped);
     }
     try {
       // Use the canonical Master Data endpoint first. This keeps Finix's
@@ -249,10 +255,13 @@ function FinixDashboardInner() {
       _companiesCache_finix.ts = Date.now();
       ssWrite(SS_COMPANIES_KEY, { data: list, ts: _companiesCache_finix.ts });
       const scoped = scopeCompanies(list);
+      companyListRef.current = scoped;
       setCompanies(scoped);
       return scoped;
     } catch {
-      return scopeCompanies(cached?.data || []);
+      const scoped = scopeCompanies(cached?.data || []);
+      companyListRef.current = scoped;
+      return scoped;
     }
   };
 
@@ -309,7 +318,33 @@ function FinixDashboardInner() {
       });
   };
 
-  const computeMetricsForCompany = async (cid, { force = false, onValidationSettled } = {}) => {
+  const computeMetricsForCompany = async (requestedCompanyId, { force = false, onValidationSettled } = {}) => {
+    // Reports must never send an ID that is absent from the authenticated
+    // company's freshly fetched selector. Old tabs can retain a previous
+    // company_id even while the dropdown displays the canonical company.
+    const availableCompanies = companyListRef.current;
+    let cid = String(requestedCompanyId || '').trim();
+    const requestedIsKnown = availableCompanies.some((company) => String(company?.id || '') === cid);
+    if (!requestedIsKnown) {
+      if (isPlatformOwnerUser) {
+        const fallback = availableCompanies.find((company) => company?.is_platform_owner_workspace === true) ||
+          availableCompanies.find((company) => String(company?.id || '') === ownerCompanyId) ||
+          availableCompanies[0];
+        if (!fallback?.id) throw new Error('No authorized Platform Owner company is available for Finix reports.');
+        console.warn('[Finix] replacing stale owner company_id with current company registry ID', {
+          staleCompanyId: cid,
+          resolvedCompanyId: fallback.id,
+        });
+        cid = String(fallback.id);
+      } else if (tenantCompanyId) {
+        cid = tenantCompanyId;
+      } else if (availableCompanies[0]?.id) {
+        cid = String(availableCompanies[0].id);
+      } else {
+        throw new Error('No authorized company is available for Finix reports.');
+      }
+    }
+
     const cached = _metricsCache_finix.get(cid);
     if (!force && cached && Date.now() - cached.ts < METRICS_CACHE_TTL_MS) {
       return cached.data;
