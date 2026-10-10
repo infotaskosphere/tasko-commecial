@@ -436,8 +436,22 @@ def _matrix_denied_action(
         return action
 
     matrix = permissions.get("governance_matrix") or {}
-    key = f"{module}.{flag}"
-    allowed = matrix.get(key) if isinstance(matrix, dict) else None
+    allowed = None
+    if isinstance(matrix, dict):
+        # The UI catalog calls the control-plane module "admin", while API
+        # routes deliberately classify these endpoints as non-billable "core".
+        # Resolve both names to the same saved action row so Users/Settings/
+        # Permission Matrix/Reports cannot silently escape action enforcement.
+        matrix_keys = [f"{module}.{flag}"]
+        if module == "core":
+            matrix_keys.append(f"admin.{flag}")
+        elif module == "admin":
+            matrix_keys.append(f"core.{flag}")
+        for key in matrix_keys:
+            candidate = matrix.get(key)
+            if isinstance(candidate, (list, tuple, set)):
+                allowed = candidate
+                break
 
     # Preserve the established compatibility contract: the granular action
     # matrix applies when a page has an explicit row. Pages not yet migrated to
@@ -484,7 +498,10 @@ def feature_for_path(
         return "core", "can_view_user_page"
 
     if normalized == "/clients" or normalized.startswith("/clients/"):
-        return "records", "can_access_records"
+        # Client CRUD belongs to the explicit Clients page, not merely the
+        # Records module switch; this lets the matrix enforce both page access
+        # and view/create/edit/delete actions for the tenant's own client data.
+        return "records", "can_view_clients_page"
 
     for module, features in FEATURE_PREFIXES.items():
         for flag, prefixes in features.items():
