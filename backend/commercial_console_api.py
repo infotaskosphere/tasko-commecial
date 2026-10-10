@@ -245,9 +245,12 @@ async def get_commercial_activity(
 ):
     """Unified administrative activity & audit trail."""
     try:
+        # Control-plane view: who did what, never the licensee's data payloads.
+        # old_data / new_data carry licensee permission and business records, so
+        # they are excluded from the Platform Owner's cross-tenant feed.
         cursor = db.audit_logs.find(
             {},
-            {"_id": 0}
+            {"_id": 0, "old_data": 0, "new_data": 0}
         ).sort("timestamp", -1).limit(limit)
         logs = await cursor.to_list(length=limit)
     except Exception:
@@ -949,4 +952,3 @@ async def trigger_user_welcome_email(
         details=f"Admin {user.email} sent welcome email to {email}.",
     )
     return {"status": "success", "message": f"Welcome email dispatched to {email}."}
-
