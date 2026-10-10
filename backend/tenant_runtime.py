@@ -168,6 +168,20 @@ def platform_owner_company_aliases() -> dict[str, str]:
     return dict(_current_platform_owner_company_aliases.get())
 
 
+def _owner_default_company_id() -> str | None:
+    """Choose a default owner company from resolved scope or deployment config."""
+    current = str(authenticated_company_id() or "").strip()
+    allowed = platform_owner_company_ids()
+    if current and allowed and current in allowed:
+        return current
+    canonical = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    if in_platform_owner_context() and canonical and (not allowed or canonical in allowed):
+        return canonical
+    if current and not allowed:
+        return current
+    return current or None
+
+
 def _normalize_owner_company_filter(value: Any) -> Any:
     aliases = platform_owner_company_aliases()
     if isinstance(value, dict):
