@@ -10,7 +10,7 @@ import jwt
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from backend.models import User, AuditLog
-from backend.tenant_runtime import set_authenticated_company, set_platform_owner, TenantAwareDatabase
+from backend.tenant_runtime import set_authenticated_company, set_platform_owner, set_platform_owner_company_ids, platform_owner_company_ids, TenantAwareDatabase
 from backend.platform_owner import is_platform_owner
 logger=logging.getLogger("dependencies")
 def personal_birthday_candidates(client):
@@ -401,54 +401,157 @@ async def _resolve_licensed_company_id(user):
     company_id=str(company.get("id") or company.get("_id") or "").strip()
     return company_id or None
 
-async def _canonicalize_platform_owner_company(user):
-    """Use the explicitly designated owner workspace as the owner's operational company.
+def _workspace_name_key(value: Any) -> str:
+    """Normalize common UK/Indian legal suffix spellings for explicit config matching."""
+    import re
+    tokens = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).split()
+    aliases = {"private": "pvt", "p": "pvt", "limited": "ltd"}
+    return " ".join(aliases.get(token, token) for token in tokens)
 
-    Legacy owner user records can carry a stale company_id (for example the old
-    practice name) even though Master Data designates a different canonical
-    workspace. Only the explicit is_platform_owner_workspace marker is trusted;
-    never infer the owner company from a display name or choose an arbitrary
-    company from the registry.
+
+async def _owner_operational_companies(user) -> List[Dict[str, Any]]:
+    """Resolve owner-eligible companies using the same isolation policy as Master Data."""
+    from backend import quotations
+    return await quotations._platform_owner_operational_companies(user)
+
+
+async def _canonicalize_platform_owner_company(user):
+    """Resolve the canonical owner workspace and establish a request-local owner allow-list.
+
+    Selection precedence: explicitly configured workspace ID/name, a unique
+    marked workspace, the existing authenticated company when it is owner-owned,
+    or the sole owner-owned company. We never select a licensee company or guess
+    between multiple owner companies.
     """
     if not is_platform_owner(user):
+        set_platform_owner_company_ids([])
         return user
+
     raw_db = globals().get("_raw_db", db)
     current_id = str(getattr(user, "company_id", "") or "").strip()
     try:
-        rows = await raw_db.companies.find(
-            {"is_platform_owner_workspace": True, "status": "active"},
-            {"_id": 0, "id": 1, "name": 1},
-        ).limit(2).to_list(2)
+        companies = await _owner_operational_companies(user)
     except Exception:
-        logger.exception("Could not resolve canonical Platform Owner workspace")
-        return user
+        logger.exception("Could not resolve Platform Owner operational companies")
+        companies = []
 
-    # Only a unique explicitly designated workspace is authoritative. If
-    # duplicate markers exist, retain the current identity only when it points
-    # to one of those marked records; otherwise fail closed by not guessing.
+    company_by_id = {
+        str(row.get("id") or "").strip(): row
+        for row in companies
+        if str(row.get("id") or "").strip()
+    }
+    allowed_ids = set(company_by_id)
+    set_platform_owner_company_ids(allowed_ids)
+
+    configured_id = str(os.getenv("PLATFORM_OWNER_WORKSPACE_ID") or "").strip()
+    configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
     selected = None
-    if len(rows) == 1 and rows[0].get("id"):
-        selected = rows[0]
-    elif len(rows) > 1:
-        matches = [row for row in rows if str(row.get("id") or "").strip() == current_id]
+
+    if configured_id:
+        selected = company_by_id.get(configured_id)
+        if selected is None:
+            logger.error(
+                "PLATFORM_OWNER_WORKSPACE_ID is configured but is not in the authenticated owner's eligible company list"
+            )
+
+    if selected is None and configured_name:
+        name_key = _workspace_name_key(configured_name)
+        matches = [
+            row for row in companies
+            if name_key and _workspace_name_key(row.get("name")) == name_key
+        ]
         if len(matches) == 1:
             selected = matches[0]
+        elif len(matches) > 1:
+            logger.error("PLATFORM_OWNER_WORKSPACE_NAME matches multiple owner companies; refusing to guess")
         else:
-            logger.error("Multiple active Platform Owner workspaces; refusing to guess")
-            return user
+            logger.error(
+                "PLATFORM_OWNER_WORKSPACE_NAME did not match any eligible Platform Owner company"
+            )
+
+    if selected is None:
+        marked = [
+            row for row in companies
+            if row.get("is_platform_owner_workspace") is True
+            and str(row.get("status") or "").strip().lower() not in {"deleted", "inactive", "disabled"}
+        ]
+        if len(marked) == 1:
+            selected = marked[0]
+        elif len(marked) > 1:
+            current_marked = [row for row in marked if str(row.get("id") or "").strip() == current_id]
+            if len(current_marked) == 1:
+                selected = current_marked[0]
+            else:
+                logger.error("Multiple active Platform Owner workspaces; refusing to guess")
+
+    if selected is None and current_id in company_by_id:
+        selected = company_by_id[current_id]
+    if selected is None and len(companies) == 1:
+        selected = companies[0]
+
+    logger.info(
+        "Platform Owner company scope resolved: user_id=%s current_company_id=%s eligible_company_ids=%s canonical_company_id=%s configured_name=%s",
+        str(getattr(user, "id", "") or ""),
+        current_id or "<missing>",
+        sorted(allowed_ids),
+        str((selected or {}).get("id") or "<unresolved>"),
+        configured_name or "<unset>",
+    )
 
     if not selected:
         return user
+
     canonical_id = str(selected.get("id") or "").strip()
-    if not canonical_id or canonical_id == current_id:
+    canonical_name = str(selected.get("name") or "").strip()
+    if not canonical_id:
         return user
+
+    # Keep exactly one canonical marker among companies this owner is allowed
+    # to operate. Do not touch any licensee company record.
+    try:
+        await raw_db.companies.update_one(
+            {"id": canonical_id},
+            {"$set": {"is_platform_owner_workspace": True, "status": "active"}},
+        )
+        other_owner_ids = [value for value in allowed_ids if value != canonical_id]
+        if other_owner_ids:
+            await raw_db.companies.update_many(
+                {
+                    "id": {"$in": other_owner_ids},
+                    "is_platform_owner_workspace": True,
+                },
+                {"$unset": {"is_platform_owner_workspace": ""}},
+            )
+    except Exception:
+        logger.exception("Could not persist canonical Platform Owner workspace marker")
+
     user_data = user.model_dump()
     user_data["company_id"] = canonical_id
+    if "company_name" in user_data:
+        user_data["company_name"] = canonical_name
+    if isinstance(user_data.get("company"), dict):
+        company_data = dict(user_data["company"])
+        company_data.update({"id": canonical_id, "name": canonical_name})
+        user_data["company"] = company_data
+
     try:
-        return User.model_validate(user_data)
+        resolved_user = User.model_validate(user_data)
     except Exception:
         logger.exception("Could not apply canonical Platform Owner company identity")
         return user
+
+    user_id = str(getattr(user, "id", "") or "").strip()
+    email = str(getattr(user, "email", "") or "").strip().lower()
+    if user_id and email:
+        try:
+            await raw_db.users.update_one(
+                {"id": user_id, "email": email},
+                {"$set": {"company_id": canonical_id, "company_name": canonical_name}},
+            )
+        except Exception:
+            logger.warning("Could not persist canonical owner company_id for user_id=%s", user_id)
+
+    return resolved_user
 
 
 async def get_current_user(credentials=Depends(security)):
@@ -459,8 +562,11 @@ async def get_current_user(credentials=Depends(security)):
     saas_user=await _get_saas_session_user(token)
     if saas_user is not None:
         saas_user = await _canonicalize_platform_owner_company(saas_user)
+        owner_context = is_platform_owner(saas_user)
+        if not owner_context:
+            set_platform_owner_company_ids([])
         set_authenticated_company(saas_user.company_id)
-        set_platform_owner(is_platform_owner(saas_user))
+        set_platform_owner(owner_context)
         return saas_user
     try:
         payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
@@ -532,9 +638,13 @@ async def get_current_user(credentials=Depends(security)):
     company_id=getattr(user,"company_id",None)
     if not company_id or not str(company_id).strip():
         if is_platform_owner(user):
-            raw_db = globals().get("_raw_db", db)
-            owner_comp = await raw_db.companies.find_one({"is_platform_owner_workspace": True, "status": "active"})
-            owner_comp_id = str((owner_comp or {}).get("id") or "comp-platform-owner")
+            # The canonical resolver normally fills this. If it could not, do
+            # not guess from a licensee company or bypass isolation.
+            owner_ids = sorted(platform_owner_company_ids())
+            if len(owner_ids) == 1:
+                owner_comp_id = owner_ids[0]
+            else:
+                owner_comp_id = "comp-platform-owner"
             user_data = user.model_dump()
             user_data["company_id"] = owner_comp_id
             user = User.model_validate(user_data)
@@ -548,9 +658,12 @@ async def get_current_user(credentials=Depends(security)):
             user=User.model_validate(user_data)
         else:
             raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
+    owner_context = is_platform_owner(user)
+    if not owner_context:
+        set_platform_owner_company_ids([])
     set_authenticated_company(company_id)
-    set_platform_owner(is_platform_owner(user))
-    if not is_platform_owner(user) and company_id:
+    set_platform_owner(owner_context)
+    if not owner_context and company_id:
         try:
             cust_id = getattr(user, "commercial_customer_id", None) or company_id
             explicit_license_id = str(getattr(user, "license_id", "") or "").strip()
