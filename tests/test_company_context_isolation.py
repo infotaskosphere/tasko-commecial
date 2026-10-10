@@ -418,3 +418,134 @@ def test_configured_legacy_owner_alias_fails_closed_without_resolved_allow_list(
         tr.reset_platform_owner_company_ids(allowed_token)
         tr.reset_platform_owner(owner_token)
         tr.reset_authenticated_company(company_token)
+
+
+def test_configured_owner_workspace_recovers_when_creator_id_differs_from_session_user(monkeypatch):
+    """A legacy owner session may differ from the verified account that created its workspace."""
+    from backend import dependencies as deps
+    from backend import tenant_runtime as tr
+
+    workspace_id = "74e30915-e7a8-47ec-a596-53361094bc19"
+    stale_id = "b03f8228-679b-422a-9d18-0e21ad66c41b"
+    creator_id = "e8defc06-cdc0-40c6-af36-edd88b8a9a89"
+    monkeypatch.setenv("PLATFORM_OWNER_WORKSPACE_ID", workspace_id)
+    monkeypatch.setenv("PLATFORM_OWNER_WORKSPACE_NAME", "Prodigist Ventures Private Limited")
+    monkeypatch.setenv("PLATFORM_OWNER_LEGACY_COMPANY_IDS", stale_id)
+
+    owner_company = {
+        "id": workspace_id,
+        "name": "Prodigist Ventures Private Limited",
+        "created_by": creator_id,
+        "is_platform_owner_workspace": True,
+        "status": "active",
+    }
+    creator_doc = {
+        "id": creator_id,
+        "email": "csmanthandesai@gmail.com",
+        "role": "admin",
+        "status": "active",
+    }
+    current_user = {
+        "id": "platform-owner-48fe785fdd75127f",
+        "email": "info.taskosphere@gmail.com",
+        "role": "admin",
+        "company_id": "platform-owner-48fe785fdd75127f",
+    }
+
+    def matches(query, doc):
+        if not query:
+            return True
+        if "$or" in query and not any(matches(q, doc) for q in query["$or"]):
+            return False
+        if "$and" in query and not all(matches(q, doc) for q in query["$and"]):
+            return False
+        for key, expected in query.items():
+            if key in {"$or", "$and"}:
+                continue
+            actual = doc.get(key)
+            if isinstance(expected, dict):
+                if "$nin" in expected and actual in expected["$nin"]:
+                    return False
+                if "$in" in expected and actual not in expected["$in"]:
+                    return False
+            elif actual != expected:
+                return False
+        return True
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+        def sort(self, *_args, **_kwargs):
+            return self
+        def limit(self, n):
+            self.rows = self.rows[:n]
+            return self
+        async def to_list(self, n=None):
+            return self.rows[:n] if n is not None else self.rows
+
+    class Collection:
+        def __init__(self, rows):
+            self.rows = rows
+        def find(self, query=None, projection=None):
+            return Cursor([dict(row) for row in self.rows if matches(query or {}, row)])
+        async def find_one(self, query=None, projection=None, **_kwargs):
+            return next((dict(row) for row in self.rows if matches(query or {}, row)), None)
+        async def update_one(self, query, update, **_kwargs):
+            for row in self.rows:
+                if matches(query, row):
+                    row.update(update.get("$set", {}))
+                    for key in update.get("$unset", {}):
+                        row.pop(key, None)
+                    return
+        async def update_many(self, query, update, **_kwargs):
+            for row in self.rows:
+                if matches(query, row):
+                    row.update(update.get("$set", {}))
+                    for key in update.get("$unset", {}):
+                        row.pop(key, None)
+
+    fake_db = type("FakeDB", (), {})()
+    fake_db.companies = Collection([owner_company])
+    fake_db.users = Collection([creator_doc])
+    fake_db.commercial_licenses = Collection([])
+
+    class FakeUser:
+        def __init__(self, data):
+            self.id = data.get("id")
+            self.email = data.get("email")
+            self.role = data.get("role")
+            self.company_id = data.get("company_id")
+            self.company_name = data.get("company_name")
+        def model_dump(self):
+            return {
+                "id": self.id, "email": self.email, "role": self.role,
+                "company_id": self.company_id, "company_name": self.company_name,
+            }
+        @classmethod
+        def model_validate(cls, data):
+            return cls(data)
+
+    user = FakeUser(current_user)
+    async def no_visible_companies(_user):
+        # Reproduce the live failure: the regular selector filtered every row.
+        return []
+
+    def is_owner(value):
+        email = value.get("email", "") if isinstance(value, dict) else getattr(value, "email", "")
+        return email in {"info.taskosphere@gmail.com", "csmanthandesai@gmail.com"}
+
+    monkeypatch.setattr(deps, "_owner_operational_companies", no_visible_companies)
+    monkeypatch.setattr(deps, "is_platform_owner", is_owner)
+    monkeypatch.setattr(deps, "_raw_db", fake_db, raising=False)
+    monkeypatch.setattr(deps, "db", fake_db)
+    monkeypatch.setattr(deps, "User", FakeUser)
+
+    async def scenario():
+        resolved = await deps._canonicalize_platform_owner_company(user)
+        assert resolved.company_id == workspace_id
+        assert workspace_id in tr.platform_owner_company_ids()
+        assert tr.platform_owner_company_aliases()[stale_id] == workspace_id
+        normalized = tr._scope_query({"company_id": stale_id})
+        assert normalized == {"company_id": workspace_id}
+
+    asyncio.run(scenario())
