@@ -62,7 +62,23 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
         if candidate:
             customer_id = str(candidate.get("commercial_customer_id") or "").strip()
             license_id = str(candidate.get("license_id") or "").strip()
-            if customer_id not in {"", "platform-owner"} or license_id not in {"", "platform-owner-license"}:
+            license_ref = await raw_db.commercial_licenses.find_one(
+                {
+                    "$or": [
+                        {"id": configured_workspace_id},
+                        {"company_id": configured_workspace_id},
+                        {"customer_id": configured_workspace_id},
+                        {"id": license_id} if license_id else {"id": "__no_license__"},
+                        {"customer_id": customer_id} if customer_id else {"customer_id": "__no_customer__"},
+                    ]
+                },
+                {"_id": 1},
+            )
+            if (
+                customer_id not in {"", "platform-owner"}
+                or license_id not in {"", "platform-owner-license"}
+                or license_ref
+            ):
                 raise RuntimeError(
                     "PLATFORM_OWNER_WORKSPACE_ID points to a commercial tenant company; refusing to reuse it"
                 )
@@ -94,7 +110,24 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
                 continue
             customer_id = str(candidate.get("commercial_customer_id") or "").strip()
             license_id = str(candidate.get("license_id") or "").strip()
-            if customer_id not in {"", "platform-owner"} or license_id not in {"", "platform-owner-license"}:
+            company_id = str(candidate.get("id") or "").strip()
+            license_ref = await raw_db.commercial_licenses.find_one(
+                {
+                    "$or": [
+                        {"id": company_id},
+                        {"company_id": company_id},
+                        {"customer_id": company_id},
+                        {"id": license_id} if license_id else {"id": "__no_license__"},
+                        {"customer_id": customer_id} if customer_id else {"customer_id": "__no_customer__"},
+                    ]
+                },
+                {"_id": 1},
+            )
+            if (
+                customer_id not in {"", "platform-owner"}
+                or license_id not in {"", "platform-owner-license"}
+                or license_ref
+            ):
                 continue
             if customer_id:
                 active_license = await raw_db.commercial_licenses.find_one(
