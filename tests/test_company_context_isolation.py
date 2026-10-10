@@ -340,6 +340,14 @@ def test_platform_owner_updates_keep_the_selected_owned_company():
         assert update == {"$set": {"memo": "updated"}}
         replacement = tr._scope_replacement({"memo": "replacement"}, scoped_query)
         assert replacement["company_id"] == "owner-b"
+
+        # Ownership of both companies does not permit silently moving an
+        # existing operational record between company ledgers.
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException):
+            tr._scope_update({"$set": {"company_id": "owner-a"}}, scoped_query)
+        with pytest.raises(HTTPException):
+            tr._scope_replacement({"company_id": "owner-a"}, scoped_query)
     finally:
         tr.reset_platform_owner_company_ids(allowed_token)
         tr.reset_platform_owner(owner_token)
