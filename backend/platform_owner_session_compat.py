@@ -80,14 +80,19 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
             if creator_id:
                 creator = await raw_db.users.find_one(
                     {"id": creator_id}, {"_id": 0, "id": 1, "email": 1, "role": 1,
-                     "is_platform_owner": 1, "isPlatformOwner": 1, "company_id": 1}
+                     "is_platform_owner": 1, "isPlatformOwner": 1, "company_id": 1,
+                     "identity_type": 1, "licensee_uid": 1, "commercial_customer_id": 1,
+                     "license_id": 1, "platform_owner_uid": 1, "identity_org_uid": 1,
+                     "user_uid": 1}
                 )
                 if not creator:
                     try:
                         creator = await raw_db.users.find_one(
                             {"_id": ObjectId(creator_id)}, {"_id": 1, "id": 1, "email": 1,
                              "role": 1, "is_platform_owner": 1, "isPlatformOwner": 1,
-                             "company_id": 1}
+                             "company_id": 1, "identity_type": 1, "licensee_uid": 1,
+                             "commercial_customer_id": 1, "license_id": 1,
+                             "platform_owner_uid": 1, "identity_org_uid": 1, "user_uid": 1}
                         )
                     except Exception:
                         creator = None
