@@ -412,32 +412,62 @@ def _matrix_denied_action(
     method: str,
     path: str,
 ) -> Optional[str]:
-    """Return the denied action name, or None when the request is allowed.
+    """Fail closed for per-user actions while preserving licensee-admin control.
 
-    Only pages with an explicit Permission Matrix entry are restricted; a page
-    without an entry keeps its page-level behaviour. The licensee admin has no
-    matrix entries, so the admin keeps full actions inside the licensed pages.
+    The commercial license/page guard runs before this function. A licensee
+    administrator therefore retains full actions on pages granted by the
+    platform license, while a non-admin user must have an explicit action grant
+    or a compatible legacy permission. Missing matrix entries never silently
+    grant create/edit/delete access.
     """
     action = _required_action(method, path)
     if not action:
+        return None
+
+    # The tenant administrator manages their own users and is governed by the
+    # active license's module/page ceiling, not by a staff user's action matrix.
+    if _is_admin_role(user):
         return None
 
     permissions = getattr(user, "permissions", None)
     if hasattr(permissions, "model_dump"):
         permissions = permissions.model_dump()
     if not isinstance(permissions, dict):
-        return None
+        return action
 
     matrix = permissions.get("governance_matrix") or {}
-    allowed = matrix.get(f"{module}.{flag}") if isinstance(matrix, dict) else None
-    if not isinstance(allowed, (list, tuple, set)):
-        return None
+    key = f"{module}.{flag}"
+    allowed = matrix.get(key) if isinstance(matrix, dict) else None
 
-    normalized_allowed = {
-        _ACTION_ALIASES.get(str(item).strip().lower(), str(item).strip().lower())
-        for item in allowed
-    }
-    return None if action in normalized_allowed else action
+    if isinstance(allowed, (list, tuple, set)):
+        normalized_allowed = {
+            _ACTION_ALIASES.get(str(item).strip().lower(), str(item).strip().lower())
+            for item in allowed
+        }
+        return None if action in normalized_allowed else action
+
+    # Backward compatibility for users whose permissions predate the granular
+    # matrix. Viewing still requires the page's view flag. Mutations require a
+    # matching management flag; destructive actions require an explicit delete
+    # grant. This fallback is deliberately conservative.
+    if action == "view":
+        return None if permissions.get(flag) is True else action
+    if action == "export":
+        export_flag = "can_download_reports" if module in {"taskosphere", "finix"} else None
+        return None if export_flag and permissions.get(export_flag) is True else action
+    if action in {"create", "edit", "update", "write"}:
+        manage_flag = flag.replace("can_view_", "can_manage_", 1) if flag.startswith("can_view_") else None
+        if manage_flag and permissions.get(manage_flag) is True:
+            return None
+        # Some modules intentionally use a single manage flag for create/edit.
+        if permissions.get("can_manage_" + module) is True:
+            return None
+        return action
+    if action == "delete":
+        return None if permissions.get(f"{module}.delete") is True else action
+    if action in {"approve", "print", "share"}:
+        return None if permissions.get(f"{module}.{action}") is True else action
+    return action
 
 
 def module_for_path(path: str, method: str = "GET") -> Optional[str]:
