@@ -401,6 +401,56 @@ async def _resolve_licensed_company_id(user):
     company_id=str(company.get("id") or company.get("_id") or "").strip()
     return company_id or None
 
+async def _canonicalize_platform_owner_company(user):
+    """Use the explicitly designated owner workspace as the owner's operational company.
+
+    Legacy owner user records can carry a stale company_id (for example the old
+    practice name) even though Master Data designates a different canonical
+    workspace. Only the explicit is_platform_owner_workspace marker is trusted;
+    never infer the owner company from a display name or choose an arbitrary
+    company from the registry.
+    """
+    if not is_platform_owner(user):
+        return user
+    raw_db = globals().get("_raw_db", db)
+    current_id = str(getattr(user, "company_id", "") or "").strip()
+    try:
+        rows = await raw_db.companies.find(
+            {"is_platform_owner_workspace": True, "status": "active"},
+            {"_id": 0, "id": 1, "name": 1},
+        ).limit(2).to_list(2)
+    except Exception:
+        logger.exception("Could not resolve canonical Platform Owner workspace")
+        return user
+
+    # Only a unique explicitly designated workspace is authoritative. If
+    # duplicate markers exist, retain the current identity only when it points
+    # to one of those marked records; otherwise fail closed by not guessing.
+    selected = None
+    if len(rows) == 1 and rows[0].get("id"):
+        selected = rows[0]
+    elif len(rows) > 1:
+        matches = [row for row in rows if str(row.get("id") or "").strip() == current_id]
+        if len(matches) == 1:
+            selected = matches[0]
+        else:
+            logger.error("Multiple active Platform Owner workspaces; refusing to guess")
+            return user
+
+    if not selected:
+        return user
+    canonical_id = str(selected.get("id") or "").strip()
+    if not canonical_id or canonical_id == current_id:
+        return user
+    user_data = user.model_dump()
+    user_data["company_id"] = canonical_id
+    try:
+        return User.model_validate(user_data)
+    except Exception:
+        logger.exception("Could not apply canonical Platform Owner company identity")
+        return user
+
+
 async def get_current_user(credentials=Depends(security)):
     unauthorized=HTTPException(status_code=401,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
     if credentials is None or not getattr(credentials, "credentials", None):
@@ -408,6 +458,7 @@ async def get_current_user(credentials=Depends(security)):
     token=credentials.credentials
     saas_user=await _get_saas_session_user(token)
     if saas_user is not None:
+        saas_user = await _canonicalize_platform_owner_company(saas_user)
         set_authenticated_company(saas_user.company_id)
         set_platform_owner(is_platform_owner(saas_user))
         return saas_user
@@ -477,6 +528,7 @@ async def get_current_user(credentials=Depends(security)):
         user_company_id = str(user.company_id or "").strip()
         if session_company_id and user_company_id and session_company_id != user_company_id:
             raise HTTPException(status_code=401, detail="SESSION_INVALIDATED", headers={"WWW-Authenticate":"Bearer"})
+    user = await _canonicalize_platform_owner_company(user)
     company_id=getattr(user,"company_id",None)
     if not company_id or not str(company_id).strip():
         if is_platform_owner(user):
