@@ -317,7 +317,21 @@ def _scope_query(query: Any) -> dict[str, Any]:
 
 def _scope_company_registry_query(query: Any) -> dict[str, Any]:
     if in_platform_owner_context():
-        return query if isinstance(query, dict) else {}
+        base = dict(query or {}) if isinstance(query, dict) else {}
+        if _is_commercial_control_context():
+            return base
+        allowed = platform_owner_company_ids()
+        if not allowed and authenticated_company_id():
+            allowed = frozenset({str(authenticated_company_id())})
+        requested = base.get(COMPANY_ID_FIELD)
+        if requested is not None and not _owner_company_filter_allowed(requested):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Platform Owner operational data is restricted to its own companies",
+            )
+        if requested is None:
+            base[COMPANY_ID_FIELD] = {"$in": sorted(allowed)} if allowed else "__no_platform_owner_company_scope__"
+        return base
     company_id = authenticated_company_id()
     if not company_id:
         return query if isinstance(query, dict) else {}
