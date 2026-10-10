@@ -62,7 +62,7 @@ MODULE_HIERARCHY = {
     "records": {
         "flag": "can_access_records",
         "label": "Records",
-        "description": "Records Dashboard, DSC Register, Document Register, Clients, Password Vault and Client Approvals.",
+        "description": "Records Dashboard, DSC Register, Document Register, Clients, Password Vault, Client Approvals, WhatsApp Hub and Automation Approvals.",
         "pages": [
             {"flag": "can_view_records_dashboard", "label": "Records Dashboard", "actions": ["view"]},
             {"flag": "can_view_all_dsc", "label": "DSC Register", "actions": ["view", "export"]},
@@ -70,6 +70,8 @@ MODULE_HIERARCHY = {
             {"flag": "can_view_clients_page", "label": "Clients", "actions": ["view", "create", "edit", "delete", "export"]},
             {"flag": "can_view_passwords", "label": "Password Vault", "actions": ["view", "create", "edit", "delete"]},
             {"flag": "can_view_client_approvals", "label": "Client Approvals", "actions": ["view", "approve", "reject"]},
+            {"flag": "can_access_whatsapp_hub", "label": "WhatsApp Hub", "actions": ["view", "create", "edit", "delete"]},
+            {"flag": "can_view_automation_approvals", "label": "Automation Approvals", "actions": ["view", "approve", "reject"]},
         ],
     },
     "proposals": {
@@ -93,6 +95,7 @@ MODULE_HIERARCHY = {
             {"flag": "can_view_payroll", "label": "Payroll", "actions": ["view", "create", "edit", "export"]},
             {"flag": "can_view_hr", "label": "HR", "actions": ["view", "create", "edit", "delete"]},
             {"flag": "can_view_recruitment", "label": "Recruitment", "actions": ["view", "create", "edit", "delete", "export"]},
+            {"flag": "can_view_performance", "label": "Performance", "actions": ["view", "create", "edit", "export"]},
         ],
     },
     "admin": {
@@ -101,6 +104,10 @@ MODULE_HIERARCHY = {
         "description": "Tenant administration — Users, Permission Matrix, Settings, Master Data and Roles.",
         "pages": [
             {"flag": "can_view_user_page", "label": "Users", "actions": ["view", "create", "edit", "delete"]},
+            {"flag": "can_view_reports", "label": "Performance Reports", "actions": ["view", "export"]},
+            {"flag": "can_download_reports", "label": "Report Exports", "actions": ["export"]},
+            {"flag": "can_view_staff_activity", "label": "Staff Activity", "actions": ["view"]},
+            {"flag": "can_view_audit_logs", "label": "Audit Logs", "actions": ["view"]},
             {"flag": "can_manage_permissions", "label": "Permission Matrix", "actions": ["view", "edit", "approve"]},
             {"flag": "can_manage_settings", "label": "Settings", "actions": ["view", "edit"]},
             {"flag": "can_view_master_data", "label": "Master Data (view)", "actions": ["view"]},
