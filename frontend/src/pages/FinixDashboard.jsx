@@ -824,7 +824,8 @@ function FinixDashboardInner() {
       if (list.length) {
         const stored = localStorage.getItem('accountingReports:lastCompanyId') || '';
         const canonicalOwnerCompany = isPlatformOwnerUser
-          ? list.find((c) => c.is_platform_owner_workspace === true)
+          ? (list.find((c) => String(c.id || '') === ownerCompanyId) ||
+             list.find((c) => c.is_platform_owner_workspace === true))
           : null;
         if (isPlatformOwnerUser && canonicalOwnerCompany) {
           initialCid = canonicalOwnerCompany.id;
@@ -841,7 +842,7 @@ function FinixDashboardInner() {
         fetchMetrics(initialCid);
       }
     })();
-  }, [user?.id]);
+  }, [user?.id, user?.company_id, user?.company?.id]);
 
   const handleCompanyChange = (val) => {
     setCompanyId(val);
