@@ -145,8 +145,7 @@ pyzk==0.9
 # =========================
 # PyKCS11==1.5.13 (optional, excluded to avoid native swig build dependency)
 cryptography>=42.0.0
-# Security override: keep the transitive ecdsa package at a patched release.
-ecdsa>=0.19.3
+# Note: python-ecdsa has no patched PyPI release for the current Minerva timing advisory; do not pin to a nonexistent version.
 
 # =========================
 # TM Sync Agent (Trademark Sphere)
