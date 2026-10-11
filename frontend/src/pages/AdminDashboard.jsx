@@ -70,7 +70,7 @@ export default function AdminDashboard() {
   const links = [
     // Global pages linked to the entire app
     { path: '/permission-matrix', icon: ShieldCheck, label: 'Permission Matrix', description: 'Review module, page and action access.', color: HUB_COLORS.emeraldGreen },
-    { path: '/settings/backup', icon: Database, label: 'Backup & Restore', description: 'System database state snapshots and restore utilities.', color: '#6366F1' },
+    { path: '/admin/backup-restore', icon: Database, label: 'Backup & Restore', description: 'System database state snapshots and restore utilities.', color: '#6366F1' },
     { path: '/master-data', icon: Database, label: 'Master Data', description: 'Manage company profiles, clients and staff master records.', color: '#7C3AED' },
     { path: '/roles', icon: Fingerprint, label: 'Roles', description: 'Define roles and their default permission templates.', color: '#DB2777' },
     { path: '/contact-details', icon: Phone, label: 'Contact Details', description: 'Manage company and department contact information.', color: '#0EA5E9' },
