@@ -94,7 +94,7 @@ MODELS=[
  {"id":"gemini-2.5-flash","provider":"gemini","name":"Gemini 2.5 Flash","capabilities":["chat","reasoning","coding","vision","document_analysis","tool_calling","long_context","structured_output"]},
  {"id":"claude-opus-5","provider":"claude","name":"Claude Opus 5","capabilities":["chat","reasoning","coding","debugging","vision","document_analysis","tool_calling","agent_execution","long_context","structured_output"]},
  {"id":"claude-sonnet-5","provider":"claude","name":"Claude Sonnet 5","capabilities":["chat","reasoning","coding","debugging","vision","document_analysis","tool_calling","structured_output"]},
- {"id":"grok-4.6","provider":"grok","name":"Grok 4.6","capabilities":["chat","reasoning","coding","vision","tool_calling","agent_execution","structured_output"]},
+ {"id":"grok-4.7","provider":"grok","name":"Grok 4.7","capabilities":["chat","reasoning","coding","vision","tool_calling","agent_execution","structured_output"]},
  {"id":"deepseek-reasoner","provider":"deepseek","name":"DeepSeek Reasoner","capabilities":["reasoning","coding","debugging","structured_output"]},
  {"id":"deepseek-chat","provider":"deepseek","name":"DeepSeek Chat","capabilities":["chat","coding","tool_calling","structured_output"]},
  {"id":"qwen-plus","provider":"qwen","name":"Qwen Plus","capabilities":["chat","reasoning","coding","document_analysis","structured_output"]},
@@ -121,6 +121,20 @@ def env_provider_keys(provider):
 def env_account_id(provider,index,scope_id):
     digest=hashlib.sha256(str(scope_id).encode()).hexdigest()[:12]
     return f"env-{provider}-{index}-{digest}"
+MODEL_DISCOVERY_RETRY_SECONDS = 6 * 60 * 60
+
+
+def _model_discovery_due(existing, fingerprint):
+    """Throttle best-effort catalog discovery; never retry a failed list call on every request."""
+    if not existing or existing.get("model_discovery_fingerprint") != fingerprint:
+        return True
+    try:
+        checked_at = float(existing.get("model_discovery_checked_at") or 0)
+    except (TypeError, ValueError):
+        return True
+    return (time.time() - checked_at) >= MODEL_DISCOVERY_RETRY_SECONDS
+
+
 async def ensure_env_accounts(user):
     s=scope(user)
     capabilities=list(CAPABILITIES-{"image_generation","agent_execution"})
@@ -135,26 +149,53 @@ async def ensure_env_accounts(user):
         existing=await db.aiweave_provider_accounts.find_one({**s,"id":aid})
         changed=not existing or existing.get("credential_fingerprint")!=fingerprint
         base_url=ollama_base if provider=="ollama" else None
-        patch={"provider":provider,"name":ENV_PROVIDER_IDENTITY.get(provider,provider.title())+(f" #{index}" if index>1 else ""),"masked_identity":"Server-managed credential","credential_encrypted":enc(key),"credential_fingerprint":fingerprint,"source":"ENV","managed_by":"server","status":"CONNECTED","health":"HEALTHY","enabled":True,"capabilities":capabilities,"priority":index,"weight":100,"allowed_task_types":["*"],"allowed_users":["*"],"allowed_companies":[s["company_id"]] if s["company_id"] else [],"base_url":base_url,"last_error":None,"updated_at":now()}
+        patch={"provider":provider,"name":ENV_PROVIDER_IDENTITY.get(provider,provider.title())+(f" #{index}" if index>1 else ""),"masked_identity":"Server-managed credential","credential_encrypted":enc(key),"credential_fingerprint":fingerprint,"source":"ENV","managed_by":"server","capabilities":capabilities,"priority":index,"weight":100,"allowed_task_types":["*"],"allowed_users":["*"],"allowed_companies":[s["company_id"]] if s["company_id"] else [],"base_url":base_url,"updated_at":now()}
+        # A changed server credential is eligible for a fresh connection check.
+        # Otherwise, preserve runtime health/status: do not turn AUTH_REQUIRED
+        # back into CONNECTED on every dashboard/provider-list request.
+        if changed:
+            patch.update({"status":"CONNECTED","health":"HEALTHY","enabled":True,"last_error":None,"cooldown_until":None})
         if not existing:
-            doc={"id":aid,**s,**patch,"cost_tier":TYPICAL_FREE_TIER_HINT.get(provider,"UNKNOWN"),
+            doc={"id":aid,**s,**patch,"status":"CONNECTED","health":"HEALTHY","enabled":True,
+                 "cost_tier":TYPICAL_FREE_TIER_HINT.get(provider,"UNKNOWN"),
                  "current_usage_tokens":0,"total_requests":0,"last_used":None,"last_checked":None,
                  "daily_limit":0,"monthly_limit":0,
                  "daily_usage_tokens":0,"daily_requests":0,"daily_reset_at":today(),
+                 "monthly_usage_tokens":0,"monthly_requests":0,"daily_reset_at":today(),
                  "monthly_usage_tokens":0,"monthly_requests":0,"monthly_reset_at":this_month(),
                  "cooldown_until":None,"quota":{},"usage":{},"created_at":now()}
             await db.aiweave_provider_accounts.insert_one(doc)
         else:
-            # Never clobber an admin's own cost-tier / limit choices for an
-            # already-known credential - only the connection status fields
-            # returned by discovery are refreshed here.
+            # Keep manually configured cost-tier/limit/health state unless the
+            # server credential itself changed.
             await db.aiweave_provider_accounts.update_one({**s,"id":aid},{"$set":patch})
-        model_count=await db.aiweave_provider_models.count_documents({**s,"provider":provider,"source":"ENV"})
-        if changed or model_count==0:
-            found=await discover({**patch,"id":aid,"provider":provider,"base_url":base_url},key)
-            if found:
+
+        if changed or _model_discovery_due(existing, fingerprint):
+            if provider == "grok":
+                # xAI API keys can be scoped per endpoint. A key may be allowed
+                # to call chat completions but forbidden from GET /v1/models,
+                # so automatic model listing must not block an otherwise usable
+                # Grok account. model_candidates() falls back to MODELS below.
+                found=[]
+                discovery_status="CATALOG_FALLBACK"
+                discovery_message="Automatic xAI model listing is skipped; using the maintained Grok catalogue. A 403 from /models does not by itself prove chat-completions access is denied."
+            else:
+                found=await discover({**patch,"id":aid,"provider":provider,"base_url":base_url},key)
+                discovery_status="DISCOVERED" if found else "CATALOG_FALLBACK"
+                discovery_message=None if found else "Provider model listing is unavailable; the maintained model catalogue will be used where available."
+            if changed or found:
                 await db.aiweave_provider_models.delete_many({**s,"provider":provider,"source":"ENV"})
+            if found:
                 await db.aiweave_provider_models.insert_many([{**m,**s,"source":"ENV"} for m in found[:500]])
+            await db.aiweave_provider_accounts.update_one(
+                {**s,"id":aid},
+                {"$set":{
+                    "model_discovery_fingerprint":fingerprint,
+                    "model_discovery_checked_at":time.time(),
+                    "model_discovery_status":discovery_status,
+                    "model_discovery_message":discovery_message,
+                }},
+            )
     return len(configured)
 
 
@@ -206,7 +247,9 @@ def safe(a):
             "usage":a.get("usage") or {},
             "costTier":str(a.get("cost_tier") or "UNKNOWN").upper(),
             "cooldownUntil":a.get("cooldown_until"),
-            "dailyUsageTokens":d,"dailyRequests":dr,"monthlyUsageTokens":m,"monthlyRequests":mr,
+            "modelDiscoveryStatus":a.get("model_discovery_status"),
+            "modelDiscoveryMessage":a.get("model_discovery_message"),
+            "dailyUsageTokens":d,"dailyRequests":dr,"monthlyUsageTokens":mr,"monthlyRequests":mr,
             "quotaAvailable":quota_available(a)}
 def account_query(user):
     s=scope(user);uid=str(getattr(user,"id","") or "")
@@ -275,6 +318,15 @@ async def ollama_call(base,model,prompt,timeout):
 async def test_provider(row,key):
     p=row["provider"]
     if PROVIDER_MAP[p].get("adapter") is None:raise PError("NON_RETRYABLE_ACCOUNT_FAILURE","This provider requires a dedicated agent integration and is not connected by a generic API-key adapter.")
+    if p=="grok":
+        # Test the capability AIWeave actually consumes rather than the optional
+        # model-list endpoint. The one-token probe is explicit (admin-triggered)
+        # and exposes a real chat-completions ACL/key failure when present.
+        r=await req("POST",BASES[p]+"/chat/completions",
+                    {"Authorization":f"Bearer {key}","Content-Type":"application/json"},
+                    json={"model":"grok-4.7","messages":[{"role":"user","content":"Reply OK."}],"max_tokens":1,"temperature":0},timeout=15)
+        if r.status_code!=200:raise PError(classify(r.status_code,err(r)),err(r))
+        return {"message":"xAI chat-completions access verified; model listing uses the maintained Grok catalogue.","discovered":0}
     if p=="ollama":
         r=await req("GET",(row.get("base_url") or "http://127.0.0.1:11434").rstrip("/")+"/api/tags",timeout=10)
     elif p=="gemini":
@@ -291,6 +343,11 @@ async def test_provider(row,key):
 
 async def discover(row,key):
     p=row["provider"]
+    # Grok uses a maintained model catalogue. Automatically GETting /v1/models
+    # is optional and can return 403 for a key that lacks the "models" endpoint
+    # ACL even when chat-completions is permitted. Verify inference separately.
+    if p=="grok":
+        return []
     try:
         if p in BASES:
             r=await req("GET",BASES[p]+"/models",{"Authorization":f"Bearer {key}"},timeout=20)
