@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import get_learning_context, record_learning
+from backend.accounting_ai.finix_access import is_admin_role
 
 router = APIRouter(prefix="/finix/ai", tags=["Finix AI Agent"])
 
@@ -85,7 +86,7 @@ async def agent_feedback(payload: FeedbackRequest, current_user: User = Depends(
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
-    if proposal.get("created_by") != current_user.id and str(current_user.role or "").lower() != "admin":
+    if proposal.get("created_by") != current_user.id and not is_admin_role(current_user):
         raise HTTPException(403, "Only the proposal owner or an admin can provide feedback.")
     await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("context", {}).get("party", {}).get("name") or proposal.get("interpretation", {}).get("party_name", ""), proposal, payload.outcome, current_user.id, payload.correction)
     await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"feedback": payload.outcome, "correction": payload.correction, "feedback_by": current_user.id, "feedback_at": datetime.now(timezone.utc).isoformat()}})
