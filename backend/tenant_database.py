@@ -219,24 +219,42 @@ async def provision(company_id: str, license_id: str = "") -> dict:
 
 
 async def seed_defaults(database: Any, company_id: str) -> None:
-    """Seed tenant-safe defaults using the existing application's source data.
-
-    The chart-of-accounts helper defines the authoritative accounting defaults.
-    Workflow templates come from WorkflowTemplates.DEFAULT_TEMPLATES. Existing
-    company-agnostic department/holiday rows in the shared database are copied
-    into the tenant with an explicit company_id; no other licensee's rows are
-    copied.
-    """
+    """Seed tenant-safe defaults from the application's existing definitions."""
     cid = str(company_id)
-    with use_tenant(cid):
-        from backend.accounting_core import ensure_default_chart_of_accounts
-
-        await ensure_default_chart_of_accounts(cid, "system")
-
-    # Workflow templates are business data; each seeded document must be tenant
-    # attributed, even though the old shared startup bootstrap omitted the field.
+    from uuid import uuid4
+    from backend.accounting_core import DEFAULT_ACCOUNTS
     from backend.workflow.workflow_templates import WorkflowTemplates
 
+    # Seed accounting defaults directly into the supplied database. Do not route
+    # through the global db facade here: that facade intentionally remains in
+    # shared mode until cut-over, while provisioning must populate the tenant DB.
+    chart = database["chart_of_accounts"]
+    existing_codes = {
+        row["code"]
+        for row in await chart.find({"company_id": cid}, {"_id": 0, "code": 1}).to_list(2000)
+        if row.get("code")
+    }
+    now_iso = datetime.now(timezone.utc).isoformat()
+    missing = [
+        {
+            "id": str(uuid4()),
+            "company_id": cid,
+            "code": code,
+            "name": name,
+            "type": account_type,
+            "sub_type": sub_type,
+            "is_system": True,
+            "is_active": True,
+            "created_by": "system",
+            "created_at": now_iso,
+        }
+        for code, name, account_type, sub_type in DEFAULT_ACCOUNTS
+        if code not in existing_codes
+    ]
+    if missing:
+        await chart.insert_many(missing)
+
+    # Templates are copied from the application's canonical template catalog.
     templates = getattr(WorkflowTemplates, "DEFAULT_TEMPLATES", [])
     target_templates = database["workflow_templates"]
     for template in templates:
@@ -247,8 +265,8 @@ async def seed_defaults(database: Any, company_id: str) -> None:
             upsert=True,
         )
 
-    # Only migrate truly global seed rows. Records already assigned to a company
-    # are deliberately not copied across tenants.
+    # Only copy company-agnostic seed rows from the legacy shared DB. Rows
+    # already assigned to a company are never propagated to another tenant.
     global_filter = {
         "$or": [
             {"company_id": {"$exists": False}},
@@ -259,8 +277,7 @@ async def seed_defaults(database: Any, company_id: str) -> None:
     for collection_name in ("departments", "holidays"):
         source = _control[collection_name]
         target = database[collection_name]
-        cursor = source.find(global_filter, {"_id": 0})
-        async for source_doc in cursor:
+        async for source_doc in source.find(global_filter, {"_id": 0}):
             doc = dict(source_doc)
             doc["company_id"] = cid
             if collection_name == "holidays" and doc.get("date") not in (None, ""):
