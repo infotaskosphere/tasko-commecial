@@ -11,6 +11,8 @@ from backend.tenant_runtime import (
     platform_owner_company_aliases,
     reset_authenticated_company,
     reset_platform_owner,
+    reset_platform_owner_company_aliases,
+    reset_platform_owner_company_ids,
     set_authenticated_company,
     set_platform_owner,
     set_platform_owner_company_aliases,
