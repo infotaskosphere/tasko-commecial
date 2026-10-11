@@ -581,13 +581,15 @@ async def _canonicalize_platform_owner_company(user):
                 logger.exception("OWNER-SCOPE-DIAG failed")
     set_platform_owner_company_ids(allowed_ids)
     selected = None
+    configured_id_unresolved = bool(configured_id and configured_id not in company_by_id)
 
     if configured_id:
         selected = company_by_id.get(configured_id)
-        if selected is None:
-            logger.error(
-                "PLATFORM_OWNER_WORKSPACE_ID is configured but is not in the authenticated owner's eligible company list"
-            )
+        # Defer reporting a stale configured ID until after trying the verified
+        # configured name/current company fallback. Render can retain an old
+        # platform-owner-* ID after the actual owner workspace has a real
+        # company UUID; the owner must not lose Finix access solely because
+        # that deployment setting is stale.
 
     if selected is None and configured_name:
         name_key = _workspace_name_key(configured_name)
@@ -648,6 +650,17 @@ async def _canonicalize_platform_owner_company(user):
     # not translate it and preserve the 403 isolation boundary.
     verified_aliases = {}
     alias_candidates = set(configured_legacy_ids)
+    # A stale deployment ID may safely alias to the selected workspace only
+    # when its configured legal name exactly matches that independently
+    # owner-verified company. The loop below additionally proves the old ID is
+    # absent from both the company registry and commercial license registry.
+    configured_name_matches_selected = bool(
+        configured_id_unresolved
+        and configured_name
+        and _workspace_name_key(configured_name) == _workspace_name_key(canonical_name)
+    )
+    if configured_name_matches_selected:
+        alias_candidates.add(configured_id)
     if current_id and current_id != canonical_id:
         alias_candidates.add(current_id)
     for legacy_id in sorted(alias_candidates):
@@ -673,6 +686,26 @@ async def _canonicalize_platform_owner_company(user):
             # strict 403 behavior. Do not guess under a DB failure.
             logger.exception("Could not validate a legacy owner company ID; leaving it unaliased")
     set_platform_owner_company_aliases(verified_aliases)
+    if configured_id_unresolved and configured_id:
+        if configured_id in verified_aliases:
+            # Rate-limit this warning because it is evaluated on every
+            # authenticated request. No cross-tenant ID is accepted: the stale
+            # configured ID was verified absent from both company/license
+            # registries and the target matches the configured owner name.
+            import time as _time
+            _now = _time.time()
+            if _now - getattr(_canonicalize_platform_owner_company, "_stale_config_log_ts", 0.0) > 300:
+                _canonicalize_platform_owner_company._stale_config_log_ts = _now
+                logger.warning(
+                    "PLATFORM_OWNER_WORKSPACE_ID is stale; verified alias maps it to owner company_id=%s. "
+                    "Update the Render setting to this canonical ID.",
+                    canonical_id,
+                )
+        else:
+            logger.error(
+                "PLATFORM_OWNER_WORKSPACE_ID is not an eligible owner company and could not be safely aliased; "
+                "the configured workspace ID is not being trusted"
+            )
 
     # Keep exactly one canonical marker among companies this owner is allowed
     # to operate. Do not touch any licensee company record.
