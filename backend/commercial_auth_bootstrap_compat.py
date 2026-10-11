@@ -38,7 +38,15 @@ async def _raw_get_current_user(credentials=Depends(_dependencies.security)) -> 
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    token = credentials.credentials
+    # HTTPBearer(auto_error=False) deliberately returns None when the
+    # Authorization header is absent. After logout, components may still have
+    # in-flight/background requests. Treat missing or empty bearer credentials
+    # as an ordinary 401 here; dereferencing credentials.credentials would turn
+    # that expected unauthenticated request into an unhandled 500.
+    token = getattr(credentials, "credentials", None)
+    if not isinstance(token, str) or not token.strip():
+        raise unauthorized
+    token = token.strip()
 
     # Preserve the existing opaque SaaS session path, but do not skip the
     # canonical company-scope resolver. This compatibility module replaces
