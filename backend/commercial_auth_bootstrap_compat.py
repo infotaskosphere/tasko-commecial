@@ -40,11 +40,29 @@ async def _raw_get_current_user(credentials=Depends(_dependencies.security)) -> 
     )
     token = credentials.credentials
 
-    # Preserve the existing opaque SaaS session path. It already uses _raw_db.
+    # Preserve the existing opaque SaaS session path, but do not skip the
+    # canonical company-scope resolver. This compatibility module replaces
+    # dependencies.get_current_user before the normal route dependencies are
+    # captured. The original dependency canonicalizes Platform Owner companies
+    # and builds the request-local owner allow-list; returning here without it
+    # leaves owner_company_ids empty and every Finix/accounting request with a
+    # stale selected company_id is (correctly) denied by tenant_runtime.
     saas_user = await _dependencies._get_saas_session_user(token)
     if saas_user is not None:
-        set_authenticated_company(saas_user.company_id)
-        set_platform_owner(is_platform_owner(saas_user))
+        saas_user = await _dependencies._canonicalize_platform_owner_company(saas_user)
+        owner_context = is_platform_owner(saas_user)
+        company_id = str(getattr(saas_user, "company_id", "") or "").strip()
+        if not company_id:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Platform Owner has no valid operational company context"
+                    if owner_context
+                    else "Authenticated user is not associated with a company"
+                ),
+            )
+        set_authenticated_company(company_id)
+        set_platform_owner(owner_context)
         return saas_user
 
     try:
