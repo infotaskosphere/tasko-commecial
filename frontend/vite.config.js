@@ -27,6 +27,11 @@ export default defineConfig({
     watch: process.env.DISABLE_HMR === 'true' ? null : {},
   },
   build: {
+    // Use esbuild's CSS minifier instead of Lightning CSS. A legacy header
+    // selector contains Tailwind's arbitrary-value class syntax and currently
+    // triggers a Lightning CSS pseudo-class parse warning during Vercel builds.
+    // This keeps CSS minification enabled while avoiding that false-positive.
+    cssMinify: 'esbuild',
     outDir: path.resolve(__dirname, './dist'),
     sourcemap: false,
     assetsInlineLimit: 0,
