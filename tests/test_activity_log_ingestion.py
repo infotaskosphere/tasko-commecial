@@ -117,8 +117,11 @@ def test_activity_route_uses_canonical_request_auth_dependency():
 
 
 @pytest.mark.asyncio
-async def test_activity_auth_forwards_request_and_credentials_to_final_dependency(monkeypatch):
-    request = SimpleNamespace(url=SimpleNamespace(path="/api/activity/log"))
+async def test_activity_auth_resolves_bearer_before_final_dependency(monkeypatch):
+    request = SimpleNamespace(
+        url=SimpleNamespace(path="/api/activity/log"),
+        headers={"authorization": "Bearer non-secret-test-token"},
+    )
     credentials = SimpleNamespace(credentials="non-secret-test-token")
     user = SimpleNamespace(
         id="licensee-admin-1",
@@ -128,14 +131,20 @@ async def test_activity_auth_forwards_request_and_credentials_to_final_dependenc
     )
     seen = {}
 
+    async def security(actual_request):
+        seen["security_request"] = actual_request
+        return credentials
+
     async def final_dependency(actual_request, actual_credentials):
         seen["request"] = actual_request
         seen["credentials"] = actual_credentials
         return user
 
+    monkeypatch.setattr(ingestion._dependencies, "security", security)
     monkeypatch.setattr(ingestion._dependencies, "get_current_user", final_dependency)
-    result = await ingestion._activity_current_user(request, credentials)
+    result = await ingestion._activity_current_user(request)
 
     assert result is user
+    assert seen["security_request"] is request
     assert seen["request"] is request
     assert seen["credentials"] is credentials
