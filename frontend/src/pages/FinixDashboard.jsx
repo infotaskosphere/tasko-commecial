@@ -258,14 +258,105 @@ function FinixDashboardInner() {
       companyListRef.current = scoped;
       setCompanies(scoped);
       return scoped;
-    } catch {
+    } catch (error) {
+      // Owner company lists are security-sensitive. Never resurrect an old
+      // session cache for a Platform Owner when the authoritative registry
+      // could not be fetched: it may contain a deleted/stale company ID which
+      // will be sent to every Finix report endpoint.
+      if (isPlatformOwnerUser) {
+        _companiesCache_finix.data = null;
+        _companiesCache_finix.ts = 0;
+        _metricsCache_finix.clear();
+        companyListRef.current = [];
+        setCompanies([]);
+        try {
+          Object.keys(sessionStorage).forEach((key) => {
+            if (key.startsWith('finix:')) sessionStorage.removeItem(key);
+          });
+          localStorage.removeItem('accountingReports:lastCompanyId');
+        } catch {}
+        console.warn('[Finix] owner company registry unavailable; refusing stale cached IDs', {
+          status: error?.response?.status || null,
+          message: error?.message || String(error),
+        });
+        return [];
+      }
       const scoped = scopeCompanies(cached?.data || []);
       companyListRef.current = scoped;
+      setCompanies(scoped);
       return scoped;
     }
   };
 
-  const loadAccountsForVoucher = async (cid) => {
+  const persistCompanySelection = (cid) => {
+    try {
+      if (cid) localStorage.setItem('accountingReports:lastCompanyId', String(cid));
+      else localStorage.removeItem('accountingReports:lastCompanyId');
+    } catch {}
+  };
+
+  // All Finix callers (reports, chart-of-accounts, AI chat, and voucher posting)
+  // must resolve the selected company against the freshest authorized registry
+  // before issuing a request. Never trust a persisted company_id by itself.
+  const resolveAuthorizedCompanyId = (requestedCompanyId) => {
+    const availableCompanies = Array.isArray(companyListRef.current)
+      ? companyListRef.current
+      : [];
+    const requested = String(requestedCompanyId || '').trim();
+
+    if (isPlatformOwnerUser) {
+      if (availableCompanies.some((company) => String(company?.id || '') === requested)) {
+        return requested;
+      }
+      const fallback =
+        availableCompanies.find((company) => company?.is_platform_owner_workspace === true) ||
+        availableCompanies.find((company) => String(company?.id || '') === ownerCompanyId) ||
+        availableCompanies[0];
+      if (!fallback?.id) {
+        throw new Error('No verified Platform Owner company is available for Finix. Refresh the company list and try again.');
+      }
+      const resolved = String(fallback.id);
+      console.warn('[Finix] replacing unauthorized/stale owner company selection', {
+        requestedCompanyId: requested || null,
+        resolvedCompanyId: resolved,
+      });
+      setCompanyId(resolved);
+      persistCompanySelection(resolved);
+      return resolved;
+    }
+
+    if (tenantCompanyId) {
+      // The authenticated licensee company ID is the only permitted fallback.
+      const resolved = String(tenantCompanyId);
+      if (requested !== resolved) {
+        setCompanyId(resolved);
+        persistCompanySelection(resolved);
+      }
+      return resolved;
+    }
+
+    if (availableCompanies.some((company) => String(company?.id || '') === requested)) {
+      return requested;
+    }
+    const fallback = availableCompanies.find((company) => company?.id);
+    if (!fallback?.id) {
+      throw new Error('No verified company is available for Finix reports.');
+    }
+    const resolved = String(fallback.id);
+    setCompanyId(resolved);
+    persistCompanySelection(resolved);
+    return resolved;
+  };
+
+  const loadAccountsForVoucher = async (requestedCid) => {
+    let cid;
+    try {
+      cid = resolveAuthorizedCompanyId(requestedCid);
+    } catch (error) {
+      setAccountsList([]);
+      console.warn('[Finix] chart of accounts was not loaded because company scope could not be verified:', error?.message);
+      return;
+    }
     if (!cid || cid === ALL_COMPANIES_ID) return;
     // Do not request Chart of Accounts merely because the dashboard is open.
     // It is separately governed from the Journal Entries page. This prevents
@@ -319,31 +410,9 @@ function FinixDashboardInner() {
   };
 
   const computeMetricsForCompany = async (requestedCompanyId, { force = false, onValidationSettled } = {}) => {
-    // Reports must never send an ID that is absent from the authenticated
-    // company's freshly fetched selector. Old tabs can retain a previous
-    // company_id even while the dropdown displays the canonical company.
-    const availableCompanies = companyListRef.current;
-    let cid = String(requestedCompanyId || '').trim();
-    const requestedIsKnown = availableCompanies.some((company) => String(company?.id || '') === cid);
-    if (!requestedIsKnown) {
-      if (isPlatformOwnerUser) {
-        const fallback = availableCompanies.find((company) => company?.is_platform_owner_workspace === true) ||
-          availableCompanies.find((company) => String(company?.id || '') === ownerCompanyId) ||
-          availableCompanies[0];
-        if (!fallback?.id) throw new Error('No authorized Platform Owner company is available for Finix reports.');
-        console.warn('[Finix] replacing stale owner company_id with current company registry ID', {
-          staleCompanyId: cid,
-          resolvedCompanyId: fallback.id,
-        });
-        cid = String(fallback.id);
-      } else if (tenantCompanyId) {
-        cid = tenantCompanyId;
-      } else if (availableCompanies[0]?.id) {
-        cid = String(availableCompanies[0].id);
-      } else {
-        throw new Error('No authorized company is available for Finix reports.');
-      }
-    }
+    // Resolve once from the current authorized list; every report/AI query in
+    // this function uses the same verified company ID.
+    const cid = resolveAuthorizedCompanyId(requestedCompanyId);
 
     const cached = _metricsCache_finix.get(cid);
     if (!force && cached && Date.now() - cached.ts < METRICS_CACHE_TTL_MS) {
@@ -562,6 +631,7 @@ function FinixDashboardInner() {
 
     const lastVerifiedAt = validationResult ? new Date() : null;
     const data = {
+      company_id: cid,
       revenue: revTotal,
       receivables: arTotal,
       cashAndBank: liquidCash,
@@ -604,7 +674,17 @@ function FinixDashboardInner() {
     setCashflowForecast(data.cashflowForecast);
   };
 
-  const fetchMetrics = async (cid, { force = false } = {}) => {
+  const fetchMetrics = async (requestedCid, { force = false } = {}) => {
+    let cid;
+    try {
+      cid = resolveAuthorizedCompanyId(requestedCid);
+    } catch (error) {
+      setLoading(false);
+      setVerifying(false);
+      setAccountsList([]);
+      toast.error(error?.message || 'No verified company is available for Finix.');
+      return;
+    }
     const requestId = ++fetchIdRef.current;
     if (!force) {
       const cached = peekMetricsCache(cid);
@@ -856,6 +936,16 @@ function FinixDashboardInner() {
     (async () => {
       const list = await fetchCompanies();
       let initialCid = '';
+      if (isPlatformOwnerUser && !list.length) {
+        // Do not leave a previously selected/cached company active when the
+        // live owner registry cannot be verified.
+        setCompanyId('');
+        setLoading(false);
+        setVerifying(false);
+        persistCompanySelection('');
+        toast.error('Finix could not verify the Platform Owner company list. Please refresh and retry.');
+        return;
+      }
       if (list.length) {
         const stored = localStorage.getItem('accountingReports:lastCompanyId') || '';
         const canonicalOwnerCompany = isPlatformOwnerUser
@@ -880,12 +970,19 @@ function FinixDashboardInner() {
   }, [user?.id, user?.company_id, user?.company?.id]);
 
   const handleCompanyChange = (val) => {
-    setCompanyId(val);
-    localStorage.setItem('accountingReports:lastCompanyId', val);
     if (val === ALL_COMPANIES_ID) {
+      setCompanyId(val);
+      persistCompanySelection(val);
       fetchAggregateMetrics(companies);
-    } else {
-      fetchMetrics(val);
+      return;
+    }
+    try {
+      const resolved = resolveAuthorizedCompanyId(val);
+      setCompanyId(resolved);
+      persistCompanySelection(resolved);
+      fetchMetrics(resolved);
+    } catch (error) {
+      toast.error(error?.message || 'This company is not available to the current account.');
     }
   };
 
@@ -909,6 +1006,14 @@ function FinixDashboardInner() {
       return;
     }
 
+    let effectiveCompanyId;
+    try {
+      effectiveCompanyId = resolveAuthorizedCompanyId(companyId);
+    } catch (error) {
+      toast.error(error?.message || 'No verified company is available for Finix AI.');
+      return;
+    }
+
     const userMsg = {
       sender: 'user',
       text: chatInput,
@@ -922,7 +1027,7 @@ function FinixDashboardInner() {
     try {
       const res = await api.post('/finix/ai/ask', {
         question: userMsg.text,
-        company_id: companyId
+        company_id: effectiveCompanyId
       });
 
       let reply = '';
@@ -962,6 +1067,13 @@ function FinixDashboardInner() {
     e.preventDefault();
     if (!companyId || companyId === ALL_COMPANIES_ID) {
       toast.error('Select a specific company first.');
+      return;
+    }
+    let effectiveCompanyId;
+    try {
+      effectiveCompanyId = resolveAuthorizedCompanyId(companyId);
+    } catch (error) {
+      toast.error(error?.message || 'No verified company is available for Finix posting.');
       return;
     }
     const amt = parseFloat(voucherForm.amount);
@@ -1009,7 +1121,7 @@ function FinixDashboardInner() {
       }
 
       await createJournalEntry({
-        company_id: companyId,
+        company_id: effectiveCompanyId,
         entry_date: voucherForm.date,
         narration: defaultNarration,
         lines,
@@ -1027,7 +1139,7 @@ function FinixDashboardInner() {
         narration: '',
       });
       // Refresh metrics
-      fetchMetrics(companyId, { force: true });
+      fetchMetrics(effectiveCompanyId, { force: true });
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || 'Failed to post voucher.');
