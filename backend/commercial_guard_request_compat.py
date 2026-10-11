@@ -106,9 +106,19 @@ async def _recover_jwt_user(credentials) -> User:
     raw_company_id = str(document.get("company_id") or "").strip()
     user = _normalise_user_document(document)
     if is_platform_owner(user):
+        # This fallback is reached only when the main guarded auth chain reports
+        # no company. It must still run the same canonical Platform Owner scope
+        # resolver; merely setting the owner flag leaves owner_company_ids empty
+        # and makes Finix/accounting queries fail closed.
+        user = await _dependencies._canonicalize_platform_owner_company(user)
+        company_id = str(getattr(user, "company_id", "") or "").strip()
+        if not company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Platform Owner has no valid operational company context",
+            )
+        set_authenticated_company(company_id)
         set_platform_owner(True)
-        if raw_company_id:
-            set_authenticated_company(raw_company_id)
         return user
 
     company_id = raw_company_id
@@ -143,10 +153,18 @@ async def get_current_user_with_commercial_guard_compat(request: Request, creden
         user = await _recover_jwt_user(credentials)
 
     if is_platform_owner(user):
-        set_platform_owner(True)
+        # Keep the final request-aware wrapper aligned with the core auth path:
+        # canonical user company, owner allow-list, and verified legacy aliases
+        # must all be established together before tenant-aware DB queries run.
+        user = await _dependencies._canonicalize_platform_owner_company(user)
         company_id = str(getattr(user, "company_id", "") or "").strip()
-        if company_id:
-            set_authenticated_company(company_id)
+        if not company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Platform Owner has no valid operational company context",
+            )
+        set_authenticated_company(company_id)
+        set_platform_owner(True)
         return user
 
     if _control_plane._is_control_plane_path(request.url.path):
