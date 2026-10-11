@@ -14,6 +14,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from backend.dependencies import db, get_current_user, _raw_db, _resolve_licensed_company_id
 from backend.models import User
 from backend.platform_owner import is_platform_owner
+from backend.tenant_runtime import in_platform_owner_context
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -56,9 +57,23 @@ async def log_browser_activity(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    if is_platform_owner(current_user):
-        # Platform Owner has no default customer company by design. Never
-        # invent or borrow a licensee company_id to satisfy tenant guards.
+    # Authentication establishes this request-local context before the
+    # handler executes. Hierarchical identity fields can be dropped by legacy
+    # Pydantic User projections, so re-checking only the projected user may
+    # misclassify the same authenticated Platform Owner as a tenant. Either
+    # signal is sufficient here because this path only writes owner telemetry
+    # to its dedicated collection; it never grants access to operational data.
+    owner_identity = is_platform_owner(current_user)
+    owner_context = in_platform_owner_context()
+    if owner_identity or owner_context:
+        if owner_context and not owner_identity:
+            logger.debug(
+                "Using authenticated Platform Owner request context for activity telemetry "
+                "after user projection (user_id=%s)",
+                actor_id,
+            )
+        # Platform Owner telemetry is separate from licensee operational data.
+        # Never invent or borrow a licensee company_id to satisfy tenant guards.
         entry["identity_type"] = "platform_owner"
         await _raw_db.platform_activity_logs.insert_one(entry)
         return {"success": True, "stored": True}
