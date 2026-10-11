@@ -1023,20 +1023,29 @@ async def get_current_user_with_commercial_guard(
     if normalized_request_path.startswith("/api"):
         normalized_request_path = normalized_request_path[4:] or "/"
 
-    # Activity telemetry is an internal part of an enabled Taskosphere
-    # workspace, not a separately purchasable page. Permit the signed-in user
-    # to submit their own activity interval only when Taskosphere has at least
-    # one explicitly selected page; viewing staff activity remains separately gated.
+    # Activity telemetry is shared infrastructure for every licensed workspace,
+    # not a billable Taskosphere-only page. The frontend activity tracker runs
+    # across modules (including Finix-only and Compliance-only licenses), so
+    # permit an authenticated user to submit their own interval whenever the
+    # tenant has at least one licensed module with an explicitly selected page.
+    # This grants ingestion only; staff-activity/report reads remain separately
+    # permission-gated below. Platform Owners have already returned above.
     if (
         str(request.method or "GET").upper() == "POST"
         and normalized_request_path == "/activity/log"
     ):
-        if _licensed_module("taskosphere", commercial) and _selected_license_features(commercial, "taskosphere"):
+        has_enabled_workspace = any(
+            _licensed_module(module_id, commercial)
+            and bool(_selected_license_features(commercial, module_id))
+            for module_id in MODULE_HIERARCHY
+            if module_id != "admin"
+        )
+        if has_enabled_workspace:
             return user
         raise _deny(
             request,
             user,
-            "Taskosphere activity tracking is not enabled for this license.",
+            "Activity tracking is unavailable because this license has no enabled workspace pages.",
             commercial,
         )
 
