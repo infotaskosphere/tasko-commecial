@@ -161,7 +161,6 @@ async def ensure_env_accounts(user):
                  "current_usage_tokens":0,"total_requests":0,"last_used":None,"last_checked":None,
                  "daily_limit":0,"monthly_limit":0,
                  "daily_usage_tokens":0,"daily_requests":0,"daily_reset_at":today(),
-                 "monthly_usage_tokens":0,"monthly_requests":0,"daily_reset_at":today(),
                  "monthly_usage_tokens":0,"monthly_requests":0,"monthly_reset_at":this_month(),
                  "cooldown_until":None,"quota":{},"usage":{},"created_at":now()}
             await db.aiweave_provider_accounts.insert_one(doc)
@@ -249,7 +248,7 @@ def safe(a):
             "cooldownUntil":a.get("cooldown_until"),
             "modelDiscoveryStatus":a.get("model_discovery_status"),
             "modelDiscoveryMessage":a.get("model_discovery_message"),
-            "dailyUsageTokens":d,"dailyRequests":dr,"monthlyUsageTokens":mr,"monthlyRequests":mr,
+            "dailyUsageTokens":d,"dailyRequests":dr,"monthlyUsageTokens":m,"monthlyRequests":mr,
             "quotaAvailable":quota_available(a)}
 def account_query(user):
     s=scope(user);uid=str(getattr(user,"id","") or "")
