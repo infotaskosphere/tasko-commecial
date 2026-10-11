@@ -1,0 +1,68 @@
+PHASE 0 BASELINE — BEFORE TENANT DATABASE CHANGES
+Repository: infotaskosphere/tasko-commecial
+Branch created for work: feature/tenant-db-per-licensee
+Baseline source ref: feature/master-console
+Baseline commit: 9b77ceb95a0ecd64eeadb2870d1818772eee55a8
+Workflow: Full Pytest - Master Console
+Workflow run: https://github.com/infotaskosphere/tasko-commecial/actions/runs/38147494059
+Run timestamp (UTC): 2026-10-11
+Python: CPython 3.11.17
+Commands executed by the workflow:
+  python -m compileall -q .
+  python -m pytest -q
+
+RESULT: PASS
+  298 passed, 16 skipped, 5 warnings in 9.49s
+No source implementation files had been changed for the tenant-database work at the time of this baseline. The tested commit is the exact parent commit from which feature/tenant-db-per-licensee was created.
+
+PYTEST OUTPUT
+------------------------------
+.........................................ssssssssssssssss............... [ 22%]
+........................................................................ [ 45%]
+........................................................................ [ 68%]
+........................................................................ [ 91%]
+..........................                                               [100%]
+=============================== warnings summary ===============================
+../../../../../opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/passlib/utils/__init__.py:854
+  /opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/passlib/utils/__init__.py:854: DeprecationWarning: 'crypt' is deprecated and slated for removal in Python 3.13
+    from crypt import crypt as _crypt
+
+../../../../../opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160
+  /opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pydantic/_internal/_fields.py:160: UserWarning: Field "model_name" has conflict with protected namespace "model_".
+  
+  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+    warnings.warn(
+
+test_phase2_runtime_import.py::Phase2RuntimeImportTests::test_all_phase2_route_registrars_are_imported
+  /home/runner/work/tasko-commecial/tasko-commecial/backend/server_modules/lifecycle.py:10: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+test_phase2_runtime_import.py::Phase2RuntimeImportTests::test_all_phase2_route_registrars_are_imported
+  /opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+tests/test_phase1c_module_isolation_matrix.py::test_aiweave_only_requires_explicit_user_ai_permission
+  /opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/pydantic/main.py:347: UserWarning: Pydantic serializer warnings:
+    Expected `UserPermissions` but got `dict` - serialized value may not be as expected
+    return self.__pydantic_serializer__.to_python(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+298 passed, 16 skipped, 5 warnings in 9.49s
+------------------------------
+
+Warnings observed in this baseline:
+- passlib imports the deprecated Python crypt module.
+- Pydantic warns about the model_name protected namespace.
+- FastAPI on_event startup/shutdown registration is deprecated.
+- A UserPermissions model was serialized from a plain dict in one test.
+These are recorded as baseline warnings, not treated as failures.
