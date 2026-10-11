@@ -551,6 +551,34 @@ async def _canonicalize_platform_owner_company(user):
             logger.exception("Could not recover configured Platform Owner workspace from raw company registry")
 
     allowed_ids = set(company_by_id)
+    if not allowed_ids:
+        # TEMPORARY DIAGNOSTIC - remove once the empty owner allow-list is fixed.
+        # Logs (at most once a minute) what the registry looks like so the cause
+        # of "owner_company_ids=[]" is visible in the Render log.
+        import time as _time
+        _now = _time.time()
+        if _now - getattr(_canonicalize_platform_owner_company, "_diag_ts", 0.0) > 60:
+            _canonicalize_platform_owner_company._diag_ts = _now
+            try:
+                _diag_companies = await raw_db.companies.find(
+                    {},
+                    {"_id": 0, "id": 1, "name": 1, "source": 1, "status": 1,
+                     "commercial_customer_id": 1, "license_id": 1, "created_by": 1,
+                     "is_platform_owner_workspace": 1},
+                ).to_list(25)
+                _diag_licenses = await raw_db.commercial_licenses.find(
+                    {}, {"_id": 0, "id": 1, "customer_id": 1, "company_id": 1, "status": 1},
+                ).to_list(25)
+                logger.warning(
+                    "OWNER-SCOPE-DIAG empty owner allow-list: user_id=%s session_company_id=%s "
+                    "configured_id=%s configured_name=%s eligible_from_helper=%s "
+                    "registry_companies=%s licenses=%s",
+                    str(getattr(user, "id", "") or ""), current_id or "<missing>",
+                    configured_id or "<unset>", configured_name or "<unset>",
+                    len(companies), _diag_companies, _diag_licenses,
+                )
+            except Exception:
+                logger.exception("OWNER-SCOPE-DIAG failed")
     set_platform_owner_company_ids(allowed_ids)
     selected = None
 
