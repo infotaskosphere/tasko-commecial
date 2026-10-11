@@ -910,16 +910,23 @@ function FinixDashboardInner() {
 
   const handleReverify = async () => {
     if (!companyId || companyId === ALL_COMPANIES_ID || verifying) return;
+    let effectiveCompanyId;
+    try {
+      effectiveCompanyId = resolveAuthorizedCompanyId(companyId);
+    } catch (error) {
+      toast.error(error?.message || 'No verified company is available for Finix verification.');
+      return;
+    }
     setVerifying(true);
     try {
-      const v = await runVerifyAndFix(companyId, { force: true });
+      const v = await runVerifyAndFix(effectiveCompanyId, { force: true });
       setValidation(v);
       const verifiedAt = new Date();
       setLastVerifiedAt(verifiedAt);
-      const cachedMetrics = _metricsCache_finix.get(companyId);
+      const cachedMetrics = _metricsCache_finix.get(effectiveCompanyId);
       if (cachedMetrics) {
         cachedMetrics.data = { ...cachedMetrics.data, validation: v, lastVerifiedAt: verifiedAt };
-        ssWrite(SS_METRICS_PREFIX + companyId, {
+        ssWrite(SS_METRICS_PREFIX + effectiveCompanyId, {
           ts: cachedMetrics.ts,
           data: { ...cachedMetrics.data, lastVerifiedAt: verifiedAt.toISOString() },
         });
