@@ -155,7 +155,7 @@ def _collection(raw, name: str):
     """Resolve identity collections centrally and tenant business collections locally."""
     if name in {"users", "companies"}:
         return _central_db()[name]
-    return _collection(raw, name)
+    return raw[name]
 
 
 def _backup_gridfs(raw):
