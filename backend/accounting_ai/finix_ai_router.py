@@ -16,31 +16,21 @@ from backend.models import User
 from backend.accounting_core import get_default_account_id
 from backend.party_ledgers import get_or_create_party_account
 from backend.accounting_ai.finix_intelligence import FinixIntelligence
+from backend.accounting_ai.finix_access import can_post_finix, can_view_finix, is_admin_role, permissions_dict
 
 router = APIRouter(prefix="/finix/ai", tags=["Finix AI Accounting"])
 
 
 def _permissions(user: User) -> dict:
-    perms = getattr(user, "permissions", None)
-    if isinstance(perms, dict):
-        return perms
-    try:
-        return perms.model_dump() if perms else {}
-    except Exception:
-        return {}
+    return permissions_dict(user)
 
 
 def _can_view(user: User) -> bool:
-    if str(getattr(user, "role", "") or "").lower() == "admin":
-        return True
-    perms = _permissions(user)
-    return bool(perms.get("can_view_accounting_reports") or perms.get("can_view_journal_entries") or perms.get("can_post_journal_entries"))
+    return can_view_finix(user)
 
 
 def _can_post(user: User) -> bool:
-    if str(getattr(user, "role", "") or "").lower() == "admin":
-        return True
-    return bool(_permissions(user).get("can_post_journal_entries"))
+    return can_post_finix(user)
 
 
 def _date(value: Optional[str]) -> str:
