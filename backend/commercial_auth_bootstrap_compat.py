@@ -96,9 +96,17 @@ async def _raw_get_current_user(credentials=Depends(_dependencies.security)) -> 
 
     user = _normalise_user(document, str(user_id))
     if is_platform_owner(user):
+        # JWT auth takes the same canonicalization path as opaque SaaS sessions.
+        # Without this call, owner JWT requests can still reach tenant_runtime
+        # with an empty owner allow-list.
+        user = await _dependencies._canonicalize_platform_owner_company(user)
         company_id = str(getattr(user, "company_id", "") or "").strip()
-        if company_id:
-            set_authenticated_company(company_id)
+        if not company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Platform Owner has no valid operational company context",
+            )
+        set_authenticated_company(company_id)
         set_platform_owner(True)
         return user
 
@@ -115,7 +123,10 @@ async def _raw_get_current_user(credentials=Depends(_dependencies.security)) -> 
     data = user.model_dump()
     data["company_id"] = company_id
     user = User.model_validate(data)
-    set_authenticated_company(company_id)
+    # Match dependencies.get_current_user: non-owner authentication must clear
+    # any inherited Platform Owner company/alias scope before the request starts.
+    user = await _dependencies._canonicalize_platform_owner_company(user)
+    set_authenticated_company(str(getattr(user, "company_id", "") or company_id))
     set_platform_owner(False)
     return user
 
