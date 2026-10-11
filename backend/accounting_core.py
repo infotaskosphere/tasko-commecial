@@ -356,6 +356,11 @@ async def validation_engine_report(company_id: str = Query(""), current_user: Us
         if company_id:
             return await run_validation_engine(company_id, auto_fix=True)
         return {"books": await run_validation_engine_all_books()}
+    except HTTPException:
+        # Tenant-isolation / permission errors (403, 404, ...) must reach the
+        # client unchanged. Previously they were swallowed by the generic
+        # handler below and re-raised as a misleading 500.
+        raise
     except Exception as exc:
         # Previously this endpoint had no guard, so any exception deep in the
         # reconcile/rebuild pipeline (bad invoice data, a missing account,
