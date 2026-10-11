@@ -7,22 +7,17 @@ from pydantic import BaseModel, Field
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import record_learning
+from backend.accounting_ai.finix_access import can_post_finix, can_view_finix_reconciliation, is_admin_role
 
 router = APIRouter(prefix="/finix/ai", tags=["Finix AI Reconciliation"])
 
 
 def _view(user: User) -> bool:
-    if str(user.role or "").lower() == "admin":
-        return True
-    p = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
-    return bool(p.get("can_view_journal_entries") or p.get("can_view_accounting_reports") or p.get("can_post_journal_entries") or p.get("can_view_bank"))
+    return can_view_finix_reconciliation(user)
 
 
 def _post(user: User) -> bool:
-    if str(user.role or "").lower() == "admin":
-        return True
-    p = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
-    return bool(p.get("can_post_journal_entries"))
+    return can_post_finix(user)
 
 
 class TransferRequest(BaseModel):
@@ -98,7 +93,7 @@ async def reconciliation_feedback(payload: ReconciliationFeedback, current_user:
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
     cid = txn.get("company_id")
-    if cid and cid != getattr(current_user, "company_id", "") and str(current_user.role or "").lower() != "admin":
+    if cid and cid != getattr(current_user, "company_id", "") and not is_admin_role(current_user):
         raise HTTPException(403, "Bank transaction belongs to another company.")
     await db.bank_transactions.update_one({"id": payload.bank_transaction_id}, {"$set": {"matched_type": payload.matched_type, "matched_id": payload.matched_id, "finix_learned_at": datetime.now(timezone.utc).isoformat()}})
     await record_learning(cid or getattr(current_user, "company_id", ""), "BANK_RECONCILIATION", payload.party_name or txn.get("description", ""), {"id": payload.bank_transaction_id, "transaction": txn, "matched_type": payload.matched_type, "matched_id": payload.matched_id}, "CORRECTED", current_user.id, payload.correction)
