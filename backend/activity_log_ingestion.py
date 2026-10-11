@@ -26,17 +26,25 @@ router = APIRouter()
 
 
 
-async def _activity_current_user(
-    request: Request,
-    credentials=Depends(_dependencies.security),
-):
-    """Use the same final Request-aware authentication chain as the rest of the API.
+async def _activity_current_user(request: Request):
+    """Use and diagnose the same final Request-aware authentication chain as other routes.
 
-    Some legacy compatibility layers recover a missing company link, canonicalize
-    Platform Owner identity, and enforce request-company checks. Calling the
-    commercial guard directly bypasses those wrappers.
+    Resolve HTTPBearer inside this function so a missing/malformed Authorization
+    header is logged too. With Depends(security) in this signature, FastAPI can
+    reject the request before this function runs, leaving only an unexplained
+    Uvicorn 403 line. Authentication rules are unchanged.
     """
+    authorization = str(request.headers.get("authorization") or "").strip()
+    scheme, _, supplied_token = authorization.partition(" ")
+    logger.info(
+        "Activity auth dependency entered: path=%s authorization_present=%s bearer_scheme=%s bearer_token_present=%s",
+        request.url.path,
+        bool(authorization),
+        scheme.lower() == "bearer",
+        bool(supplied_token.strip()) if scheme.lower() == "bearer" else False,
+    )
     try:
+        credentials = await _dependencies.security(request)
         user = await _dependencies.get_current_user(request, credentials)
     except HTTPException as exc:
         logger.warning(
@@ -53,6 +61,16 @@ async def _activity_current_user(
 
     owner_identity = is_platform_owner(user)
     owner_context = in_platform_owner_context()
+    logger.info(
+        "Activity auth resolved: user_id=%s role=%s owner_identity=%s owner_context=%s "
+        "authenticated_company_id=%s owner_company_ids=%s",
+        str(getattr(user, "id", "") or ""),
+        str(getattr(user, "role", "") or ""),
+        owner_identity,
+        owner_context,
+        authenticated_company_id(),
+        sorted(platform_owner_company_ids()),
+    )
     if owner_identity != owner_context:
         logger.warning(
             "Activity logger identity/context mismatch: user_id=%s role=%s "
