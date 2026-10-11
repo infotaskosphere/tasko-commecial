@@ -31,8 +31,20 @@ function ChartOfAccountsInner() {
     try {
       const { data } = await api.get('/chart-of-accounts');
       setAccounts(data || []);
-    } catch {
-      toast.error('Failed to load chart of accounts');
+    } catch (err) {
+      // Keep the user-facing message concise while preserving the real
+      // backend failure for diagnosis of Platform Owner vs tenant routing.
+      console.error('[ChartOfAccounts] Failed to load accounts', {
+        status: err?.response?.status,
+        detail: err?.response?.data?.detail || err?.response?.data?.error || err?.message,
+        url: err?.config?.url,
+        baseURL: err?.config?.baseURL,
+      });
+      toast.error(
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        `Failed to load chart of accounts${err?.response?.status ? ` (HTTP ${err.response.status})` : ''}`
+      );
     } finally {
       setLoading(false);
     }
