@@ -103,3 +103,24 @@ The current licensing registry uses a JSON file. This is suitable for developmen
 7. Test suspension, revocation and expiry.
 8. Test the configured offline grace period.
 9. Only then enable `LICENSE_ENFORCEMENT=true` for customer deployments.
+
+
+## Per-licensee database isolation
+
+New commercial customers are provisioned with a dedicated MongoDB database when the license is issued. The database name is derived from the immutable customer ID using SHA-256; it is never accepted from a request, URL, or token. The central database remains the control plane for license records, customer-to-database mapping, company master records, and login identities. Tenant business collections are routed to the authenticated customer's dedicated database only after the central customer registry confirms `tenant_database_status=ready` and the database name matches the deterministic mapping.
+
+Existing licensees are not automatically switched to an empty database. Migrate their operational records first:
+
+```bash
+# 1. Inspect what would be copied; no data is changed.
+MONGO_URL='...' DB_NAME='taskosphere_commercial' \
+  python scripts/migrate_licensee_databases.py --customer-id 'cus-...' --dry-run
+
+# 2. After reviewing the collection counts and taking a separate database backup:
+MONGO_URL='...' DB_NAME='taskosphere_commercial' \
+  python scripts/migrate_licensee_databases.py --customer-id 'cus-...' --apply
+```
+
+The migration copies and verifies matching tenant-owned documents and retains the shared source records for rollback. Do not delete the old shared records until a separate post-migration reconciliation confirms the expected company IDs, collection counts, reports, files, and background jobs. Login identities and company master records remain centrally managed and are scoped by the commercial customer identity. Backup artifacts/history for an isolated licensee are stored in that licensee's tenant database.
+
+A successful code deployment alone is not proof that every historical customer has been migrated. Before activating an existing customer, reconcile the dry-run output and test direct API access across two test licensees.

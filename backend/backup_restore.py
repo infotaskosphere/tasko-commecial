@@ -131,9 +131,31 @@ def _require_admin(user: User) -> None:
     raise HTTPException(status_code=403, detail="Only an administrator can restore an application backup.")
 
 
+def _central_db():
+    """Control-plane database for identity and company master records."""
+    return client[DB_NAME]
+
+
 def _raw_db():
+    """Return the authenticated tenant database for business backup/restore.
+
+    The platform owner remains in the central workspace. Tenant database names
+    are populated only from the authenticated, server-validated registry context.
+    """
+    from backend.tenant_runtime import authenticated_tenant_database_name, in_platform_owner_context
+
+    tenant_name = authenticated_tenant_database_name()
+    if tenant_name and not in_platform_owner_context():
+        return client[tenant_name]
     raw = getattr(db, "_database", None)
     return raw if raw is not None else client[DB_NAME]
+
+
+def _collection(raw, name: str):
+    """Resolve identity collections centrally and tenant business collections locally."""
+    if name in {"users", "companies"}:
+        return _central_db()[name]
+    return _collection(raw, name)
 
 
 def _backup_gridfs(raw):
@@ -407,9 +429,9 @@ async def _tenant_context(user: User):
         )
 
     raw = _raw_db()
-    company = await raw.companies.find_one({"id": company_id})
+    company = await _central_db().companies.find_one({"id": company_id})
     if not company and ObjectId.is_valid(company_id):
-        company = await raw.companies.find_one({"_id": ObjectId(company_id)})
+        company = await _central_db().companies.find_one({"_id": ObjectId(company_id)})
 
     if is_owner:
         # Include the owner identity even when the control-plane company record
@@ -424,12 +446,12 @@ async def _tenant_context(user: User):
                 else {"id": "__never__"},
             ]
         }
-        users = await raw.users.find(
+        users = await _central_db().users.find(
             owner_user_query,
             {"_id": 1, "id": 1},
         ).to_list(100000)
     else:
-        users = await raw.users.find(
+        users = await _central_db().users.find(
             _company_query(company_id),
             {"_id": 1, "id": 1},
         ).to_list(100000)
@@ -461,13 +483,13 @@ async def _collection_docs(raw, name: str, company_id: str, user_ids: set[str], 
     if name in EXCLUDED_COLLECTIONS:
         return []
     if name == "companies":
-        docs = await raw[name].find({"id": company_id}).to_list(10)
+        docs = await _collection(raw, name).find({"id": company_id}).to_list(10)
         if not docs and company and company.get("_id") is not None:
-            docs = await raw[name].find({"_id": company["_id"]}).to_list(10)
+            docs = await _collection(raw, name).find({"_id": company["_id"]}).to_list(10)
         return docs
     if name == "users" or name in TENANT_COLLECTIONS:
-        return await raw[name].find(_company_query(company_id)).to_list(100000)
-    docs = await raw[name].find({"$or": [{"company_id": {"$exists": True}}, {"user_id": {"$exists": True}}]}).to_list(100000)
+        return await _collection(raw, name).find(_company_query(company_id)).to_list(100000)
+    docs = await _collection(raw, name).find({"$or": [{"company_id": {"$exists": True}}, {"user_id": {"$exists": True}}]}).to_list(100000)
     return [doc for doc in docs if _linked(doc, user_ids, identities)]
 
 
@@ -475,7 +497,7 @@ async def _resolve_collections(user: User, requested: list[str] | None):
     company_id, company, user_ids, identities = await _tenant_context(user)
     raw = _raw_db()
     available = sorted(
-        name for name in set(await raw.list_collection_names()) - EXCLUDED_COLLECTIONS
+        name for name in (set(await raw.list_collection_names()) | {"users", "companies"}) - EXCLUDED_COLLECTIONS
         if not name.startswith(RESTORE_SNAPSHOT_PREFIX)
     )
     if not requested:
@@ -599,7 +621,7 @@ async def backup_info(current_user: User = Depends(get_current_user)):
     company_id, company, user_ids, identities = await _tenant_context(current_user)
     raw = _raw_db()
     available = sorted(
-        name for name in set(await raw.list_collection_names()) - EXCLUDED_COLLECTIONS
+        name for name in (set(await raw.list_collection_names()) | {"users", "companies"}) - EXCLUDED_COLLECTIONS
         if not name.startswith(RESTORE_SNAPSHOT_PREFIX)
     )
     modules = {module: sorted(set(collections) & set(available)) for module, collections in MODULE_COLLECTION_MAP.items()}
@@ -897,7 +919,7 @@ async def _legacy_user_replacements(
                     email = _s(doc.get("email")).lower()
                     existing = None
                     if email:
-                        existing = await raw.users.find_one(
+                        existing = await _central_db().users.find_one(
                             {
                                 "company_id": target_company_id,
                                 "email": doc.get("email"),
@@ -910,7 +932,7 @@ async def _legacy_user_replacements(
                         new_id = secrets.token_urlsafe(18)
 
                     if not existing:
-                        collision = await raw.users.find_one({"id": new_id}, {"company_id": 1})
+                        collision = await _central_db().users.find_one({"id": new_id}, {"company_id": 1})
                         if collision and _s(collision.get("company_id")) != target_company_id:
                             new_id = secrets.token_urlsafe(18)
 
@@ -957,15 +979,15 @@ async def _snapshot_restore_targets(current_user: User, selected_names: list[str
             if target_company:
                 docs = [dict(target_company)]
             elif target_company_id:
-                found = await raw.companies.find_one({"id": target_company_id})
+                found = await _central_db().companies.find_one({"id": target_company_id})
                 if found:
                     docs = [dict(found)]
         elif name == "users":
-            docs = await raw.users.find({"company_id": target_company_id}).to_list(100000)
+            docs = await _central_db().users.find({"company_id": target_company_id}).to_list(100000)
         elif name in TENANT_COLLECTIONS:
-            docs = await raw[name].find({"company_id": target_company_id}).to_list(100000)
+            docs = await _collection(raw, name).find({"company_id": target_company_id}).to_list(100000)
         else:
-            cursor = raw[name].find(
+            cursor = _collection(raw, name).find(
                 {"$or": [{"company_id": {"$exists": True}}, {"user_id": {"$exists": True}}]}
             )
             docs = []
@@ -996,22 +1018,22 @@ async def _rollback_restore_targets(current_user: User, snapshot: tuple[str, dic
         docs = [item.get("doc") for item in staged if isinstance(item.get("doc"), dict)]
 
         if name == "companies":
-            await raw.companies.delete_one({"id": target_company_id})
+            await _central_db().companies.delete_one({"id": target_company_id})
             if docs:
-                await raw.companies.replace_one({"id": target_company_id}, docs[0], upsert=True)
+                await _central_db().companies.replace_one({"id": target_company_id}, docs[0], upsert=True)
             continue
 
         if name == "users":
-            await raw.users.delete_many({"company_id": target_company_id, "id": {"$ne": str(current_user.id)}})
+            await _central_db().users.delete_many({"company_id": target_company_id, "id": {"$ne": str(current_user.id)}})
             live_snapshot = next((doc for doc in docs if _s(doc.get("id")) == _s(current_user.id)), None)
             if live_snapshot:
-                await raw.users.replace_one({"id": str(current_user.id)}, live_snapshot, upsert=True)
+                await _central_db().users.replace_one({"id": str(current_user.id)}, live_snapshot, upsert=True)
             other_docs = [doc for doc in docs if _s(doc.get("id")) != _s(current_user.id)]
         elif name in TENANT_COLLECTIONS:
-            await raw[name].delete_many({"company_id": target_company_id})
+            await _collection(raw, name).delete_many({"company_id": target_company_id})
             other_docs = docs
         else:
-            cursor = raw[name].find(
+            cursor = _collection(raw, name).find(
                 {"$or": [{"company_id": {"$exists": True}}, {"user_id": {"$exists": True}}]}
             )
             current_linked = []
@@ -1019,12 +1041,12 @@ async def _rollback_restore_targets(current_user: User, snapshot: tuple[str, dic
                 if _linked(existing, {_s(current_user.id)}, target_identities) and existing.get("_id") is not None:
                     current_linked.append(existing.get("_id"))
             for oid in current_linked:
-                await raw[name].delete_one({"_id": oid})
+                await _collection(raw, name).delete_one({"_id": oid})
             other_docs = docs
 
         for index in range(0, len(other_docs), 500):
             if other_docs[index:index + 500]:
-                await raw[name].insert_many(other_docs[index:index + 500], ordered=False)
+                await _collection(raw, name).insert_many(other_docs[index:index + 500], ordered=False)
 
 
 async def _cleanup_restore_snapshot(snapshot: tuple[str, dict[str, str]] | None):
@@ -1116,21 +1138,21 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
         if name in EXCLUDED_COLLECTIONS or name == "companies":
             continue
         if name == "users":
-            result = await raw.users.delete_many({"company_id": target_company_id, "id": {"$ne": current_user.id}})
+            result = await _central_db().users.delete_many({"company_id": target_company_id, "id": {"$ne": current_user.id}})
         elif name in TENANT_COLLECTIONS or legacy_migration:
-            result = await raw[name].delete_many({"company_id": target_company_id})
+            result = await _collection(raw, name).delete_many({"company_id": target_company_id})
         else:
             result = type("DeleteResult", (), {"deleted_count": 0})()
-            cursor = raw[name].find({})
+            cursor = _collection(raw, name).find({})
             async for existing in cursor:
                 if _linked(existing, {_s(current_user.id)}, target_identities) and existing.get("_id") is not None:
                     result.deleted_count += (
-                        await raw[name].delete_one({"_id": existing["_id"]})
+                        await _collection(raw, name).delete_one({"_id": existing["_id"]})
                     ).deleted_count
         removed += getattr(result, "deleted_count", 0)
 
     restored = 0
-    live_admin = await raw.users.find_one({"id": current_user.id})
+    live_admin = await _central_db().users.find_one({"id": current_user.id})
 
     # Process one JSONL document at a time instead of materializing every
     # collection into memory. The decrypted ZIP remains on disk.
@@ -1170,7 +1192,7 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                         if target_company and target_company.get("_id") is not None
                         else {"id": target_company_id}
                     )
-                    await raw.companies.replace_one(query, doc, upsert=True)
+                    await _central_db().companies.replace_one(query, doc, upsert=True)
                     restored += 1
                     continue
 
@@ -1193,7 +1215,7 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                         doc["company_id"] = target_company_id
 
                     if legacy_migration and doc.get("_id") is not None:
-                        existing = await raw[name].find_one({"_id": doc["_id"]}, {"company_id": 1})
+                        existing = await _collection(raw, name).find_one({"_id": doc["_id"]}, {"company_id": 1})
                         if existing and _s(existing.get("company_id")) != target_company_id:
                             doc.pop("_id", None)
 
@@ -1206,7 +1228,7 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                             else {"id": doc.get("id")}
                         )
                     )
-                    await raw[name].replace_one(query, doc, upsert=True)
+                    await _collection(raw, name).replace_one(query, doc, upsert=True)
                     restored += 1
 
     return {
@@ -1378,7 +1400,7 @@ async def _count_commercial_backup_documents(raw, name, company_id, company, use
     if name in EXCLUDED_COLLECTIONS:
         return 0
     try:
-        collection = raw[name]
+        collection = _collection(raw, name)
         if name == "companies":
             q = {"$or": [{"id": company_id}]}
             if company and company.get("_id") is not None:
@@ -1485,7 +1507,7 @@ async def _build_archive(
                     mode="w",
                     force_zip64=True,
                 ) as entry:
-                    cursor = raw[name].find({})
+                    cursor = _collection(raw, name).find({})
                     pending_lines = []
                     async for doc in cursor:
                         if name in EXCLUDED_COLLECTIONS:
@@ -1550,7 +1572,7 @@ async def _build_archive(
                         pending_lines.clear()
 
                 try:
-                    list_indexes = getattr(raw[name], "list_indexes", None)
+                    list_indexes = getattr(_collection(raw, name), "list_indexes", None)
                     indexes = (
                         await list_indexes().to_list(1000)
                         if callable(list_indexes)

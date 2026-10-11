@@ -100,6 +100,18 @@ _current_platform_owner_company_aliases: ContextVar[dict[str, str]] = ContextVar
     "taskosphere_platform_owner_company_aliases", default={}
 )
 _system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
+# Set only after the authenticated customer has been resolved from the central registry.
+_current_tenant_database: ContextVar[str | None] = ContextVar("taskosphere_tenant_database_name", default=None)
+
+def set_authenticated_tenant_database(database_name: Any):
+    value = str(database_name).strip() if database_name is not None else ""
+    return _current_tenant_database.set(value or None)
+
+def reset_authenticated_tenant_database(token) -> None:
+    _current_tenant_database.reset(token)
+
+def authenticated_tenant_database_name() -> str | None:
+    return _current_tenant_database.get()
 
 
 def set_authenticated_company(company_id: Any):
@@ -695,6 +707,39 @@ class TenantAwareCollection:
 
 
 class TenantAwareDatabase:
-    def __init__(self, database: Any): self._database = database
-    def __getitem__(self, name): return TenantAwareCollection(self._database[name], name)
-    def __getattr__(self, name): return self[name]
+    """Database facade with server-derived per-licensee routing.
+
+    Control-plane and identity collections deliberately remain in the central
+    database. Business collections listed in TENANT_COLLECTIONS are routed to a
+    tenant database only after the authenticated request has resolved a ready
+    tenant mapping. Legacy customers without a migrated mapping continue to use
+    the existing company-scoped shared database until their migration is run.
+    """
+    _CENTRAL_COLLECTIONS = {
+        "users", "companies", "commercial_licenses", "commercial_license_customers",
+        "commercial_license_packages", "commercial_customers", "identity_email_links",
+        "identity_migrations", "identity_sequences", "licenses", "license_activations",
+        "subscriptions", "tenants", "organizations", "platform_settings", "system_settings",
+    }
+
+    def __init__(self, database: Any, mongo_client: Any = None):
+        self._database = database
+        self._mongo_client = mongo_client or getattr(database, "client", None)
+
+    def __getitem__(self, name):
+        target = self._database
+        tenant_database = authenticated_tenant_database_name()
+        if (
+            tenant_database
+            and name in TENANT_COLLECTIONS
+            and name not in self._CENTRAL_COLLECTIONS
+            and not in_platform_owner_context()
+        ):
+            if self._mongo_client is None:
+                # Never silently fall back to shared data when isolation was selected.
+                raise HTTPException(status_code=503, detail="Tenant database routing is unavailable")
+            target = self._mongo_client[tenant_database]
+        return TenantAwareCollection(target[name], name)
+
+    def __getattr__(self, name):
+        return self[name]

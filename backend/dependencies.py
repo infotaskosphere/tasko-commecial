@@ -1173,4 +1173,4 @@ def get_user_permissions(current_user):
 async def get_db():yield db
 admin_required=require_admin
 _raw_db=db
-db=TenantAwareDatabase(_raw_db)
+db=TenantAwareDatabase(_raw_db, mongo_client=client)
