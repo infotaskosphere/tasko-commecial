@@ -1,11 +1,81 @@
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from datetime import datetime
 
 import pytz
 
 logger = logging.getLogger(__name__)
+
+
+def _tenant_targets():
+    """Resolve scheduled-job tenant contexts from the central control plane."""
+    from backend.dependencies import DB_NAME, client
+    from backend.tenant_database_manager import tenant_database_for_customer
+
+    async def load():
+        central = client[DB_NAME]
+        customers = await central.commercial_license_customers.find({}, {"_id": 0}).to_list(10000)
+        targets = []
+        for customer in customers:
+            customer_id = str(customer.get("id") or "").strip()
+            if not customer_id:
+                continue
+            try:
+                tenant_database = tenant_database_for_customer(customer_id, customer)
+            except Exception:
+                logger.exception("Skipping scheduled tenant job due to invalid DB mapping: %s", customer_id)
+                continue
+            companies = await central.companies.find(
+                {"$or": [{"commercial_customer_id": customer_id}, {"id": customer_id}]},
+                {"_id": 0, "id": 1},
+            ).to_list(5000)
+            company_ids = sorted({str(row.get("id") or "").strip() for row in companies if row.get("id")})
+            if not company_ids:
+                company_ids = [customer_id]
+            for company_id in company_ids:
+                targets.append((customer_id, company_id, tenant_database))
+        return targets
+
+    return asyncio.run(load())
+
+
+def _per_tenant(job):
+    """Run an existing scheduler job inside each tenant context."""
+    def run_for_tenants():
+        from backend.commercial_tenant_scope import (
+            reset_authenticated_customer, set_authenticated_customer,
+        )
+        from backend.tenant_runtime import (
+            reset_authenticated_company, set_authenticated_company,
+            reset_authenticated_tenant_database, set_authenticated_tenant_database,
+        )
+        try:
+            targets = _tenant_targets()
+        except Exception:
+            logger.exception("Unable to resolve licensees for scheduled job %s", getattr(job, "__name__", job))
+            return
+        for customer_id, company_id, database_name in targets:
+            customer_token = set_authenticated_customer(customer_id)
+            company_token = set_authenticated_company(company_id)
+            database_token = set_authenticated_tenant_database(database_name)
+            try:
+                result = job()
+                if inspect.isawaitable(result):
+                    asyncio.run(result)
+            except Exception:
+                logger.exception(
+                    "Scheduled job %s failed for customer=%s company=%s",
+                    getattr(job, "__name__", job), customer_id, company_id,
+                )
+            finally:
+                reset_authenticated_tenant_database(database_token)
+                reset_authenticated_company(company_token)
+                reset_authenticated_customer(customer_token)
+    run_for_tenants.__name__ = f"tenant_scoped_{getattr(job, '__name__', 'job')}"
+    return run_for_tenants
 
 
 def register_scheduler_jobs(
@@ -45,7 +115,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        mark_absent_users_task,
+        _per_tenant(mark_absent_users_task),
         "cron",
         hour=19,
         minute=0,
@@ -55,7 +125,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        force_punch_out_11pm_task,
+        _per_tenant(force_punch_out_11pm_task),
         "cron",
         hour=23,
         minute=0,
@@ -65,7 +135,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        birthday_automation_job,
+        _per_tenant(birthday_automation_job),
         "cron",
         hour=9,
         minute=0,
@@ -75,7 +145,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        festival_greeting_job,
+        _per_tenant(festival_greeting_job),
         "cron",
         hour=9,
         minute=5,
@@ -85,7 +155,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        service_expiry_alert_job,
+        _per_tenant(service_expiry_alert_job),
         "cron",
         hour=9,
         minute=45,
@@ -95,7 +165,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        follow_up_reminder_job,
+        _per_tenant(follow_up_reminder_job),
         "cron",
         hour=10,
         minute=15,
@@ -105,7 +175,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        wa_dsc_expiry_job,
+        _per_tenant(wa_dsc_expiry_job),
         "cron",
         hour=9,
         minute=30,
@@ -115,7 +185,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        wa_compliance_job,
+        _per_tenant(wa_compliance_job),
         "cron",
         hour=10,
         minute=0,
@@ -125,7 +195,7 @@ def register_scheduler_jobs(
     )
 
     scheduler.add_job(
-        wa_scheduled_bulk_job,
+        _per_tenant(wa_scheduled_bulk_job),
         "interval",
         minutes=1,
         id="wa_scheduled_bulk",

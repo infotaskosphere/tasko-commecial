@@ -214,6 +214,7 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
 
     customer_id = str(input_data.get("customer_id") or f"cus-{uuid.uuid4().hex}")
     existing_customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
+    created_new_customer = not bool(existing_customer)
     if existing_customer:
         customer = existing_customer
     else:
@@ -261,6 +262,44 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
                     detail="This email is already linked to another licensee unique ID.",
                 )
         await db.commercial_license_customers.insert_one(dict(customer))
+
+    # New licensees receive a dedicated database at issuance. Existing legacy
+    # customers are deliberately NOT switched automatically: their shared-DB
+    # records must first be copied and verified by the migration utility. If a
+    # prior first-time issuance failed before creating any license, retry the
+    # idempotent provisioning operation rather than leaving the customer stuck.
+    existing_license_count = 0
+    if not created_new_customer and not customer.get("tenant_database_status"):
+        existing_license_count = await db.commercial_licenses.count_documents({"customer_id": customer["id"]})
+    should_provision_database = created_new_customer or (
+        not customer.get("tenant_database_status") and existing_license_count == 0
+    )
+    if should_provision_database:
+        try:
+            from backend import dependencies as _dependencies
+            from backend.tenant_database_manager import provision_tenant_database
+            provisioned = await provision_tenant_database(
+                getattr(_dependencies, "client", None), customer["id"]
+            )
+            customer.update({
+                "tenant_database_name": provisioned["database_name"],
+                "tenant_database_status": provisioned["status"],
+                "tenant_database_created_at": _now().isoformat(),
+            })
+            await _dependencies._raw_db.commercial_license_customers.update_one(
+                {"id": customer["id"]},
+                {"$set": {
+                    "tenant_database_name": provisioned["database_name"],
+                    "tenant_database_status": provisioned["status"],
+                    "tenant_database_created_at": customer["tenant_database_created_at"],
+                }},
+            )
+        except Exception as exc:
+            logger.exception("Tenant database provisioning failed for customer %s", customer.get("id"))
+            raise HTTPException(
+                status_code=503,
+                detail="License issuance stopped because the isolated tenant database could not be provisioned.",
+            ) from exc
 
     email_normalized = str(customer.get("email") or "").strip().lower()
     licensee_uid = await ensure_licensee_uid(db, customer["id"], customer)
@@ -328,6 +367,8 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
         "licensee_uid": licensee_uid,
         "license_key": await _generate_unique_key(),
         "customer_id": customer["id"],
+        "tenant_database_name": customer.get("tenant_database_name"),
+        "tenant_database_status": customer.get("tenant_database_status", "migration_required"),
         "customer_name": customer.get("admin_name") or customer["company_name"],
         "admin_name": customer.get("admin_name") or admin_name,
         "company_name": customer["company_name"],

@@ -20,7 +20,10 @@ from fastapi import Depends, HTTPException, status
 
 from backend import dependencies as _dependencies
 from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import TenantAwareCollection, in_platform_owner_context
+from backend.tenant_runtime import (
+    TenantAwareCollection, in_platform_owner_context,
+    set_authenticated_tenant_database,
+)
 
 _current_customer_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_customer_id", default=None)
 
@@ -299,6 +302,17 @@ async def get_current_user_with_customer_scope(
     user = await _original_get_current_user(credentials)
     customer_id = await _resolve_customer_id(user)
     set_authenticated_customer(customer_id)
+
+    # Resolve database routing from the central customer registry, never from
+    # a client-supplied company_id, license_id, header, or JWT database claim.
+    raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+    customer_record = await raw_db.commercial_license_customers.find_one(
+        {"id": str(customer_id)},
+        {"_id": 0, "tenant_database_name": 1, "tenant_database_status": 1},
+    )
+    from backend.tenant_database_manager import tenant_database_for_customer
+    database_name = tenant_database_for_customer(customer_id, customer_record)
+    set_authenticated_tenant_database(database_name)
     return await _apply_live_license_permissions(user, customer_id)
 
 
