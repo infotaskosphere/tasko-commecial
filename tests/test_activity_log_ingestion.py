@@ -148,3 +148,30 @@ async def test_activity_auth_resolves_bearer_before_final_dependency(monkeypatch
     assert seen["security_request"] is request
     assert seen["request"] is request
     assert seen["credentials"] is credentials
+
+
+def test_runtime_registers_only_the_tenant_safe_activity_writer():
+    """Prevent an earlier legacy route from shadowing the owner-safe ingestion handler."""
+    from backend.server import app
+
+    try:
+        from fastapi.routing import iter_route_contexts
+        routes = list(iter_route_contexts(app.routes))
+    except ImportError:
+        # Older FastAPI versions eagerly flatten included routers.
+        routes = list(app.routes)
+
+    matches = [
+        route for route in routes
+        if getattr(route, "path", None) == "/api/activity/log"
+        and "POST" in (getattr(route, "methods", set()) or set())
+    ]
+
+    assert len(matches) == 1, [
+        (
+            getattr(route, "path", None),
+            getattr(route, "endpoint", None),
+        )
+        for route in matches
+    ]
+    assert matches[0].endpoint is ingestion.log_browser_activity
