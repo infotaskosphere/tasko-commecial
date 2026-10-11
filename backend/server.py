@@ -177,6 +177,7 @@ from backend.models import (
     OffboardRequest,
 )
 from backend.tenant_runtime import system_context
+from backend.platform_owner import is_platform_owner
 from backend.dependencies import (
     db,
     client,
@@ -196,6 +197,7 @@ from backend.dependencies import (
     get_cross_visibility_union,
     get_user_permissions,   # moved to dependencies — single source of truth
     personal_birthday_candidates,
+    _raw_db,
 )
 
 from fpdf import FPDF
@@ -293,6 +295,71 @@ register_application_runtime(globals())
 # /api/auth/me, /api/companies/list/ and /api/role-admin/roles exist in the
 # router definitions but are never attached to the live FastAPI application,
 # causing 404 responses in the Admin / Portal Owner dashboard.
+
+# ── Activity tracker ingestion ───────────────────────────────────────────────
+# This endpoint records the signed-in user's own browser activity. Platform
+# Owner activity is control-plane telemetry, not customer operational data, so
+# it is stored separately from company-scoped activity_logs. Licensee activity
+# remains company-scoped and is always stamped from the authenticated identity.
+@api_router.post("/activity/log")
+async def log_browser_activity(
+    payload: dict = Body(...),
+    current_user: User = Depends(get_current_user),
+):
+    from urllib.parse import urlsplit, urlunsplit
+
+    actor_id = str(getattr(current_user, "id", "") or "").strip()
+    if not actor_id:
+        raise HTTPException(status_code=401, detail="Authenticated user identity is missing")
+
+    raw_url = str(payload.get("url") or "").strip()
+    safe_url = ""
+    if raw_url:
+        try:
+            parts = urlsplit(raw_url)
+            # Query strings and fragments can contain session or customer data.
+            safe_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+        except Exception:
+            safe_url = ""
+
+    try:
+        duration_seconds = int(payload.get("duration_seconds") or 0)
+    except (TypeError, ValueError):
+        duration_seconds = 0
+    duration_seconds = max(0, min(duration_seconds, 300))
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "user_id": actor_id,
+        "user_email": str(getattr(current_user, "email", "") or ""),
+        "app_name": str(payload.get("app_name") or "Taskosphere Web")[:120],
+        "window_title": str(payload.get("window_title") or "")[:200],
+        "url": safe_url[:2048],
+        "category": str(payload.get("category") or "productivity")[:80],
+        "duration_seconds": duration_seconds,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if is_platform_owner(current_user):
+        # Platform Owner has no default customer company by design. Never
+        # invent or borrow a licensee company_id just to satisfy tenant guards.
+        entry["identity_type"] = "platform_owner"
+        await _raw_db.platform_activity_logs.insert_one(entry)
+        return {"success": True, "stored": True}
+
+    company_id = str(getattr(current_user, "company_id", "") or "").strip()
+    if not company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Authenticated licensee user is not associated with a company",
+        )
+
+    entry["company_id"] = company_id
+    entry["identity_type"] = "licensee"
+    await db.activity_logs.insert_one(entry)
+    return {"success": True, "stored": True}
+
+
 app.include_router(api_router)
 
 from backend.website_config import router as website_config_router
