@@ -695,6 +695,41 @@ class TenantAwareCollection:
 
 
 class TenantAwareDatabase:
-    def __init__(self, database: Any): self._database = database
-    def __getitem__(self, name): return TenantAwareCollection(self._database[name], name)
-    def __getattr__(self, name): return self[name]
+    """Collection facade that routes business data to the active tenant DB.
+
+    In shared mode this delegates to the original control database exactly as
+    before. In per-tenant mode, pre-login/control collections remain in the
+    control DB and all other collections resolve to a deterministic tenant DB.
+    """
+    def __init__(self, control_database: Any):
+        self._database = control_database
+
+    def _target(self, name: str):
+        from backend import tenant_database as td
+
+        if not td.per_tenant_enabled() or name in td.CONTROL_COLLECTIONS:
+            return self._database
+
+        company_id = td.forced_tenant() or (
+            _owner_default_company_id()
+            if in_platform_owner_context()
+            else authenticated_company_id()
+        )
+        if not company_id:
+            if td.strict():
+                raise RuntimeError(
+                    f"Collection '{name}' accessed without a tenant context"
+                )
+            logger.warning(
+                "Collection %s accessed without tenant context; using control DB",
+                name,
+            )
+            return self._database
+
+        return td.database_for(str(company_id))
+
+    def __getitem__(self, name):
+        return TenantAwareCollection(self._target(name)[name], name)
+
+    def __getattr__(self, name):
+        return self[name]
