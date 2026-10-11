@@ -103,3 +103,16 @@ async def test_licensee_activity_remains_company_scoped(monkeypatch):
     entry = tenant_collection.documents[0]
     assert entry["identity_type"] == "licensee"
     assert entry["company_id"] == "licensee-company-1"
+
+
+def test_activity_route_uses_commercial_guard_dependency():
+    """Ingestion must use the request-aware guard even when the router is imported early."""
+    from backend.commercial_module_guard import get_current_user_with_commercial_guard
+
+    route = next(
+        route for route in ingestion.router.routes
+        if getattr(route, "path", None) == "/activity/log"
+        and "POST" in getattr(route, "methods", set())
+    )
+    assert route.dependant.dependencies
+    assert route.dependant.dependencies[0].call is get_current_user_with_commercial_guard
