@@ -1,13 +1,14 @@
-"""Startup diagnostic for duplicate or unexpected activity-ingestion route wiring.
+"""Startup diagnostic for activity-ingestion routing on modern FastAPI.
 
-Logs only static route/function metadata. It never logs request headers, tokens,
-payloads, or customer data. Kept separate from server.py to preserve the thin
-composition layer.
+Logs static route/function metadata only; no request headers, tokens, payloads,
+or customer data are inspected or logged.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+from fastapi.routing import iter_route_contexts
 
 logger = logging.getLogger("activity_route_diagnostic")
 
@@ -40,47 +41,48 @@ def _dependency_chain(dependant: Any, depth: int = 0, seen: set[int] | None = No
     return calls
 
 
-def _walk_routes(routes: Any, seen: set[int] | None = None):
-    """Walk FastAPI's nested IncludedRouter trees as well as direct routes."""
-    visited = seen if seen is not None else set()
-    for route in routes or []:
-        identity = id(route)
-        if identity in visited:
-            continue
-        visited.add(identity)
-        yield route
-        children = getattr(route, "routes", None)
-        if children:
-            yield from _walk_routes(children, visited)
-
-
 def log_activity_route_registry(app: Any) -> None:
-    """Log every effective registration of POST /api/activity/log at startup."""
+    """Log effective prefixed routes, including FastAPI 0.137+ IncludedRouter entries."""
     matches = []
     candidates = []
-    for route in _walk_routes(getattr(app, "routes", []) or []):
+    wildcard_posts = []
+    try:
+        contexts = list(iter_route_contexts(getattr(app, "routes", []) or []))
+    except Exception:
+        logger.exception("[ACTIVITY-ROUTE-DIAG] Could not expand FastAPI route contexts")
+        contexts = []
+
+    for route in contexts:
         path = str(getattr(route, "path", "") or "")
         methods = set(getattr(route, "methods", set()) or set())
-        if "POST" in methods and (path.endswith("/activity/log") or "activity" in path.lower() and "log" in path.lower()):
-            candidates.append({
-                "path": path,
-                "route_type": type(route).__qualname__,
-                "endpoint": _call_label(getattr(route, "endpoint", None)),
-            })
-        if path != "/api/activity/log" or "POST" not in methods:
+        endpoint = _call_label(getattr(route, "endpoint", None))
+        if "POST" not in methods:
+            continue
+
+        if any(token in path for token in ("{path:path}", "{full_path:path}", "{rest:path}")):
+            wildcard_posts.append({"path": path, "endpoint": endpoint})
+
+        if path.endswith("/activity/log") or ("activity" in path.lower() and "log" in path.lower()):
+            candidates.append({"path": path, "endpoint": endpoint})
+
+        if path != "/api/activity/log":
             continue
         dependant = getattr(route, "dependant", None)
         matches.append({
             "path": path,
-            "route_type": type(route).__qualname__,
-            "endpoint": _call_label(getattr(route, "endpoint", None)),
+            "endpoint": endpoint,
             "dependencies": _dependency_chain(dependant),
+            "include_dependency_names": [
+                _call_label(getattr(dep, "dependency", None))
+                for dep in (getattr(route, "dependencies", None) or [])
+            ],
         })
 
     logger.warning(
         "[ACTIVITY-ROUTE-DIAG] method=POST path=/api/activity/log "
-        "registration_count=%d registrations=%s nearby_post_routes=%s",
+        "registration_count=%d registrations=%s related_post_routes=%s wildcard_post_routes=%s",
         len(matches),
         matches,
         candidates,
+        wildcard_posts,
     )
