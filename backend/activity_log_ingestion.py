@@ -36,7 +36,7 @@ async def _activity_current_user(request: Request):
     """
     authorization = str(request.headers.get("authorization") or "").strip()
     scheme, _, supplied_token = authorization.partition(" ")
-    logger.info(
+    logger.warning(
         "Activity auth dependency entered: path=%s authorization_present=%s bearer_scheme=%s bearer_token_present=%s",
         request.url.path,
         bool(authorization),
