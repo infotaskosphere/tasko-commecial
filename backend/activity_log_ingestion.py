@@ -9,22 +9,68 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
+import backend.dependencies as _dependencies
 from backend.dependencies import db, _raw_db, _resolve_licensed_company_id
-from backend.commercial_module_guard import get_current_user_with_commercial_guard
 from backend.models import User
 from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import in_platform_owner_context
+from backend.tenant_runtime import (
+    authenticated_company_id,
+    in_platform_owner_context,
+    platform_owner_company_ids,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+
+async def _activity_current_user(
+    request: Request,
+    credentials=Depends(_dependencies.security),
+):
+    """Use the same final Request-aware authentication chain as the rest of the API.
+
+    Some legacy compatibility layers recover a missing company link, canonicalize
+    Platform Owner identity, and enforce request-company checks. Calling the
+    commercial guard directly bypasses those wrappers.
+    """
+    try:
+        user = await _dependencies.get_current_user(request, credentials)
+    except HTTPException as exc:
+        logger.warning(
+            "Activity logger authentication rejected: status=%s detail=%s "
+            "path=%s owner_context=%s authenticated_company_id=%s owner_company_ids=%s",
+            exc.status_code,
+            str(exc.detail)[:180],
+            request.url.path,
+            in_platform_owner_context(),
+            authenticated_company_id(),
+            sorted(platform_owner_company_ids()),
+        )
+        raise
+
+    owner_identity = is_platform_owner(user)
+    owner_context = in_platform_owner_context()
+    if owner_identity != owner_context:
+        logger.warning(
+            "Activity logger identity/context mismatch: user_id=%s role=%s "
+            "owner_identity=%s owner_context=%s authenticated_company_id=%s owner_company_ids=%s",
+            str(getattr(user, "id", "") or ""),
+            str(getattr(user, "role", "") or ""),
+            owner_identity,
+            owner_context,
+            authenticated_company_id(),
+            sorted(platform_owner_company_ids()),
+        )
+    return user
+
+
 @router.post("/activity/log")
 async def log_browser_activity(
     payload: dict = Body(...),
-    current_user: User = Depends(get_current_user_with_commercial_guard),
+    current_user: User = Depends(_activity_current_user),
 ):
     actor_id = str(getattr(current_user, "id", "") or "").strip()
     if not actor_id:
@@ -76,7 +122,14 @@ async def log_browser_activity(
         # Platform Owner telemetry is separate from licensee operational data.
         # Never invent or borrow a licensee company_id to satisfy tenant guards.
         entry["identity_type"] = "platform_owner"
-        await _raw_db.platform_activity_logs.insert_one(entry)
+        try:
+            await _raw_db.platform_activity_logs.insert_one(entry)
+        except HTTPException as exc:
+            logger.warning(
+                "Platform Owner activity telemetry write rejected: user_id=%s status=%s detail=%s",
+                actor_id, exc.status_code, str(exc.detail)[:180],
+            )
+            raise
         return {"success": True, "stored": True}
 
     company_id = str(getattr(current_user, "company_id", "") or "").strip()
@@ -109,5 +162,12 @@ async def log_browser_activity(
 
     entry["company_id"] = company_id
     entry["identity_type"] = "licensee"
-    await db.activity_logs.insert_one(entry)
+    try:
+        await db.activity_logs.insert_one(entry)
+    except HTTPException as exc:
+        logger.warning(
+            "Licensee activity telemetry write rejected: user_id=%s company_id=%s status=%s detail=%s",
+            actor_id, company_id, exc.status_code, str(exc.detail)[:180],
+        )
+        raise
     return {"success": True, "stored": True}
