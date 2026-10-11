@@ -105,14 +105,37 @@ async def test_licensee_activity_remains_company_scoped(monkeypatch):
     assert entry["company_id"] == "licensee-company-1"
 
 
-def test_activity_route_uses_commercial_guard_dependency():
-    """Ingestion must use the request-aware guard even when the router is imported early."""
-    from backend.commercial_module_guard import get_current_user_with_commercial_guard
-
+def test_activity_route_uses_canonical_request_auth_dependency():
+    """Activity logging must use the same final auth chain as other request routes."""
     route = next(
         route for route in ingestion.router.routes
         if getattr(route, "path", None) == "/activity/log"
         and "POST" in getattr(route, "methods", set())
     )
-    assert route.dependant.dependencies
-    assert route.dependant.dependencies[0].call is get_current_user_with_commercial_guard
+    dependency_calls = {dependency.call for dependency in route.dependant.dependencies}
+    assert ingestion._activity_current_user in dependency_calls
+
+
+@pytest.mark.asyncio
+async def test_activity_auth_forwards_request_and_credentials_to_final_dependency(monkeypatch):
+    request = SimpleNamespace(url=SimpleNamespace(path="/api/activity/log"))
+    credentials = SimpleNamespace(credentials="non-secret-test-token")
+    user = SimpleNamespace(
+        id="licensee-admin-1",
+        email="licensee@example.test",
+        role="admin",
+        company_id="licensee-company-1",
+    )
+    seen = {}
+
+    async def final_dependency(actual_request, actual_credentials):
+        seen["request"] = actual_request
+        seen["credentials"] = actual_credentials
+        return user
+
+    monkeypatch.setattr(ingestion._dependencies, "get_current_user", final_dependency)
+    result = await ingestion._activity_current_user(request, credentials)
+
+    assert result is user
+    assert seen["request"] is request
+    assert seen["credentials"] is credentials
