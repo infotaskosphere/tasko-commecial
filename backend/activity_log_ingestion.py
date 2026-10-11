@@ -11,7 +11,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from backend.dependencies import db, get_current_user, _raw_db, _resolve_licensed_company_id
+from backend.dependencies import db, _raw_db, _resolve_licensed_company_id
+from backend.commercial_module_guard import get_current_user_with_commercial_guard
 from backend.models import User
 from backend.platform_owner import is_platform_owner
 from backend.tenant_runtime import in_platform_owner_context
@@ -23,7 +24,7 @@ router = APIRouter()
 @router.post("/activity/log")
 async def log_browser_activity(
     payload: dict = Body(...),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_with_commercial_guard),
 ):
     actor_id = str(getattr(current_user, "id", "") or "").strip()
     if not actor_id:
