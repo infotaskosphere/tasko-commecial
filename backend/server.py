@@ -297,7 +297,6 @@ register_application_runtime(globals())
 # router definitions but are never attached to the live FastAPI application,
 # causing 404 responses in the Admin / Portal Owner dashboard.
 
-# Activity ingestion is mounted from its isolated route module below.
 app.include_router(api_router)
 app.include_router(activity_log_router, prefix="/api")
 
