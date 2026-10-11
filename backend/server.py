@@ -1,3 +1,4 @@
+import backend.admin_identity_compat  # noqa: F401 — bootstrap identity compatibility before routers
 import os
 import re
 import csv
@@ -390,3 +391,12 @@ register_legacy_router_mounts(
         google_auth_router,
     ),
 )
+
+
+# Ensure the direct Render entry point (uvicorn backend.server:app) receives the
+# same compatibility bootstraps as the production launcher backend.run. Both
+# calls are idempotent; owner sessions remain isolated from licensee tenants.
+import sys as _bootstrap_sys
+from backend import platform_owner_session_compat as _owner_session_compat
+_owner_session_compat.install()
+_owner_session_compat.install_server_session_patch(_bootstrap_sys.modules[__name__])
