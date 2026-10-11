@@ -19,6 +19,7 @@ from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import get_learning_context, record_learning
 from backend.accounting_ai.finix_ai_router import _build_proposal, _can_post, _can_view, _date
+from backend.accounting_ai.finix_access import is_admin_role
 
 router = APIRouter(prefix="/finix/ai", tags=["Finix AI Agent"])
 
@@ -110,9 +111,9 @@ async def agent_feedback(payload: FeedbackRequest, current_user: User = Depends(
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
-    if proposal.get("company_id") != getattr(current_user, "company_id", "") and str(current_user.role or "").lower() != "admin":
+    if proposal.get("company_id") != getattr(current_user, "company_id", "") and not is_admin_role(current_user):
         raise HTTPException(403, "Proposal belongs to another company.")
-    if proposal.get("created_by") != current_user.id and str(current_user.role or "").lower() != "admin":
+    if proposal.get("created_by") != current_user.id and not is_admin_role(current_user):
         raise HTTPException(403, "Only the proposal owner or an admin can provide feedback.")
     await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("interpretation", {}).get("party_name", ""), proposal, payload.outcome, current_user.id, payload.correction)
     await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"feedback": payload.outcome, "correction": payload.correction, "feedback_by": current_user.id, "feedback_at": datetime.now(timezone.utc).isoformat()}})
@@ -133,7 +134,7 @@ async def agent_inbox_action(payload: InboxActionRequest, current_user: User = D
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
-    is_admin = str(current_user.role or "").lower() == "admin"
+    is_admin = is_admin_role(current_user)
     if not is_admin and proposal.get("company_id") != getattr(current_user, "company_id", ""):
         raise HTTPException(403, "Proposal belongs to another company.")
     if proposal.get("created_by") != current_user.id and not is_admin:
