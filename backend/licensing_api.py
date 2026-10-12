@@ -161,39 +161,19 @@ async def list_license_state() -> Dict[str, Any]:
         }
     )
 
+    # This function is called by the Master Console to read license state.
+    # It must never delete customer, company, or user data as a side effect.
+    # In particular, a temporarily empty/missing license collection must not
+    # erase the tenant registry and make customer ownership unrecoverable.
     if licensed_customer_ids:
-        # Hard-clean orphan commercial customer/company records left by older
-        # deletion flows. This is safe because every retained customer still
-        # has at least one commercial license document.
-        await db.commercial_license_customers.delete_many(
-            {"id": {"$nin": licensed_customer_ids}}
-        )
-        await db.companies.delete_many(
-            {
-                "source": "commercial-license",
-                "commercial_customer_id": {"$nin": licensed_customer_ids},
-            }
-        )
-        # Permanently remove legacy soft-deleted commercial users belonging to
-        # customer tenants that no longer have any license. This cleans records
-        # created by the previous soft-delete implementation without touching
-        # active users or platform-owner/internal accounts.
-        await db.users.delete_many(
-            {
-                "status": "deleted",
-                "commercial_customer_id": {"$nin": licensed_customer_ids},
-                "is_internal_commercial_admin": {"$ne": True},
-            }
-        )
         customers = await db.commercial_license_customers.find(
             {"id": {"$in": licensed_customer_ids}},
             {"_id": 0},
         ).sort("created_at", -1).to_list(1000)
     else:
-        # No commercial licenses means there must be no commercial customer
-        # registry records left behind.
-        await db.commercial_license_customers.delete_many({})
-        await db.companies.delete_many({"source": "commercial-license"})
+        # Preserve existing registry data for diagnosis/recovery, while keeping
+        # the public license-state response consistent: without license docs
+        # there are no currently licensed customers to list.
         customers = []
 
     return {"packages": packages, "customers": customers, "licenses": licenses}
