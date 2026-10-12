@@ -15,9 +15,36 @@ export default function NoModuleAccess() {
   const { user, logout, refreshUser } = useAuth();
 
   const modules = Array.isArray(user?.licensed_modules) ? user.licensed_modules : [];
-  const featureKeys = user?.selected_features && typeof user.selected_features === 'object'
-    ? Object.keys(user.selected_features)
-    : [];
+  const selectedFeatures = user?.selected_features && typeof user.selected_features === 'object'
+    ? user.selected_features
+    : {};
+  const normalizeModuleId = (value) => {
+    const key = String(value || '').trim().toLowerCase().replace(/-/g, '_').replace(/\\s+/g, '_');
+    const aliases = {
+      tasks: 'taskosphere',
+      'ai_weave': 'aiweave',
+      invoicing: 'finix',
+      accounting: 'finix',
+      client_proposals: 'proposals',
+      leadsense: 'proposals',
+      peoplematrix: 'people_matrix',
+      hrms: 'people_matrix',
+    };
+    return aliases[key] || key;
+  };
+  const selectedPagesByModule = Object.entries(selectedFeatures).reduce((result, [rawModule, rawPages]) => {
+    const moduleId = normalizeModuleId(rawModule);
+    const pages = Array.isArray(rawPages)
+      ? rawPages.map((page) => String(page || '').trim()).filter(Boolean)
+      : [];
+    result[moduleId] = [...new Set([...(result[moduleId] || []), ...pages])];
+    return result;
+  }, {});
+  const actualSelectedPages = Object.entries(selectedPagesByModule)
+    .filter(([, pages]) => pages.length > 0)
+    .map(([moduleId, pages]) => `${moduleId}: ${pages.join(', ')}`);
+  const licensedModulesWithoutPages = [...new Set(modules.map(normalizeModuleId))]
+    .filter((moduleId) => !(selectedPagesByModule[moduleId] || []).length);
 
   const signOut = async () => {
     try { await logout(); } finally { window.location.replace('/login'); }
@@ -37,7 +64,8 @@ export default function NoModuleAccess() {
         </p>
         <div className="mt-4 text-left text-xs rounded-xl bg-slate-50 border border-slate-200 p-3 text-slate-600 space-y-1">
           <div><span className="font-semibold">Licensed modules:</span> {modules.length ? modules.join(', ') : '— none received —'}</div>
-          <div><span className="font-semibold">Selected page groups:</span> {featureKeys.length ? featureKeys.join(', ') : '— none received —'}</div>
+          <div><span className="font-semibold">Page permissions actually selected:</span> {actualSelectedPages.length ? actualSelectedPages.join(' · ') : '— none selected —'}</div>
+          <div><span className="font-semibold">Licensed modules with no selected page:</span> {licensedModulesWithoutPages.length ? licensedModulesWithoutPages.join(', ') : '— none —'}</div>
           <div><span className="font-semibold">Company:</span> {user?.company_id || '—'}</div>
         </div>
         <div className="mt-6 flex gap-3 justify-center">
