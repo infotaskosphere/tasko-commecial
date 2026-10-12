@@ -19,7 +19,7 @@ export default function NoModuleAccess() {
     ? user.selected_features
     : {};
   const normalizeModuleId = (value) => {
-    const key = String(value || '').trim().toLowerCase().replace(/-/g, '_').replace(/\\s+/g, '_');
+    const key = String(value || '').trim().toLowerCase().replace(/-/g, '_').replace(/\s+/g, '_');
     const aliases = {
       tasks: 'taskosphere',
       'ai_weave': 'aiweave',
