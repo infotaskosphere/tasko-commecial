@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.dependencies import db, get_current_user, require_admin
-from backend.identity_hierarchy import ensure_identity_email_link, ensure_licensee_uid, ensure_license_uid
+from backend.identity_hierarchy import (ensure_identity_email_link, ensure_licensee_uid, ensure_license_uid, release_stale_licensee_email_link)
 from backend.platform_owner import platform_owner_emails
 
 
@@ -179,6 +179,77 @@ async def list_license_state() -> Dict[str, Any]:
     return {"packages": packages, "customers": customers, "licenses": licenses}
 
 
+
+async def _release_orphaned_unlicensed_customer_for_email(email: str) -> bool:
+    """Remove an incomplete customer shell left by failed issuance.
+
+    Never remove a customer with any license record or live tenant user. The
+    former tenant database is intentionally not dropped here; removing its
+    central mapping keeps it inaccessible, and a new license receives a new ID.
+    """
+    normalized = str(email or "").strip().lower()
+    if not normalized:
+        return False
+    escaped = __import__("re").escape(normalized)
+    email_query = {
+        "$or": [
+            {"email_normalized": normalized},
+            {"email": {"$regex": f"^{escaped}$", "$options": "i"}},
+        ]
+    }
+    customer = await db.commercial_license_customers.find_one(email_query, {"_id": 0})
+    if not customer:
+        return False
+    customer_id = str(customer.get("id") or "").strip()
+    if not customer_id:
+        return False
+
+    # Even expired, suspended, or revoked licenses remain ownership records.
+    existing_license = await db.commercial_licenses.find_one(
+        {"customer_id": customer_id}, {"_id": 1}
+    )
+    if existing_license:
+        return False
+
+    uid = str(customer.get("licensee_uid") or "").strip()
+    ownership = [
+        {"commercial_customer_id": customer_id},
+        {"company_id": customer_id},
+    ]
+    if uid:
+        ownership.extend([
+            {"licensee_uid": uid},
+            {"identity_org_uid": uid},
+        ])
+    live_user = await db.users.find_one({
+        "$and": [
+            {"status": {"$ne": "deleted"}},
+            {"$or": ownership},
+        ]
+    }, {"_id": 1})
+    if live_user:
+        return False
+
+    await db.commercial_license_customers.delete_one({"id": customer_id})
+    await db.companies.delete_many({
+        "$or": [
+            {"commercial_customer_id": customer_id, "source": "commercial-license"},
+            {"id": customer_id, "source": "commercial-license"},
+        ]
+    })
+
+    link = await db.identity_email_links.find_one(
+        {"email_normalized": normalized}, {"_id": 0}
+    )
+    if link:
+        await release_stale_licensee_email_link(db, normalized, link)
+    logger.info(
+        "Released orphaned unlicensed commercial customer shell for email hash=%s",
+        __import__("hashlib").sha256(normalized.encode("utf-8")).hexdigest()[:12],
+    )
+    return True
+
+
 async def create_license_record(input_data: Dict[str, Any], created_by: str) -> Dict[str, Any]:
     package_id = str(input_data.get("package_id") or "essential")
     package = await _get_package(package_id)
@@ -209,29 +280,23 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
         }
         email = str(customer.get("email") or "").strip()
         if email:
-            existing_link = await db.identity_email_links.find_one(
-                {"email_normalized": email.lower()},
-                {"_id": 0, "identity_uid": 1},
-            )
-            if existing_link:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "This email is already linked to "
-                        f"{existing_link.get('identity_uid') or 'another organization identity'}. "
-                        "One email cannot be linked to two unique IDs."
-                    ),
-                )
-            if email.lower() in platform_owner_emails():
+            normalized_email = email.lower()
+            if normalized_email in platform_owner_emails():
                 raise HTTPException(
                     status_code=409,
                     detail="This email is reserved for the Platform Owner and cannot be linked to a licensee.",
                 )
+
+            # A prior failed issuance can leave only a customer shell (no license
+            # and no live users). Release that shell before uniqueness checks;
+            # never remove a customer that owns a license or a live tenant account.
+            await _release_orphaned_unlicensed_customer_for_email(normalized_email)
+
             existing_email_customer = await db.commercial_license_customers.find_one(
                 {
                     "$or": [
-                        {"email_normalized": email.lower()},
-                        {"email": email},
+                        {"email_normalized": normalized_email},
+                        {"email": {"$regex": f"^{__import__('re').escape(normalized_email)}$", "$options": "i"}},
                     ]
                 },
                 {"_id": 0, "id": 1, "licensee_uid": 1},
@@ -239,8 +304,23 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
             if existing_email_customer and str(existing_email_customer.get("id") or "") != customer_id:
                 raise HTTPException(
                     status_code=409,
-                    detail="This email is already linked to another licensee unique ID.",
+                    detail="This email belongs to an existing commercial customer. Delete that customer or update its contact email before reusing it.",
                 )
+
+            existing_link = await db.identity_email_links.find_one(
+                {"email_normalized": normalized_email},
+                {"_id": 0},
+            )
+            if existing_link:
+                released = await release_stale_licensee_email_link(db, normalized_email, existing_link)
+                if not released:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "This email is still linked to an active organization identity. "
+                            "Delete the user/company or change its contact email before reusing it."
+                        ),
+                    )
         await db.commercial_license_customers.insert_one(dict(customer))
 
     # New licensees receive a dedicated database at issuance. Existing legacy
@@ -276,9 +356,20 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
             )
         except Exception as exc:
             logger.exception("Tenant database provisioning failed for customer %s", customer.get("id"))
+            if created_new_customer:
+                try:
+                    await db.commercial_license_customers.delete_one({"id": customer["id"]})
+                    await db.companies.delete_many({
+                        "$or": [
+                            {"commercial_customer_id": customer["id"], "source": "commercial-license"},
+                            {"id": customer["id"], "source": "commercial-license"},
+                        ]
+                    })
+                except Exception:
+                    logger.exception("Could not roll back incomplete customer shell %s", customer.get("id"))
             raise HTTPException(
                 status_code=503,
-                detail="License issuance stopped because the isolated tenant database could not be provisioned.",
+                detail="License issuance stopped because the isolated tenant database could not be provisioned. Verify the MongoDB application user has read/write privileges on taskosphere_tenant_* databases.",
             ) from exc
 
     email_normalized = str(customer.get("email") or "").strip().lower()

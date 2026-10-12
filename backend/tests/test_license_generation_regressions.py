@@ -46,6 +46,11 @@ def test_stale_deleted_licensee_email_link_can_be_released():
                         continue
                     if op == "$in" and actual not in value:
                         return False
+                    if op == "$regex":
+                        import re
+                        flags = re.IGNORECASE if wanted.get("$options") == "i" else 0
+                        if not re.search(value, str(actual or ""), flags):
+                            return False
             elif actual != wanted:
                 return False
         return True
@@ -96,6 +101,13 @@ def test_license_generation_requires_invoice_company_before_creating_records():
     from types import SimpleNamespace
     from fastapi import HTTPException
     from backend.commercial_onboarding_extensions import generate_custom_license
+    import backend.commercial_onboarding as onboarding
+
+    # A missing invoice issuer is rejected before license/customer creation.
+    original_create = onboarding.create_license_record
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("license records must not be created before invoice preflight")
+    onboarding.create_license_record = fail_if_called
 
     try:
         asyncio.run(generate_custom_license(
@@ -107,3 +119,139 @@ def test_license_generation_requires_invoice_company_before_creating_records():
         assert "invoice company" in str(exc.detail).lower() or "company master company" in str(exc.detail).lower()
     else:
         raise AssertionError("Issuance must stop before creating records when invoice company is missing")
+    finally:
+        onboarding.create_license_record = original_create
+
+
+
+def test_deleted_user_email_can_be_reused_while_old_licensee_still_exists():
+    import asyncio
+    from backend.identity_hierarchy import release_stale_licensee_email_link
+
+    class Collection:
+        def __init__(self, rows=None):
+            self.rows = list(rows or [])
+
+        async def find_one(self, query=None, *args, **kwargs):
+            return next((row.copy() for row in self.rows if matches(row, query or {})), None)
+
+        async def delete_one(self, query):
+            return type("Result", (), {"deleted_count": 1})()
+
+    def matches(document, query):
+        for key, wanted in query.items():
+            if key == "$or":
+                if not any(matches(document, branch) for branch in wanted):
+                    return False
+                continue
+            if key == "$and":
+                if not all(matches(document, branch) for branch in wanted):
+                    return False
+                continue
+            actual = document.get(key)
+            if isinstance(wanted, dict):
+                for op, value in wanted.items():
+                    if op == "$ne" and actual == value:
+                        return False
+                    if op == "$regex":
+                        import re
+                        flags = re.IGNORECASE if wanted.get("$options") == "i" else 0
+                        if not re.search(value, str(actual or ""), flags):
+                            return False
+            elif actual != wanted:
+                return False
+        return True
+
+    class DB:
+        def __init__(self):
+            self.identity_email_links = Collection([{
+                "email_normalized": "former-staff@example.com",
+                "identity_uid": "L-000007",
+                "identity_type": "licensee",
+            }])
+            self.commercial_license_customers = Collection([{
+                "id": "cus-old",
+                "licensee_uid": "L-000007",
+                "email": "admin@old-company.example",
+                "email_normalized": "admin@old-company.example",
+            }])
+            self.commercial_licenses = Collection([{
+                "id": "lic-old",
+                "customer_id": "cus-old",
+                "licensee_uid": "L-000007",
+                "status": "active",
+            }])
+            self.users = Collection([])
+
+        def __getitem__(self, name):
+            return getattr(self, name)
+
+    db = DB()
+    link = db.identity_email_links.rows[0].copy()
+    released = asyncio.run(
+        release_stale_licensee_email_link(db, "former-staff@example.com", link)
+    )
+    assert released is True
+
+
+def test_customer_contact_email_stays_reserved_until_customer_is_removed():
+    import asyncio
+    from backend.identity_hierarchy import release_stale_licensee_email_link
+
+    class Collection:
+        def __init__(self, rows=None):
+            self.rows = list(rows or [])
+
+        async def find_one(self, query=None, *args, **kwargs):
+            return next((row.copy() for row in self.rows if matches(row, query or {})), None)
+
+        async def delete_one(self, query):
+            return type("Result", (), {"deleted_count": 1})()
+
+    def matches(document, query):
+        for key, wanted in query.items():
+            if key == "$or":
+                if not any(matches(document, branch) for branch in wanted):
+                    return False
+                continue
+            if key == "$and":
+                if not all(matches(document, branch) for branch in wanted):
+                    return False
+                continue
+            actual = document.get(key)
+            if isinstance(wanted, dict):
+                for op, value in wanted.items():
+                    if op == "$ne" and actual == value:
+                        return False
+                    if op == "$regex":
+                        import re
+                        flags = re.IGNORECASE if wanted.get("$options") == "i" else 0
+                        if not re.search(value, str(actual or ""), flags):
+                            return False
+            elif actual != wanted:
+                return False
+        return True
+
+    class DB:
+        identity_email_links = Collection([{
+            "email_normalized": "admin@old-company.example",
+            "identity_uid": "L-000007",
+        }])
+        commercial_license_customers = Collection([{
+            "id": "cus-old",
+            "licensee_uid": "L-000007",
+            "email": "Admin@Old-Company.Example",
+        }])
+        commercial_licenses = Collection([])
+        users = Collection([])
+
+        def __getitem__(self, name):
+            return getattr(self, name)
+
+    db = DB()
+    released = asyncio.run(
+        release_stale_licensee_email_link(
+            db, "admin@old-company.example", db.identity_email_links.rows[0]
+        )
+    )
+    assert released is False

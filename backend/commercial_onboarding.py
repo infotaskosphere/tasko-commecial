@@ -20,7 +20,7 @@ from backend.dependencies import create_access_token, db, get_current_user, requ
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.licensing_api import create_license_record, _expiry_reason, _find_license, _now, _public_license
-from backend.identity_hierarchy import ensure_licensee_uid, ensure_license_uid, ensure_user_uid
+from backend.identity_hierarchy import ensure_licensee_uid, ensure_license_uid, ensure_user_uid, release_stale_licensee_email_link
 
 # ---------------------------------------------------------------------------
 # Core primitives.
@@ -435,6 +435,15 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     if months <= 0:
         raise HTTPException(status_code=400, detail="License duration in months is required.")
 
+    # Validate invoice requirements before creating customers, licenses, admins,
+    # or per-tenant databases. Failed forms must not leave partial records behind.
+    invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
+    if not invoice_company_id:
+        raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
+    invoice_company = await db.companies.find_one({"id": invoice_company_id}, {"_id": 0, "id": 1})
+    if not invoice_company:
+        raise HTTPException(status_code=400, detail="The selected invoice company was not found in Company Master.")
+
     catalog = await _ensure_module_catalog()
     active_catalog = [item for item in catalog if item.get("active", True)]
     selected_modules = []
@@ -523,9 +532,6 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     from backend.commercial_licensee_admin import ensure_licensee_admin, get_all_admin_permissions
     await ensure_licensee_admin(customer, license_doc, company)
 
-    invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
-    if not invoice_company_id:
-        raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
     invoice = await _create_license_invoice(license_doc, customer, invoice_company_id, amount_charged, selected_features)
     license_doc["invoice_id"] = invoice.get("id")
     license_doc["invoice_no"] = invoice.get("invoice_no")
@@ -839,6 +845,15 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
                 "commercial_customer_id": customer_id,
             }
         )
+        # Release the organization email link after its last license/company and
+        # users are removed. This is safe only if no active account still uses it.
+        customer_email = str((customer or {}).get("email") or "").strip().lower()
+        if customer_email:
+            identity_link = await db.identity_email_links.find_one(
+                {"email_normalized": customer_email}, {"_id": 0}
+            )
+            if identity_link:
+                await release_stale_licensee_email_link(db, customer_email, identity_link)
 
     return {"deleted": True, "license_id": license_id, "company_name": (customer or {}).get("company_name"), "remaining_licenses": remaining, "historical_invoices_preserved": True}
 

@@ -121,10 +121,13 @@ async def release_stale_licensee_email_link(
     email: Any,
     existing_link: Optional[dict],
 ) -> bool:
-    """Release an email link only when its former licensee identity is orphaned.
+    """Release an email link only when no live account or customer contact uses it.
 
-    This allows a genuinely deleted/unlicensed company to reuse its contact email,
-    but never detaches an email from an existing customer, license, or live user.
+    Links are organization-scoped, not user-scoped. Keep the link while the email
+    is a customer's registered contact or belongs to any non-deleted user. Once
+    an individual is hard-deleted (or the contact email changes), the old email
+    can be attached to another licensee. Former tenant data remains isolated by
+    the customer ID/database mapping.
     """
     normalized = _normalized_email(email)
     if not normalized or not isinstance(existing_link, dict):
@@ -134,42 +137,32 @@ async def release_stale_licensee_email_link(
     if not old_uid.startswith("L-"):
         return False
 
-    # An extant customer/license is authoritative, even if its license is
-    # suspended or expired. Such a customer must be renewed, not replaced.
-    customer = await db.commercial_license_customers.find_one(
-        {"licensee_uid": old_uid},
+    escaped_email = re.escape(normalized)
+    email_match = {
+        "$or": [
+            {"email_normalized": normalized},
+            {"email": {"$regex": f"^{escaped_email}$", "$options": "i"}},
+        ]
+    }
+
+    # The current customer contact email remains reserved until changed/deleted.
+    customer_contact = await db.commercial_license_customers.find_one(
+        email_match,
         {"_id": 0, "id": 1},
     )
-    license_doc = await db.commercial_licenses.find_one(
-        {"licensee_uid": old_uid},
-        {"_id": 0, "id": 1, "customer_id": 1},
-    )
-    if customer or license_doc:
+    if customer_contact:
         return False
 
-    # Legacy customers may not have had licensee_uid written yet. If this email
-    # still belongs to a customer with any license record, keep the link.
-    customer_by_email = await db.commercial_license_customers.find_one(
-        {"$or": [{"email_normalized": normalized}, {"email": normalized}]},
-        {"_id": 0, "id": 1},
-    )
-    if customer_by_email:
-        customer_license = await db.commercial_licenses.find_one(
-            {"customer_id": str(customer_by_email.get("id") or "")},
-            {"_id": 0, "id": 1},
-        )
-        if customer_license:
-            return False
-
+    # Any live account using the email blocks cross-tenant identity reuse.
     live_user = await db.users.find_one(
-        {"identity_org_uid": old_uid, "status": {"$ne": "deleted"}},
+        {
+            "$and": [
+                {"status": {"$ne": "deleted"}},
+                email_match,
+            ]
+        },
         {"_id": 1},
     )
-    if not live_user:
-        live_user = await db.users.find_one(
-            {"licensee_uid": old_uid, "status": {"$ne": "deleted"}},
-            {"_id": 1},
-        )
     if live_user:
         return False
 
@@ -177,7 +170,6 @@ async def release_stale_licensee_email_link(
         {"email_normalized": normalized, "identity_uid": old_uid}
     )
     return bool(getattr(result, "deleted_count", 0))
-
 
 async def ensure_identity_email_link(
     db,
