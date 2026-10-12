@@ -298,6 +298,15 @@ export default function MasterConsole() {
     return monthly * Number(form.validity_months || 0);
   }, [activeModules, selectedModules, selectedFeatures, form.validity_months]);
 
+  // The final amount charged may intentionally differ from catalog pricing (for
+  // example, a free or discounted license). Keep the invoice preview in sync
+  // with the exact value submitted to the backend; zero is a valid amount.
+  const amountToInvoice = useMemo(() => {
+    if (form.amount_charged === "" || form.amount_charged == null) return calculatedAmount;
+    const entered = Number(form.amount_charged);
+    return Number.isFinite(entered) ? entered : calculatedAmount;
+  }, [form.amount_charged, calculatedAmount]);
+
   const submit = async (event) => {
     event.preventDefault();
     if (generating) return;
@@ -313,7 +322,7 @@ export default function MasterConsole() {
         selected_modules: selectedModules,
         selected_features: normalizeDashboardSelection(activeModules, selectedFeatures),
         validity_months: Number(form.validity_months || 0),
-        amount_charged: form.amount_charged === "" ? calculatedAmount : Number(form.amount_charged),
+        amount_charged: amountToInvoice,
         max_users: Number(form.max_users),
         max_installations: Number(form.max_installations)
       });
@@ -874,8 +883,12 @@ export default function MasterConsole() {
                     <span className="font-semibold">{form.validity_months} months</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-slate-500">Calculated Charge:</span>
-                    <span className="font-bold text-slate-900">{money(calculatedAmount)}</span>
+                    <span className="text-slate-500">Calculated List Price:</span>
+                    <span className="font-semibold text-slate-700">{money(calculatedAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-500">Amount to Invoice:</span>
+                    <span className="font-bold text-slate-900">{money(amountToInvoice)}</span>
                   </div>
                 </div>
               </div>
@@ -974,7 +987,7 @@ export default function MasterConsole() {
                   onChange={(e) => setForm({ ...form, max_installations: e.target.value })}
                 />
               </Field>
-              <Field label="Amount Charged (INR)">
+              <Field label="Final Amount Charged / Invoice Total (INR)">
                 <Input
                   type="number"
                   min="0"
