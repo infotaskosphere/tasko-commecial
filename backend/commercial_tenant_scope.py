@@ -263,9 +263,9 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
         )
 
         if role == "admin":
-            # Licensee admin gets full control inside the modules actually
-            # purchased by the Platform Owner. AIWeave remains explicitly
-            # governed and is never auto-enabled merely by purchase.
+            # The licensee administrator receives only the modules/pages
+            # selected by the Platform Owner, including AIWeave when selected.
+            # Staff/Manager grants remain separately governed below.
             license_permissions = get_all_admin_permissions(active)
         else:
             # IMPORTANT: do NOT rebuild Manager/Staff permissions from

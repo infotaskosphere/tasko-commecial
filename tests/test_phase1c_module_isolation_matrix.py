@@ -84,7 +84,7 @@ def _admin_user() -> User:
         role="admin",
         company_id="company-a",
         permissions={
-            # AIWeave is explicitly user-governed even for tenant admins.
+            # The current license must also select AIWeave for access to be valid.
             "can_access_aiweave": True,
             "can_view_aiweave": True,
         },
@@ -216,21 +216,15 @@ async def test_leadsense_only_admin_cannot_enter_finix(monkeypatch):
         raise AssertionError("LeadSense-only admin reached Finix")
 
 
-async def test_aiweave_only_requires_explicit_user_ai_permission(monkeypatch):
-    user = _admin_user()
-    user.permissions = {
-        "can_access_aiweave": True,
-        "can_view_aiweave": True,
-    }
-    await _run_guard(monkeypatch, "/aiweave", ["aiweave"], user=user)
-
-    user.permissions = {
+async def test_aiweave_license_grants_admin_but_staff_needs_own_permission(monkeypatch):
+    active_user = _admin_user()
+    active_user.permissions = {
         "can_access_aiweave": False,
         "can_view_aiweave": False,
     }
 
     async def fake_base(_credentials):
-        return user
+        return active_user
 
     async def fake_license(_user, *_args, **_kwargs):
         return _license(["aiweave"])
@@ -245,6 +239,26 @@ async def test_aiweave_only_requires_explicit_user_ai_permission(monkeypatch):
         fake_sync,
     )
 
+    # The Platform Owner selected AIWeave on this commercial license, so the
+    # tenant administrator must receive the page even if older stored flags are false.
+    effective_admin = await guard.get_current_user_with_commercial_guard(
+        _request("/aiweave"),
+        credentials=type("Creds", (), {"credentials": "test"})(),
+    )
+    assert effective_admin.permissions.can_access_aiweave is True
+    assert effective_admin.permissions.can_view_aiweave is True
+
+    # The same license must not grant access to every staff member.
+    active_user = User(
+        id="tenant-staff",
+        email="staff@example.com",
+        role="staff",
+        company_id="company-a",
+        permissions={
+            "can_access_aiweave": False,
+            "can_view_aiweave": False,
+        },
+    )
     try:
         await guard.get_current_user_with_commercial_guard(
             _request("/aiweave"),
@@ -253,7 +267,7 @@ async def test_aiweave_only_requires_explicit_user_ai_permission(monkeypatch):
     except HTTPException as exc:
         assert exc.status_code == 403
     else:
-        raise AssertionError("AIWeave license alone recreated user AI access")
+        raise AssertionError("AIWeave license bypassed the staff Permission Matrix")
 
 
 async def test_core_admin_routes_remain_available_on_single_module_license(monkeypatch):

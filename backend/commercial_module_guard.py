@@ -648,10 +648,9 @@ def _hydrate_tenant_user(user: User, license_doc: dict) -> User:
     if not _is_admin_role(user):
         return User.model_validate(data)
 
-    # Ordinary licensed modules remain role-granted to the tenant admin.
-    # AIWeave is the exception: preserve only the administrator's previously
-    # explicit AIWeave grant from the user's actual permission state. A license
-    # purchase alone must never recreate that grant.
+    # Every licensed page selected in the Commercial Console is granted to the
+    # tenant administrator. Non-admin access remains a separate Permission
+    # Matrix decision, capped by the same license selection.
     source_permissions = getattr(user, "permissions", None)
     if hasattr(source_permissions, "model_dump"):
         source_permissions = source_permissions.model_dump()
