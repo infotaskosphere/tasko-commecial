@@ -305,7 +305,7 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     # email identity, creating an administrator, or inserting a license record.
     invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
     if not invoice_company_id:
-        raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
+        raise HTTPException(status_code=400, detail="Select an invoice company from Company Master to issue this invoice.")
     invoice_issuer = await db.companies.find_one(
         {"id": invoice_company_id}, {"_id": 0, "id": 1, "name": 1}
     )
@@ -329,6 +329,7 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
         )
 
     preserve_customer = bool(existing_customer)
+    discard_draft_customer = None
     if existing_customer:
         existing_customer_id = str(existing_customer.get("id") or "").strip()
         if invoice_company_id == existing_customer_id:
@@ -354,7 +355,10 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
         if requested_email and existing_email and requested_email == existing_email:
             payload["customer_id"] = existing_customer_id
         elif not requested_customer_id:
-            await _discard_unlicensed_draft_customer(existing_customer)
+            # Delay destructive cleanup until every request field and entitlement
+            # has passed validation. A typo in another field must not delete a
+            # customer's earlier unissued draft as a side effect.
+            discard_draft_customer = existing_customer
             existing_customer = None
             preserve_customer = False
 
@@ -383,6 +387,9 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
         raise HTTPException(status_code=400, detail="Amount charged must be a valid number.")
     if amount_charged < 0:
         raise HTTPException(status_code=400, detail="Amount charged cannot be negative.")
+
+    if discard_draft_customer:
+        await _discard_unlicensed_draft_customer(discard_draft_customer)
 
     license_doc = await create_license_record(
         {
