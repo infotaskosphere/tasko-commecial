@@ -219,7 +219,7 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
         """License = ceiling, never a grant.
 
         The licensee admin gets what the license selected. Every other user
-        (and AIWeave, which must be granted explicitly even to the admin) keeps
+        (and non-admin AIWeave users, whose page access must be granted explicitly) keeps
         only what was explicitly granted to them AND the license still allows.
         Previously the license selection overwrote the user's own flags, so the
         Permission Matrix UI showed every licensed page as enabled for everyone.
@@ -230,7 +230,9 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
             permissions[flag] = bool(licensed and existing.get(flag, False))
 
     for module_id, module_flag in _MODULE_FLAGS.items():
-        strict = module_id == "aiweave"
+        # A selected AIWeave page grants the tenant admin; every other role
+        # still needs its own explicit permission-matrix grant.
+        strict = module_id == "aiweave" and not is_admin
         if module_id not in modules:
             permissions[module_flag] = False
             for page_flag in _MODULE_PAGES[module_id]:

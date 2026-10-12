@@ -205,6 +205,14 @@ export function normalizedSelectedFeatures(user) {
 
 export function isCommercialTenant(user) { return Boolean(user) && !isPlatformOwner(user) && Boolean(user.company_id || user.license_id || user.commercial_customer_id || (Array.isArray(user.licensed_modules) && user.licensed_modules.length > 0) || user.company?.commercial_customer_id || user.company?.license_id); }
 
+function isAdminRole(user) {
+  const rawRole = user?.role?.value ?? user?.role?.name ?? user?.role;
+  const role = String(rawRole || "").trim().toLowerCase().replaceAll("-", "_").replaceAll(" ", "_");
+  return ["admin", "licensee_admin", "tenant_admin"].includes(role) ||
+    role.endsWith(".admin") ||
+    String(user?.identity_type || "").trim().toLowerCase() === "licensee_admin";
+}
+
 export function moduleForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[0] || null; }
 export function pageFlagForPath(pathname) { const path = String(pathname || "").split("?", 1)[0]; const match = PAGE_MATRIX.filter(([, , prefix]) => path === prefix || path.startsWith(`${prefix}/`)).sort((a, b) => b[2].length - a[2].length)[0]; return match?.[1] || null; }
 
@@ -213,7 +221,11 @@ export function hasModuleAccess(user, moduleId) {
   if (isPlatformOwner(user)) return true;
   if (moduleId === "core") return isCommercialTenant(user);
   if (moduleId === "aiweave") {
-    return (normalizedSelectedFeatures(user).aiweave || new Set()).size > 0;
+    const modules = normalizeModules(user);
+    if (modules.size > 0 && !modules.has("aiweave")) return false;
+    const selected = normalizedSelectedFeatures(user).aiweave || new Set();
+    if (!selected.has("can_view_aiweave")) return false;
+    return isAdminRole(user) || user.permissions?.can_access_aiweave === true;
   }
   if (!MODULES[moduleId]) return false;
   const modules = normalizeModules(user);
@@ -221,7 +233,7 @@ export function hasModuleAccess(user, moduleId) {
   if (modules.size > 0 && !modules.has(moduleId)) return false;
   // Licensee administrator module visibility is also controlled by the
   // Platform Owner's explicit page selection.
-  if (String(user.role || "").toLowerCase() === "admin") {
+  if (isAdminRole(user)) {
     return (normalizedSelectedFeatures(user)[moduleId] || new Set()).size > 0;
   };
 
@@ -246,10 +258,17 @@ export function hasPageLicense(user, pageFlag, moduleId = null) {
   if (!user || !pageFlag) return false;
   if (isPlatformOwner(user)) return true;
   if (pageFlag === "can_access_aiweave") {
-    return user.permissions?.can_access_aiweave === true;
+    return hasModuleAccess(user, "aiweave");
   }
   if (pageFlag === "can_view_aiweave") {
-    return user.permissions?.can_access_aiweave === true && user.permissions?.can_view_aiweave === true;
+    const modules = normalizeModules(user);
+    if (modules.size > 0 && !modules.has("aiweave")) return false;
+    const selected = normalizedSelectedFeatures(user).aiweave || new Set();
+    if (!selected.has("can_view_aiweave")) return false;
+    return isAdminRole(user) || (
+      user.permissions?.can_access_aiweave === true &&
+      user.permissions?.can_view_aiweave === true
+    );
   }
   const module = moduleId || Object.entries(MODULES).find(([id, def]) => {
     return ALL_PAGE_FLAGS_BY_MODULE[id]?.includes(pageFlag);
@@ -277,7 +296,7 @@ export function hasEffectivePermission(user, permission) {
   // control-plane permissions stay available even when the customer purchased
   // only one operational module. Purchased operational modules remain the hard
   // ceiling for business-module routes and APIs.
-  if (user && !isPlatformOwner(user) && String(user.role || "").trim().toLowerCase() === "admin" && user.company_id) {
+  if (user && !isPlatformOwner(user) && isAdminRole(user) && user.company_id) {
     const adminControlPlanePermissions = new Set([
       "can_access_admin",
       "can_view_user_page",
@@ -294,12 +313,12 @@ export function hasEffectivePermission(user, permission) {
   if (!user || !permission) return false;
   if (isPlatformOwner(user)) return true;
   if (permission === "can_access_aiweave") {
-    return (normalizedSelectedFeatures(user).aiweave || new Set()).size > 0;
+    return hasModuleAccess(user, "aiweave");
   }
   if (permission === "can_view_aiweave") {
-    return (normalizedSelectedFeatures(user).aiweave || new Set()).has("can_view_aiweave");
+    return hasPageLicense(user, "can_view_aiweave", "aiweave");
   }
-  if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : String(user.role || "").toLowerCase() === "admin";
+  if (!isCommercialTenant(user)) return typeof user.permissions?.[permission] === "boolean" ? user.permissions[permission] : isAdminRole(user);
   const moduleEntry = Object.entries(MODULES).find(([, def]) => def.flag === permission);
   if (moduleEntry) return hasModuleAccess(user, moduleEntry[0]);
   const pageEntry = PAGE_MATRIX.find(([, flag]) => flag === permission);
@@ -307,13 +326,13 @@ export function hasEffectivePermission(user, permission) {
     const [moduleId] = pageEntry;
     if (moduleId === "core") {
       if (permission === "can_view_security_sessions") return isCommercialTenant(user);
-      if (String(user.role || "").toLowerCase() === "admin") return true;
+      if (isAdminRole(user)) return true;
       return Boolean(user.permissions?.[permission]);
     }
     if (!hasPageLicense(user, permission, moduleId)) return false;
     // Commercial licensee admins are governed by the active commercial
     // module + selected-page ceiling. Platform Owner is handled above.
-    if (String(user.role || "").toLowerCase() === "admin") {
+    if (isAdminRole(user)) {
       // Tenant-admin access is also capped by the Platform Owner's explicit
       // selected page entitlements. Never trust stale stored permissions to
       // reopen a page that is not present in the active license selection.
@@ -351,7 +370,7 @@ export function canAccessPath(user, pathname) {
   // Keep them reachable even when the tenant buys only one module.
   const normalizedPath = String(pathname || "").split("?", 1)[0];
   if (
-    String(user.role || "").trim().toLowerCase() === "admin" &&
+    isAdminRole(user) &&
     user.company_id &&
     ["/users", "/master-data", "/roles", "/permission-matrix", "/admin-dashboard", "/settings/backup", "/contact-details"].some(
       (prefix) => normalizedPath === prefix || normalizedPath.startsWith(prefix + "/")
@@ -360,7 +379,7 @@ export function canAccessPath(user, pathname) {
     return true;
   }
 
-  if (String(user.role || "").trim().toLowerCase() === "admin" && user.company_id) {
+  if (isAdminRole(user) && user.company_id) {
     const linked = Object.entries(COMMERCIAL_ADMIN_LINKED_PAGES).find(([prefix]) =>
       normalizedPath === prefix || normalizedPath.startsWith(prefix + "/")
     )?.[1];

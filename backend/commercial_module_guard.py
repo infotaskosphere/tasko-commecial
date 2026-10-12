@@ -30,18 +30,18 @@ logger = logging.getLogger("commercial_module_guard")
 
 
 def _is_admin_role(user: User) -> bool:
-    """Handle both string and UserRole enum representations of the admin role."""
+    """Handle string/enum roles used by internal and commercial administrators."""
     role = getattr(user, "role", "")
     value = getattr(role, "value", None)
     name = getattr(role, "name", None)
     candidates = [value, name, role]
 
     for candidate in candidates:
-        normalized = str(candidate or "").strip().lower()
-        if normalized == "admin" or normalized.endswith(".admin"):
+        normalized = str(candidate or "").strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in {"admin", "licensee_admin", "tenant_admin"} or normalized.endswith(".admin"):
             return True
 
-    return False
+    return str(getattr(user, "identity_type", "") or "").strip().lower() == "licensee_admin"
 
 
 def _deny(request: Request, user: User, detail: str, license_doc: Optional[dict] = None, effective_pages=None) -> HTTPException:
@@ -628,20 +628,6 @@ async def _commercial_license(
 
 def _hydrate_tenant_user(user: User, license_doc: dict) -> User:
     data = user.model_dump()
-    original_permissions = getattr(user, "permissions", None)
-    if hasattr(original_permissions, "model_dump"):
-        explicit_ai_access = bool(
-            getattr(original_permissions, "can_access_aiweave", False)
-        )
-        explicit_ai_view = bool(
-            getattr(original_permissions, "can_view_aiweave", False)
-        )
-        original_permissions = original_permissions.model_dump()
-    else:
-        if not isinstance(original_permissions, dict):
-            original_permissions = {}
-        explicit_ai_access = bool(original_permissions.get("can_access_aiweave", False))
-        explicit_ai_view = bool(original_permissions.get("can_view_aiweave", False))
 
     data["commercial_customer_id"] = (
         data.get("commercial_customer_id")
@@ -680,8 +666,10 @@ def _hydrate_tenant_user(user: User, license_doc: dict) -> User:
         if isinstance(fallback_permissions, dict):
             stored_permissions = dict(fallback_permissions)
     if "aiweave" in resolve_license_modules(license_doc):
-        admin_permissions["can_access_aiweave"] = bool(stored_permissions.get("can_access_aiweave", False))
-        admin_permissions["can_view_aiweave"] = bool(stored_permissions.get("can_view_aiweave", False))
+        selected_ai = set((data.get("selected_features") or {}).get("aiweave") or [])
+        aiweave_enabled = "can_view_aiweave" in selected_ai
+        admin_permissions["can_access_aiweave"] = aiweave_enabled
+        admin_permissions["can_view_aiweave"] = aiweave_enabled
         matrix = dict(stored_permissions.get("governance_matrix") or {})
         ai_matrix = {
             key: value for key, value in matrix.items()
@@ -698,12 +686,11 @@ def _hydrate_tenant_user(user: User, license_doc: dict) -> User:
     data["permissions"] = admin_permissions
 
     hydrated_user = User.model_validate(data)
-    # Re-apply the explicit tenant-admin AIWeave grant to the final Pydantic
-    # permission object. AIWeave remains user-governed and is never recreated
-    # merely because the commercial license contains the module.
+    # Keep final authenticated permissions aligned with the active license.
+    # Non-admin users remain subject to their own Permission Matrix grants.
     if "aiweave" in resolve_license_modules(license_doc):
-        hydrated_user.permissions.can_access_aiweave = explicit_ai_access
-        hydrated_user.permissions.can_view_aiweave = explicit_ai_view
+        hydrated_user.permissions.can_access_aiweave = aiweave_enabled
+        hydrated_user.permissions.can_view_aiweave = aiweave_enabled
     return hydrated_user
 
 
@@ -785,6 +772,10 @@ def _permission_flag(
             selected_pages = _selected_license_features(license_doc, module)
             if "can_view_aiweave" not in selected_pages:
                 return False
+            # The licensee administrator receives the explicitly licensed page.
+            # Other roles still need their own module and page grants.
+            if is_admin:
+                return True
             permissions = getattr(user, "permissions", None)
             if hasattr(permissions, "model_dump"):
                 permissions = permissions.model_dump()
@@ -964,27 +955,9 @@ async def get_current_user_with_commercial_guard(
                 )
         return user
 
-    # Preserve the authenticated administrator's explicit AIWeave grant before
-    # commercial hydration applies role/license defaults.
-    pre_hydration_permissions = getattr(user, "permissions", None)
-    if hasattr(pre_hydration_permissions, "model_dump"):
-        pre_hydration_ai_access = bool(
-            getattr(pre_hydration_permissions, "can_access_aiweave", False)
-        )
-        pre_hydration_ai_view = bool(
-            getattr(pre_hydration_permissions, "can_view_aiweave", False)
-        )
-        pre_hydration_permissions = pre_hydration_permissions.model_dump()
-    else:
-        if not isinstance(pre_hydration_permissions, dict):
-            pre_hydration_permissions = {}
-        pre_hydration_ai_access = bool(
-            pre_hydration_permissions.get("can_access_aiweave", False)
-        )
-        pre_hydration_ai_view = bool(
-            pre_hydration_permissions.get("can_view_aiweave", False)
-        )
-
+    # Rebuild tenant-admin AIWeave flags from the active Commercial Console
+    # selection during authentication. Stored false flags must not cancel a
+    # page explicitly enabled on the current license.
     user = _hydrate_admin(
         user,
         commercial,
@@ -994,8 +967,8 @@ async def get_current_user_with_commercial_guard(
         permissions = getattr(user, "permissions", None)
         if permissions is not None:
             selected_ai = _selected_license_features(commercial, "aiweave")
-            allowed_ai_access = bool(selected_ai) and pre_hydration_ai_access
-            allowed_ai_view = "can_view_aiweave" in selected_ai and pre_hydration_ai_view
+            allowed_ai_view = "can_view_aiweave" in selected_ai
+            allowed_ai_access = allowed_ai_view
             if isinstance(permissions, dict):
                 permissions["can_access_aiweave"] = allowed_ai_access
                 permissions["can_view_aiweave"] = allowed_ai_view

@@ -234,7 +234,10 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
         if not active:
             return user
 
-        role = str(getattr(user, "role", "staff") or "staff").lower()
+        raw_role = getattr(user, "role", "staff")
+        role = str(getattr(raw_role, "value", raw_role) or "staff").strip().lower()
+        if role.replace("-", "_").replace(" ", "_") in {"licensee_admin", "tenant_admin"} or role.endswith(".admin"):
+            role = "admin"
 
         # Read the raw stored Permission Matrix first. User model
         # normalization adds role defaults for legacy compatibility, but those

@@ -289,9 +289,6 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
         module_allowed = module_id in licensed_modules
         module_flag = module_def.get("flag")
         if module_flag:
-            # AIWeave is licensed separately but never auto-granted to the
-            # tenant admin. The admin must explicitly enable the module AND
-            # page through Permission Matrix / Access Governance.
             permissions[module_flag] = module_allowed
 
         # The licensee admin is also capped by the Platform Owner page
@@ -303,13 +300,16 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
             selected = set(selected_features.get(module_id) or [])
         else:
             selected = set()
-        # AIWeave's license is only the maximum ceiling. Even a tenant
-        # administrator must receive explicit user-level module AND page
-        # grants; do not turn license selection into a permission grant.
         if module_id == "aiweave":
+            # The license's explicit AIWeave page grants access to the
+            # licensee administrator. Staff/managers are capped by this
+            # administrator grant and still need their own matrix permission.
+            aiweave_enabled = bool(
+                module_allowed and "can_view_aiweave" in selected
+            )
             if module_flag:
-                permissions[module_flag] = False
-            permissions["can_view_aiweave"] = False
+                permissions[module_flag] = aiweave_enabled
+            permissions["can_view_aiweave"] = aiweave_enabled
             continue
 
         for page in module_def.get("pages", []) or []:

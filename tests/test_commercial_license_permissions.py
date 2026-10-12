@@ -46,7 +46,7 @@ def test_licensee_admin_gets_only_selected_pages_in_purchased_finix_module():
     assert permissions["can_access_records"] is False
 
 
-def test_aiweave_is_not_auto_granted_by_its_license():
+def test_selected_aiweave_license_grants_tenant_admin_access():
     from backend.commercial_licensee_admin import get_all_admin_permissions
 
     license_doc = {
@@ -63,8 +63,46 @@ def test_aiweave_is_not_auto_granted_by_its_license():
     permissions = get_all_admin_permissions(license_doc)
 
     assert permissions["can_access_finix"] is True
-    assert permissions["can_access_aiweave"] is False
-    assert permissions["can_view_aiweave"] is False
+    assert permissions["can_access_aiweave"] is True
+    assert permissions["can_view_aiweave"] is True
+
+
+def test_aiweave_api_guard_requires_staff_user_permission_but_honours_admin_license():
+    from backend.commercial_module_guard import _permission_flag
+    from backend.models import User
+
+    license_doc = {
+        "id": "license-aiweave",
+        "customer_id": "customer-1",
+        "page_catalog_version": 2,
+        "modules": ["aiweave"],
+        "selected_features": {"aiweave": ["can_view_aiweave"]},
+    }
+    admin = User(
+        id="tenant-admin",
+        email="admin@example.com",
+        role="admin",
+        company_id="company-1",
+        permissions={"can_access_aiweave": False, "can_view_aiweave": False},
+    )
+    staff = User(
+        id="tenant-staff",
+        email="staff@example.com",
+        role="staff",
+        company_id="company-1",
+        permissions={"can_access_aiweave": False, "can_view_aiweave": False},
+    )
+    enabled_staff = User(
+        id="tenant-staff-enabled",
+        email="enabled@example.com",
+        role="staff",
+        company_id="company-1",
+        permissions={"can_access_aiweave": True, "can_view_aiweave": True},
+    )
+
+    assert _permission_flag(admin, "can_view_aiweave", license_doc, "aiweave") is True
+    assert _permission_flag(staff, "can_view_aiweave", license_doc, "aiweave") is False
+    assert _permission_flag(enabled_staff, "can_view_aiweave", license_doc, "aiweave") is True
 
 
 def test_request_guard_requires_accounting_reports_to_be_selected():

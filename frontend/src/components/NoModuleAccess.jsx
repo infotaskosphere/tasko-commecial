@@ -45,6 +45,16 @@ export default function NoModuleAccess() {
     .map(([moduleId, pages]) => `${moduleId}: ${pages.join(', ')}`);
   const licensedModulesWithoutPages = [...new Set(modules.map(normalizeModuleId))]
     .filter((moduleId) => !(selectedPagesByModule[moduleId] || []).length);
+  const accountRole = String(user?.role?.value || user?.role?.name || user?.role || 'unknown');
+  const effectiveModuleFlags = [
+    ['Taskosphere', 'can_access_taskosphere'],
+    ['Finix', 'can_access_finix'],
+    ['AIWeave', 'can_access_aiweave'],
+    ['CompliGenie', 'can_access_compliance'],
+    ['Records', 'can_access_records'],
+    ['LeadSense', 'can_access_proposals'],
+    ['People Matrix', 'can_access_people_matrix'],
+  ].map(([label, flag]) => `${label}: ${user?.permissions?.[flag] === true ? 'allowed' : user?.permissions?.[flag] === false ? 'blocked' : 'not set'}`);
 
   const signOut = async () => {
     try { await logout(); } finally { window.location.replace('/login'); }
@@ -63,6 +73,9 @@ export default function NoModuleAccess() {
           confirm that the module and at least one page are selected, then refresh.
         </p>
         <div className="mt-4 text-left text-xs rounded-xl bg-slate-50 border border-slate-200 p-3 text-slate-600 space-y-1">
+          <div><span className="font-semibold">Account role:</span> {accountRole}</div>
+          <div><span className="font-semibold">Effective module permissions:</span> {effectiveModuleFlags.join(' · ')}</div>
+          <div><span className="font-semibold">AIWeave page permission:</span> {user?.permissions?.can_view_aiweave === true ? 'allowed' : user?.permissions?.can_view_aiweave === false ? 'blocked' : 'not set'}</div>
           <div><span className="font-semibold">Licensed modules:</span> {modules.length ? modules.join(', ') : '— none received —'}</div>
           <div><span className="font-semibold">Page permissions actually selected:</span> {actualSelectedPages.length ? actualSelectedPages.join(' · ') : '— none selected —'}</div>
           <div><span className="font-semibold">Licensed modules with no selected page:</span> {licensedModulesWithoutPages.length ? licensedModulesWithoutPages.join(', ') : '— none —'}</div>
