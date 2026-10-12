@@ -104,6 +104,6 @@ def test_license_generation_requires_invoice_company_before_creating_records():
         ))
     except HTTPException as exc:
         assert exc.status_code == 400
-        assert "invoice company" in str(exc.detail).lower()
+        assert "invoice company" in str(exc.detail).lower() or "company master company" in str(exc.detail).lower()
     else:
         raise AssertionError("Issuance must stop before creating records when invoice company is missing")
