@@ -116,6 +116,69 @@ async def ensure_identity_indexes(db) -> None:
         pass
 
 
+async def release_stale_licensee_email_link(
+    db,
+    email: Any,
+    existing_link: Optional[dict],
+) -> bool:
+    """Release an email link only when its former licensee identity is orphaned.
+
+    This allows a genuinely deleted/unlicensed company to reuse its contact email,
+    but never detaches an email from an existing customer, license, or live user.
+    """
+    normalized = _normalized_email(email)
+    if not normalized or not isinstance(existing_link, dict):
+        return False
+
+    old_uid = _clean(existing_link.get("identity_uid")).upper()
+    if not old_uid.startswith("L-"):
+        return False
+
+    # An extant customer/license is authoritative, even if its license is
+    # suspended or expired. Such a customer must be renewed, not replaced.
+    customer = await db.commercial_license_customers.find_one(
+        {"licensee_uid": old_uid},
+        {"_id": 0, "id": 1},
+    )
+    license_doc = await db.commercial_licenses.find_one(
+        {"licensee_uid": old_uid},
+        {"_id": 0, "id": 1, "customer_id": 1},
+    )
+    if customer or license_doc:
+        return False
+
+    # Legacy customers may not have had licensee_uid written yet. If this email
+    # still belongs to a customer with any license record, keep the link.
+    customer_by_email = await db.commercial_license_customers.find_one(
+        {"$or": [{"email_normalized": normalized}, {"email": normalized}]},
+        {"_id": 0, "id": 1},
+    )
+    if customer_by_email:
+        customer_license = await db.commercial_licenses.find_one(
+            {"customer_id": str(customer_by_email.get("id") or "")},
+            {"_id": 0, "id": 1},
+        )
+        if customer_license:
+            return False
+
+    live_user = await db.users.find_one(
+        {"identity_org_uid": old_uid, "status": {"$ne": "deleted"}},
+        {"_id": 1},
+    )
+    if not live_user:
+        live_user = await db.users.find_one(
+            {"licensee_uid": old_uid, "status": {"$ne": "deleted"}},
+            {"_id": 1},
+        )
+    if live_user:
+        return False
+
+    result = await db[IDENTITY_EMAIL_LINK_COLLECTION].delete_one(
+        {"email_normalized": normalized, "identity_uid": old_uid}
+    )
+    return bool(getattr(result, "deleted_count", 0))
+
+
 async def ensure_identity_email_link(
     db,
     email: Any,
@@ -143,25 +206,30 @@ async def ensure_identity_email_link(
     if existing:
         existing_uid = _clean(existing.get("identity_uid")).upper()
         if existing_uid and existing_uid != uid:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "This email is already linked to another organization identity "
-                    f"({existing_uid}). One email cannot be linked to two unique IDs."
-                ),
+            released = await release_stale_licensee_email_link(db, email, existing)
+            if not released:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This email is already linked to another organization identity "
+                        f"({existing_uid}). One email cannot be linked to two unique IDs."
+                    ),
+                )
+            existing = None
+
+        if existing:
+            await db[IDENTITY_EMAIL_LINK_COLLECTION].update_one(
+                {"email_normalized": normalized},
+                {
+                    "$set": {
+                        "email": _clean(email),
+                        "identity_uid": uid,
+                        "identity_type": identity_type,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
             )
-        await db[IDENTITY_EMAIL_LINK_COLLECTION].update_one(
-            {"email_normalized": normalized},
-            {
-                "$set": {
-                    "email": _clean(email),
-                    "identity_uid": uid,
-                    "identity_type": identity_type,
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                }
-            },
-        )
-        return uid
+            return uid
 
     payload = {
         "_id": normalized,

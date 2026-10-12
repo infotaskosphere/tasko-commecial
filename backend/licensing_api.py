@@ -128,8 +128,8 @@ async def _find_license(license_key: str):
 
 
 def _expiry_reason(license: Dict[str, Any]) -> Optional[str]:
-    status = license.get("status")
-    if status != "active":
+    status = str(license.get("status") or "").strip().lower()
+    if status not in {"active", "trial"}:
         return f"License is {status or 'inactive'}"
     expires_at = license.get("expires_at")
     if expires_at:
@@ -137,9 +137,9 @@ def _expiry_reason(license: Dict[str, Any]) -> Optional[str]:
             expiry = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00"))
             if expiry.tzinfo is None:
                 expiry = expiry.replace(tzinfo=timezone.utc)
-            if expiry < _now():
+            if expiry <= _now():
                 return "License expired"
-        except ValueError:
+        except (TypeError, ValueError):
             return "License has an invalid expiry date"
     return None
 

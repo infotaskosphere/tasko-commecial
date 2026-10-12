@@ -8,6 +8,7 @@ licensed.
 """
 
 import copy
+import logging
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List
@@ -32,10 +33,103 @@ from backend.commercial_onboarding import (
     pwd_context,
 )
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/commercial-onboarding", tags=["commercial-onboarding"])
 
 # Admin is a tenant control-plane role, not a commercial product/module.
 COMMERCIAL_MODULE_IDS = tuple(module_id for module_id in MODULE_IDS if module_id != "admin")
+
+
+async def _discard_unlicensed_draft_customer(customer: Dict[str, Any]) -> None:
+    """Remove a failed/unissued draft customer so corrected retries don't collide."""
+    customer_id = str(customer.get("id") or "").strip()
+    if not customer_id:
+        return
+    if await db.commercial_licenses.find_one({"customer_id": customer_id}, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="This customer already has a commercial license.")
+
+    owner_emails = sorted(__import__("backend.platform_owner", fromlist=["platform_owner_emails"]).platform_owner_emails())
+    licensee_uid = str(customer.get("licensee_uid") or "").strip()
+    clauses = [{"company_id": customer_id}, {"commercial_customer_id": customer_id}]
+    if licensee_uid:
+        clauses.extend([{"identity_org_uid": licensee_uid}, {"licensee_uid": licensee_uid}])
+    await db.users.delete_many({
+        "$and": [
+            {"$or": clauses},
+            {"email": {"$nin": owner_emails}},
+            {"is_internal_commercial_admin": {"$ne": True}},
+        ]
+    })
+    if licensee_uid:
+        await db.identity_email_links.delete_many({"identity_uid": licensee_uid})
+    email = str(customer.get("email") or "").strip().lower()
+    if email:
+        await db.identity_email_links.delete_one({"email_normalized": email, "identity_type": "licensee"})
+    await db.companies.delete_one({"id": customer_id, "source": "commercial-license"})
+    await db.commercial_license_customers.delete_one({"id": customer_id})
+
+
+async def _rollback_failed_license_generation(
+    license_doc: Dict[str, Any],
+    *,
+    preserve_customer: bool,
+) -> None:
+    """Remove a failed license attempt and leave a safe retryable draft if needed."""
+    license_id = str(license_doc.get("id") or "").strip()
+    customer_id = str(license_doc.get("customer_id") or "").strip()
+    try:
+        if license_id:
+            await db.commercial_licenses.delete_one({"id": license_id})
+            await db.companies.update_many(
+                {"license_id": license_id},
+                {"$unset": {
+                    "license_id": "",
+                    "license_key": "",
+                    "licensed_modules": "",
+                    "selected_features": "",
+                }},
+            )
+            await db.users.update_many(
+                {"license_id": license_id},
+                {
+                    "$set": {
+                        "is_active": False,
+                        "status": "pending_admin_setup",
+                        "admin_credentials_pending": True,
+                    },
+                    "$unset": {
+                        "license_id": "",
+                        "license_key": "",
+                        "licensed_modules": "",
+                        "selected_features": "",
+                    },
+                },
+            )
+        if preserve_customer:
+            if customer_id:
+                await db.commercial_license_customers.update_one(
+                    {"id": customer_id},
+                    {"$unset": {
+                        "last_license_id": "",
+                        "licensed_modules": "",
+                        "selected_features": "",
+                        "feature_prices": "",
+                        "module_prices": "",
+                        "amount_charged": "",
+                        "calculated_amount": "",
+                        "monthly_module_price": "",
+                        "validity_months": "",
+                    }},
+                )
+        else:
+            customer = await db.commercial_license_customers.find_one(
+                {"id": customer_id}, {"_id": 0}
+            )
+            if customer:
+                await _discard_unlicensed_draft_customer(customer)
+    except Exception:
+        # Never mask the original issuance error with a secondary cleanup error.
+        logger.exception("Failed to roll back incomplete commercial license issuance %s", license_id)
 
 
 def _feature_defs(module_id: str) -> List[Dict[str, Any]]:
@@ -196,6 +290,7 @@ async def update_custom_module_catalog(module_id: str, payload: Dict[str, Any], 
 
 @router.post("/generate-license", status_code=201)
 async def generate_custom_license(payload: Dict[str, Any], current_user: User = Depends(require_admin())):
+    payload = dict(payload or {})
     company_name = str(payload.get("company_name") or "").strip()
     if not company_name:
         raise HTTPException(status_code=400, detail="Company name is required.")
@@ -205,6 +300,64 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     months = max(0, int(payload.get("validity_months") or 0))
     if months <= 0:
         raise HTTPException(status_code=400, detail="License duration in months is required.")
+
+    # Validate invoice prerequisites before provisioning a customer, linking an
+    # email identity, creating an administrator, or inserting a license record.
+    invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
+    if not invoice_company_id:
+        raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
+    invoice_issuer = await db.companies.find_one(
+        {"id": invoice_company_id}, {"_id": 0, "id": 1, "name": 1}
+    )
+    if not invoice_issuer:
+        raise HTTPException(status_code=400, detail="The selected invoice company was not found in Company Master.")
+
+    requested_customer_id = str(payload.get("customer_id") or "").strip()
+    existing_customer = None
+    if requested_customer_id:
+        existing_customer = await db.commercial_license_customers.find_one(
+            {"id": requested_customer_id}, {"_id": 0}
+        )
+    else:
+        candidates = await db.commercial_license_customers.find(
+            {}, {"_id": 0, "id": 1, "company_name": 1, "email": 1, "email_normalized": 1, "licensee_uid": 1}
+        ).to_list(5000)
+        normalized_company = _norm(company_name)
+        existing_customer = next(
+            (item for item in candidates if _norm(item.get("company_name")) == normalized_company),
+            None,
+        )
+
+    preserve_customer = bool(existing_customer)
+    if existing_customer:
+        existing_customer_id = str(existing_customer.get("id") or "").strip()
+        if invoice_company_id == existing_customer_id:
+            raise HTTPException(status_code=400, detail="Invoice issuer and licensed customer company must be different.")
+        existing_license = await db.commercial_licenses.find_one(
+            {"customer_id": existing_customer_id}, {"_id": 0, "id": 1, "license_key": 1, "status": 1}
+        )
+        if existing_license:
+            raise HTTPException(
+                status_code=409,
+                detail="This customer already has a commercial license. Update or renew the existing license instead of issuing another one.",
+            )
+        requested_email = _norm(payload.get("email"))
+        existing_email = _norm(existing_customer.get("email_normalized") or existing_customer.get("email"))
+        if requested_customer_id and requested_email and existing_email and requested_email != existing_email:
+            raise HTTPException(
+                status_code=409,
+                detail="This unissued customer draft is registered with a different email. Use that email or remove the draft before retrying.",
+            )
+        # Failed attempts can leave a draft customer with no license. Reuse that
+        # same record only when its contact email matches, otherwise discard the
+        # unlicensed draft safely and start clean.
+        if requested_email and existing_email and requested_email == existing_email:
+            payload["customer_id"] = existing_customer_id
+        elif not requested_customer_id:
+            await _discard_unlicensed_draft_customer(existing_customer)
+            existing_customer = None
+            preserve_customer = False
+
     catalog = await _ensure_module_catalog()
     active_catalog = [item for item in catalog if item.get("active", True) and item.get("id") in COMMERCIAL_MODULE_IDS]
     selected_modules = []
@@ -224,30 +377,108 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
     monthly_total = _monthly_total(catalog, selected_features, feature_prices)
     calculated_amount = round(monthly_total * months, 2)
     amount_raw = payload.get("amount_charged")
-    amount_charged = calculated_amount if amount_raw in (None, "") else float(amount_raw)
+    try:
+        amount_charged = calculated_amount if amount_raw in (None, "") else float(amount_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Amount charged must be a valid number.")
     if amount_charged < 0:
         raise HTTPException(status_code=400, detail="Amount charged cannot be negative.")
-    license_doc = await create_license_record({**payload, "package_id": "essential", "validity_days": max(1, months * 30), "max_users": max(1, int(payload.get("max_users") or 1)), "max_installations": max(1, int(payload.get("max_installations") or 1))}, str(current_user.id))
-    issued_at = datetime.fromisoformat(license_doc["issued_at"].replace("Z", "+00:00"))
-    expires_at = _add_months(issued_at, months)
-    license_doc.update({"admin_name": admin_name, "customer_name": admin_name, "company_name": company_name, "package_id": "custom-modules", "package_code": "TSO-CUSTOM", "package_name": "Custom Module License", "modules": selected_modules, "selected_features": selected_features, "feature_prices": feature_prices, "module_prices": {module_id: round(float(next((x.get("monthly_price", 0) for x in catalog if x["id"] == module_id), 0) or 0), 2) for module_id in selected_modules}, "monthly_module_price": monthly_total, "calculated_amount": calculated_amount, "validity_months": months, "expires_at": expires_at.isoformat(), "amount_charged": round(amount_charged, 2), "sales_currency": str(payload.get("currency") or "INR"), "notes": str(payload.get("notes") or "").strip()})
-    await db.commercial_licenses.update_one({"id": license_doc["id"]}, {"$set": {k: license_doc[k] for k in ("package_id", "package_code", "package_name", "modules", "selected_features", "feature_prices", "module_prices", "monthly_module_price", "calculated_amount", "validity_months", "amount_charged", "expires_at", "sales_currency", "notes")}})
-    customer = await db.commercial_license_customers.find_one({"id": license_doc["customer_id"]}, {"_id": 0})
-    customer_updates = {"admin_name": admin_name, "gstin": str(payload.get("gstin") or "").strip(), "address": str(payload.get("address") or "").strip(), "gst_address": str(payload.get("gst_address") or "").strip(), "city": str(payload.get("city") or "").strip(), "state": str(payload.get("state") or "").strip(), "pincode": str(payload.get("pincode") or "").strip(), "licensed_modules": selected_modules, "selected_features": selected_features, "feature_prices": feature_prices, "module_prices": license_doc["module_prices"], "amount_charged": round(amount_charged, 2), "calculated_amount": calculated_amount, "monthly_module_price": monthly_total, "validity_months": months, "last_license_id": license_doc["id"]}
-    await db.commercial_license_customers.update_one({"id": license_doc["customer_id"]}, {"$set": customer_updates})
-    customer = {**(customer or {}), **customer_updates}
-    company = await _ensure_company_master(customer, license_doc)
-    await db.companies.update_one({"id": company["id"]}, {"$set": {"licensed_modules": selected_modules, "selected_features": selected_features, "license_id": license_doc["id"], "license_key": license_doc["license_key"]}})
-    from backend.commercial_licensee_admin import ensure_licensee_admin
-    await ensure_licensee_admin(customer, license_doc, company)
-    invoice_company_id = str(payload.get("invoice_company_id") or "").strip()
-    if not invoice_company_id:
-        raise HTTPException(status_code=400, detail="Select the Company Master company that should issue this invoice.")
-    invoice = await _create_license_invoice(license_doc, customer, invoice_company_id, amount_charged, selected_features)
-    license_doc["invoice_id"] = invoice.get("id")
-    license_doc["invoice_no"] = invoice.get("invoice_no")
-    license_doc["invoice_company_id"] = invoice_company_id
-    return {"license": {**license_doc, "customer": _customer_public(customer), "invoice": invoice}, "customer": _customer_public(customer), "company": company, "invoice": invoice}
+
+    license_doc = await create_license_record(
+        {
+            **payload,
+            "package_id": "essential",
+            "validity_days": max(1, months * 30),
+            "max_users": max(1, int(payload.get("max_users") or 1)),
+            "max_installations": max(1, int(payload.get("max_installations") or 1)),
+        },
+        str(current_user.id),
+    )
+    try:
+        issued_at = datetime.fromisoformat(license_doc["issued_at"].replace("Z", "+00:00"))
+        expires_at = _add_months(issued_at, months)
+        license_doc.update({
+            "admin_name": admin_name,
+            "customer_name": admin_name,
+            "company_name": company_name,
+            "package_id": "custom-modules",
+            "package_code": "TSO-CUSTOM",
+            "package_name": "Custom Module License",
+            "modules": selected_modules,
+            "selected_features": selected_features,
+            "feature_prices": feature_prices,
+            "module_prices": {
+                module_id: round(float(next((x.get("monthly_price", 0) for x in catalog if x["id"] == module_id), 0) or 0), 2)
+                for module_id in selected_modules
+            },
+            "monthly_module_price": monthly_total,
+            "calculated_amount": calculated_amount,
+            "validity_months": months,
+            "expires_at": expires_at.isoformat(),
+            "amount_charged": round(amount_charged, 2),
+            "sales_currency": str(payload.get("currency") or "INR"),
+            "notes": str(payload.get("notes") or "").strip(),
+        })
+        await db.commercial_licenses.update_one(
+            {"id": license_doc["id"]},
+            {"$set": {k: license_doc[k] for k in (
+                "package_id", "package_code", "package_name", "modules", "selected_features",
+                "feature_prices", "module_prices", "monthly_module_price", "calculated_amount",
+                "validity_months", "amount_charged", "expires_at", "sales_currency", "notes",
+            )}},
+        )
+        customer = await db.commercial_license_customers.find_one(
+            {"id": license_doc["customer_id"]}, {"_id": 0}
+        )
+        customer_updates = {
+            "admin_name": admin_name,
+            "gstin": str(payload.get("gstin") or "").strip(),
+            "address": str(payload.get("address") or "").strip(),
+            "gst_address": str(payload.get("gst_address") or "").strip(),
+            "city": str(payload.get("city") or "").strip(),
+            "state": str(payload.get("state") or "").strip(),
+            "pincode": str(payload.get("pincode") or "").strip(),
+            "licensed_modules": selected_modules,
+            "selected_features": selected_features,
+            "feature_prices": feature_prices,
+            "module_prices": license_doc["module_prices"],
+            "amount_charged": round(amount_charged, 2),
+            "calculated_amount": calculated_amount,
+            "monthly_module_price": monthly_total,
+            "validity_months": months,
+            "last_license_id": license_doc["id"],
+        }
+        await db.commercial_license_customers.update_one(
+            {"id": license_doc["customer_id"]}, {"$set": customer_updates}
+        )
+        customer = {**(customer or {}), **customer_updates}
+        company = await _ensure_company_master(customer, license_doc)
+        await db.companies.update_one(
+            {"id": company["id"]},
+            {"$set": {
+                "licensed_modules": selected_modules,
+                "selected_features": selected_features,
+                "license_id": license_doc["id"],
+                "license_key": license_doc["license_key"],
+            }},
+        )
+        from backend.commercial_licensee_admin import ensure_licensee_admin
+        await ensure_licensee_admin(customer, license_doc, company)
+        invoice = await _create_license_invoice(
+            license_doc, customer, invoice_company_id, amount_charged, selected_features
+        )
+        license_doc["invoice_id"] = invoice.get("id")
+        license_doc["invoice_no"] = invoice.get("invoice_no")
+        license_doc["invoice_company_id"] = invoice_company_id
+        return {
+            "license": {**license_doc, "customer": _customer_public(customer), "invoice": invoice},
+            "customer": _customer_public(customer),
+            "company": company,
+            "invoice": invoice,
+        }
+    except Exception:
+        await _rollback_failed_license_generation(license_doc, preserve_customer=preserve_customer)
+        raise
 
 
 @router.post("/lookup")
@@ -332,7 +563,10 @@ async def create_custom_admin(payload: Dict[str, Any]):
         )
         user_id = str(existing_admin.get("id"))
     else:
-        existing_email_user = await db.users.find_one({"email": email}, {"_id": 1})
+        existing_email_user = await db.users.find_one(
+            {"status": {"$ne": "deleted"}, "$or": [{"email": email}, {"email_normalized": email}]},
+            {"_id": 1},
+        )
         if existing_email_user:
             raise HTTPException(status_code=409, detail="An account already exists for this email address.")
         user_id = str(uuid.uuid4())
@@ -398,7 +632,7 @@ async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depe
     full_name = str(payload.get("full_name") or "").strip()
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"email": email}):
+    if await db.users.find_one({"status": {"$ne": "deleted"}, "$or": [{"email": email}, {"email_normalized": email}]}):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
     active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
     max_users = int(license_doc.get("max_users", 1))
@@ -432,17 +666,91 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
     from backend.platform_owner import platform_owner_emails
     owner_emails = list(platform_owner_emails())
     if customer_id:
-        owner_linked = await db.users.find_one({"company_id": customer_id, "email": {"$in": owner_emails}}, {"_id": 0, "id": 1})
+        owner_linked = await db.users.find_one(
+            {"company_id": customer_id, "email": {"$in": owner_emails}},
+            {"_id": 0, "id": 1},
+        )
         if owner_linked:
             raise HTTPException(status_code=400, detail="This company/license is linked to a Platform Owner account and cannot be deleted.")
     customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})
     await db.commercial_licenses.delete_one({"id": license_id})
     remaining = await db.commercial_licenses.count_documents({"customer_id": customer_id})
     if remaining == 0 and customer_id:
+        licensee_uid = str(
+            (customer or {}).get("licensee_uid")
+            or license_doc.get("licensee_uid")
+            or ""
+        ).strip()
+        # A deleted licensee must not reserve any of its old login emails.
+        if licensee_uid:
+            await db.identity_email_links.delete_many({"identity_uid": licensee_uid})
+        else:
+            customer_email = str((customer or {}).get("email") or "").strip().lower()
+            if customer_email:
+                await db.identity_email_links.delete_one(
+                    {"email_normalized": customer_email, "identity_type": "licensee"}
+                )
+
+        user_clauses = [
+            {"company_id": customer_id},
+            {"commercial_customer_id": customer_id},
+            {"license_id": license_id},
+        ]
+        if licensee_uid:
+            user_clauses.extend([
+                {"identity_org_uid": licensee_uid},
+                {"licensee_uid": licensee_uid},
+            ])
+        user_filter = {
+            "$and": [
+                {"$or": user_clauses},
+                {"email": {"$nin": owner_emails}},
+                {"is_internal_commercial_admin": {"$ne": True}},
+                {"role": {"$nin": ["platform_owner", "superadmin", "saas_admin"]}},
+            ]
+        }
+        try:
+            from backend.security.session_manager import SessionManager
+            rows = await db.users.find(user_filter, {"_id": 0, "id": 1}).to_list(5000)
+            for row in rows:
+                user_id = str(row.get("id") or "").strip()
+                if user_id:
+                    try:
+                        await SessionManager.revoke_all_user_sessions(
+                            user_id, reason="commercial_company_deleted"
+                        )
+                    except Exception:
+                        logger.warning("Could not revoke a deleted licensee session for %s", user_id)
+
+        except Exception:
+            logger.exception("Could not enumerate deleted licensee sessions")
+
+        # Keep deleted-user history, but clear identity fields that participate in
+        # uniqueness checks. These users are inactive and excluded from login.
+        await db.users.update_many(
+            user_filter,
+            {
+                "$set": {
+                    "is_active": False,
+                    "status": "deleted",
+                    "commercial_deleted_at": _now().isoformat(),
+                },
+                "$unset": {
+                    "identity_org_uid": "",
+                    "email_normalized": "",
+                    "licensee_uid": "",
+                },
+            },
+        )
         await db.commercial_license_customers.delete_one({"id": customer_id})
         await db.companies.delete_one({"id": customer_id, "source": "commercial-license"})
-        await db.users.update_many({"company_id": customer_id, "email": {"$nin": owner_emails}}, {"$set": {"is_active": False, "status": "deleted", "commercial_deleted_at": _now().isoformat()}})
-    return {"deleted": True, "license_id": license_id, "company_name": (customer or {}).get("company_name"), "remaining_licenses": remaining, "historical_invoices_preserved": True}
+    return {
+        "deleted": True,
+        "license_id": license_id,
+        "company_name": (customer or {}).get("company_name"),
+        "remaining_licenses": remaining,
+        "historical_invoices_preserved": True,
+    }
 
 
 from backend.permission_governance import router as _permission_governance_router

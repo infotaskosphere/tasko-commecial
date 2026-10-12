@@ -283,7 +283,13 @@ async def create_public_licensed_user_fixed(payload: Dict[str, Any]):
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
     db = _raw_db()
-    if await db.users.find_one({"email": email}, {"_id": 1}):
+    if await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": email}, {"email_normalized": email}],
+        },
+        {"_id": 1},
+    ):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
 
     requested_role = str(payload.get("role") or "not_known").strip().lower()
@@ -345,7 +351,13 @@ async def create_staff_fixed(payload: Dict[str, Any], current_user: User = Depen
     full_name = str(payload.get("full_name") or "").strip()
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"email": email}, {"_id": 1}):
+    if await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": email}, {"email_normalized": email}],
+        },
+        {"_id": 1},
+    ):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
     await _require_user_seat(customer_id, 1)
 

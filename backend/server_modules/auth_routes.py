@@ -569,7 +569,14 @@ async def register(
             status_code=403, detail="You do not have permission to register users"
         )
 
-    existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
+    normalized_email = str(user_data.email or "").strip().lower()
+    existing = await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": normalized_email}, {"email_normalized": normalized_email}],
+        },
+        {"_id": 0},
+    )
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
@@ -665,7 +672,14 @@ async def self_register(user_data: UserCreate, request: Request):
     """
     await _enforce_auth_rate_limit(request, user_data.email, limit_per_minute=5)
 
-    existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
+    normalized_email = str(user_data.email or "").strip().lower()
+    existing = await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": normalized_email}, {"email_normalized": normalized_email}],
+        },
+        {"_id": 0},
+    )
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 

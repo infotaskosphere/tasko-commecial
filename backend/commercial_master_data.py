@@ -353,7 +353,13 @@ async def create_platform_company_user(payload: Dict[str, Any], current_user: Us
         raise HTTPException(status_code=400, detail="Full name and email are required.")
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    if await db.users.find_one({"email": email}, {"_id": 1}):
+    if await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": email}, {"email_normalized": email}],
+        },
+        {"_id": 1},
+    ):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
 
     max_users = max(1, int(license_doc.get("max_users", 1)))
@@ -627,7 +633,13 @@ async def create_company_user(payload: Dict[str, Any], current_user: User = Depe
         raise HTTPException(status_code=400, detail="Full name and email are required.")
     if len(password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
-    if await db.users.find_one({"email": email}, {"_id": 1}):
+    if await db.users.find_one(
+        {
+            "status": {"$ne": "deleted"},
+            "$or": [{"email": email}, {"email_normalized": email}],
+        },
+        {"_id": 1},
+    ):
         raise HTTPException(status_code=409, detail="An account already exists for this email address.")
 
     company_id = str(company["id"])
