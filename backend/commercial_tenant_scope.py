@@ -24,7 +24,7 @@ from backend import dependencies as _dependencies
 from backend.platform_owner import is_platform_owner
 from backend.tenant_runtime import (
     TenantAwareCollection, in_platform_owner_context,
-    set_authenticated_tenant_database,
+    set_authenticated_company, set_authenticated_tenant_database,
 )
 
 _current_customer_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_customer_id", default=None)
@@ -335,6 +335,144 @@ async def _resolve_customer_id(user: Any) -> str | None:
     return customer_id
 
 
+async def _resolve_tenant_company_id(
+    user: Any,
+    customer_id: str,
+    raw_db: Any,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve a licensee's operational company without trusting a stale link.
+
+    The reported incident has a licensee user whose company_id points at a
+    Platform Owner workspace. That row can carry duplicated license markers,
+    so it must never be accepted as the licensee's operational company.
+    """
+    customer_id = str(customer_id or "").strip()
+    current_id = str(getattr(user, "company_id", "") or "").strip()
+    user_id = str(getattr(user, "id", "") or "").strip()
+    raw_role = getattr(user, "role", "staff")
+    role = str(getattr(raw_role, "value", raw_role) or "staff").strip().lower()
+    is_admin = role in {"admin", "licensee_admin", "tenant_admin"} or role.endswith(".admin")
+    user_license_id = str(getattr(user, "license_id", "") or "").strip()
+    if not user_license_id:
+        active_license = await raw_db.commercial_licenses.find_one(
+            {
+                "customer_id": customer_id,
+                "status": {"$in": ["active", "trial"]},
+            },
+            {"_id": 0, "id": 1, "customer_id": 1},
+            sort=[("issued_at", -1)],
+        )
+        user_license_id = str((active_license or {}).get("id") or "").strip()
+
+    projection = {
+        "_id": 0,
+        "id": 1,
+        "name": 1,
+        "company_name": 1,
+        "created_by": 1,
+        "source": 1,
+        "commercial_customer_id": 1,
+        "license_id": 1,
+        "is_platform_owner_workspace": 1,
+    }
+    current_company = None
+    if current_id:
+        current_company = await raw_db.companies.find_one({"id": current_id}, projection)
+        if not current_company:
+            try:
+                current_company = await raw_db.companies.find_one(
+                    {"_id": ObjectId(current_id)}, projection
+                )
+            except Exception:
+                current_company = None
+
+    current_is_owner_workspace = bool(
+        current_company and current_company.get("is_platform_owner_workspace") is True
+    )
+    if current_company and not current_is_owner_workspace:
+        row_customer = str(current_company.get("commercial_customer_id") or "").strip()
+        row_license = str(current_company.get("license_id") or "").strip()
+        source = str(current_company.get("source") or "").strip().lower()
+        # A non-owner row is accepted only when its identity marker agrees with
+        # this tenant, or when it is the canonical generated company ID.
+        if current_id == customer_id or row_customer == customer_id:
+            return current_id, current_company
+        if user_license_id and row_license == user_license_id:
+            return current_id, current_company
+        if row_customer or row_license or source in {
+            "commercial-license", "commercial", "license", "commercial-customer"
+        }:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authenticated company belongs to a different commercial customer",
+            )
+        # Preserve a genuinely legacy company created by this same admin
+        # only when it has no conflicting ownership markers.
+        if (
+            is_admin
+            and not row_customer
+            and not row_license
+            and source not in {"commercial-license", "commercial", "license", "commercial-customer"}
+            and str(current_company.get("created_by") or "").strip() == user_id
+        ):
+            return current_id, current_company
+
+    # Prefer the canonical company generated for a customer. This exact ID is
+    # derived from the authenticated customer registry, never from request data.
+    primary = await raw_db.companies.find_one(
+        {
+            "$and": [
+                {"id": customer_id},
+                {"is_platform_owner_workspace": {"$ne": True}},
+            ]
+        },
+        projection,
+    )
+    if primary:
+        row_customer = str(primary.get("commercial_customer_id") or "").strip()
+        if not row_customer or row_customer == customer_id:
+            return customer_id, primary
+
+    clauses = [{"commercial_customer_id": customer_id}, {"id": customer_id}]
+    if user_license_id:
+        clauses.append({"license_id": user_license_id})
+    rows = await raw_db.companies.find(
+        {
+            "$and": [
+                {"is_platform_owner_workspace": {"$ne": True}},
+                {"$or": clauses},
+            ]
+        },
+        projection,
+    ).sort("name", 1).limit(100).to_list(100)
+
+    # Exclude any conflicting ownership markers returned through a legacy
+    # license link. The company must match the authenticated customer or its
+    # explicit license, never just the same display name.
+    valid = []
+    for row in rows:
+        row_id = str(row.get("id") or "").strip()
+        row_customer = str(row.get("commercial_customer_id") or "").strip()
+        row_license = str(row.get("license_id") or "").strip()
+        if row.get("is_platform_owner_workspace") is True:
+            continue
+        if row_customer and row_customer != customer_id:
+            continue
+        if row_id != customer_id and row_customer != customer_id and not (
+            user_license_id and row_license == user_license_id
+        ):
+            continue
+        valid.append(row)
+
+    if is_admin and len(valid) == 1:
+        row = valid[0]
+        return str(row.get("id") or "").strip(), row
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="A verified company profile for the authenticated licensee could not be resolved",
+    )
+
+
 async def _apply_live_license_permissions(user: Any, customer_id: str | None):
     """Apply the active commercial license as a hard ceiling without
     overwriting the licensee admin's Permission Matrix grants.
@@ -344,8 +482,25 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
     """
     if not customer_id or is_platform_owner(user):
         return user
+
+    # Repair the request's company context before any company-scoped collection
+    # is queried. A licensee session carrying the Owner's company_id must never
+    # continue with that ID, even if the customer/license markers were duplicated.
+    raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+    resolved_company_id, resolved_company = await _resolve_tenant_company_id(
+        user, customer_id, raw_db
+    )
+    data = user.model_dump()
+    data["company_id"] = resolved_company_id
+    data["company_name"] = (
+        resolved_company.get("name")
+        or resolved_company.get("company_name")
+        or getattr(user, "company_name", None)
+    )
+    user = type(user).model_validate(data)
+    set_authenticated_company(resolved_company_id)
+
     try:
-        raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
         license_docs = await raw_db.commercial_licenses.find(
             {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
             {"_id": 0},
@@ -548,7 +703,21 @@ def _install_collection_overrides() -> None:
             customer_id = authenticated_customer_id()
             if customer_id and not _is_owner_context():
                 pipeline = list(pipeline or [])
-                pipeline.insert(0, {"$match": {"commercial_customer_id": customer_id}})
+                if self._name == "companies":
+                    owner_safe_scope = {
+                        "$and": [
+                            {
+                                "$or": [
+                                    {"commercial_customer_id": customer_id},
+                                    {"id": customer_id},
+                                ]
+                            },
+                            {"is_platform_owner_workspace": {"$ne": True}},
+                        ]
+                    }
+                    pipeline.insert(0, {"$match": owner_safe_scope})
+                else:
+                    pipeline.insert(0, {"$match": {"commercial_customer_id": customer_id}})
         return original_aggregate(self, pipeline, *args, **kwargs)
 
     TenantAwareCollection._company_registry_enabled = registry_enabled

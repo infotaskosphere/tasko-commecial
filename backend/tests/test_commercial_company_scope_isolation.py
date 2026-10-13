@@ -106,6 +106,40 @@ def test_licensee_cannot_create_a_company_as_platform_owner_workspace():
 
 
 @pytest.mark.asyncio
+async def test_licensee_admin_company_id_is_repaired_from_owner_workspace(monkeypatch):
+    owner = {
+        "id": "owner-company",
+        "name": "Prodigist Ventures Private Limited",
+        "is_platform_owner_workspace": True,
+        "commercial_customer_id": "tenant-customer",
+        "license_id": "tenant-license",
+        "created_by": "owner-user",
+    }
+    tenant = {
+        "id": "tenant-customer",
+        "name": "Manthan Desai And Associates",
+        "source": "commercial-license",
+        "commercial_customer_id": "tenant-customer",
+        "license_id": "tenant-license",
+    }
+    raw = _FakeRawDB(owner_company=owner, tenant_company=tenant)
+    user = SimpleNamespace(
+        id="tenant-admin",
+        role="admin",
+        company_id="owner-company",
+        commercial_customer_id="tenant-customer",
+        license_id="tenant-license",
+    )
+
+    company_id, company = await tenant_scope._resolve_tenant_company_id(
+        user, "tenant-customer", raw
+    )
+    assert company_id == "tenant-customer"
+    assert company.get("name") == "Manthan Desai And Associates"
+    assert company.get("is_platform_owner_workspace") is not True
+
+
+@pytest.mark.asyncio
 async def test_owner_workspace_markers_never_resolve_a_licensee(monkeypatch):
     owner = {
         "id": "owner-company",
