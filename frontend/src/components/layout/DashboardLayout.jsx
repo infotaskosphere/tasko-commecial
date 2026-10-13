@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
-import { canAccessPath, hasModuleAccess, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
+import { canAccessPath, hasEffectivePermission, hasModuleAccess, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 import {
   LayoutDashboard, CheckSquare, FileText, Clock, BarChart3,
   Users, LogOut, Menu, Activity, ChevronDown,
@@ -205,12 +205,14 @@ const DashboardLayout = ({ children }) => {
     // to the Platform Owner and authenticated licensee admins, independent of the
     // purchased operational-module flags. Backup & Restore is filtered separately below.
     const normalizedRole = String(user?.role?.value || user?.role?.name || user?.role || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
-    const isAdminUser = ['admin', 'licensee_admin', 'tenant_admin'].includes(normalizedRole) || normalizedRole.endsWith('.admin') || String(user?.identity_type || '').trim().toLowerCase() === 'licensee_admin';
+    const isAdminUser = ['admin', 'licensee_admin', 'tenant_admin'].includes(normalizedRole) || normalizedRole.endsWith('.admin') || String(user?.identity_type || '').trim().toLowerCase().replace(/[-\\s]+/g, '_') === 'licensee_admin';
     const isSettingsPage = ['/settings/email', '/settings/general', '/settings/whatsapp'].includes(item?.path);
-    // Settings visibility must not depend on company_id: some valid commercial
-    // licensee admin identities are scoped by licensee_uid/license_id instead.
-    // This is navigation visibility only; route gates still require an admin/owner.
-    if (isSettingsPage && (isPlatformOwner || isAdminUser)) return true;
+    // Some valid tenant-admin payloads carry the settings grant in permissions
+    // while role/identity metadata is incomplete. Use the canonical permission
+    // matrix as a second signal so the shared Settings navigation cannot hide
+    // Message Automation after the session payload is refreshed.
+    const canManageSettings = hasEffectivePermission(user, 'can_manage_settings') || user?.permissions?.can_access_admin === true;
+    if (isSettingsPage && (isPlatformOwner || isAdminUser || canManageSettings)) return true;
     if (item.adminOnly && !isAdminUser && !isPlatformOwner) return false;
     if (item.adminOnly && item.relatedModule) {
       if (isPlatformOwner) return true;
