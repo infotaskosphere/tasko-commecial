@@ -989,37 +989,53 @@ export default function WhatsAppSettings() {
   return (
     <div className="space-y-4 w-full min-w-0 overflow-x-hidden">
       {/* Banner */}
-      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="relative overflow-hidden rounded-2xl px-4 sm:px-6 pt-4 sm:pt-5 pb-4"
-          style={{ background: GRADIENT, boxShadow: "0 8px 32px rgba(18,140,126,0.25)" }}>
-          <div className="absolute right-0 top-0 w-48 h-48 rounded-full -mr-16 -mt-16 opacity-10"
-            style={{ background: "radial-gradient(circle, white 0%, transparent 70%)" }} />
-          <div className="relative flex items-center gap-3">
+      <motion.div
+        className="wa-automation-shell"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        {/* The green title banner and the tabs are deliberately separate full-width rows. */}
+        <div
+          className="wa-automation-hero relative overflow-hidden rounded-2xl px-4 sm:px-6 pt-4 sm:pt-5 pb-4"
+          style={{ background: GRADIENT, boxShadow: "0 8px 32px rgba(18,140,126,0.25)" }}
+        >
+          <div
+            className="absolute right-0 top-0 w-48 h-48 rounded-full -mr-16 -mt-16 opacity-10"
+            style={{ background: "radial-gradient(circle, white 0%, transparent 70%)" }}
+          />
+          <div className="relative flex min-w-0 items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
               <MessageCircle className="h-5 w-5 text-white" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold text-white tracking-tight leading-tight">Message Automation</h1>
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest mt-0.5">
                 {isAdmin ? "WhatsApp connection · Templates · Birthday & festival automation" : "Message templates · Shared across all pages"}
               </p>
             </div>
           </div>
-          <div className="relative mt-4 flex flex-wrap gap-1 bg-white/10 p-1 rounded-xl w-fit">
-            {TABS.map(t => {
-              const I = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button key={t.id} onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition ${active ? "bg-white text-slate-800 shadow" : "text-white/80 hover:text-white"}`}>
-                  <I className="h-3.5 w-3.5" />{t.label}
-                </button>
-              );
-            })}
-          </div>
+        </div>
+
+        <div className="wa-automation-tabs" role="tablist" aria-label="Message Automation sections">
+          {TABS.map(t => {
+            const I = t.icon;
+            const active = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveTab(t.id)}
+                className={`wa-automation-tab ${active ? "is-active" : ""}`}
+              >
+                <I className="h-3.5 w-3.5" />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
       </motion.div>
-
       {/* Connected Numbers Tab */}
       {activeTab === "numbers" && isAdmin && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>

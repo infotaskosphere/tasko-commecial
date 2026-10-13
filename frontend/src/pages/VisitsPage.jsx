@@ -791,14 +791,23 @@ function VisitFormModal({ visit, clients, users, currentUser, onClose }) {
         <div className="p-5 space-y-3.5">
           {/* Bulk toggle */}
           {!isEdit && (
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50">
+            <div
+              className="visit-multi-date-toggle-row grid grid-cols-[16px_minmax(0,1fr)_36px] items-center gap-3 p-3 w-full min-w-0 box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/50"
+              style={{ display: "grid", gridTemplateColumns: "16px minmax(0, 1fr) 36px", width: "100%", minWidth: 0, boxSizing: "border-box" }}
+            >
               <CalendarRange className="h-4 w-4 text-purple-500 flex-shrink-0" />
-              <div className="flex-1">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">Multi-date scheduling</p>
-                <p className="text-[10px] text-slate-400">Pick multiple dates at once from a calendar</p>
+                <p className="text-[10px] text-slate-400 break-words">Pick multiple dates at once from a calendar</p>
               </div>
-              <button onClick={() => setBulkMode(b => !b)}
-                className={cn("relative h-5 w-9 rounded-full transition-colors flex-shrink-0", bulkMode ? "bg-purple-500" : "bg-slate-300 dark:bg-slate-600")}>
+              <button
+                type="button"
+                aria-label="Enable multi-date scheduling"
+                aria-pressed={bulkMode}
+                onClick={() => setBulkMode(b => !b)}
+                className={cn("visit-multi-date-toggle relative h-5 w-9 min-w-[36px] max-w-[36px] p-0 m-0 justify-self-end rounded-full transition-colors flex-none", bulkMode ? "bg-purple-500" : "bg-slate-300 dark:bg-slate-600")}
+                style={{ display: "block", width: 36, minWidth: 36, maxWidth: 36, height: 20, minHeight: 20, maxHeight: 20, flex: "0 0 36px", padding: 0, margin: 0, boxSizing: "border-box", justifySelf: "end" }}
+              >
                 <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", bulkMode ? "translate-x-4" : "translate-x-0.5")} />
               </button>
             </div>
