@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -36,6 +37,52 @@ def _owner_workspace_id(user: dict) -> str:
     email = str(user.get("email") or "").strip().lower()
     digest = hashlib.sha256(email.encode("utf-8")).hexdigest()[:16]
     return f"platform-owner-{digest}"
+
+
+def _company_name_key(value: Any) -> str:
+    tokens = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower()).split()
+    aliases = {"private": "pvt", "p": "pvt", "limited": "ltd"}
+    return " ".join(aliases.get(token, token) for token in tokens)
+
+
+async def _has_separate_licensee_counterpart(raw_db: Any, candidate: dict) -> bool:
+    """Confirm duplicate customer/license markers exist on a separate tenant row."""
+    company_id = str(candidate.get("id") or "").strip()
+    customer_id = str(candidate.get("commercial_customer_id") or "").strip()
+    license_id = str(candidate.get("license_id") or "").strip()
+    clauses = []
+    if customer_id:
+        clauses.extend([
+            {"id": customer_id},
+            {"commercial_customer_id": customer_id},
+        ])
+    if license_id:
+        clauses.append({"license_id": license_id})
+    if not company_id or not clauses:
+        return False
+
+    counterpart = await raw_db.companies.find_one(
+        {
+            "$and": [
+                {"id": {"$ne": company_id}},
+                {"is_platform_owner_workspace": {"$ne": True}},
+                {"$or": clauses},
+            ]
+        },
+        {"_id": 0, "id": 1, "source": 1, "commercial_customer_id": 1, "license_id": 1},
+    )
+    if not counterpart:
+        return False
+
+    # A matching row must itself be tied to the same customer or license, not
+    # merely have a similar company name.
+    return bool(
+        (customer_id and (
+            str(counterpart.get("id") or "").strip() == customer_id
+            or str(counterpart.get("commercial_customer_id") or "").strip() == customer_id
+        ))
+        or (license_id and str(counterpart.get("license_id") or "").strip() == license_id)
+    )
 
 
 async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None = None) -> tuple[str, dict]:
@@ -139,6 +186,39 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
                 configured_workspace_is_commercial = (
                     configured_workspace_is_commercial or bool(active_license)
                 )
+
+            # Recovery for the exact mis-stamped owner workspace: accept stale
+            # customer/license markers only when the row is explicitly marked,
+            # configured by ID and name, created by a verified owner, and a
+            # distinct non-owner company row proves that the same licensee has
+            # its own record. Never use name similarity as the ownership proof.
+            creator_id = str(candidate.get("created_by") or "").strip()
+            owner_creator = creator_id in owner_ids
+            if not owner_creator and creator_id:
+                creator_doc = await raw_db.users.find_one(
+                    {"id": creator_id},
+                    {
+                        "_id": 0, "id": 1, "email": 1, "role": 1,
+                        "is_platform_owner": 1, "isPlatformOwner": 1,
+                        "identity_type": 1, "licensee_uid": 1,
+                        "commercial_customer_id": 1, "license_id": 1,
+                        "platform_owner_uid": 1, "identity_org_uid": 1, "user_uid": 1,
+                    },
+                )
+                owner_creator = bool(creator_doc and is_platform_owner(creator_doc))
+            configured_name = str(os.getenv("PLATFORM_OWNER_WORKSPACE_NAME") or "").strip()
+            stale_linked_owner_workspace = bool(
+                candidate.get("is_platform_owner_workspace") is True
+                and configured_workspace_id == str(candidate.get("id") or "").strip()
+                and configured_name
+                and _company_name_key(candidate.get("name")) == _company_name_key(configured_name)
+                and owner_creator
+                and source not in {"commercial-license", "commercial", "license", "commercial-customer"}
+                and await _has_separate_licensee_counterpart(raw_db, candidate)
+            )
+            if stale_linked_owner_workspace:
+                configured_workspace_is_commercial = False
+
             if configured_workspace_is_commercial:
                 logger.error(
                     "Ignoring PLATFORM_OWNER_WORKSPACE_ID because it resolves to a "
