@@ -10,6 +10,7 @@ from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
 from email import encoders
 from datetime import datetime, timezone, date
+from contextvars import ContextVar
 from io import BytesIO
 from typing import List, Optional, Any, Dict
 
@@ -40,6 +41,15 @@ except ImportError:
     from fpdf.enums import Align, XPos, YPos
 
 logger = logging.getLogger(__name__)
+
+# Authentication canonicalizes the Platform Owner workspace before a route
+# handler runs. Both that authentication step and GET /companies need the same
+# owner-scoped company registry in one request. Re-running the full registry
+# scan twice can exceed the frontend's 30-second Axios deadline. ContextVar
+# keeps this cache request-local (never shared across users or requests).
+_OWNER_COMPANIES_REQUEST_CACHE: ContextVar = ContextVar(
+    "owner_companies_request_cache", default=None
+)
 
 router = APIRouter(tags=["Quotations"])
 
@@ -1758,16 +1768,22 @@ async def _verified_owner_workspace_ids(
 async def _platform_owner_operational_companies(current_user: User) -> List[Dict[str, Any]]:
     """Companies shown in the Platform Owner's OWN operational selectors."""
     raw = _tenant_raw_db()
+    user_id = _norm_id(getattr(current_user, "id", ""))
     if not is_platform_owner(current_user):
         return await raw.companies.find(
-            {"created_by": _norm_id(getattr(current_user, "id", ""))},
+            {"created_by": user_id},
             {"_id": 0},
         ).sort("name", 1).to_list(500)
 
+    # get_current_user() calls this once to establish the trusted owner allow-list;
+    # the protected route then calls it again to serialize the same registry.
+    # Reuse only inside this request, and only for the same authenticated owner.
+    cached = _OWNER_COMPANIES_REQUEST_CACHE.get()
+    if cached and cached.get("user_id") == user_id:
+        return [dict(company) for company in cached.get("companies", [])]
+
     rows = await raw.companies.find({}, {"_id": 0}).sort("name", 1).to_list(5000)
-    identity_sets = await _licensee_identity_sets(
-        _norm_id(getattr(current_user, "id", ""))
-    )
+    identity_sets = await _licensee_identity_sets(user_id)
     verified_owner_ids = await _verified_owner_workspace_ids(current_user, rows)
     filtered = [
         company for company in rows
@@ -1778,8 +1794,12 @@ async def _platform_owner_operational_companies(current_user: User) -> List[Dict
             identity_sets["legacy_company_ids"],
             verified_owner_ids,
         )
-    ]
-    return filtered[:500]
+    ][:500]
+    _OWNER_COMPANIES_REQUEST_CACHE.set({
+        "user_id": user_id,
+        "companies": [dict(company) for company in filtered],
+    })
+    return filtered
 
 
 
