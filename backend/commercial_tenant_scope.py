@@ -397,7 +397,13 @@ async def _resolve_tenant_company_id(
         # this tenant, or when it is the canonical generated company ID.
         if current_id == customer_id or row_customer == customer_id:
             return current_id, current_company
-        if user_license_id and row_license == user_license_id:
+        # A matching license ID must not override a conflicting customer ID.
+        # Duplicate/stale license markers must never bridge two tenants.
+        if (
+            user_license_id
+            and row_license == user_license_id
+            and (not row_customer or row_customer == customer_id)
+        ):
             return current_id, current_company
         if row_customer or row_license or source in {
             "commercial-license", "commercial", "license", "commercial-customer"

@@ -1806,6 +1806,18 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     is_admin = role in {"admin", "licensee_admin", "tenant_admin"}
     raw = _tenant_raw_db()
 
+    # This route module can be imported before the commercial auth wrappers
+    # install their request-local ContextVars. Resolve a customer from the
+    # user's explicit license link as a safe fallback; never derive it from
+    # company_id, because legacy sessions may point at an Owner workspace.
+    if not customer_id and license_id:
+        linked_license = await raw.commercial_licenses.find_one(
+            {"id": license_id},
+            {"_id": 0, "id": 1, "customer_id": 1, "status": 1},
+        )
+        if linked_license and str(linked_license.get("customer_id") or "").strip():
+            customer_id = _norm_id(linked_license.get("customer_id"))
+
     # Resolve missing license metadata from the authenticated customer, never
     # by borrowing the license marker from the user's current company row.
     if customer_id and not license_id:

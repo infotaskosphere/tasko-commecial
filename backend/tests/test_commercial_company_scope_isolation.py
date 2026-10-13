@@ -140,6 +140,33 @@ async def test_licensee_admin_company_id_is_repaired_from_owner_workspace(monkey
 
 
 @pytest.mark.asyncio
+async def test_licensee_company_scope_resolves_customer_from_explicit_license(monkeypatch):
+    raw = _FakeRawDB()
+    raw.commercial_licenses.one = {
+        "id": "tenant-license",
+        "customer_id": "tenant-customer",
+        "status": "active",
+    }
+    monkeypatch.setattr(quotations, "_tenant_raw_db", lambda: raw)
+
+    # This matches a legacy login whose license_id is present but whose
+    # commercial_customer_id was omitted from the Pydantic session model.
+    user = SimpleNamespace(
+        id="tenant-admin",
+        role="admin",
+        company_id="owner-company",
+        commercial_customer_id=None,
+        license_id="tenant-license",
+    )
+    query = await quotations._tenant_company_scope(user)
+
+    assert "tenant-customer" in repr(query)
+    assert "tenant-license" in repr(query)
+    assert "owner-company" not in repr(query)
+    assert "'is_platform_owner_workspace': {'$ne': True}" in repr(query)
+
+
+@pytest.mark.asyncio
 async def test_owner_workspace_markers_never_resolve_a_licensee(monkeypatch):
     owner = {
         "id": "owner-company",
