@@ -201,7 +201,12 @@ const DashboardLayout = ({ children }) => {
   };
 
   const checkNavPermission = (item) => {
-    if (item.adminOnly && user?.role !== 'admin') return false;
+    // Settings is a shared administration area. Keep all three Settings links visible
+    // to the Platform Owner and authenticated licensee admins, independent of the
+    // purchased operational-module flags. Backup & Restore is filtered separately below.
+    const isSettingsPage = ['/settings/email', '/settings/general', '/settings/whatsapp'].includes(item?.path);
+    if (isSettingsPage && (isPlatformOwner || (user?.role?.toLowerCase() === 'admin' && (Boolean(user?.company_id) || !isCommercialTenant(user))))) return true;
+    if (item.adminOnly && user?.role?.toLowerCase() !== 'admin' && !isPlatformOwner) return false;
     if (item.adminOnly && item.relatedModule) {
       if (isPlatformOwner) return true;
       if (!hasModuleAccess(user, item.relatedModule)) return false;
