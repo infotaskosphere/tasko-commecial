@@ -44,16 +44,39 @@ class _Collection:
         return _Cursor(self.many)
 
 
+class _CompanyCollection:
+    def __init__(self, owner=None, counterpart=None):
+        self.owner = owner
+        self.counterpart = counterpart
+
+    async def find_one(self, query=None, projection=None, **kwargs):
+        query = query or {}
+        if self.owner and query == {"id": self.owner.get("id")}:
+            return dict(self.owner)
+        if self.counterpart and "$and" in query:
+            query_text = repr(query)
+            same_customer = (
+                self.counterpart.get("id") in query_text
+                or self.counterpart.get("commercial_customer_id") in query_text
+            )
+            same_license = bool(
+                self.counterpart.get("license_id")
+                and self.counterpart.get("license_id") in query_text
+            )
+            if same_customer or same_license:
+                return dict(self.counterpart)
+        return None
+
+    def find(self, query=None, projection=None, **kwargs):
+        return _Cursor()
+
+
 class _FakeRawDB:
     def __init__(self, owner_company=None, tenant_company=None, users=None):
-        self.companies = _Collection(one=owner_company)
+        self.companies = _CompanyCollection(owner=owner_company, counterpart=tenant_company)
         self.users = _Collection(many=users or [])
         self.commercial_licenses = _Collection()
         self.commercial_license_customers = _Collection()
-        self._tenant_company = tenant_company
-
-    async def _tenant_counterpart_find_one(self, query=None, projection=None, **kwargs):
-        return self._tenant_company
 
 
 @pytest.mark.asyncio
@@ -134,6 +157,6 @@ async def test_owner_workspace_with_stale_license_markers_requires_separate_coun
     verified = await quotations._verified_owner_workspace_ids(user, [owner])
     assert verified == {"owner-company"}
 
-    raw._tenant_company = None
+    raw.companies.counterpart = None
     unverified = await quotations._verified_owner_workspace_ids(user, [owner])
     assert unverified == set()
