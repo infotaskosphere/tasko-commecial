@@ -943,8 +943,8 @@ export default function WhatsAppSettings() {
   const { user, isPlatformOwner } = useAuth();
   // Role may be serialized as a string or { value }, and platform owners must
   // receive the same administration tabs as licensee admins on this page.
-  const normalizedRole = String(user?.role?.value || user?.role || "").trim().toLowerCase();
-  const isAdmin = normalizedRole === "admin" || Boolean(isPlatformOwner);
+  const normalizedRole = String(user?.role?.value || user?.role?.name || user?.role || "").trim().toLowerCase().replace(/[-\s]+/g, "_");
+  const isAdmin = ["admin", "licensee_admin", "tenant_admin"].includes(normalizedRole) || normalizedRole.endsWith(".admin") || String(user?.identity_type || "").trim().toLowerCase() === "licensee_admin" || Boolean(isPlatformOwner);
 
   const [settings,   setSettings]   = useState(getWASettings);
   const [saved,      setSaved]      = useState(false);
