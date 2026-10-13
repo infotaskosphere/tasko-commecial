@@ -24,7 +24,7 @@ export default function BackupWidget() {
     return null;
   }
 
-  const isBackupPage = location.pathname === '/settings/backup';
+  const isBackupPage = location.pathname === '/admin/backup-restore' || location.pathname === '/settings/backup';
   // If the user is on the backup page AND the card is expanded there, we don't need to duplicate the full floating card
   if (isBackupPage && !transfer.isMinimized) {
     return null;
@@ -44,7 +44,7 @@ export default function BackupWidget() {
   };
 
   const handleNavigateToBackupPage = () => {
-    navigate('/settings/backup');
+    navigate('/admin/backup-restore');
     maximize();
   };
 

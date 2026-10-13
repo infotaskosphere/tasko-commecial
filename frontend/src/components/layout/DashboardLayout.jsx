@@ -143,6 +143,43 @@ const DashboardLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false); const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && localStorage.getItem('sidebarCollapsed') === 'true'); const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1440); const [userMenuOpen, setUserMenuOpen] = useState(false); const [isDark, setIsDark] = useState(() => typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark'); const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024); const [hasUnread, setHasUnread] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const [copilotOpen, setCopilotOpen] = useState(false); const sidebarNavRef = useRef(null), mainRef = useRef(null), activeItemRef = useRef(null);
   useEffect(() => { if (mainRef.current) mainRef.current.scrollTo({ top: 0, behavior: 'auto' }); }, [location.pathname]); useEffect(() => { if (activeItemRef.current) activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [location.pathname]); useEffect(() => { localStorage.setItem('theme', isDark ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', isDark); }, [isDark]); useActivityTracker(Boolean(user) && (Boolean(isPlatformOwner) || hasModuleAccess(user, 'taskosphere'))); useEffect(() => { localStorage.setItem('sidebarCollapsed', String(collapsed)); }, [collapsed]); const handleResize = useCallback(() => { const desktop = window.innerWidth >= 1024; setIsDesktop(desktop); if (!desktop) setCollapsed(false); }, []); useEffect(() => { window.addEventListener('resize', handleResize); const updateViewportWidth = () => setViewportWidth(window.innerWidth); updateViewportWidth(); return () => window.removeEventListener('resize', handleResize); }, [handleResize]); useEffect(() => { if (window.innerWidth >= 1024) setSidebarOpen(true); }, []); useEffect(() => { if (!isDesktop) setSidebarOpen(false); }, [location.pathname, isDesktop]); useEffect(() => { if (!userMenuOpen) return; const handle = (e) => { if (!e.target.closest('[data-user-menu]')) setUserMenuOpen(false); }; document.addEventListener('mousedown', handle); return () => document.removeEventListener('mousedown', handle); }, [userMenuOpen]);
   useEffect(() => { const fetchUnread = async () => { try { const { data } = await api.get('/notifications/unread-count', { _silent: true }); setHasUnread((data?.count ?? 0) > 0); } catch {} }; fetchUnread(); const interval = setInterval(fetchUnread, 30000); return () => clearInterval(interval); }, []);
+  
+  // Runtime compatibility guard: older navigation state or a legacy injected entry
+  // can still add Backup & Restore to the Settings sidebar even though the current
+  // Settings NAV_GROUP no longer defines it. Suppress that row only in Settings;
+  // the canonical Admin link at /admin/backup-restore remains visible in Admin.
+  useEffect(() => {
+    const inSettingsWorkspace =
+      location.pathname === '/settings' || location.pathname.startsWith('/settings/');
+    if (!inSettingsWorkspace) return undefined;
+
+    const sidebar = document.querySelector('aside .sidebar-scroll');
+    if (!sidebar) return undefined;
+
+    const suppressLegacyBackupEntry = () => {
+      sidebar.querySelectorAll('a').forEach((link) => {
+        const href = String(link.getAttribute('href') || '').trim().toLowerCase();
+        const label = String(link.textContent || '').replace(/\s+/g, ' ').trim();
+        const isBackupEntry =
+          href.includes('backup') || /back\s*up\s*&\s*restore/i.test(label);
+        if (!isBackupEntry) return;
+
+        const row = link.parentElement;
+        if (row instanceof HTMLElement) {
+          row.hidden = true;
+          row.setAttribute('aria-hidden', 'true');
+          row.dataset.settingsBackupNavSuppressed = 'true';
+        }
+        link.tabIndex = -1;
+      });
+    };
+
+    suppressLegacyBackupEntry();
+    const observer = new MutationObserver(suppressLegacyBackupEntry);
+    observer.observe(sidebar, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [location.pathname]);
+
   if (loading) return <GifLoader />; if (!user) { navigate('/login', { replace: true }); return null; }
   const handleLogout = () => { if (window.__TASKO_LOGOUT_IN_PROGRESS__) return; window.__TASKO_LOGOUT_IN_PROGRESS__ = true; window.__STOP_ACTIVITY__ = true; setUserMenuOpen(false); void logout(); toast.success('Logged out successfully'); navigate('/login', { replace: true }); window.setTimeout(() => { window.__TASKO_LOGOUT_IN_PROGRESS__ = false; }, 500); };
   const normalizeModulesForTab = (candidate) => {
@@ -228,9 +265,8 @@ const DashboardLayout = ({ children }) => {
       // not only in NAV_GROUPS initialization, so stale/dynamic items cannot
       // leak back into the Settings sidebar.
       const isSettingsBackupItem = groupId === 'settings' && (
-        itemPath === '/settings/backup' ||
-        itemPath === '/admin/backup-restore' ||
-        itemLabel === 'backup & restore'
+        itemPath.toLowerCase().includes('backup') ||
+        /back\s*up\s*&\s*restore/i.test(itemLabel)
       );
       if (isSettingsBackupItem || !checkNavPermission(item)) continue;
       if (seenPaths.has(itemPath)) continue;
