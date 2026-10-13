@@ -369,10 +369,13 @@ export function canAccessPath(user, pathname) {
   // administration surfaces linked to the entire app, not separately purchased operational modules.
   // Keep them reachable even when the tenant buys only one module.
   const normalizedPath = String(pathname || "").split("?", 1)[0];
+  // Tenant-wide administration pages are not purchased operational modules.
+  // Use the shared allowlist here so Settings child pages, including Message
+  // Automation, retain consistent access for authenticated licensee admins.
   if (
     isAdminRole(user) &&
     user.company_id &&
-    ["/users", "/master-data", "/roles", "/permission-matrix", "/admin-dashboard", "/settings/backup", "/contact-details"].some(
+    COMMERCIAL_ADMIN_GLOBAL_PATHS.some(
       (prefix) => normalizedPath === prefix || normalizedPath.startsWith(prefix + "/")
     )
   ) {
