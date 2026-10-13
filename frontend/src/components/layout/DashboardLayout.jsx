@@ -153,33 +153,58 @@ const DashboardLayout = ({ children }) => {
       location.pathname === '/settings' || location.pathname.startsWith('/settings/');
     if (!inSettingsWorkspace || loading || !document.body) return undefined;
 
-    // Observe the document, not only the sidebar element. Some legacy/runtime
-    // navigation rows are inserted after authentication has completed, and the
-    // sidebar itself may not exist during the initial loading render.
+    const isBackupLink = (link) => {
+      const href = String(link.getAttribute('href') || '').trim().toLowerCase();
+      const label = String(link.textContent || '').replace(/\s+/g, ' ').trim();
+      return href.includes('backup') || /back\s*up\s*&\s*restore/i.test(label);
+    };
+    const unhideRow = (row) => {
+      row.hidden = false;
+      row.style.removeProperty('display');
+      row.removeAttribute('aria-hidden');
+      delete row.dataset.settingsBackupNavSuppressed;
+    };
     const suppressLegacyBackupEntry = () => {
       const sidebar = document.querySelector('aside .sidebar-scroll');
       if (!sidebar) return;
 
+      // 1. The legacy script in index.html used to inject a "Backup & Restore"
+      //    anchor INSIDE the wrapper <div> of the Message Automation link. Remove
+      //    that injected element outright (Backup & Restore lives only in Admin).
+      sidebar.querySelectorAll('#taskosphere-backup-sidebar-link').forEach((node) => node.remove());
+
+      // 2. Recovery: if an earlier pass hid a wrapper that also contains a
+      //    legitimate (non-backup) link, such as Message Automation, show it again.
+      sidebar.querySelectorAll('[data-settings-backup-nav-suppressed="true"]').forEach((row) => {
+        const hasLegitLink = Array.from(row.querySelectorAll('a')).some((a) => !isBackupLink(a));
+        if (hasLegitLink) unhideRow(row);
+      });
+
+      // 3. Hide any other stale Backup & Restore link. NEVER hide a parent that
+      //    also holds other navigation links: hide just the link in that case.
       sidebar.querySelectorAll('a').forEach((link) => {
-        const href = String(link.getAttribute('href') || '').trim().toLowerCase();
-        const label = String(link.textContent || '').replace(/\s+/g, ' ').trim();
-        const isBackupEntry =
-          href.includes('backup') || /back\s*up\s*&\s*restore/i.test(label);
-        if (!isBackupEntry) return;
+        if (!isBackupLink(link)) return;
 
         const row = link.parentElement;
-        if (row instanceof HTMLElement) {
-          row.hidden = true;
-          // Tailwind's .flex can override the browser's default [hidden] style.
-          // Use an important inline display rule so the stale row is actually hidden.
-          row.style.setProperty('display', 'none', 'important');
-          row.setAttribute('aria-hidden', 'true');
-          row.dataset.settingsBackupNavSuppressed = 'true';
-        }
+        const rowIsDedicatedToLink =
+          row instanceof HTMLElement &&
+          row !== sidebar &&
+          row.querySelectorAll('a').length === 1;
+        const target = rowIsDedicatedToLink ? row : link;
+
+        target.hidden = true;
+        // Tailwind's .flex can override the browser's default [hidden] style.
+        // Use an important inline display rule so the stale entry is actually hidden.
+        target.style.setProperty('display', 'none', 'important');
+        target.setAttribute('aria-hidden', 'true');
+        target.dataset.settingsBackupNavSuppressed = 'true';
         link.tabIndex = -1;
       });
     };
 
+    // Observe the document, not only the sidebar element. Some legacy/runtime
+    // navigation rows are inserted after authentication has completed, and the
+    // sidebar itself may not exist during the initial loading render.
     suppressLegacyBackupEntry();
     const observer = new MutationObserver(suppressLegacyBackupEntry);
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
