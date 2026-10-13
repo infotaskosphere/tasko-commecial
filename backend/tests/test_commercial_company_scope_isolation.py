@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from backend import commercial_tenant_scope as tenant_scope
 from backend import quotations
+from backend import commercial_legacy_company_scope_compat as legacy_scope
 
 
 class _Cursor:
@@ -77,6 +78,31 @@ class _FakeRawDB:
         self.users = _Collection(many=users or [])
         self.commercial_licenses = _Collection()
         self.commercial_license_customers = _Collection()
+
+
+def test_shared_company_queries_never_return_owner_workspaces_to_licensees():
+    token = tenant_scope.set_authenticated_customer("tenant-customer")
+    try:
+        customer_query = tenant_scope._customer_query("companies", {})
+        legacy_query = legacy_scope._company_scope_query({})
+        for query in (customer_query, legacy_query):
+            assert "'is_platform_owner_workspace': {'$ne': True}" in repr(query)
+            assert "owner-company" not in repr(query)
+    finally:
+        tenant_scope.reset_authenticated_customer(token)
+
+
+def test_licensee_cannot_create_a_company_as_platform_owner_workspace():
+    token = tenant_scope.set_authenticated_customer("tenant-customer")
+    try:
+        with pytest.raises(HTTPException) as exc:
+            tenant_scope._customer_insert(
+                "companies",
+                {"id": "forged-owner-company", "is_platform_owner_workspace": True},
+            )
+        assert exc.value.status_code == 403
+    finally:
+        tenant_scope.reset_authenticated_customer(token)
 
 
 @pytest.mark.asyncio

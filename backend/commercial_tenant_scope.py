@@ -70,10 +70,18 @@ def _customer_query(name: str, query: Any) -> dict[str, Any]:
         elif str(requested) != customer_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
     if name == "companies":
+        # Company IDs and customer IDs sometimes collide in legacy records.
+        # A row explicitly marked as the Platform Owner workspace must never
+        # be returned to a licensee, even if it carries stale customer markers.
         scope_filter = {
-            "$or": [
-                {"commercial_customer_id": customer_id},
-                {"id": customer_id},
+            "$and": [
+                {
+                    "$or": [
+                        {"commercial_customer_id": customer_id},
+                        {"id": customer_id},
+                    ]
+                },
+                {"is_platform_owner_workspace": {"$ne": True}},
             ]
         }
         if result:
@@ -98,6 +106,11 @@ def _customer_insert(name: str, document: Any) -> Any:
     if not customer_id or _is_owner_context() or not _customer_scoped_collection(name) or not isinstance(document, dict):
         return document
     result = dict(document)
+    if name == "companies" and result.get("is_platform_owner_workspace") is True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A licensee cannot create or claim a Platform Owner workspace",
+        )
     requested = result.get("commercial_customer_id")
     if requested is not None and str(requested) != customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A licensee cannot create records for another licensee")
@@ -111,6 +124,16 @@ def _customer_update(name: str, update: Any) -> Any:
         return update
     result = dict(update)
     set_values = dict(result.get("$set") or {})
+    if name == "companies" and set_values.get("is_platform_owner_workspace") is True:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A licensee cannot claim a Platform Owner workspace",
+        )
+    if name == "companies" and "is_platform_owner_workspace" in dict(result.get("$unset") or {}):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="A licensee cannot change Platform Owner workspace ownership",
+        )
     if "commercial_customer_id" in set_values and str(set_values["commercial_customer_id"]) != customer_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Commercial customer ownership cannot be changed")
     set_values.pop("commercial_customer_id", None)

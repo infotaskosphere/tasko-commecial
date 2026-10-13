@@ -71,10 +71,17 @@ def _company_scope_query(query: Any) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
 
     ownership = {
-        "$or": [
-            {"commercial_customer_id": customer_id},
-            {"id": customer_id},
-            *([{"license_id": license_id}] if license_id else []),
+        "$and": [
+            {
+                "$or": [
+                    {"commercial_customer_id": customer_id},
+                    {"id": customer_id},
+                    *([{"license_id": license_id}] if license_id else []),
+                ]
+            },
+            # Never allow an owner workspace to be admitted because stale
+            # customer/license markers happen to match this licensee.
+            {"is_platform_owner_workspace": {"$ne": True}},
         ]
     }
     return {"$and": [base, ownership]} if base else ownership
