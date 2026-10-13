@@ -201,10 +201,15 @@ function FinixDashboardInner() {
         // workspace and marked it as the Platform Owner workspace. Do not
         // discard that one verified canonical row because of those stale
         // markers; all other tenant-marked records remain excluded.
-        const isVerifiedCanonicalOwnerWorkspace =
-          String(c.id) === ownerCompanyId &&
-          c.is_platform_owner_workspace === true;
-        if (isVerifiedCanonicalOwnerWorkspace) return true;
+        // ownerCompanyId comes from the authenticated backend resolver, which
+        // has already built a Platform Owner-only allow-list. The resolver may
+        // repair the workspace marker in Mongo after building that list, so the
+        // serialized row can legitimately still have a stale/missing marker.
+        // Exact ID membership in this already-scoped response is the trusted
+        // condition; requiring the marker here would drop the canonical row.
+        const isCanonicalOwnerCompany =
+          Boolean(ownerCompanyId) && String(c.id) === ownerCompanyId;
+        if (isCanonicalOwnerCompany) return true;
 
         const source = String(c.source || '').trim().toLowerCase();
         const customerId = String(c.commercial_customer_id || '').trim().toLowerCase();
