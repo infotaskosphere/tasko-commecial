@@ -194,6 +194,18 @@ function FinixDashboardInner() {
       // company_id embedded in a long-lived login session.
       return rows.filter((c) => {
         if (!c || typeof c !== 'object' || !c.id) return false;
+
+        // The backend's authenticated Platform Owner scope is authoritative.
+        // Legacy records can retain old commercial source/customer/license
+        // markers even after the backend has verified this exact canonical
+        // workspace and marked it as the Platform Owner workspace. Do not
+        // discard that one verified canonical row because of those stale
+        // markers; all other tenant-marked records remain excluded.
+        const isVerifiedCanonicalOwnerWorkspace =
+          String(c.id) === ownerCompanyId &&
+          c.is_platform_owner_workspace === true;
+        if (isVerifiedCanonicalOwnerWorkspace) return true;
+
         const source = String(c.source || '').trim().toLowerCase();
         const customerId = String(c.commercial_customer_id || '').trim().toLowerCase();
         const licenseId = String(c.license_id || '').trim().toLowerCase();
