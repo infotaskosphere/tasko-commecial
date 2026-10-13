@@ -12,6 +12,8 @@ permission restrictions.
 """
 from __future__ import annotations
 
+import re
+
 from contextvars import ContextVar
 from typing import Any
 
@@ -127,87 +129,186 @@ def _customer_replacement(name: str, replacement: Any) -> Any:
 
 
 async def _resolve_customer_id(user: Any) -> str | None:
-    """Resolve the commercial customer from authenticated identity first.
+    """Resolve a licensee only from explicit license/customer ownership.
 
-    Older commercial records are not completely uniform: some company records
-    use the public ``id`` field while others can be addressed by MongoDB
-    ``_id``.  The previous resolver only checked ``id`` and could therefore
-    fall back to ``company_id``.  That fallback caused the authenticated
-    customer context to differ from the customer's actual license id, which in
-    turn filtered the users collection to zero rows and surfaced as a
-    "user data not fetched" condition.
-
-    Resolution is deliberately fail-closed: a non-owner request receives a
-    customer context only when it can be tied to the authenticated user or its
-    company.  We never accept a customer id supplied by the frontend.
+    A company_id is not a customer ID. In particular, never derive the
+    commercial customer from a company marked as a Platform Owner workspace:
+    historical license issuance could leave licensee markers on the owner row.
+    If identity evidence is conflicting or absent, fail closed.
     """
     if is_platform_owner(user):
         return None
 
     user_customer_id = str(getattr(user, "commercial_customer_id", "") or "").strip()
+    user_license_id = str(getattr(user, "license_id", "") or "").strip()
     company_id = str(getattr(user, "company_id", "") or "").strip()
+    email = str(getattr(user, "email", "") or "").strip().lower()
+    user_id = str(getattr(user, "id", "") or "").strip()
     raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+
+    license_doc = None
+    license_customer_id = ""
+    if user_license_id and user_license_id not in {"platform-owner-license", "platform-owner"}:
+        license_doc = await raw_db.commercial_licenses.find_one(
+            {"id": user_license_id},
+            {"_id": 0, "id": 1, "customer_id": 1, "status": 1},
+        )
+        license_customer_id = str((license_doc or {}).get("customer_id") or "").strip()
+
+    if user_customer_id and license_customer_id and user_customer_id != license_customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user is not associated with the licensed customer",
+        )
 
     company = None
     if company_id:
         company = await raw_db.companies.find_one(
             {"id": company_id},
-            {"commercial_customer_id": 1, "source": 1, "id": 1},
+            {
+                "_id": 0, "id": 1, "commercial_customer_id": 1,
+                "license_id": 1, "source": 1, "created_by": 1,
+                "is_platform_owner_workspace": 1,
+            },
         )
         if not company:
             try:
                 company = await raw_db.companies.find_one(
                     {"_id": ObjectId(company_id)},
-                    {"commercial_customer_id": 1, "source": 1, "id": 1},
+                    {
+                        "_id": 0, "id": 1, "commercial_customer_id": 1,
+                        "license_id": 1, "source": 1, "created_by": 1,
+                        "is_platform_owner_workspace": 1,
+                    },
                 )
             except Exception:
                 company = None
 
-    company_customer_id = str((company or {}).get("commercial_customer_id") or "").strip()
+    # Owner workspace identity overrides stale customer/license fields on that
+    # workspace row. The real licensee company must be resolved independently.
+    owner_workspace_link = bool((company or {}).get("is_platform_owner_workspace") is True)
+    company_customer_id = (
+        ""
+        if owner_workspace_link
+        else str((company or {}).get("commercial_customer_id") or "").strip()
+    )
+    company_license_id = (
+        ""
+        if owner_workspace_link
+        else str((company or {}).get("license_id") or "").strip()
+    )
 
-    # The authenticated user's customer identity and its company ownership
-    # marker must agree. Never "repair" a mismatch by switching an admin to the
-    # company record's customer: that can silently route the request into another
-    # licensee's database and expose that customer's data. Resolve stale identity
-    # links through an explicit, audited repair flow instead.
-    if user_customer_id and company_customer_id and user_customer_id != company_customer_id:
+    customer_id = user_customer_id or license_customer_id
+    if customer_id and company_customer_id and customer_id != company_customer_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Authenticated user is not associated with the licensed company",
         )
-
-    customer_id = user_customer_id or company_customer_id
-
-    # If identity is not resolved yet, check customer by email
     if not customer_id:
-        email = str(getattr(user, "email", "") or "").strip().lower()
-        if email:
-            cust = await raw_db.commercial_license_customers.find_one({"email": email}, {"id": 1})
-            if cust:
-                customer_id = str(cust.get("id") or "").strip()
-            if not customer_id:
-                lic = await raw_db.commercial_licenses.find_one({"customer_email": email}, {"customer_id": 1})
-                if lic:
-                    customer_id = str(lic.get("customer_id") or "").strip()
+        customer_id = company_customer_id
 
-    # Legacy commercial company records may not have commercial_customer_id.
-    # In that case the company id was historically used as the customer key,
-    # but only after the company itself has been positively resolved.
-    if not customer_id and company and (company.get("source") == "commercial-license"):
+    if customer_id and company_license_id and user_license_id and company_license_id != user_license_id:
+        # A customer may have an updated license after renewal. Resolve the
+        # current license by customer below rather than reusing a conflicting
+        # company link.
+        company_license_id = ""
+
+    if not user_license_id and company_license_id:
+        user_license_id = company_license_id
+
+    # Recover the customer from the authenticated email only when it matches
+    # exactly one customer identity. Never infer it from company_id alone.
+    if not customer_id and email:
+        email_pattern = {"$regex": "^" + re.escape(email) + "$", "$options": "i"}
+        candidates = await raw_db.commercial_license_customers.find(
+            {
+                "$or": [
+                    {"email_normalized": email},
+                    {"email": email_pattern},
+                    {"admin_email_normalized": email},
+                    {"admin_email": email_pattern},
+                    {"licensee_email": email_pattern},
+                    {"contact_email": email_pattern},
+                ]
+            },
+            {"_id": 0, "id": 1},
+        ).limit(3).to_list(3)
+        candidate_ids = {
+            str(row.get("id") or "").strip()
+            for row in candidates
+            if str(row.get("id") or "").strip()
+        }
+        if len(candidate_ids) == 1:
+            customer_id = next(iter(candidate_ids))
+        elif len(candidate_ids) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authenticated email is linked to multiple commercial customers",
+            )
+
+    # Older user records may lack license_id and customers may store the login
+    # email on the license rather than on the customer document.
+    if not customer_id and email:
+        email_pattern = {"$regex": "^" + re.escape(email) + "$", "$options": "i"}
+        license_candidates = await raw_db.commercial_licenses.find(
+            {
+                "$or": [
+                    {"customer_email": email_pattern},
+                    {"licensee_email": email_pattern},
+                    {"admin_email": email_pattern},
+                ]
+            },
+            {"_id": 0, "id": 1, "customer_id": 1, "issued_at": 1},
+        ).sort("issued_at", -1).limit(20).to_list(20)
+        candidate_ids = {
+            str(row.get("customer_id") or "").strip()
+            for row in license_candidates
+            if str(row.get("customer_id") or "").strip()
+        }
+        if len(candidate_ids) == 1:
+            customer_id = next(iter(candidate_ids))
+        elif len(candidate_ids) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authenticated email is linked to multiple commercial customers",
+            )
+
+    # Last legacy recovery: a company explicitly created as a commercial
+    # licensee master, and only after verifying that its customer exists.
+    source = str((company or {}).get("source") or "").strip().lower()
+    if not customer_id and company and not owner_workspace_link and source == "commercial-license":
+        legacy_company_id = str(company.get("id") or company_id).strip()
+        linked_customer = await raw_db.commercial_license_customers.find_one(
+            {"id": legacy_company_id}, {"_id": 0, "id": 1}
+        )
+        linked_license = await raw_db.commercial_licenses.find_one(
+            {"customer_id": legacy_company_id}, {"_id": 0, "id": 1}
+        )
+        if linked_customer or linked_license:
+            customer_id = legacy_company_id
+
+    # Preserve self-created, unlicensed legacy workspaces, but never let an
+    # owner workspace or a record with commercial ownership markers become a
+    # customer's identity merely because its ID happens to be company_id.
+    if (
+        not customer_id
+        and company
+        and not owner_workspace_link
+        and not str(company.get("commercial_customer_id") or "").strip()
+        and not str(company.get("license_id") or "").strip()
+        and source not in {"commercial-license", "commercial", "license", "commercial-customer"}
+        and str(company.get("created_by") or "").strip() == user_id
+    ):
         customer_id = company_id
 
-    if not customer_id and company_id and str(getattr(user, "role", "")).lower() == "admin":
-        customer_id = company_id
-
-    # If neither identity source is usable, fail closed instead of creating an
-    # unscoped customer view. This is safer than treating company_id as a
-    # customer id for arbitrary legacy/non-commercial records.
     if not customer_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Authenticated user is not linked to a commercial customer",
         )
 
+    # If the supplied license is stale/missing, do not change customer scope.
+    # The request can still resolve that customer's current license separately.
     return customer_id
 
 
