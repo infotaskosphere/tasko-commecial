@@ -165,16 +165,16 @@ async def _resolve_customer_id(user: Any) -> str | None:
 
     company_customer_id = str((company or {}).get("commercial_customer_id") or "").strip()
 
-    # Prefer the authenticated user identity, but require it to agree with the
-    # company when both values are present. For admins, seamlessly reconcile rather than blocking.
+    # The authenticated user's customer identity and its company ownership
+    # marker must agree. Never "repair" a mismatch by switching an admin to the
+    # company record's customer: that can silently route the request into another
+    # licensee's database and expose that customer's data. Resolve stale identity
+    # links through an explicit, audited repair flow instead.
     if user_customer_id and company_customer_id and user_customer_id != company_customer_id:
-        if str(getattr(user, "role", "")).lower() == "admin":
-            user_customer_id = company_customer_id or user_customer_id
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Authenticated user is not associated with the licensed company",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user is not associated with the licensed company",
+        )
 
     customer_id = user_customer_id or company_customer_id
 
