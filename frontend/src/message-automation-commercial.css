@@ -25,10 +25,12 @@ main .wa-automation-hero > div.relative {
   max-width: 100% !important;
 }
 
-main .wa-automation-tabs {
+/* #root and the component classes intentionally outrank the app-wide
+   #root main [role="tab"] rule that otherwise forces tab buttons to 48px. */
+#root main .wa-automation-tabs {
   display: grid !important;
   grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
-  grid-auto-rows: minmax(34px, auto) !important;
+  grid-auto-rows: 32px !important;
   align-items: stretch !important;
   gap: 0 !important;
   width: 100% !important;
@@ -43,18 +45,22 @@ main .wa-automation-tabs {
   background: #128c7e !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 6px !important;
+  flex-wrap: nowrap !important;
+  gap: 5px !important;
   width: 100% !important;
   min-width: 0 !important;
   max-width: 100% !important;
-  min-height: 34px !important;
-  height: auto !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
   margin: 0 !important;
-  padding: 5px 8px !important;
+  padding: 3px 7px !important;
   box-sizing: border-box !important;
   overflow: hidden !important;
   border: 0 !important;
@@ -65,75 +71,87 @@ main .wa-automation-tabs > .wa-automation-tab {
   background: #128c7e !important;
   color: rgba(255, 255, 255, 0.9) !important;
   text-align: center !important;
-  white-space: normal !important;
-  overflow-wrap: break-word !important;
+  white-space: nowrap !important;
+  text-overflow: clip !important;
   font-size: 11px !important;
-  line-height: 1.12 !important;
+  line-height: 1 !important;
   font-weight: 700 !important;
   cursor: pointer !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab span {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"] span {
   display: block !important;
   min-width: 0 !important;
   max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab:last-child {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"]:last-child {
   border-right: 0 !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab svg {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"] svg {
   flex: 0 0 13px !important;
   width: 13px !important;
   height: 13px !important;
   color: currentColor !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab.is-active {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"].is-active {
   background: #ffffff !important;
   color: #128c7e !important;
   box-shadow: inset 0 -3px 0 #25d366 !important;
 }
 
-main .wa-automation-tabs > .wa-automation-tab:hover:not(.is-active) {
+#root main .wa-automation-tabs > .wa-automation-tab[role="tab"]:hover:not(.is-active) {
   background: #159d8d !important;
   color: #ffffff !important;
 }
 
 @media (max-width: 900px) {
-  main .wa-automation-tabs {
+  #root main .wa-automation-tabs {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     grid-auto-rows: minmax(34px, auto) !important;
   }
-  main .wa-automation-tabs > .wa-automation-tab {
+  #root main .wa-automation-tabs > .wa-automation-tab[role="tab"] {
+    height: auto !important;
     min-height: 34px !important;
-    padding: 5px 7px !important;
-    font-size: 11px !important;
+    max-height: none !important;
+    flex-wrap: wrap !important;
+    padding: 5px 6px !important;
+    white-space: normal !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+  #root main .wa-automation-tabs > .wa-automation-tab[role="tab"] span {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    text-overflow: clip !important;
   }
 }
 
 @media (max-width: 560px) {
-  main .wa-automation-hero {
+  #root main .wa-automation-hero {
     padding: 12px 12px 14px !important;
   }
-  main .wa-automation-tabs {
+  #root main .wa-automation-tabs {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-    grid-auto-rows: minmax(34px, auto) !important;
   }
-  main .wa-automation-tabs > .wa-automation-tab {
+  #root main .wa-automation-tabs > .wa-automation-tab[role="tab"] {
     gap: 5px !important;
-    padding: 5px 6px !important;
+    padding: 5px !important;
     font-size: 10px !important;
   }
-  main .wa-automation-tabs > .wa-automation-tab svg {
+  #root main .wa-automation-tabs > .wa-automation-tab[role="tab"] svg {
     flex-basis: 12px !important;
     width: 12px !important;
     height: 12px !important;
   }
 }
 
-/* Client Visits: a compact square checkbox avoids the global pill-button rules. */
+/* Client Visits: square checkbox; normalize the old cached pill markup too. */
 #root main .visit-multi-date-toggle-row {
   display: grid !important;
   grid-template-columns: 16px minmax(0, 1fr) 24px !important;
@@ -148,7 +166,8 @@ main .wa-automation-tabs > .wa-automation-tab:hover:not(.is-active) {
   min-width: 0 !important;
 }
 
-#root main button.visit-multi-date-checkbox {
+#root main button.visit-multi-date-checkbox,
+#root main button.visit-multi-date-toggle {
   appearance: none !important;
   -webkit-appearance: none !important;
   display: inline-flex !important;
@@ -176,14 +195,28 @@ main .wa-automation-tabs > .wa-automation-tab:hover:not(.is-active) {
   cursor: pointer !important;
 }
 
-#root main button.visit-multi-date-checkbox.is-checked {
+#root main button.visit-multi-date-checkbox.is-checked,
+#root main button.visit-multi-date-toggle[aria-pressed="true"] {
   border-color: #a855f7 !important;
   background: #a855f7 !important;
 }
 
-#root main button.visit-multi-date-checkbox:focus-visible {
-  outline: 2px solid #c084fc !important;
-  outline-offset: 2px !important;
+#root main button.visit-multi-date-toggle > span {
+  display: none !important;
+}
+
+#root main button.visit-multi-date-toggle[aria-pressed="true"]::after {
+  content: "✓" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 18px !important;
+  height: 18px !important;
+  font-size: 13px !important;
+  line-height: 18px !important;
+  text-align: center !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
 }
 
 #root main button.visit-multi-date-checkbox > .visit-multi-date-checkbox-mark {

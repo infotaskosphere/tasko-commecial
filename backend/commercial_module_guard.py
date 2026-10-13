@@ -785,12 +785,20 @@ def _permission_flag(
                 and permissions.get("can_view_aiweave") is True
             )
 
-        # Every commercial role, including the licensee administrator, is
-        # capped by the Platform Owner's explicit page selection.
+        # Dashboard summary APIs are the baseline landing workspace for a
+        # licensee administrator when Taskosphere is licensed and at least one
+        # Taskosphere page is enabled. Older licenses may contain valid selected
+        # pages but omit the separate can_view_dashboard checkbox; denying these
+        # summary APIs then creates 403 errors immediately after licensee login.
+        # Keep this exception admin-only and require an enabled Taskosphere page.
+        # All other page entitlements remain capped by explicit page selection.
         selected_pages = _selected_license_features(
             license_doc,
             module,
         )
+        if module == "taskosphere" and flag == "can_view_dashboard" and is_admin:
+            return bool(selected_pages)
+
         if flag not in selected_pages:
             return False
 
