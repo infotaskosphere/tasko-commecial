@@ -119,24 +119,31 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
                 },
                 {"_id": 1},
             )
-            if (
+            # A stale/misconfigured workspace ID must never break owner login,
+            # and must never cause a licensee company to be adopted as the owner.
+            # Reject it and continue through the independently validated owner
+            # workspace discovery/creation path below.
+            configured_workspace_is_commercial = (
                 customer_id not in {"", "platform-owner"}
                 or license_id not in {"", "platform-owner-license"}
-                or license_ref
-            ):
-                raise RuntimeError(
-                    "PLATFORM_OWNER_WORKSPACE_ID points to a commercial tenant company; refusing to reuse it"
-                )
+                or bool(license_ref)
+            )
             if customer_id:
                 active_license = await raw_db.commercial_licenses.find_one(
                     {"customer_id": customer_id, "status": {"$in": ["active", "trial"]}},
                     {"_id": 1},
                 )
-                if active_license:
-                    raise RuntimeError(
-                        "PLATFORM_OWNER_WORKSPACE_ID is linked to an active commercial license"
-                    )
-            company = candidate
+                configured_workspace_is_commercial = (
+                    configured_workspace_is_commercial or bool(active_license)
+                )
+            if configured_workspace_is_commercial:
+                logger.error(
+                    "Ignoring PLATFORM_OWNER_WORKSPACE_ID because it resolves to a "
+                    "commercial tenant; resolving a separate Platform Owner workspace"
+                )
+                candidate = None
+            if candidate:
+                company = candidate
 
     # Existing marked Master Data firms do not necessarily have source='platform-owner'.
     # Reuse a unique marker-backed company only when creator/owner metadata proves
@@ -227,17 +234,37 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
                 continue
 
             commercial_customer_id = str(candidate.get("commercial_customer_id") or "").strip()
+            commercial_license_id = str(candidate.get("license_id") or "").strip()
+            candidate_company_id = str(candidate.get("id") or candidate_id).strip()
+            linked_commercial_license = await raw_db.commercial_licenses.find_one(
+                {
+                    "$or": [
+                        {"id": candidate_company_id},
+                        {"company_id": candidate_company_id},
+                        {"customer_id": candidate_company_id},
+                        {"id": commercial_license_id} if commercial_license_id else {"id": "__no_license__"},
+                        {"customer_id": commercial_customer_id} if commercial_customer_id else {"customer_id": "__no_customer__"},
+                    ]
+                },
+                {"_id": 1},
+            )
+            if (
+                commercial_customer_id not in {"", "platform-owner"}
+                or commercial_license_id not in {"", "platform-owner-license"}
+                or linked_commercial_license
+            ):
+                continue
             active_customer_license = False
             if commercial_customer_id:
                 active_customer_license = bool(
                     await raw_db.commercial_licenses.find_one(
-                        {"customer_id": commercial_customer_id, "status": "active"},
+                        {"customer_id": commercial_customer_id, "status": {"$in": ["active", "trial"]}},
                         {"_id": 1},
                     )
                 )
             if not active_customer_license:
                 company = candidate
-                owner_workspace_id = str(candidate.get("id") or candidate_id)
+                owner_workspace_id = candidate_company_id
                 break
 
     # The owner workspace must not depend on the licensee registry. Create it
