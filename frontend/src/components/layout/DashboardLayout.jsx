@@ -204,9 +204,13 @@ const DashboardLayout = ({ children }) => {
     // Settings is a shared administration area. Keep all three Settings links visible
     // to the Platform Owner and authenticated licensee admins, independent of the
     // purchased operational-module flags. Backup & Restore is filtered separately below.
+    const normalizedRole = String(user?.role?.value || user?.role || '').trim().toLowerCase();
     const isSettingsPage = ['/settings/email', '/settings/general', '/settings/whatsapp'].includes(item?.path);
-    if (isSettingsPage && (isPlatformOwner || (user?.role?.toLowerCase() === 'admin' && (Boolean(user?.company_id) || !isCommercialTenant(user))))) return true;
-    if (item.adminOnly && user?.role?.toLowerCase() !== 'admin' && !isPlatformOwner) return false;
+    // Settings visibility must not depend on company_id: some valid commercial
+    // licensee admin identities are scoped by licensee_uid/license_id instead.
+    // This is navigation visibility only; route gates still require an admin/owner.
+    if (isSettingsPage && (isPlatformOwner || normalizedRole === 'admin')) return true;
+    if (item.adminOnly && normalizedRole !== 'admin' && !isPlatformOwner) return false;
     if (item.adminOnly && item.relatedModule) {
       if (isPlatformOwner) return true;
       if (!hasModuleAccess(user, item.relatedModule)) return false;
