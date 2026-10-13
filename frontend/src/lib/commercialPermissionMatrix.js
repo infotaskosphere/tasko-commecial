@@ -355,7 +355,7 @@ export function hasEffectivePermission(user, permission) {
 
     return user.permissions?.[permission] === true || (permission === "can_view_client_discussion" && user.permissions?.can_view_all_leads === true);
   }
-  const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_create_quotations", can_view_clients: "can_view_all_clients" };
+  const legacyToPage = { can_manage_invoices: "can_view_sale", can_create_quotations: "can_view_quotations", can_view_clients: "can_view_all_clients" };
   const page = legacyToPage[permission];
   if (page) return hasEffectivePermission(user, page) && user.permissions?.[permission] !== false;
   return user.permissions?.[permission] === true;
