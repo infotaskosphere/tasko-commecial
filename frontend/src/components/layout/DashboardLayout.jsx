@@ -151,12 +151,15 @@ const DashboardLayout = ({ children }) => {
   useEffect(() => {
     const inSettingsWorkspace =
       location.pathname === '/settings' || location.pathname.startsWith('/settings/');
-    if (!inSettingsWorkspace) return undefined;
+    if (!inSettingsWorkspace || loading || !document.body) return undefined;
 
-    const sidebar = document.querySelector('aside .sidebar-scroll');
-    if (!sidebar) return undefined;
-
+    // Observe the document, not only the sidebar element. Some legacy/runtime
+    // navigation rows are inserted after authentication has completed, and the
+    // sidebar itself may not exist during the initial loading render.
     const suppressLegacyBackupEntry = () => {
+      const sidebar = document.querySelector('aside .sidebar-scroll');
+      if (!sidebar) return;
+
       sidebar.querySelectorAll('a').forEach((link) => {
         const href = String(link.getAttribute('href') || '').trim().toLowerCase();
         const label = String(link.textContent || '').replace(/\s+/g, ' ').trim();
@@ -167,6 +170,9 @@ const DashboardLayout = ({ children }) => {
         const row = link.parentElement;
         if (row instanceof HTMLElement) {
           row.hidden = true;
+          // Tailwind's .flex can override the browser's default [hidden] style.
+          // Use an important inline display rule so the stale row is actually hidden.
+          row.style.setProperty('display', 'none', 'important');
           row.setAttribute('aria-hidden', 'true');
           row.dataset.settingsBackupNavSuppressed = 'true';
         }
@@ -176,9 +182,9 @@ const DashboardLayout = ({ children }) => {
 
     suppressLegacyBackupEntry();
     const observer = new MutationObserver(suppressLegacyBackupEntry);
-    observer.observe(sidebar, { childList: true, subtree: true, characterData: true });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
-  }, [location.pathname]);
+  }, [location.pathname, loading]);
 
   if (loading) return <GifLoader />; if (!user) { navigate('/login', { replace: true }); return null; }
   const handleLogout = () => { if (window.__TASKO_LOGOUT_IN_PROGRESS__) return; window.__TASKO_LOGOUT_IN_PROGRESS__ = true; window.__STOP_ACTIVITY__ = true; setUserMenuOpen(false); void logout(); toast.success('Logged out successfully'); navigate('/login', { replace: true }); window.setTimeout(() => { window.__TASKO_LOGOUT_IN_PROGRESS__ = false; }, 500); };
