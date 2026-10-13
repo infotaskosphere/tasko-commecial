@@ -805,10 +805,9 @@ function VisitFormModal({ visit, clients, users, currentUser, onClose }) {
                 aria-label="Enable multi-date scheduling"
                 aria-pressed={bulkMode}
                 onClick={() => setBulkMode(b => !b)}
-                className={cn("visit-multi-date-toggle relative h-5 w-9 min-w-[36px] max-w-[36px] p-0 m-0 justify-self-end rounded-full transition-colors flex-none", bulkMode ? "bg-purple-500" : "bg-slate-300 dark:bg-slate-600")}
-                style={{ display: "block", width: 36, minWidth: 36, maxWidth: 36, height: 20, minHeight: 20, maxHeight: 20, flex: "0 0 36px", padding: 0, margin: 0, boxSizing: "border-box", justifySelf: "end" }}
+                className={cn("visit-multi-date-checkbox justify-self-end", bulkMode ? "is-checked" : "")}
               >
-                <span className={cn("absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform", bulkMode ? "translate-x-4" : "translate-x-0.5")} />
+                {bulkMode && <span aria-hidden="true" className="visit-multi-date-checkbox-mark">✓</span>}
               </button>
             </div>
           )}
