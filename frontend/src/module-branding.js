@@ -15,6 +15,9 @@ const MODULE_BRANDING = {
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
   aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
   records: { label: 'Records', landingPath: '/records-dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Records Vault' },
+  // Utility sections have text wordmarks rather than the Taskosphere product logo.
+  admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true, alt: 'Admin' },
+  settings: { label: 'Setting', landingPath: '/settings/general', wordmark: true, alt: 'Setting' },
 };
 
 // Last-resort logo that ships INSIDE the JS bundle. If a static file is missing
@@ -106,6 +109,12 @@ const syncModuleBranding = () => {
   renameNavigation();
   const moduleId = getActiveModuleId();
   const branding = MODULE_BRANDING[moduleId] || FALLBACK;
+  // DashboardLayout renders Admin/Setting as React wordmarks. Never fall back
+  // to the Taskosphere image for these routes via this legacy DOM branding shim.
+  if (branding.wordmark) {
+    lastModuleId = moduleId;
+    return;
+  }
   const header = document.querySelector('header.fixed');
   if (!header) return;
 
