@@ -530,17 +530,52 @@ async def _canonicalize_platform_owner_company(user):
                     customer_id in {"", "platform-owner"}
                     and license_id in {"", "platform-owner-license"}
                 )
+
+                # Some historical rows were incorrectly stamped with a
+                # licensee's customer/license IDs even though this exact row is
+                # an explicitly marked Platform Owner workspace created by the
+                # verified Platform Owner. Never clear the markers based on the
+                # name alone: require a separate, non-owner company record that
+                # proves the same customer/license exists independently.
+                separate_licensee_counterpart = None
+                if not owner_markers_only or license_ref:
+                    counterpart_clauses = []
+                    if customer_id:
+                        counterpart_clauses.extend([
+                            {"id": customer_id},
+                            {"commercial_customer_id": customer_id},
+                        ])
+                    if license_id:
+                        counterpart_clauses.append({"license_id": license_id})
+                    if counterpart_clauses:
+                        separate_licensee_counterpart = await raw_db.companies.find_one(
+                            {
+                                "$and": [
+                                    {"id": {"$ne": configured_id}},
+                                    {"is_platform_owner_workspace": {"$ne": True}},
+                                    {"$or": counterpart_clauses},
+                                ]
+                            },
+                            {"_id": 0, "id": 1, "source": 1, "commercial_customer_id": 1, "license_id": 1},
+                        )
+
+                verified_duplicated_markers = bool(
+                    candidate.get("is_platform_owner_workspace") is True
+                    and separate_licensee_counterpart
+                )
                 if (
                     configured_name_matches
                     and creator_is_owner
                     and not source_is_commercial
-                    and owner_markers_only
-                    and not license_ref
+                    and (
+                        (owner_markers_only and not license_ref)
+                        or verified_duplicated_markers
+                    )
                 ):
                     companies = [*companies, candidate]
                     company_by_id[configured_id] = candidate
                     logger.warning(
-                        "Recovered configured Platform Owner workspace via verified owner creator; company_id=%s",
+                        "Recovered configured Platform Owner workspace after verifying owner creator and independent licensee counterpart; company_id=%s",
                         configured_id,
                     )
                 else:
