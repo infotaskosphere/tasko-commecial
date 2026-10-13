@@ -15,6 +15,7 @@ without recreating a licensee/customer record.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -24,6 +25,8 @@ from bson import ObjectId
 from backend import dependencies as _dependencies
 from backend.platform_owner import is_platform_owner
 
+
+logger = logging.getLogger(__name__)
 
 _original_saas_session_user = _dependencies._get_saas_session_user
 
