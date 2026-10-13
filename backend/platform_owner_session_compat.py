@@ -109,6 +109,10 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
             {"id": configured_workspace_id,
              "status": {"$nin": ["deleted", "inactive", "disabled"]}}
         )
+        if candidate:
+            # Needed by the marked-workspace exception below too; historically
+            # source was initialized only for legacy records without this marker.
+            source = str(candidate.get("source") or "").strip().lower()
         if candidate and candidate.get("is_platform_owner_workspace") is not True:
             # Some legitimate owner workspaces pre-date the owner marker.
             # Adopt one only when the deployment explicitly names its exact ID,
