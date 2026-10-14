@@ -22,6 +22,13 @@ from backend import platform_owner_session_compat as _owner_session_compat
 
 app = server_module.app
 
+# Performance layer is deliberately installed after the application has loaded
+# all routes, but before Uvicorn starts accepting traffic. It does not alter
+# tenant/license/permission decisions; it only coalesces identical authenticated
+# dashboard GETs for a couple of seconds.
+from backend.performance_runtime import install_performance_cache
+install_performance_cache(app)
+
 # The Platform Owner has its own operational company/workspace. The owner is
 # exempt from customer subscription gates, but opaque SaaS sessions must still
 # carry that workspace company_id so /auth/me and normal application APIs can
