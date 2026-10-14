@@ -83,10 +83,12 @@ function RoutePrefetcher() {
       if (!href || !href.startsWith("/")) return;
       prefetchRoute(href.split("?")[0].split("#")[0]);
     };
-    document.addEventListener("pointerover", warm, { passive: true });
+    // Load a route chunk only after an explicit interaction, not whenever the
+    // pointer happens to cross a navigation link.
+    document.addEventListener("pointerdown", warm, { passive: true });
     document.addEventListener("focusin", warm);
     return () => {
-      document.removeEventListener("pointerover", warm);
+      document.removeEventListener("pointerdown", warm);
       document.removeEventListener("focusin", warm);
     };
   }, []);

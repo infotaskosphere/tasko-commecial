@@ -1,6 +1,5 @@
 import axios from "axios";
 import { useState, useEffect } from "react";
-import { handleMockRoute } from "./mockBackend";
 import { isPlatformOwner } from "./commercialPermissionMatrix";
 
 // ─────────────────────────────────────────────────────────────
@@ -339,6 +338,7 @@ api.interceptors.request.use(
       }
 
       config.adapter = async (cfg) => {
+        const { handleMockRoute } = await import("./mockBackend");
         const method = (cfg.method || "get").toLowerCase();
         const rawUrl = cfg.url || "";
         let bodyData = cfg.data;
@@ -440,7 +440,7 @@ api.interceptors.response.use(
     return response;
   },
 
-  (error) => {
+  async (error) => {
     if (!error.config?._silent) {
       _setLoading(-1);
     }
@@ -498,6 +498,7 @@ api.interceptors.response.use(
 
     if (isOffline) {
       try {
+        const { handleMockRoute } = await import("./mockBackend");
         const method = (error.config?.method || "get").toLowerCase();
         const rawUrl = error.config?.url || "";
         let bodyData = error.config?.data;

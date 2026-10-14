@@ -69,7 +69,7 @@ const getAuthHeader = () => {
 
 // ── Dashboard session cache (2-minute TTL) ───────────────────────────────────
 const DASH_CACHE_TTL = 2 * 60 * 1000; // 2 minutes
-const DASH_CACHE_KEY = 'dashboard_cache_v1';
+const DASH_CACHE_KEY = 'dashboard_cache_v2';
 
 const getDashCache = () => {
   try {
@@ -825,7 +825,7 @@ const DonutMetricCard = memo(function DonutMetricCard({ isDark, title, centerVal
 });
 
 // ── Weekly Trend Diagram — created vs completed, last 7 days ────────────────
-const WeeklyTrendChart = memo(function WeeklyTrendChart({ isDark, tasks = [], onCardClick }) {
+const WeeklyTrendChart = memo(function WeeklyTrendChart({ isDark, tasks = [], trendData, onCardClick }) {
   const data = React.useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
@@ -833,6 +833,17 @@ const WeeklyTrendChart = memo(function WeeklyTrendChart({ isDark, tasks = [], on
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() - i);
       days.push(d);
+    }
+    if (Array.isArray(trendData)) {
+      const trendByDate = new Map(trendData.map((item) => [item.date, item]));
+      return days.map((day) => {
+        const item = trendByDate.get(format(day, 'yyyy-MM-dd'));
+        return {
+          label: format(day, 'EEE'),
+          created: Number(item?.created || 0),
+          completed: Number(item?.completed || 0),
+        };
+      });
     }
     return days.map((day) => {
       const next = new Date(day); next.setDate(next.getDate() + 1);
@@ -849,7 +860,7 @@ const WeeklyTrendChart = memo(function WeeklyTrendChart({ isDark, tasks = [], on
       }
       return { label: format(day, 'EEE'), created, completed };
     });
-  }, [tasks]);
+  }, [tasks, trendData]);
 
   const totalCreated   = data.reduce((s, d) => s + d.created, 0);
   const totalCompleted = data.reduce((s, d) => s + d.completed, 0);
@@ -1099,6 +1110,7 @@ export default function Dashboard() {
 
   // ── Core State ─────────────────────────────────────────────────────────────
   const [tasks,             setTasks]             = useState([]);
+  const [dashboardTaskSummary, setDashboardTaskSummary] = useState(null);
   const [visits,            setVisits]            = useState([]);
   const [loading,           setLoading]           = useState(false);
   const [rankings,          setRankings]          = useState([]);
@@ -1130,12 +1142,7 @@ export default function Dashboard() {
   // ── Real Data State ────────────────────────────────────────────────────────
   const [allUsers,         setAllUsers]         = useState([]);
   const [usersLoading,     setUsersLoading]     = useState(true);
-  const [stats,            setStats]            = useState({
-    total_tasks: 0, completed_tasks: 0, overdue_tasks: 0,
-    expiring_dsc_count: 0, expired_dsc_count: 0,
-    upcoming_due_dates: 0, total_clients: 0, total_dsc: 0,
-    team_workload: [],
-  });
+  const [stats,            setStats]            = useState(null);
   const [upcomingDueDates, setUpcomingDueDates] = useState([]);
   const [todayAttendance,  setTodayAttendance]  = useState(null);
   const [holidaysData,     setHolidaysData]     = useState([]);
@@ -1161,30 +1168,34 @@ export default function Dashboard() {
   // single tap/click (see onClick below).
   const newTaskNavGuardRef = useRef(false);
 
-  // Warm the /tasks route's lazy chunk as soon as the Dashboard is idle, and
-  // again on hover/focus of the button below. Without this, the first click
-  // on "+ New Task" has to wait for Tasks.jsx (a very large page) to be
-  // downloaded and parsed before the Create Task dialog can even mount —
-  // which is what made the page look like it "opened, closed, and reopened"
-  // (empty shell → dialog pops in late → data finishes loading around it).
-  // import() is cached by the browser/bundler, so calling this more than
-  // once is a harmless no-op once the chunk is loaded.
+  // Load the large Tasks page only when the user shows intent to open it.
+  // The New Task button below calls this on hover/focus, avoiding idle-time
+  // download and parse work for users who stay on the Dashboard.
   const preloadTasksPage = useCallback(() => {
     import('./Tasks.jsx').catch(() => {});
   }, []);
-  useEffect(() => {
-    const idle = window.requestIdleCallback
-      ? window.requestIdleCallback(preloadTasksPage, { timeout: 2000 })
-      : setTimeout(preloadTasksPage, 300);
-    return () => {
-      if (window.cancelIdleCallback && typeof idle === 'number') window.cancelIdleCallback(idle);
-      else clearTimeout(idle);
-    };
-  }, [preloadTasksPage]);
 
   // ── Fetch All Dashboard Data (with session cache for fast revisits) ──────────
+  const applyDashboardTaskSummary = useCallback((summary) => {
+    if (!summary || typeof summary !== 'object') return;
+    setDashboardTaskSummary(summary);
+    const rowsById = new Map();
+    for (const key of ['recent_tasks', 'assigned_to_me', 'assigned_by_me']) {
+      for (const task of Array.isArray(summary[key]) ? summary[key] : []) {
+        if (task?.id) rowsById.set(task.id, task);
+      }
+    }
+    setTasks([...rowsById.values()]);
+  }, []);
+
   const applyWave1Data = React.useCallback((d) => {
-    if (Array.isArray(d.tasks))      setTasks(d.tasks);
+    if (d.taskSummary && typeof d.taskSummary === 'object') {
+      applyDashboardTaskSummary(d.taskSummary);
+    } else if (Array.isArray(d.tasks)) {
+      // Backward compatibility for a session cache created by an older build.
+      setDashboardTaskSummary(null);
+      setTasks(d.tasks);
+    }
     if (Array.isArray(d.holidays))   setHolidaysData(d.holidays);
     if (Array.isArray(d.visits))     setVisits(d.visits);
     if (d.stats && !Array.isArray(d.stats)) setStats(d.stats);
@@ -1193,7 +1204,7 @@ export default function Dashboard() {
     if (Array.isArray(d.todos))      setTodosRaw(d.todos);
     if (Array.isArray(d.reminders))  setReminders(d.reminders);
     if (d.deptMembers && typeof d.deptMembers.count === 'number') setDeptMembers(d.deptMembers);
-  }, []);
+  }, [applyDashboardTaskSummary]);
 
   const applyWave2Data = React.useCallback((d) => {
     if (Array.isArray(d.users))    { setAllUsers(d.users); setUsersLoading(false); }
@@ -1226,13 +1237,9 @@ export default function Dashboard() {
     // ── Wave 1: critical path ──
     let wave1 = {};
     try {
-      // /tasks is capped to the 500 most-recently-created tasks — the dashboard only
-      // ever displays small "recent" slices of this array (top 5-6, newest-first);
-      // aggregate counts/overdue stats come from /dashboard/stats and
-      // /duedates/upcoming, which are unaffected by this cap.
-      const [tasksResp, stats, dueDates, attendance, todos, visits, holidays, deptMembers, reminders] =
+      const [taskSummary, stats, dueDates, attendance, todos, visits, holidays, deptMembers, reminders] =
         await Promise.all([
-          apiFetch('/tasks?page=1&page_size=500'),
+          apiFetch('/dashboard/task-summary'),
           apiFetch('/dashboard/stats'),
           apiFetch('/duedates/upcoming?days=30'),
           apiFetch('/attendance/today'),
@@ -1242,8 +1249,7 @@ export default function Dashboard() {
           apiFetch('/dashboard/dept-members'),
           apiFetch('/email/reminders'),
         ]);
-      const tasks = Array.isArray(tasksResp) ? tasksResp : (tasksResp?.tasks || []);
-      wave1 = { tasks, stats, dueDates, attendance, todos, visits, holidays, deptMembers, reminders };
+      wave1 = { taskSummary, stats, dueDates, attendance, todos, visits, holidays, deptMembers, reminders };
       applyWave1Data(wave1);
     } catch (e) {
       console.error('Dashboard wave-1 fetch error:', e);
@@ -1258,12 +1264,11 @@ export default function Dashboard() {
       const canFetchUsers = !isCommercial || (perms.can_access_people_matrix === true && perms.can_view_user_page !== false);
       const canFetchLeads = !isCommercial || (perms.can_access_proposals === true && perms.can_view_all_leads !== false);
 
-      const [users, leads, rankings] = await Promise.all([
+      const [users, leads] = await Promise.all([
         canFetchUsers ? apiFetch('/users') : Promise.resolve([]),
         canFetchLeads ? apiFetch('/leads') : Promise.resolve([]),
-        apiFetch(`/reports/performance-rankings?period=${rankingPeriod}`),
       ]);
-      wave2 = { users: users || [], leads: leads || [], rankings };
+      wave2 = { users: users || [], leads: leads || [] };
       applyWave2Data(wave2);
     } catch (e) {
       console.error('Dashboard wave-2 fetch error:', e);
@@ -1272,7 +1277,7 @@ export default function Dashboard() {
 
     // Cache the fresh data
     setDashCache({ wave1, wave2 });
-  }, [apiFetch, rankingPeriod, applyWave1Data, applyWave2Data]);
+  }, [apiFetch, applyWave1Data, applyWave2Data]);
 
   // Initial load — serve from cache first, refresh in background
   useEffect(() => {
@@ -1310,11 +1315,14 @@ export default function Dashboard() {
 
   const crossVisibilityUserIds = useMemo(() => {
     if (isAdmin) {
+      if (Array.isArray(dashboardTaskSummary?.assigned_user_ids)) {
+        return dashboardTaskSummary.assigned_user_ids.filter(id => id && id !== user?.id);
+      }
       return [...new Set(tasks.map(t => t.assigned_to).filter(id => id && id !== user?.id))];
     }
     const perms = user?.permissions || {};
     return (perms.view_other_tasks || []).filter(id => id !== user?.id);
-  }, [user, isAdmin, tasks, allUsers]);
+  }, [user, isAdmin, tasks, dashboardTaskSummary]);
 
   const openLeadsCount = useMemo(
     () => leadsData.filter(
@@ -1351,16 +1359,26 @@ export default function Dashboard() {
     [tasks, user?.id]
   );
 
-  const myTaskCount = myTasks.length;
+  const myTaskCount = dashboardTaskSummary?.my_task_count ?? myTasks.length;
+  const displayedTaskTotal =
+    stats?.total_tasks ?? dashboardTaskSummary?.total_task_count ?? tasks.length;
+  const displayedTaskCompleted =
+    stats?.completed_tasks ?? dashboardTaskSummary?.completed_task_count ?? 0;
 
   const tasksAssignedToMe = useMemo(() => {
+    if (Array.isArray(dashboardTaskSummary?.assigned_to_me)) {
+      return dashboardTaskSummary.assigned_to_me;
+    }
     const filtered = tasks.filter(
       t => t.assigned_to === user?.id && !isTaskHiddenAsCompleted(t)
     );
     return sortNewestFirst(filtered).slice(0, 6);
-  }, [tasks, user?.id]);
+  }, [dashboardTaskSummary, tasks, user?.id]);
 
   const tasksAssignedByMe = useMemo(() => {
+    if (Array.isArray(dashboardTaskSummary?.assigned_by_me)) {
+      return dashboardTaskSummary.assigned_by_me;
+    }
     const filtered = tasks.filter(
       t =>
         t.created_by === user?.id &&
@@ -1368,15 +1386,33 @@ export default function Dashboard() {
         !isTaskHiddenAsCompleted(t)
     );
     return sortNewestFirst(filtered).slice(0, 6);
-  }, [tasks, user?.id]);
+  }, [dashboardTaskSummary, tasks, user?.id]);
 
   const recentTasks = useMemo(() => {
+    if (Array.isArray(dashboardTaskSummary?.recent_tasks)) {
+      return dashboardTaskSummary.recent_tasks;
+    }
     const filtered = tasks.filter(t => !isTaskHiddenAsCompleted(t));
     return sortNewestFirst(filtered).slice(0, 5);
-  }, [tasks]);
+  }, [dashboardTaskSummary, tasks]);
 
   const teamTaskBreakdown = useMemo(() => {
     if (!hasCrossVisibility) return [];
+    if (Array.isArray(dashboardTaskSummary?.team_task_breakdown)) {
+      return dashboardTaskSummary.team_task_breakdown
+        .map(member => {
+          const memberUser = allUsers.find(u => u.id === member.user_id);
+          const name = member.user_id === user?.id
+            ? (memberUser?.full_name || 'Me')
+            : (memberUser?.full_name || 'Unknown');
+          return {
+            id: member.user_id,
+            name,
+            pendingCount: Number(member.pending_count || 0),
+          };
+        })
+        .filter(member => member.pendingCount > 0);
+    }
     const allUids = [...new Set([user?.id, ...crossVisibilityUserIds].filter(Boolean))];
     return allUids
       .map(uid => {
@@ -1390,10 +1426,13 @@ export default function Dashboard() {
         return { id: uid, name: label, pendingCount };
       })
       .filter(m => m.pendingCount > 0);
-  }, [hasCrossVisibility, crossVisibilityUserIds, tasks, allUsers, user?.id]);
+  }, [hasCrossVisibility, dashboardTaskSummary, crossVisibilityUserIds, tasks, allUsers, user?.id]);
 
   const teamTaskTotal = useMemo(() => {
     if (!hasCrossVisibility) return 0;
+    if (dashboardTaskSummary?.team_task_total != null) {
+      return Number(dashboardTaskSummary.team_task_total);
+    }
     return tasks.filter(t => {
       const isIncomplete = t.status !== 'completed';
       const isMyTask = t.assigned_to === user?.id || (t.sub_assignees || []).includes(user?.id);
@@ -1402,7 +1441,7 @@ export default function Dashboard() {
         (t.sub_assignees || []).some(id => crossVisibilityUserIds.includes(id));
       return isIncomplete && (isMyTask || isCrossTask);
     }).length;
-  }, [hasCrossVisibility, crossVisibilityUserIds, tasks, user?.id]);
+  }, [hasCrossVisibility, dashboardTaskSummary, crossVisibilityUserIds, tasks, user?.id]);
 
   const sortedDueDates = useMemo(() => {
     return [...upcomingDueDates]
@@ -1502,6 +1541,19 @@ export default function Dashboard() {
     setTasks(prev =>
       prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t)
     );
+    const refreshTaskSummary = async () => {
+      clearDashCache();
+      const [summary, refreshedStats] = await Promise.all([
+        apiFetch('/dashboard/task-summary'),
+        apiFetch('/dashboard/stats'),
+      ]);
+      if (summary && typeof summary === 'object') {
+        applyDashboardTaskSummary(summary);
+      }
+      if (refreshedStats && typeof refreshedStats === 'object') {
+        setStats(refreshedStats);
+      }
+    };
     try {
       const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
         method: 'PATCH',
@@ -1510,16 +1562,16 @@ export default function Dashboard() {
       });
       if (!res.ok) {
         toast.error('Failed to update status');
-        const data = await apiFetch('/tasks?page=1&page_size=500');
-        const arr = Array.isArray(data) ? data : (data?.tasks || null);
-        if (Array.isArray(arr)) setTasks(arr);
+        await refreshTaskSummary();
       } else {
         toast.success(`Marked as ${newStatus.replace('_', ' ')}`);
+        await refreshTaskSummary();
       }
     } catch {
       toast.error('Network error');
+      await refreshTaskSummary();
     }
-  }, [apiFetch, API_BASE, getAuthHeader]);
+  }, [apiFetch, API_BASE, getAuthHeader, applyDashboardTaskSummary]);
 
   // ── Punch In / Out ────────────────────────────────────────────────────────
   const handlePunchAction = useCallback(async (action) => {
@@ -1595,8 +1647,8 @@ export default function Dashboard() {
   );
 
   const myCompletedTasks = useMemo(
-    () => myTasks.filter(t => t.status === 'completed').length,
-    [myTasks]
+    () => dashboardTaskSummary?.my_completed_task_count ?? myTasks.filter(t => t.status === 'completed').length,
+    [dashboardTaskSummary, myTasks]
   );
   const completionRate =
     myTaskCount > 0 ? Math.round((myCompletedTasks / myTaskCount) * 100) : 0;
@@ -1758,10 +1810,13 @@ export default function Dashboard() {
 
   const GreetIcon = getGreetingIcon();
 
-  const overdueTaskCount = useMemo(() => myTasks.filter(t => t.status !== 'completed' && t.due_date && new Date(t.due_date) < new Date()).length, [myTasks]);
+  const overdueTaskCount = useMemo(
+    () => dashboardTaskSummary?.my_overdue_count ?? myTasks.filter(t => t.status !== 'completed' && t.due_date && new Date(t.due_date) < new Date()).length,
+    [dashboardTaskSummary, myTasks]
+  );
 
   // Today's new tasks: tasks assigned to me created today
-  const todayNewTasks = useMemo(() => {
+  const todayNewTasksFallback = useMemo(() => {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     return tasks.filter(t => {
       if (!t.created_at) return false;
@@ -1771,6 +1826,8 @@ export default function Dashboard() {
       return createdDate === todayStr;
     });
   }, [tasks, user?.id]);
+  const todayNewTaskCount =
+    dashboardTaskSummary?.today_new_task_count ?? todayNewTasksFallback.length;
 
   return (
     <>
@@ -1887,7 +1944,7 @@ export default function Dashboard() {
                           className="font-black leading-none tracking-tight text-white"
                           style={{ fontSize: '1.35rem', fontFamily: "'Roboto Mono', monospace" }}
                         >
-                          {stats?.total_tasks ?? tasks.length}
+                          {displayedTaskTotal}
                         </span>
                         <span className="text-white/60 text-[10px] font-semibold uppercase tracking-widest mt-1">
                           Total Tasks
@@ -1896,13 +1953,13 @@ export default function Dashboard() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-white/50 text-[9px] font-semibold">Pending</span>
                             <span className="text-white/90 text-[9px] font-black tabular-nums">
-                              {Math.max(0, (stats?.total_tasks ?? tasks.length) - (stats?.completed_tasks ?? 0))}
+                              {Math.max(0, displayedTaskTotal - displayedTaskCompleted)}
                             </span>
                           </div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-white/50 text-[9px] font-semibold">Completed</span>
                             <span style={{ color: '#5CCB5F' }} className="text-[9px] font-black tabular-nums">
-                              {stats?.completed_tasks ?? 0}
+                              {displayedTaskCompleted}
                             </span>
                           </div>
                         </div>
@@ -2160,13 +2217,13 @@ export default function Dashboard() {
             onClick={() => navigate('/tasks?filter=today_new')}
             style={{
               borderLeftWidth: 3, borderLeftColor: isDark ? '#a5b4fc' : '#4338ca',
-              background: todayNewTasks.length > 0
+              background: todayNewTaskCount > 0
                 ? (isDark ? 'linear-gradient(150deg, rgba(129,140,248,0.16) 0%, rgba(30,41,59,1) 55%)' : 'linear-gradient(150deg, #e0e7ff 0%, #ffffff 60%)')
                 : (isDark ? 'linear-gradient(150deg, rgba(165,180,252,0.08) 0%, rgba(30,41,59,1) 55%)' : 'linear-gradient(150deg, #4338ca0d 0%, #ffffff 55%)'),
               boxShadow: isDark ? 'none' : '0 1px 2px rgba(67,56,202,0.04)',
             }}
             className={`${metricCardCls} ${
-              todayNewTasks.length > 0
+              todayNewTaskCount > 0
                 ? isDark ? 'border-indigo-800 hover:border-indigo-700' : 'border-indigo-200 hover:border-indigo-300'
                 : isDark ? 'border-slate-700 hover:border-slate-600' : 'border-slate-200/80 hover:border-slate-300'
             }`}
@@ -2176,7 +2233,7 @@ export default function Dashboard() {
                 <div className="min-w-0 flex-1 mr-2">
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">New Today</p>
                   <p className="text-xl font-bold mt-1 tracking-tight" style={{ color: isDark ? '#a5b4fc' : '#4338ca' }}>
-                    {todayNewTasks.length}
+                    {todayNewTaskCount}
                   </p>
                 </div>
                 <div
@@ -2187,10 +2244,10 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className={`flex items-center gap-1 mt-2 text-xs font-medium transition-colors ${
-                todayNewTasks.length > 0 ? 'text-indigo-500' : isDark ? 'text-slate-500' : 'text-slate-400'
+                todayNewTaskCount > 0 ? 'text-indigo-500' : isDark ? 'text-slate-500' : 'text-slate-400'
               } group-hover:text-indigo-500`}>
-                <span>{todayNewTasks.length > 0 ? `${todayNewTasks.length} assigned today` : 'None today'}</span>
-                {todayNewTasks.length > 0 && <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />}
+                <span>{todayNewTaskCount > 0 ? `${todayNewTaskCount} assigned today` : 'None today'}</span>
+                {todayNewTaskCount > 0 && <ChevronRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />}
               </div>
             </CardContent>
           </motion.div>
@@ -2341,7 +2398,12 @@ export default function Dashboard() {
         <React.Fragment key="pie_charts">
         {/* 7-DAY TREND DIAGRAM */}
         <motion.div className="grid grid-cols-1 gap-4 [&>*]:min-w-0" variants={itemVariants}>
-          <WeeklyTrendChart isDark={isDark} tasks={tasks} onCardClick={() => navigate('/tasks')} />
+          <WeeklyTrendChart
+            isDark={isDark}
+            tasks={tasks}
+            trendData={dashboardTaskSummary?.weekly_trend}
+            onCardClick={() => navigate('/tasks')}
+          />
         </motion.div>
         {/* TASK OVERVIEW / TASKS BY TYPE — INTERACTIVE DONUT CARDS */}
         <motion.div
@@ -2349,8 +2411,8 @@ export default function Dashboard() {
           variants={itemVariants}
         >
           {(() => {
-            const totalTasks   = stats?.total_tasks ?? tasks.length;
-            const completedCt  = stats?.completed_tasks ?? 0;
+            const totalTasks   = displayedTaskTotal;
+            const completedCt  = displayedTaskCompleted;
             const overdueCt    = overdueTaskCount;
             const todoCt       = pendingTodos.length;
             const pendingCt    = Math.max(0, totalTasks - completedCt - overdueCt);
