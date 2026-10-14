@@ -22,6 +22,20 @@ from backend import platform_owner_session_compat as _owner_session_compat
 
 app = server_module.app
 
+# Register the composed startup lifecycle exactly once. The legacy code keeps
+# the startup orchestration in backend.server_modules.application_runtime, but
+# it was not attached to FastAPI in the production launcher. Without this,
+# index/bootstrap/scheduler initialization silently never runs on fresh workers.
+if not any(getattr(handler, "__name__", "") == "startup_event" for handler in getattr(app.router, "on_startup", [])):
+    app.add_event_handler("startup", server_module.startup_event)
+
+# Performance layer is deliberately installed after the application has loaded
+# all routes, but before Uvicorn starts accepting traffic. It does not alter
+# tenant/license/permission decisions; it only coalesces identical authenticated
+# dashboard GETs for a couple of seconds.
+from backend.performance_runtime import install_performance_cache
+install_performance_cache(app)
+
 # The Platform Owner has its own operational company/workspace. The owner is
 # exempt from customer subscription gates, but opaque SaaS sessions must still
 # carry that workspace company_id so /auth/me and normal application APIs can
