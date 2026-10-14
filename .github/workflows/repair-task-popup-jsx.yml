@@ -1,0 +1,52 @@
+name: Repair task popup JSX
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Repair Tasks.jsx
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/Tasks.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = '''      </motion.div>\n      </motion.div>\n      </AnimatePresence>'''
+          new = '''      </motion.div>\n      </motion.div>}\n      </AnimatePresence>'''
+          if old not in s:
+              raise SystemExit('Expected unclosed showCreateModal JSX expression was not found; refusing to change the file.')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Build frontend before commit
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/src/pages/Tasks.jsx
+          if git diff --cached --quiet; then
+            echo 'No change required.'
+            exit 0
+          fi
+          git commit -m 'fix: close task popup JSX expression'
+          git push origin HEAD:feature/master-console
