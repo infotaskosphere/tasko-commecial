@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import time
+from urllib.parse import parse_qsl, urlencode
 from typing import Dict, Tuple
 
 from starlette.responses import Response
@@ -58,7 +59,31 @@ def install_performance_cache(app) -> None:
     """Install a tiny authenticated GET cache/coalescer on the FastAPI app."""
     @app.middleware("http")
     async def _performance_cache(request, call_next):
-        if request.method.upper() != "GET" or request.url.path not in _CACHEABLE_PATHS:
+        if request.method.upper() != "GET":
+            return await call_next(request)
+
+        # Dashboard only renders a small recent task slice. Keep the legacy
+        # endpoint contract intact for every other caller, but prevent the
+        # dashboard from accidentally downloading hundreds of task documents.
+        if request.url.path == "/api/tasks":
+            referer = request.headers.get("referer", "")
+            if "/dashboard" in referer:
+                params = parse_qsl(request.url.query, keep_blank_values=True)
+                changed = False
+                normalized = []
+                for key, value in params:
+                    if key == "page_size":
+                        try:
+                            if int(value) > 20:
+                                value = "20"
+                                changed = True
+                        except ValueError:
+                            pass
+                    normalized.append((key, value))
+                if changed:
+                    request.scope["query_string"] = urlencode(normalized).encode("ascii")
+
+        if request.url.path not in _CACHEABLE_PATHS:
             return await call_next(request)
 
         token_hash = _token_hash(request)
