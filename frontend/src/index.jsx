@@ -78,7 +78,29 @@ if (typeof window !== "undefined") {
   const installFormFieldIssueFix = () => {
     ensureFormFieldMetadata(document);
     if (!document.body) return;
-    const observer = new MutationObserver(() => ensureFormFieldMetadata(document));
+
+    const pendingNodes = [];
+    let scheduled = false;
+
+    const flush = () => {
+      scheduled = false;
+      const nodes = pendingNodes.splice(0, pendingNodes.length);
+      for (const node of nodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          ensureFormFieldMetadata(node);
+        }
+      }
+    };
+
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) pendingNodes.push(node);
+      }
+      if (!scheduled && pendingNodes.length) {
+        scheduled = true;
+        queueMicrotask(flush);
+      }
+    });
     observer.observe(document.body, { childList: true, subtree: true });
   };
 
