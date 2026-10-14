@@ -217,6 +217,9 @@ window.addEventListener('popstate', scheduleSync);
 document.addEventListener('click', (event) => {
   if (event.target?.closest?.('#top-module-switcher-bar button, header a[href], aside a, aside button')) scheduleSync();
 }, true);
+// Safety-net only: React/router mutations and navigation events normally
+// trigger syncModuleBranding. Keep a low-frequency fallback for legacy code
+// that changes the active module without emitting a DOM/navigation event.
 window.setInterval(() => {
   if (lastModuleId !== getActiveModuleId()) scheduleSync();
-}, 500);
+}, 2000);
