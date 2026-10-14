@@ -55,7 +55,7 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
                             total_added += 1
                         elif existing.get("status") not in ("confirmed", "rejected"):
                             await db.holidays.update_one(
-                                {"date": date_str}, {"$set": {"status": "confirmed"}}
+                                {"date": date_str}, {"$set": {"status": "confirmed"}
                             )
                 except Exception as year_err:
                     logger.warning(f"Holiday sync for {year} failed: {year_err}")
@@ -97,8 +97,11 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
 
     # 🔥 AUTO MIGRATION: Add consent_given for old users
     try:
+        # Only touch legacy rows that are actually missing consent_given. The
+        # previous {} update rewrote every user document on every backend boot,
+        # which added unnecessary write load and startup latency.
         result = await db.users.update_many(
-            {},  # all users
+            {"$or": [{"consent_given": {"$exists": False}}, {"consent_given": None}]},
             {"$set": {"consent_given": True}},
         )
         logger.info(f"Consent cleanup: Updated {result.modified_count} users")
