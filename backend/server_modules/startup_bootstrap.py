@@ -55,7 +55,7 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
                             total_added += 1
                         elif existing.get("status") not in ("confirmed", "rejected"):
                             await db.holidays.update_one(
-                                {"date": date_str}, {"$set": {"status": "confirmed"}
+                                {"date": date_str}, {"$set": {"status": "confirmed"}}
                             )
                 except Exception as year_err:
                     logger.warning(f"Holiday sync for {year} failed: {year_err}")
