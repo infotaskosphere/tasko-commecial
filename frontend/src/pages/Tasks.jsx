@@ -102,7 +102,7 @@ export default function Tasks() {
             </form>
           </div>
         </motion.div>
-      </motion.div>
+      </motion.div>}
       </AnimatePresence>
     </div>
   );
