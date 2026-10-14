@@ -1,0 +1,49 @@
+name: Fix Tasks JSX build
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fix missing JSX expression close
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/Tasks.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = '      </motion.div>\n      </motion.div>\n      </AnimatePresence>\n    </div>'
+          new = '      </motion.div>\n      </motion.div>}\n      </AnimatePresence>\n    </div>'
+          if old not in s:
+              raise SystemExit('Expected JSX sequence not found; refusing to modify the file.')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Verify JSX/build syntax
+        run: |
+          cd frontend
+          npm install
+          npm run build
+
+      - name: Commit fix and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/fix-tasks-jsx-build.yml
+          git add frontend/src/pages/Tasks.jsx .github/workflows/fix-tasks-jsx-build.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: close task creation JSX expression'
+          git push origin HEAD:feature/master-console
