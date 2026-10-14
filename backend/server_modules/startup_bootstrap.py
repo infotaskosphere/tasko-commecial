@@ -55,7 +55,7 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
                             total_added += 1
                         elif existing.get("status") not in ("confirmed", "rejected"):
                             await db.holidays.update_one(
-                                {"date": date_str}, {"$set": {"status": "confirmed"}}
+                                {"date": date_str}, {"$set": {"status": "confirmed"}
                             )
                 except Exception as year_err:
                     logger.warning(f"Holiday sync for {year} failed: {year_err}")
@@ -95,10 +95,11 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
 
     asyncio.create_task(_keep_alive_ping())
 
-    # 🔥 AUTO MIGRATION: Add consent_given for old users
+    # 🔥 AUTO MIGRATION: Add consent_given only for legacy users that are
+    # actually missing the field. Avoid rewriting every user on every boot.
     try:
         result = await db.users.update_many(
-            {},  # all users
+            {"$or": [{"consent_given": {"$exists": False}}, {"consent_given": None}]},
             {"$set": {"consent_given": True}},
         )
         logger.info(f"Consent cleanup: Updated {result.modified_count} users")
@@ -143,9 +144,8 @@ async def start_bootstrap_tasks(*, db, logger_instance=None):
                 await PlatformEngine.bootstrap_saas_platform()
                 logger.info("Phase 12 SaaS Platform bootstrapped successfully on boot.")
             except Exception as e_saas:
-                logger.error(f"Failed to bootstrap SaaS Platform: {e_saas}")
+                logger.error(f"Failed to bootstrap SaaS Platform on boot: {e_saas}")
 
         asyncio.create_task(bootstrap_saas_platform_async())
     except Exception as e_saas_import:
         logger.error(f"Failed to import SaaS Platform Engine: {e_saas_import}")
-
