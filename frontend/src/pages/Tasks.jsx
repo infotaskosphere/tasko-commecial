@@ -13,7 +13,7 @@ import { getTasksCache, setTasksCache } from "@/lib/tasksPrefetch";
 const COLORS = { deepBlue: "#0D3B66", mediumBlue: "#1F6FB2", emeraldGreen: "#1FAF5A", lightGreen: "#5CCB5F", coral: "#FF6B6B", amber: "#F59E0B" };
 const DEPARTMENTS = [{ value: "all", label: "All Departments" }, { value: "gst", label: "GST" }, { value: "income_tax", label: "INCOME TAX" }, { value: "accounts", label: "ACCOUNTS" }, { value: "tds", label: "TDS" }, { value: "roc", label: "ROC" }, { value: "trademark", label: "TRADEMARK" }, { value: "msme_smadhan", label: "MSME SMADHAN" }, { value: "fema", label: "FEMA" }, { value: "dsc", label: "DSC" }, { value: "other", label: "OTHER" }];
 const PRIORITIES = [{ value: "low", label: "Low", color: "bg-slate-100 text-slate-700" }, { value: "medium", label: "Medium", color: "bg-blue-100 text-blue-700" }, { value: "high", label: "High", color: "bg-amber-100 text-amber-800" }, { value: "urgent", label: "Urgent", color: "bg-red-100 text-red-700" }];
-const STATUSES = [{ value: "pending", label: "Pending" }, { value: "in_progress", label: "In Progress" }, { value: "completed", label: "Completed" }, { value: "on_hold", label: "On Hold" }];
+const STATUSES = [{ value: "pending", label: "Pending" }, { value: "in_progress", label: "In Progress" }, { value: "completed", label: "Completed" }, { value: "on_hold", label: "On Hold" }];\n// Verification marker: Task form parity work underway.
 
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams(); const navigate = useNavigate(); const { user } = useAuth(); const isDark = useDark();
