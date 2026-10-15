@@ -1378,6 +1378,8 @@ class PaymentCreate(BaseModel):
     payment_mode: str = "neft"
     reference_no: str = ""
     notes: str = ""
+    # Distinguish a partial receipt from the invoice's advance.
+    payment_type: str = "payment"
 
 
 class Payment(PaymentCreate):
@@ -4694,6 +4696,9 @@ async def record_payment(data: PaymentCreate, current_user: User = Depends(check
         raise HTTPException(400, "Payment amount must be greater than zero.")
     inv = await db.invoices.find_one({"id": data.invoice_id})
     if not inv: raise HTTPException(404, "Invoice not found")
+    payment_type = str(data.payment_type or "payment").strip().lower()
+    if payment_type not in {"advance", "partial", "payment"}:
+        raise HTTPException(400, "Invalid payment_type. Use advance, partial, or payment.")
     if inv.get("status") == "cancelled":
         raise HTTPException(400, "Cannot record a payment against a cancelled invoice.")
     if inv.get("paid_bank_txn_id"):
@@ -4707,7 +4712,7 @@ async def record_payment(data: PaymentCreate, current_user: User = Depends(check
                         + sum(float(n.get("grand_total") or 0) for n in debit_notes), 2)
     if data.amount > max(outstanding, 0):
         raise HTTPException(400, f"Payment exceeds outstanding amount of ₹{max(outstanding, 0):,.2f}.")
-    payment_data = {**data.model_dump(), "id": str(uuid.uuid4()),
+    payment_data = {**data.model_dump(), "id": str(uuid.uuid4()), "payment_type": payment_type,
                     "company_id": inv.get("company_id") or "",
                     "client_name": inv.get("client_name") or "",
                     "created_by": current_user.id, "created_at": datetime.now(timezone.utc).isoformat()}
