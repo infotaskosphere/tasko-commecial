@@ -4054,6 +4054,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
   const [activeTab, setActiveTab] = useState('details');
   // Partial Payment is recorded as a separate receipt after the invoice is saved.
   const [partialPayment, setPartialPayment] = useState(0);
+  const [partialPaymentPosted, setPartialPaymentPosted] = useState(false);
   const [products, setProducts] = useState([]);
   const [focusedItemIdx, setFocusedItemIdx] = useState(-1); // which item description is focused
   const [dragIdx, setDragIdx] = useState(null);             // which item is being dragged
@@ -4139,6 +4140,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
       }
       setActiveTab('details');
       setPartialPayment(0);
+      setPartialPaymentPosted(false);
     }
   }, [open, editingInv]);
 
@@ -4395,8 +4397,9 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         savedInvoiceId = createResponse?.data?.id || createResponse?.data?.invoice?.id || null;
         try { localStorage.removeItem(INV_DRAFT_KEY); } catch {}
       }
-      if (partial > 0 && savedInvoiceId) {
+      if (partial > 0 && savedInvoiceId && !partialPaymentPosted) {
         await api.post('/payments', { invoice_id: savedInvoiceId, amount: partial, payment_date: form.invoice_date || format(new Date(), 'yyyy-MM-dd'), payment_mode: 'neft', reference_no: '', notes: `Partial payment against invoice ${form.invoice_no || editingInv?.invoice_no || ''}`.trim(), payment_type: 'partial' });
+        setPartialPaymentPosted(true);
       }
       toast.success(editingInv?.id ? 'Invoice updated successfully' : 'Invoice created successfully');
       saveItemMemory(form.items);
@@ -4431,7 +4434,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
       onClose();
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to save invoice'); }
     finally { setLoading(false); }
-  }, [form, totals, editingInv, partialPayment, onSuccess, onClose]);
+  }, [form, totals, editingInv, partialPayment, partialPaymentPosted, onSuccess, onClose]);
 
   const labelCls = "text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 block";
   const inputCls = `h-11 rounded-xl text-sm border-slate-200 dark:border-slate-600 focus:border-blue-400 ${isDark ? 'bg-slate-700 text-slate-100' : 'bg-white'}`;
