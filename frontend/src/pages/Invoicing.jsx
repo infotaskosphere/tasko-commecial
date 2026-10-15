@@ -4042,7 +4042,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
     due_date: '',  // intentionally empty — user sets this manually or via quick-fill buttons
     supply_state: '', supply_state_code: '', supply_pincode: '', is_interstate: false,
     items: [emptyItem()],
-    gst_rate: 18, discount_amount: 0, shipping_charges: 0, other_charges: 0, advance_received: 0,
+    gst_rate: 18, discount_amount: 0, shipping_charges: 0, other_charges: 0, advance_received: 0, partial_payment: 0,
     payment_terms: 'Due on receipt', notes: '', terms_conditions: '', reference_no: '',
     is_recurring: false, recurrence_pattern: 'monthly', status: 'draft',
     invoice_template: 'prestige', invoice_theme: 'classic_blue', invoice_custom_color: '#0D3B66',
@@ -4052,6 +4052,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
   const [form, setForm] = useState(defaultForm);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
+  // Partial Payment is recorded as a separate receipt after the invoice is saved.
+  const [partialPayment, setPartialPayment] = useState(0);
   const [products, setProducts] = useState([]);
   const [focusedItemIdx, setFocusedItemIdx] = useState(-1); // which item description is focused
   const [dragIdx, setDragIdx] = useState(null);             // which item is being dragged
@@ -4136,6 +4138,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         }
       }
       setActiveTab('details');
+      setPartialPayment(0);
     }
   }, [open, editingInv]);
 
@@ -4321,7 +4324,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
 
   const handlePreview = useCallback(() => {
     const company = (companies || []).find(c => c.id === form.company_id) || {};
-    const advance = parseFloat(form.advance_received) || 0;
+    const advance = Math.max(0, parseFloat(form.advance_received) || 0);
+    const partial = Math.max(0, parseFloat(partialPayment) || 0);
     const grand   = totals.grand_total || 0;
     const previewInv = {
       ...form,
@@ -4331,8 +4335,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
       due_date: form.due_date || format(new Date(Date.now() + 30 * 86400000), 'yyyy-MM-dd'),
       client_name: form.client_name || 'Client Name',
       advance_received: advance,
-      amount_paid: advance,
-      amount_due:  Math.max(0, Math.round((grand - advance) * 100) / 100),
+      amount_paid: Math.min(grand, Math.max(parseFloat(editingInv?.amount_paid) || 0, advance) + partial),
+      amount_due: Math.max(0, Math.round((grand - Math.min(grand, Math.max(parseFloat(editingInv?.amount_paid) || 0, advance) + partial)) * 100) / 100),
     };
     const html = generateInvoiceHTML(previewInv, {
       company,
@@ -4343,7 +4347,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
     if (previewRef.current) {
       previewRef.current.srcdoc = html;
     }
-  }, [companies, form, totals, editingInv]);
+  }, [companies, form, totals, editingInv, partialPayment]);
 
   const handleSubmit = useCallback(async (e) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -4354,12 +4358,15 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
     try {
       // ── Apply Advance Received to amount_paid / amount_due so the saved
       //    invoice (and generated PDF) match what the popup shows.
-      const advance      = parseFloat(form.advance_received) || 0;
+      const advance      = Math.max(0, parseFloat(form.advance_received) || 0);
+      const partial      = Math.max(0, parseFloat(partialPayment) || 0);
       const grand        = totals.grand_total || 0;
-      const existingPaid = parseFloat(editingInv?.amount_paid) || 0;
-      // Never reduce previously-recorded payments (e.g. partial payments via /payments)
-      const amountPaid   = Math.max(existingPaid, advance);
-      const amountDue    = Math.max(0, Math.round((grand - amountPaid) * 100) / 100);
+      const existingPaid = Math.max(0, parseFloat(editingInv?.amount_paid) || 0);
+      const amountPaidBeforePartial = Math.max(existingPaid, advance);
+      const remainingBeforePartial = Math.max(0, Math.round((grand - amountPaidBeforePartial) * 100) / 100);
+      if (partial > remainingBeforePartial + 0.01) { toast.error(`Partial payment cannot exceed the outstanding amount of ${fmtC(remainingBeforePartial)}`); setLoading(false); return; }
+      const amountPaid = Math.min(grand, amountPaidBeforePartial + partial);
+      const amountDue = Math.max(0, Math.round((grand - amountPaid) * 100) / 100);
       const payload = {
         ...form,
         ...totals,
@@ -4367,6 +4374,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         amount_paid: amountPaid,
         amount_due:  amountDue,
       };
+      let savedInvoiceId = editingInv?.id || null;
       if (editingInv?.id) await api.put(`/invoices/${editingInv.id}`, payload);
       else if (['credit_note', 'debit_note'].includes(form.invoice_type) && form.original_invoice_id) {
         // Dedicated endpoint: links to the original invoice, posts the
@@ -4383,8 +4391,12 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         });
         try { localStorage.removeItem(INV_DRAFT_KEY); } catch {}
       } else {
-        await api.post('/invoices', payload);
+        const createResponse = await api.post('/invoices', payload);
+        savedInvoiceId = createResponse?.data?.id || createResponse?.data?.invoice?.id || null;
         try { localStorage.removeItem(INV_DRAFT_KEY); } catch {}
+      }
+      if (partial > 0 && savedInvoiceId) {
+        await api.post('/payments', { invoice_id: savedInvoiceId, amount: partial, payment_date: form.invoice_date || format(new Date(), 'yyyy-MM-dd'), payment_mode: 'neft', reference_no: '', notes: `Partial payment against invoice ${form.invoice_no || editingInv?.invoice_no || ''}`.trim(), payment_type: 'partial' });
       }
       toast.success(editingInv?.id ? 'Invoice updated successfully' : 'Invoice created successfully');
       saveItemMemory(form.items);
@@ -4419,7 +4431,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
       onClose();
     } catch (err) { toast.error(err.response?.data?.detail || 'Failed to save invoice'); }
     finally { setLoading(false); }
-  }, [form, totals, editingInv, onSuccess, onClose]);
+  }, [form, totals, editingInv, partialPayment, onSuccess, onClose]);
 
   const labelCls = "text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 block";
   const inputCls = `h-11 rounded-xl text-sm border-slate-200 dark:border-slate-600 focus:border-blue-400 ${isDark ? 'bg-slate-700 text-slate-100' : 'bg-white'}`;
@@ -4762,6 +4774,11 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
                         Balance due at delivery: {fmtC(Math.max(0, totals.grand_total - (form.advance_received || 0)))}
                       </p>
                     )}
+                    <div className={`p-4 rounded-xl border-2 border-dashed ${isDark ? 'border-blue-700/50 bg-blue-900/10' : 'border-blue-200 bg-blue-50/50'}`}>
+                      <div className="flex items-center gap-2 mb-3"><div className="w-5 h-5 rounded-md bg-blue-500/20 flex items-center justify-center"><IndianRupee className="h-3 w-3 text-blue-600" /></div><label className={`text-xs font-bold uppercase tracking-widest ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>Partial Payment</label></div>
+                      <div className="relative"><span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>₹</span><Input type="number" min="0" step="any" className={`${inputCls} pl-7`} placeholder="0.00" value={partialPayment || ''} onChange={e => setPartialPayment(Math.max(0, parseFloat(e.target.value) || 0))} /></div>
+                      <p className={`text-xs mt-2 font-medium ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>Records a separate payment transaction and appears as a credit in Party Ledger.</p>
+                    </div>
                   </div>
                 </div>
                 <div className={`${sectionCls} space-y-2`}>
@@ -4786,15 +4803,10 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
                     <span className={isDark ? 'text-slate-100' : 'text-slate-900'}>Grand Total</span>
                     <span style={{ color: COLORS.mediumBlue }}>{fmtC(totals.grand_total)}</span>
                   </div>
-                  {(form.advance_received || 0) > 0 && (<>
-                    <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-emerald-200 dark:border-emerald-800">
-                      <span className={`font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− Advance Received</span>
-                      <span className={`font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− {fmtC(form.advance_received)}</span>
-                    </div>
-                    <div className="flex justify-between text-base font-bold pt-2">
-                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>Balance Due at Delivery</span>
-                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>{fmtC(Math.max(0, totals.grand_total - (form.advance_received||0)))}</span>
-                    </div>
+                  {((form.advance_received || 0) > 0 || (partialPayment || 0) > 0) && (<>
+                    {(form.advance_received || 0) > 0 && <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-emerald-200 dark:border-emerald-800"><span className={`font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− Advance Received</span><span className={`font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− {fmtC(form.advance_received)}</span></div>}
+                    {(partialPayment || 0) > 0 && <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-blue-200 dark:border-blue-800"><span className={`font-medium ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>− Partial Payment</span><span className={`font-semibold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>− {fmtC(partialPayment)}</span></div>}
+                    <div className="flex justify-between text-base font-bold pt-2"><span className={isDark ? 'text-amber-300' : 'text-amber-700'}>Balance Due</span><span className={isDark ? 'text-amber-300' : 'text-amber-700'}>{fmtC(Math.max(0, totals.grand_total - Math.min(totals.grand_total, Math.max(parseFloat(editingInv?.amount_paid) || 0, form.advance_received || 0) + (partialPayment || 0))))}</span></div>
                   </>)}
                 </div>
                 <div className={sectionCls}>
