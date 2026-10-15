@@ -4042,7 +4042,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
     due_date: '',  // intentionally empty — user sets this manually or via quick-fill buttons
     supply_state: '', supply_state_code: '', supply_pincode: '', is_interstate: false,
     items: [emptyItem()],
-    gst_rate: 18, discount_amount: 0, shipping_charges: 0, other_charges: 0, advance_received: 0,
+    gst_rate: 18, discount_amount: 0, shipping_charges: 0, other_charges: 0,
+    advance_received: 0, partial_payment: 0,
     payment_terms: 'Due on receipt', notes: '', terms_conditions: '', reference_no: '',
     is_recurring: false, recurrence_pattern: 'monthly', status: 'draft',
     invoice_template: 'prestige', invoice_theme: 'classic_blue', invoice_custom_color: '#0D3B66',
@@ -4322,7 +4323,10 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
   const handlePreview = useCallback(() => {
     const company = (companies || []).find(c => c.id === form.company_id) || {};
     const advance = parseFloat(form.advance_received) || 0;
+    const partial = parseFloat(form.partial_payment) || 0;
+    const existingPaid = parseFloat(editingInv?.amount_paid) || 0;
     const grand   = totals.grand_total || 0;
+    const received = editingInv?.id ? Math.max(existingPaid, advance) + partial : advance + partial;
     const previewInv = {
       ...form,
       ...totals,                         // ensure grand_total/taxes are present
@@ -4331,8 +4335,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
       due_date: form.due_date || format(new Date(Date.now() + 30 * 86400000), 'yyyy-MM-dd'),
       client_name: form.client_name || 'Client Name',
       advance_received: advance,
-      amount_paid: advance,
-      amount_due:  Math.max(0, Math.round((grand - advance) * 100) / 100),
+      amount_paid: received,
+      amount_due:  Math.max(0, Math.round((grand - received) * 100) / 100),
     };
     const html = generateInvoiceHTML(previewInv, {
       company,
@@ -4367,7 +4371,8 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         amount_paid: amountPaid,
         amount_due:  amountDue,
       };
-      if (editingInv?.id) await api.put(`/invoices/${editingInv.id}`, payload);
+      let savedInvoice = null;
+      if (editingInv?.id) savedInvoice = await api.put(`/invoices/${editingInv.id}`, payload);
       else if (['credit_note', 'debit_note'].includes(form.invoice_type) && form.original_invoice_id) {
         // Dedicated endpoint: links to the original invoice, posts the
         // reversing/additional journal entry, and re-derives that invoice's
@@ -4383,10 +4388,34 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
         });
         try { localStorage.removeItem(INV_DRAFT_KEY); } catch {}
       } else {
-        await api.post('/invoices', payload);
+        savedInvoice = await api.post('/invoices', payload);
         try { localStorage.removeItem(INV_DRAFT_KEY); } catch {}
       }
-      toast.success(editingInv?.id ? 'Invoice updated successfully' : 'Invoice created successfully');
+
+      // Partial Payment is an actual receipt, not a display-only deduction.
+      // Store it in db.payments so the existing payment journal synchronisation
+      // posts Dr Cash/Bank and Cr Accounts Receivable and the accounting engine
+      // immediately recalculates amount_paid / amount_due.
+      const partial = Math.max(0, parseFloat(form.partial_payment) || 0);
+      const savedInvoiceId = editingInv?.id || savedInvoice?.data?.id;
+      if (partial > 0) {
+        if (!savedInvoiceId) throw new Error('Invoice was saved but its ID was not returned; partial payment was not posted.');
+        await api.post('/payments', {
+          invoice_id: savedInvoiceId,
+          amount: partial,
+          payment_date: form.invoice_date || format(new Date(), 'yyyy-MM-dd'),
+          payment_mode: 'neft',
+          reference_no: '',
+          notes: 'Partial payment received with invoice entry',
+          payment_type: 'partial',
+        });
+      }
+
+      toast.success(
+        partial > 0
+          ? `${editingInv?.id ? 'Invoice updated' : 'Invoice created'} and partial payment of ${fmtC(partial)} recorded`
+          : (editingInv?.id ? 'Invoice updated successfully' : 'Invoice created successfully')
+      );
       saveItemMemory(form.items);
       // Auto-sync client details back to the client record AND all invoices (non-fatal)
       if (form.client_id) {
@@ -4740,28 +4769,48 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
                     <div><label className={labelCls}>Shipping (₹)</label><Input type="number" min="0" step="any" className={inputCls} value={form.shipping_charges} onChange={e => setField('shipping_charges', parseFloat(e.target.value) || 0)} /></div>
                     <div><label className={labelCls}>Other Charges (₹)</label><Input type="number" min="0" step="any" className={inputCls} value={form.other_charges} onChange={e => setField('other_charges', parseFloat(e.target.value) || 0)} /></div>
                   </div>
-                  <div className={`mt-4 p-4 rounded-xl border-2 border-dashed ${isDark ? 'border-emerald-700/50 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50/50'}`}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="w-5 h-5 rounded-md bg-emerald-500/20 flex items-center justify-center"><IndianRupee className="h-3 w-3 text-emerald-600" /></div>
-                      <label className={`text-xs font-bold uppercase tracking-widest ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Advance Received from Client</label>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex-1"><span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>₹</span><Input type="number" min="0" step="any" className={`${inputCls} pl-7`} placeholder="0.00" value={form.advance_received || ''} onChange={e => setField('advance_received', parseFloat(e.target.value) || 0)} /></div>
-                      <div className="flex gap-1.5">
-                        {[25, 50, 75, 100].map(pct => (
-                          <button key={pct} type="button"
-                            onClick={() => setField('advance_received', Math.round(totals.grand_total * pct / 100 * 100) / 100)}
-                            className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-slate-700 text-slate-300 hover:bg-emerald-900/40 hover:text-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'}`}>
-                            {pct}%
-                          </button>
-                        ))}
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Existing advance receipt */}
+                    <div className={`p-4 rounded-xl border-2 border-dashed ${isDark ? 'border-emerald-700/50 bg-emerald-900/10' : 'border-emerald-200 bg-emerald-50/50'}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-5 h-5 rounded-md bg-emerald-500/20 flex items-center justify-center"><IndianRupee className="h-3 w-3 text-emerald-600" /></div>
+                        <label className={`text-xs font-bold uppercase tracking-widest ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>Advance Received from Client</label>
                       </div>
+                      <div className="flex items-center gap-3">
+                        <div className="relative flex-1"><span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>₹</span><Input type="number" min="0" step="any" className={`${inputCls} pl-7`} placeholder="0.00" value={form.advance_received || ''} onChange={e => setField('advance_received', parseFloat(e.target.value) || 0)} /></div>
+                        <div className="flex gap-1.5">
+                          {[25, 50, 75, 100].map(pct => (
+                            <button key={pct} type="button"
+                              onClick={() => setField('advance_received', Math.round(totals.grand_total * pct / 100 * 100) / 100)}
+                              className={`text-[10px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${isDark ? 'bg-slate-700 text-slate-300 hover:bg-emerald-900/40 hover:text-emerald-300' : 'bg-slate-100 text-slate-600 hover:bg-emerald-100 hover:text-emerald-700'}`}>
+                              {pct}%
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {(form.advance_received || 0) > 0 && (
+                        <p className={`text-xs mt-2 font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                          Balance after advance: {fmtC(Math.max(0, totals.grand_total - (form.advance_received || 0)))}
+                        </p>
+                      )}
                     </div>
-                    {(form.advance_received || 0) > 0 && (
-                      <p className={`text-xs mt-2 font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                        Balance due at delivery: {fmtC(Math.max(0, totals.grand_total - (form.advance_received || 0)))}
-                      </p>
-                    )}
+
+                    {/* New partial receipt — this is posted to db.payments and therefore the Party Ledger */}
+                    <div className={`p-4 rounded-xl border-2 border-dashed ${isDark ? 'border-blue-700/50 bg-blue-900/10' : 'border-blue-200 bg-blue-50/50'}`}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-5 h-5 rounded-md bg-blue-500/20 flex items-center justify-center"><IndianRupee className="h-3 w-3 text-blue-600" /></div>
+                        <label className={`text-xs font-bold uppercase tracking-widest ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>Partial Payment</label>
+                      </div>
+                      <div className="relative">
+                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 font-bold text-sm ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>₹</span>
+                        <Input type="number" min="0" step="any" className={`${inputCls} pl-7`} placeholder="Enter payment received" value={form.partial_payment || ''} onChange={e => setField('partial_payment', parseFloat(e.target.value) || 0)} />
+                      </div>
+                      {(form.partial_payment || 0) > 0 && (
+                        <p className={`text-xs mt-2 font-medium ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+                          New receipt: {fmtC(form.partial_payment)} · Remaining after receipt: {fmtC(Math.max(0, totals.grand_total - (form.advance_received || 0) - (form.partial_payment || 0)))}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className={`${sectionCls} space-y-2`}>
@@ -4786,14 +4835,22 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
                     <span className={isDark ? 'text-slate-100' : 'text-slate-900'}>Grand Total</span>
                     <span style={{ color: COLORS.mediumBlue }}>{fmtC(totals.grand_total)}</span>
                   </div>
-                  {(form.advance_received || 0) > 0 && (<>
-                    <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-emerald-200 dark:border-emerald-800">
-                      <span className={`font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− Advance Received</span>
-                      <span className={`font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− {fmtC(form.advance_received)}</span>
-                    </div>
+                  {((form.advance_received || 0) > 0 || (form.partial_payment || 0) > 0) && (<>
+                    {(form.advance_received || 0) > 0 && (
+                      <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-emerald-200 dark:border-emerald-800">
+                        <span className={`font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− Advance Received</span>
+                        <span className={`font-semibold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>− {fmtC(form.advance_received)}</span>
+                      </div>
+                    )}
+                    {(form.partial_payment || 0) > 0 && (
+                      <div className="flex justify-between text-sm py-1.5 border-b border-dashed border-blue-200 dark:border-blue-800">
+                        <span className={`font-medium ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>− Partial Payment</span>
+                        <span className={`font-semibold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>− {fmtC(form.partial_payment)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between text-base font-bold pt-2">
-                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>Balance Due at Delivery</span>
-                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>{fmtC(Math.max(0, totals.grand_total - (form.advance_received||0)))}</span>
+                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>Balance Due</span>
+                      <span className={isDark ? 'text-amber-300' : 'text-amber-700'}>{fmtC(Math.max(0, totals.grand_total - (form.advance_received||0) - (form.partial_payment||0)))}</span>
                     </div>
                   </>)}
                 </div>

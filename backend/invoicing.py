@@ -1378,6 +1378,9 @@ class PaymentCreate(BaseModel):
     payment_mode: str = "neft"
     reference_no: str = ""
     notes: str = ""
+    # Distinguishes an advance receipt from a later partial receipt while
+    # keeping both as canonical records in db.payments for the Party Ledger.
+    payment_type: Literal["advance", "partial", "payment"] = "payment"
 
 
 class Payment(PaymentCreate):
