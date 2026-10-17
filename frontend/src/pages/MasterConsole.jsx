@@ -24,6 +24,7 @@ import {
   getCommercialDomains,
   getCommercialPlans
 } from "@/lib/commercialConsoleApi";
+import OnboardingApprovalTab from "@/components/commercial/OnboardingApprovalTab.jsx";
 
 import CommercialSidebar from "@/components/commercial/CommercialSidebar.jsx";
 import GlobalSearch from "@/components/commercial/GlobalSearch.jsx";
@@ -757,6 +758,14 @@ export default function MasterConsole() {
 
           {tab === "auth-recovery" && (
             <AccountRecoveryTab />
+          )}
+
+          {tab === "onboarding-approval" && (
+            <OnboardingApprovalTab
+              modules={modules}
+              invoiceCompanies={invoiceCompanies}
+              onRefresh={refreshCore}
+            />
           )}
         </main>
       </div>

@@ -261,6 +261,8 @@ from backend.server_modules.holiday_trademark_misc import register_holiday_trade
 from backend.server_modules.application_runtime import register_application_runtime
 
 app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
+from backend.commercial_console_api import router as commercial_console_router
+app.include_router(commercial_console_router)
 api_router = APIRouter(prefix="/api")
 app.include_router(backup_restore_router, prefix="/api")
 register_shutdown_handler(app, scheduler)

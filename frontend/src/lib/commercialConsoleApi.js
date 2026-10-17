@@ -156,3 +156,18 @@ export async function triggerUserWelcomeEmail(userId) {
   return res.data;
 }
 
+
+
+// ── Commercial Onboarding Approval ────────────────────────────────────────────
+export async function getOnboardingApplications(params = {}) {
+  const res = await api.get("/commercial-console/onboarding/submissions", { params });
+  return res.data;
+}
+
+export async function reviewOnboardingApplication(applicationId, payload) {
+  const res = await api.post(
+    `/commercial-console/onboarding/submissions/${encodeURIComponent(applicationId)}/review`,
+    payload
+  );
+  return res.data;
+}
