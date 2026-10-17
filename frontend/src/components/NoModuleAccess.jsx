@@ -51,7 +51,7 @@ export default function NoModuleAccess() {
     ['Finix', 'can_access_finix'],
     ['AIWeave', 'can_access_aiweave'],
     ['CompliGenie', 'can_access_compliance'],
-    ['Records', 'can_access_records'],
+    ['ClientSync', 'can_access_records'],
     ['LeadSense', 'can_access_proposals'],
     ['People Matrix', 'can_access_people_matrix'],
   ].map(([label, flag]) => `${label}: ${user?.permissions?.[flag] === true ? 'allowed' : user?.permissions?.[flag] === false ? 'blocked' : 'not set'}`);
