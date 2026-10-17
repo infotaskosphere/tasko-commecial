@@ -2,13 +2,14 @@ import React from "react";
 import {
   LayoutDashboard, Users, KeyRound, Layers, CreditCard,
   Globe, Sparkles, Activity, ShieldAlert, HeartPulse,
-  Sliders, ShieldCheck, ChevronRight, Mail, FileText, Send, Lock
+  Sliders, ShieldCheck, ChevronRight, Mail, FileText, Send, Lock, ClipboardCheck
 } from "lucide-react";
 
 export const SECTIONS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, category: "core" },
   { id: "customers", label: "Customers", icon: Users, category: "core" },
   { id: "licenses", label: "Licenses", icon: KeyRound, category: "core" },
+  { id: "onboarding-approval", label: "Onboarding Approval", icon: ClipboardCheck, category: "core" },
   { id: "plans", label: "Plans & Tiers", icon: CreditCard, category: "core" },
   { id: "modules", label: "Modules & Access", icon: Layers, category: "core" },
   
