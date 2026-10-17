@@ -188,6 +188,12 @@ async def bank_cash_from_books(ledger: Ledger) -> float:
 # ── integrity ────────────────────────────────────────────────────────────────
 async def integrity_issues(company_id: str, ledger: Ledger) -> list:
     issues = []
+    orphans = await find_orphan_notes(company_id)
+    if orphans:
+        names = ", ".join(str(n.get("invoice_no") or n["id"][:8]) for n in orphans[:5])
+        issues.append({"code": "ORPHAN_NOTE", "severity": "high", "blocker": True, "count": len(orphans),
+                       "message": f"{len(orphans)} credit/debit note(s) refer to an invoice that no longer exists ({names}). "
+                                  "They still affect sales and receivables — delete them."})
     dr, cr = ledger.totals()
     if abs(dr - cr) >= 0.05:
         issues.append({"code": "TRIAL_BALANCE_OUT", "severity": "high", "blocker": True,
@@ -201,12 +207,6 @@ async def integrity_issues(company_id: str, ledger: Ledger) -> list:
     if ap < -0.5:
         issues.append({"code": "NEGATIVE_PAYABLES", "severity": "high", "blocker": True,
                        "message": f"Accounts Payable is negative ({ap:,.2f}). Payments exceed the bills on the books."})
-    orphans = await find_orphan_notes(company_id)
-    if orphans:
-        names = ", ".join(str(n.get("invoice_no") or n["id"][:8]) for n in orphans[:5])
-        issues.append({"code": "ORPHAN_NOTE", "severity": "high", "blocker": True, "count": len(orphans),
-                       "message": f"{len(orphans)} credit/debit note(s) refer to an invoice that no longer exists ({names}). "
-                                  "They still affect sales and receivables — delete them."})
     if ledger.orphan_line_count:
         issues.append({"code": "ORPHAN_JOURNAL_LINES", "severity": "high", "blocker": True, "count": ledger.orphan_line_count,
                        "message": f"{ledger.orphan_line_count} journal line(s) have no parent journal entry."})

@@ -631,6 +631,37 @@ function FinixDashboardInner() {
     setAiAvailability(data.aiAvailability || { health: true, statutory: true, anomalies: true, cashflow: true });
   };
 
+  // Credit/debit notes whose invoice was deleted keep posting negative sales and
+  // receivables. Listing and deleting them is explicit and confirmed by the user.
+  const handleDeleteOrphanNotes = async () => {
+    if (!companyId || companyId === ALL_COMPANIES_ID) {
+      toast.error('Select a single company first.');
+      return;
+    }
+    try {
+      const { data } = await api.get('/invoices/orphan-notes', { params: { company_id: companyId } });
+      const notes = data?.orphan_notes || [];
+      if (!notes.length) {
+        toast.info('No orphan credit/debit notes found.');
+        fetchMetrics(companyId, { force: true });
+        return;
+      }
+      const list = notes.map((n) => `• ${n.invoice_no || n.id} — ${n.client_name || 'Customer'} — ${fmtC(n.grand_total)} — ${n.invoice_date || ''}`).join('\n');
+      if (!window.confirm(`These credit/debit notes refer to invoices that no longer exist:\n\n${list}\n\nDelete them so the books match your invoices?`)) return;
+      let deleted = 0;
+      const failures = [];
+      for (const n of notes) {
+        try { await api.delete(`/invoices/${n.id}`); deleted += 1; }
+        catch (err) { failures.push(err?.response?.data?.detail || n.invoice_no || n.id); }
+      }
+      if (deleted) toast.success(`Deleted ${deleted} orphan note${deleted > 1 ? 's' : ''}`);
+      if (failures.length) toast.error(`${failures.length} could not be deleted: ${failures[0]}`, { duration: 9000 });
+      await fetchMetrics(companyId, { force: true });
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Could not load orphan notes.');
+    }
+  };
+
   const fetchMetrics = async (requestedCid, { force = false } = {}) => {
     let cid;
     try {
@@ -1422,6 +1453,11 @@ function FinixDashboardInner() {
                       <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-300">
                         <strong>{healthScore.issues.length} data issue{healthScore.issues.length === 1 ? '' : 's'}</strong>
                         {healthScore.capped ? ' — score capped until fixed' : ''}: {healthScore.issues[0].message}
+                        {healthScore.issues.some((i) => i.code === 'ORPHAN_NOTE') && companyId !== ALL_COMPANIES_ID && (
+                          <button onClick={handleDeleteOrphanNotes} className="block mt-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
+                            Review &amp; delete orphan notes
+                          </button>
+                        )}
                       </div>
                     )}
                   </>
@@ -1941,6 +1977,11 @@ function FinixDashboardInner() {
                   {healthScore.issues.map((issue, i) => (
                     <div key={i} className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-800 dark:text-amber-200">
                       {issue.message}
+                      {issue.code === 'ORPHAN_NOTE' && companyId !== ALL_COMPANIES_ID && (
+                        <button onClick={handleDeleteOrphanNotes} className="block mt-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
+                          Review &amp; delete orphan notes
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
