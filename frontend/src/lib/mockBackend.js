@@ -80,8 +80,8 @@ export const DEFAULT_MOCK_CATALOG = [
   },
   {
     id: "records",
-    name: "Records",
-    label: "Records",
+    name: "ClientSync",
+    label: "ClientSync",
     description: "Document Vault, DSC Register, Password Manager, Client Database",
     monthly_price: 2499,
     active: true,
@@ -743,7 +743,7 @@ export function handleMockRoute(method, url, data) {
       { title: "Accounting", description: "Ledgers, banking, reports and financial controls.", icon: "landmark" },
       { title: "HRMS", description: "People, attendance, leave, payroll and recruitment.", icon: "users" },
       { title: "Compliance", description: "GST, ROC, trademark and compliance workflows.", icon: "shield" },
-      { title: "Records", description: "Client records, documents, approvals and business information.", icon: "check" },
+      { title: "ClientSync", description: "Client records, documents, approvals and business information.", icon: "check" },
       { title: "AI & Automation", description: "Intelligent document processing and operational assistance.", icon: "sparkles" }
     ],
     solutions_title: "Tailored Solutions for Practice & Enterprise",
@@ -823,7 +823,7 @@ export function handleMockRoute(method, url, data) {
               { title: "Accounting", description: "Ledgers, banking, reports and financial controls." },
               { title: "HRMS", description: "People, attendance, leave, payroll and recruitment." },
               { title: "Compliance", description: "GST, ROC, trademark and compliance workflows." },
-              { title: "Records", description: "Client records, documents, approvals and business information." },
+              { title: "ClientSync", description: "Client records, documents, approvals and business information." },
               { title: "AI & Automation", description: "Intelligent document processing and operational assistance." }
             ]
           } },
@@ -1986,7 +1986,7 @@ export function handleMockRoute(method, url, data) {
         plans: [
           { id: "starter", name: "Starter", code: "PLAN-STARTER", description: "Essential task management and invoicing for small firms", modules: ["taskosphere", "finix"], max_users: 5, max_storage_gb: 5, max_ai_requests: 25000, monthly_price: 2499.0, support_level: "Standard", active: true },
           { id: "professional", name: "Professional", code: "PLAN-PRO", description: "Full accounting, compliance, AI documents, and task management", modules: ["taskosphere", "finix", "aiweave", "compliance"], max_users: 20, max_storage_gb: 25, max_ai_requests: 100000, monthly_price: 5999.0, support_level: "Priority", active: true },
-          { id: "enterprise", name: "Enterprise Complete", code: "PLAN-ENTERPRISE", description: "Unlimited full suite with LeadSense, Records, People Matrix & Website Studio", modules: ["taskosphere", "finix", "aiweave", "compliance", "records", "proposals", "people_matrix"], max_users: 100, max_storage_gb: 100, max_ai_requests: 500000, monthly_price: 14999.0, support_level: "Dedicated 24/7", active: true },
+          { id: "enterprise", name: "Enterprise Complete", code: "PLAN-ENTERPRISE", description: "Unlimited full suite with LeadSense, ClientSync, People Matrix & Website Studio", modules: ["taskosphere", "finix", "aiweave", "compliance", "records", "proposals", "people_matrix"], max_users: 100, max_storage_gb: 100, max_ai_requests: 500000, monthly_price: 14999.0, support_level: "Dedicated 24/7", active: true },
         ],
       },
     };
