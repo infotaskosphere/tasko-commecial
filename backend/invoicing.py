@@ -2993,6 +2993,56 @@ async def purchase_invoice_facets(
     }
 
 
+@router.get("/purchase-invoices/masters")
+async def purchase_invoice_masters(current_user: User = Depends(get_current_user)):
+    """
+    Everything the Purchase page's company / client dropdowns need, in ONE light call.
+
+    Companies are read straight from the Master Data collection (Admin → Master Data →
+    Company Profiles → db.companies) — organisation-wide, never filtered by who created
+    them. A user who is bound to one company only gets that company, matching what they
+    are allowed to see in the register. Logos / QR images are NOT sent (the full
+    /companies/list payload carries them and is far heavier than a dropdown needs).
+    """
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    proj = {"_id": 0, "id": 1, "name": 1, "gstin": 1, "pan": 1, "city": 1, "state": 1, "state_code": 1, "has_gst": 1}
+    raw = await db.companies.find({}, proj).sort("name", 1).to_list(1000)
+    bound = getattr(current_user, "company_id", None) if getattr(current_user, "role", None) != "admin" else None
+    companies, without_id, without_name = [], 0, 0
+    for c in raw:
+        if not (c.get("name") or "").strip():
+            without_name += 1
+            continue
+        if not c.get("id"):
+            without_id += 1
+            continue
+        if bound and c["id"] != bound:
+            continue
+        companies.append({
+            "id": c["id"], "name": c["name"].strip(), "gstin": (c.get("gstin") or "").strip().upper(),
+            "pan": c.get("pan") or "", "city": c.get("city") or "", "state": c.get("state") or "",
+            "has_gst": c.get("has_gst"),
+        })
+    clients_raw = await db.clients.find(
+        _client_access_query_for_purchase(current_user),
+        {"_id": 0, "id": 1, "company_name": 1, "name": 1, "gstin": 1, "client_gstin": 1, "phone": 1},
+    ).sort("company_name", 1).to_list(5000)
+    clients = [{
+        "id": c["id"], "company_name": c.get("company_name") or c.get("name") or "",
+        "gstin": (c.get("gstin") or c.get("client_gstin") or "").strip().upper(), "phone": c.get("phone") or "",
+    } for c in clients_raw if c.get("id") and (c.get("company_name") or c.get("name"))]
+    return {
+        "companies": companies,
+        "clients": clients,
+        "diagnostics": {
+            "companies_in_master": len(raw), "companies_returned": len(companies),
+            "companies_without_id": without_id, "companies_without_name": without_name,
+            "restricted_to_company": bound or None, "clients_returned": len(clients),
+        },
+    }
+
+
 async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplier_gstin: str = "", notes: str = "") -> dict:
     """Runs the same AI ledger-mapping cascade the Zero-Touch Entry engine uses
     (vendor profile → learned history → keyword rules → chart-of-accounts
