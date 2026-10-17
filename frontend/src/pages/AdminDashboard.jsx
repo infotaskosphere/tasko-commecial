@@ -37,7 +37,7 @@ function useAdminFacts() {
       const customRoles = roles.filter(x => x?.is_builtin === false).length;
       const licensedModules = [
         ['can_access_taskosphere', 'Taskosphere'], ['can_access_finix', 'Finix'], ['can_access_compliance', 'CompliGenie'],
-        ['can_access_records', 'Records'], ['can_access_proposals', 'LeadSense'], ['can_access_people_matrix', 'People Matrix'],
+        ['can_access_records', 'ClientSync'], ['can_access_proposals', 'LeadSense'], ['can_access_people_matrix', 'People Matrix'],
       ].filter(([flag]) => user?.permissions?.[flag] === true).map(([, label]) => label);
       return {
         users, companies, roles, user, pendingUsers, activeUsers, customRoles, licensedModules,
