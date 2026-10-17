@@ -248,8 +248,8 @@ export default function RecordsDashboard() {
     <div className={`records-dashboard-root pb-4 ${isDark ? 'records-dashboard-root-dark' : ''}`}>
       <HubBanner
         icon={Archive}
-        eyebrow="Records"
-        title="Records Dashboard"
+        eyebrow="ClientSync"
+        title="ClientSync Dashboard"
         subtitle="Everything you keep on file — clients, DSCs, documents and credentials — with the items that need attention first."
         isDark={isDark}
         stats={stats}
