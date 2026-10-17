@@ -2757,6 +2757,7 @@ def _purchase_scope_query(current_user: User) -> dict:
 
 from backend import purchase_reader as _pr
 from backend import purchase_exports as _px
+from backend.accounting_ai import invoice_learning as _il
 
 # Columns the register may be sorted by (whitelist — never trust a client-supplied field name).
 _PURCHASE_SORT_FIELDS = {
@@ -3089,11 +3090,35 @@ async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplie
     accounting NATURE (expense/income) and CATEGORY (direct cost_of_service vs
     indirect operating_expense) straight from the Chart of Accounts, per
     standard Indian accounting principles (Trading A/c vs P&L classification).
-    Never raises — always falls back to the safe generic Purchases account."""
+    Never raises — always falls back to the safe generic Purchases account.
+
+    This company's OWN confirmed history for the vendor (``invoice_learning``) is
+    consulted first. It only auto-fills after several consistent confirmations
+    with no recent correction; otherwise it is returned as a proposal flagged
+    ``ledger_requires_review`` so the next bill is checked by a person."""
     try:
         from backend.accounting_ai.ledger_mapper import LedgerMapper
         from backend.accounting_ai.chart_of_accounts import ChartOfAccountsManager
         from backend.ai.vendor_learning import apply_vendor_defaults
+
+        learned = await _il.suggest_ledger(company_id, supplier_gstin, supplier_name)
+        if learned["code"]:
+            # Read the chart straight from the database (the manager's per-process cache can be stale): a ledger that
+            # was deleted, deactivated or turned into a group since it was learned is ignored, never posted to.
+            l_acct = await db.chart_of_accounts.find_one({"company_id": company_id, "code": str(learned["code"])}, {"_id": 0})
+            if l_acct and l_acct.get("is_active", True) is not False and l_acct.get("is_group") is not True \
+                    and l_acct.get("is_postable", True) is not False:
+                return {
+                    "expense_ledger_code": learned["code"],
+                    "expense_ledger_name": l_acct.get("name") or learned["name"],
+                    "classification_confidence": round(float(learned["confidence"]), 2),
+                    "expense_nature": l_acct.get("type") or "expense",
+                    "expense_category": l_acct.get("sub_type") or "operating_expense",
+                    "classification_source": "learned",
+                    "ledger_auto_applied": bool(learned["auto_apply"]),
+                    "ledger_requires_review": bool(learned["requires_review"]),
+                    "ledger_learning_reason": learned["reason"],
+                }
 
         vendor_profile = await apply_vendor_defaults(supplier_name, supplier_gstin, {})
         extracted = {
@@ -3110,6 +3135,10 @@ async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplie
             "classification_confidence": round(float(confidence), 2),
             "expense_nature": acct.get("type") or "expense",
             "expense_category": acct.get("sub_type") or "operating_expense",
+            "classification_source": "rules",
+            "ledger_auto_applied": False,
+            "ledger_requires_review": False,
+            "ledger_learning_reason": "",
         }
     except Exception as e:
         logger.warning(f"Purchase ledger classification failed for '{supplier_name}', falling back to Purchases: {e}")
@@ -3119,6 +3148,10 @@ async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplie
             "classification_confidence": 0.5,
             "expense_nature": "expense",
             "expense_category": "cost_of_service",
+            "classification_source": "rules",
+            "ledger_auto_applied": False,
+            "ledger_requires_review": False,
+            "ledger_learning_reason": "",
         }
 
 
@@ -3288,6 +3321,24 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
             warnings.append(_pr._w("supplier_name", "vendor_known_as", "info",
                                    f"This GSTIN is saved in your books as \"{vendor['supplier_name']}\" ({vendor['count']} earlier bill(s)). "
                                    "Use the saved name to keep the supplier ledger consistent."))
+    learning: Dict[str, Any] = {"vendor_known": False, "confirmations": 0, "layout_filled": [], "ledger": None}
+    if suggested_company and (result.get("supplier_name") or result.get("supplier_gstin")):
+        try:
+            mem = await _il.get_memory(suggested_company["id"], result.get("supplier_gstin") or "", result.get("supplier_name") or "")
+            if mem:
+                learning["vendor_known"] = True
+                learning["confirmations"] = int((mem.get("stats") or {}).get("confirmations") or 0)
+                fills, notes = _il.apply_layout(mem, result.get("raw_text_excerpt") or "", result)
+                for f, v in fills.items():
+                    result[f] = v
+                learning["layout_filled"] = sorted(fills)
+                warnings.extend(_pr._w(n["field"], n["code"], n["severity"], n["message"]) for n in notes)
+                for chk in (_il.gst_rate_warning(mem, result.get("taxable_amount"), result.get("total_gst")),
+                            _il.invoice_no_warning(mem, result.get("invoice_no") or "")):
+                    if chk:
+                        warnings.append(_pr._w(chk["field"], chk["code"], chk["severity"], chk["message"]))
+        except Exception:
+            logger.exception("Finix learning could not be applied to the preview")
     dup = await _find_duplicate_purchase(result.get("supplier_name") or "", result.get("supplier_gstin") or "", result.get("invoice_no") or "")
     if dup:
         warnings.insert(0, _pr._w("invoice_no", "duplicate", "error",
@@ -3302,6 +3353,16 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
                 (result.get("raw_text_excerpt") or "")[:500])
         except Exception:
             ledger = None
+    if ledger and ledger.get("classification_source") == "learned":
+        learning["ledger"] = {k: ledger.get(k) for k in ("expense_ledger_code", "expense_ledger_name", "classification_confidence",
+                                                         "ledger_auto_applied", "ledger_requires_review", "ledger_learning_reason")}
+        if ledger.get("ledger_auto_applied"):
+            warnings.append(_pr._w("expense_ledger_code", "ledger_learned_auto", "info",
+                                   f"Expense head \"{ledger['expense_ledger_name']}\" was filled from your earlier bills with this vendor. {ledger.get('ledger_learning_reason', '')}".strip()))
+        else:
+            warnings.append(_pr._w("expense_ledger_code", "ledger_learned_review", "warn",
+                                   f"Finix suggests \"{ledger['expense_ledger_name']}\" from your earlier bills with this vendor but is not sure yet. "
+                                   f"{ledger.get('ledger_learning_reason', '')} Confirm or change the expense head.".strip()))
 
     extracted = {k: result.get(k, "" if k not in _PURCHASE_AMOUNT_KEYS else 0.0) for k in _PURCHASE_EXTRACT_KEYS}
     extracted["currency"] = extracted.get("currency") or "INR"
@@ -3325,6 +3386,7 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
         "vendor": vendor,
         "duplicate": _duplicate_summary(dup),
         "ledger": ledger,
+        "learning": learning,
         "file": {"name": filename, "size": len(contents), "content_type": file.content_type or "application/octet-stream"},
         "raw_text_excerpt": (result.get("raw_text_excerpt") or "")[:5000],
         "ai_available": bool(result.get("ai_available")),
@@ -3409,8 +3471,13 @@ def _validate_purchase_payload(p: dict, acknowledge_mismatch: bool = False) -> T
 
 async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta: Optional[dict] = None,
                                  require_company: bool = True, acknowledge_mismatch: bool = False,
-                                 force_duplicate: bool = False, extra: Optional[dict] = None) -> Tuple[Optional[dict], Optional[dict]]:
-    """Validate + store one purchase bill and post it to the ledger. Returns (doc, duplicate_of)."""
+                                 force_duplicate: bool = False, extra: Optional[dict] = None,
+                                 learn: bool = False) -> Tuple[Optional[dict], Optional[dict]]:
+    """Validate + store one purchase bill and post it to the ledger. Returns (doc, duplicate_of).
+
+    `learn=True` is for bills a PERSON confirmed (the reviewed upload, manual entry): Finix then
+    remembers the vendor's ledger / GST rate / layout and scores its own proposal. Unreviewed
+    paths (legacy one-step upload, GSTR-2B import) pass False so they never teach Finix anything."""
     p = _normalise_purchase_payload(p)
     errs, warns = _validate_purchase_payload(p, acknowledge_mismatch)
     if errs:
@@ -3467,6 +3534,10 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
         doc.update(extra)
     override_code = (p.get("expense_ledger_code") or "").strip()
     doc.update(await _classify_purchase_ledger(company_id, doc["supplier_name"], doc["supplier_gstin"], doc["raw_text_excerpt"][:500]))
+    proposed = {"code": doc.get("expense_ledger_code"), "source": doc.get("classification_source") or "rules",
+                "confidence": doc.get("classification_confidence") or 0, "auto_applied": bool(doc.get("ledger_auto_applied"))}
+    if not learn and doc.get("ledger_requires_review") and source == "upload":
+        doc["needs_review"] = True         # nobody reviewed this bill and Finix was not sure of the ledger
     if override_code and override_code != doc.get("expense_ledger_code"):
         try:
             from backend.accounting_ai.chart_of_accounts import ChartOfAccountsManager
@@ -3481,8 +3552,26 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
     if client:
         await db.clients.update_one({"id": client["id"]}, {"$set": {"last_purchase_invoice_at": now}, "$inc": {"purchase_invoice_count": 1}})
     await sync_purchase_journal_entry(doc["id"])
+    if learn:
+        await _il.learn_from_confirmed_bill(company_id, doc, proposed=proposed, edited_fields=p.get("edited_fields"), user_id=user.id)
     doc["save_warnings"] = warns
     return doc, dup
+
+
+@router.get("/purchase-invoices/expense-heads")
+async def purchase_expense_heads(company_id: str, current_user: User = Depends(get_current_user)):
+    """Ledgers a purchase bill can be booked to for one company (for the expense-head picker on the preview)."""
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    if not await _find_master_company(current_user, company_id):
+        raise HTTPException(400, "That company is not in Master Data.")
+    from backend.accounting_core import ensure_default_chart_of_accounts
+    await ensure_default_chart_of_accounts(company_id, current_user.id)
+    rows = await db.chart_of_accounts.find(
+        {"company_id": company_id, "type": {"$in": ["expense", "asset"]}, "is_party_ledger": {"$ne": True}},
+        {"_id": 0, "code": 1, "name": 1, "type": 1, "sub_type": 1, "is_active": 1}).sort("code", 1).to_list(1000)
+    return [{"code": r.get("code"), "name": r.get("name"), "type": r.get("type"), "sub_type": r.get("sub_type")}
+            for r in rows if r.get("code") and r.get("is_active", True) is not False]
 
 
 class PurchaseInvoiceConfirm(BaseModel):
@@ -3532,7 +3621,7 @@ async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: U
     doc, dup = await _save_purchase_invoice(
         payload, current_user, source="upload" if data.file_name else "manual",
         file_meta={"name": data.file_name or "", "size": data.file_size or 0, "content_type": data.content_type or ""},
-        acknowledge_mismatch=data.acknowledge_mismatch, force_duplicate=data.force_duplicate)
+        acknowledge_mismatch=data.acknowledge_mismatch, force_duplicate=data.force_duplicate, learn=True)
     if doc is None:
         raise HTTPException(409, detail={"code": "duplicate", "message":
                             f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} already exists.",
@@ -3601,7 +3690,7 @@ async def create_purchase_invoice(data: PurchaseInvoiceCreate, current_user: Use
         rem = round(payload["grand_total"] - payload["taxable_amount"] - payload["total_gst"], 2)
         if abs(rem) <= 1.0:
             payload["round_off"] = rem
-    doc, dup = await _save_purchase_invoice(payload, current_user, source="manual", acknowledge_mismatch=True)
+    doc, dup = await _save_purchase_invoice(payload, current_user, source="manual", acknowledge_mismatch=True, learn=True)
     if doc is None:
         raise HTTPException(400, f"A purchase invoice with number {dup.get('invoice_no')} already exists.")
     doc.pop("save_warnings", None)
@@ -3965,6 +4054,13 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
     await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": update_data})
     await sync_purchase_journal_entry(invoice_id)
     updated = await db.purchase_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    new_code = str(update_data.get("expense_ledger_code") or "")
+    if new_code and new_code != str(existing.get("expense_ledger_code") or ""):
+        # a person re-pointed a saved bill to another expense head: that is a correction Finix learns from
+        await _il.record_ledger_signal(
+            str(updated.get("company_id") or ""), gstin=updated.get("supplier_gstin") or "", name=updated.get("supplier_name") or "",
+            to_code=new_code, to_name=updated.get("expense_ledger_name") or "", from_code=str(existing.get("expense_ledger_code") or ""),
+            signal="edit", user_id=current_user.id, ref=f"edit:{invoice_id}:{new_code}:{update_data.get('updated_at', '')}", create=True)
     return _decorate_purchase(updated, await _company_name_map(current_user))
 
 

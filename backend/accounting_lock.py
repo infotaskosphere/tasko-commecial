@@ -314,7 +314,51 @@ async def raise_adjustment_note(body: AdjustmentNoteOverride, current_user: User
     await db.adjustment_note_overrides.insert_one(dict(note_doc))
     note_doc.pop("_id", None)
 
+    await _learn_from_adjustment(original, previous_lines, new_lines, company_id, current_user.id, note_id)
+
     return {"adjustment_note": note_doc, "updated_entry": corrected_entry}
+
+
+async def _expense_head_of(lines: list, company_id: str) -> Optional[dict]:
+    """The expense/asset account carrying the biggest debit in a purchase entry (not GST input / TDS)."""
+    ids = list({l.get("account_id") for l in lines if l.get("account_id")})
+    if not ids:
+        return None
+    accts = {a["id"]: a async for a in db.chart_of_accounts.find(
+        {"company_id": company_id, "id": {"$in": ids}}, {"_id": 0, "id": 1, "code": 1, "name": 1, "type": 1})}
+    best, best_amt = None, 0.0
+    for l in lines:
+        a = accts.get(l.get("account_id"))
+        amt = float(l.get("debit") or 0)
+        nm = (a or {}).get("name", "").lower()
+        if not a or amt <= best_amt or a.get("type") not in ("expense", "asset"):
+            continue
+        if str(a.get("code")) == "1200" or "gst" in nm or "tds" in nm or "input" in nm:
+            continue
+        best, best_amt = a, amt
+    return best
+
+
+async def _learn_from_adjustment(original: dict, previous_lines: list, new_lines: list, company_id: str,
+                                 user_id: str, note_id: str) -> None:
+    """Finix learning: an Adjustment Note that re-posts a purchase bill to a different expense head is a
+    correction of where that vendor's bills should go. Best-effort; never blocks the note."""
+    try:
+        if original.get("source") != "purchase" or not original.get("source_id"):
+            return
+        bill = await db.purchase_invoices.find_one({"id": original["source_id"]}, {"_id": 0})
+        if not bill:
+            return
+        old, new = await _expense_head_of(previous_lines, company_id), await _expense_head_of(new_lines, company_id)
+        if not new or (old and old.get("code") == new.get("code")):
+            return
+        from backend.accounting_ai import invoice_learning as _il
+        await _il.record_ledger_signal(
+            company_id, gstin=bill.get("supplier_gstin") or "", name=bill.get("supplier_name") or "",
+            to_code=str(new.get("code")), to_name=new.get("name") or "", from_code=str((old or {}).get("code") or ""),
+            signal="adjustment", user_id=user_id, ref=f"adjustment:{note_id}", create=True)
+    except Exception as ex:
+        logger.warning("Finix could not learn from adjustment note %s: %s", note_id, ex)
 
 
 @router.get("/adjustment-notes")

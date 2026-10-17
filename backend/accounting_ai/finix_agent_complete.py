@@ -331,3 +331,42 @@ async def agent_resync(company_id: str = "", current_user: User = Depends(get_cu
     await invoicing._reconcile_and_sync_all_purchases_and_payments_impl(cid)
     from backend.accounting_ai import finix_metrics
     return {"success": True, "remaining_findings": (await finix_metrics.ledger_diagnostics(cid))["count"]}
+
+
+# ── Finix learning: accuracy, what was learned, admin reset ────────────────────
+
+@router.get("/learning/accuracy")
+async def learning_accuracy(company_id: str = "", days: int = 90, current_user: User = Depends(get_current_user)):
+    """How often Finix read and classified purchase bills right first time (straight-through rate),
+    overall, per vendor and by week. Counts only bills a person reviewed."""
+    if not _can_view(current_user):
+        raise HTTPException(403, "Access denied.")
+    from backend.accounting_ai import invoice_learning
+    return await invoice_learning.accuracy_report(_company(current_user, company_id), days)
+
+
+@router.get("/learning/vendors")
+async def learning_vendors(company_id: str = "", current_user: User = Depends(get_current_user)):
+    """What Finix has learned about each vendor in this company."""
+    if not _can_view(current_user):
+        raise HTTPException(403, "Access denied.")
+    from backend.accounting_ai import invoice_learning
+    return {"vendors": await invoice_learning.list_vendor_memory(_company(current_user, company_id))}
+
+
+class ResetVendorRequest(BaseModel):
+    vendor_key: str = Field(..., min_length=3, max_length=300)
+    company_id: str = ""
+
+
+@router.post("/learning/reset-vendor")
+async def learning_reset_vendor(body: ResetVendorRequest, current_user: User = Depends(get_current_user)):
+    """Admin only: make Finix forget what it learned about one vendor (ledger, GST rate, layout).
+    Bills already posted are not changed; the reset itself is logged."""
+    if not is_admin_role(current_user):
+        raise HTTPException(403, "Only an admin can reset what Finix has learned.")
+    from backend.accounting_ai import invoice_learning
+    cid = _company(current_user, body.company_id)
+    if not await invoice_learning.reset_vendor(cid, body.vendor_key, current_user.id):
+        raise HTTPException(404, "Finix has no learned data for that vendor.")
+    return {"success": True, "vendor_key": body.vendor_key}

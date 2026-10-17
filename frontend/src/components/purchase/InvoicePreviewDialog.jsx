@@ -24,6 +24,8 @@ const NOTE_CODES = new Set([
   'duplicate', 'vendor_known_as', 'oidar', 'proforma', 'receipt', 'advance_adjusted', 'own_company_is_supplier',
   'company_not_matched', 'low_confidence', 'unreadable', 'timeout', 'read_failed', 'ai_text_disagree',
   'gstin_repaired', 'missing_supplier_gstin',
+  // Finix learning notes (filled from this vendor's usual layout, unusual GST rate / numbering, learned expense head)
+  'layout_filled', 'layout_differs', 'gst_rate_unusual', 'invoice_no_unusual', 'ledger_learned_auto', 'ledger_learned_review',
 ]);
 const OVERRIDABLE = new Set(['mismatch', 'duplicate']);
 
@@ -81,10 +83,25 @@ export default function InvoicePreviewDialog({
   const [saving, setSaving] = useState(false);
   const [serverErrors, setServerErrors] = useState([]);
   const [showDoc, setShowDoc] = useState(false);
+  // Expense head: starts at what Finix proposed; only sent to the server when the person actually changes it.
+  const proposedHead = preview?.ledger?.expense_ledger_code || '';
+  const [ledgerCode, setLedgerCode] = useState(proposedHead);
+  const [ledgerTouched, setLedgerTouched] = useState(false);
+  const [heads, setHeads] = useState([]);
 
   useEffect(() => {
     setForm(initial); setForceDup(false); setAckMismatch(false); setServerErrors([]); setShowDoc(false);
-  }, [initial]);
+    setLedgerCode(proposedHead); setLedgerTouched(false);
+  }, [initial, proposedHead]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!open || !form.company_id) { setHeads([]); return undefined; }
+    api.get('/purchase-invoices/expense-heads', { params: { company_id: form.company_id } })
+      .then(({ data }) => { if (alive) setHeads(Array.isArray(data) ? data : []); })
+      .catch(() => { if (alive) setHeads([]); });
+    return () => { alive = false; };
+  }, [open, form.company_id]);
 
   const vendor = preview?.vendor;
   const extractedFile = preview?.file || {};
@@ -143,6 +160,7 @@ export default function InvoicePreviewDialog({
         parse_confidence: preview?.parse_confidence || 0,
         raw_text_excerpt: preview?.raw_text_excerpt || '',
         edited_fields: edited,
+        ...(ledgerTouched && ledgerCode ? { expense_ledger_code: ledgerCode } : {}),
         force_duplicate: forceDup,
         acknowledge_mismatch: ackMismatch,
       });
@@ -244,8 +262,22 @@ export default function InvoicePreviewDialog({
                   Advance of ₹{fmtNum(preview.advance_info.advance)} already adjusted — balance payable ₹{fmtNum(preview.advance_info.balance)}. The register records the full invoice value.
                 </p>
               )}
-              {preview.ledger?.expense_ledger_name && form.company_id === preview.suggested?.company_id && (
-                <p className="text-xs mt-2 opacity-80">Will be posted to expense head: <b>{preview.ledger.expense_ledger_name}</b> (Dr) · Accounts Payable (Cr).</p>
+              {heads.length > 0 && (
+                <label className="flex flex-wrap items-center gap-2 text-xs mt-2">
+                  <span className="opacity-80">Expense head (Dr) · Accounts Payable (Cr):</span>
+                  <select
+                    value={form.company_id === preview.suggested?.company_id || ledgerTouched ? ledgerCode : ''}
+                    onChange={(e) => { setLedgerCode(e.target.value); setLedgerTouched(true); }}
+                    className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs max-w-[16rem]"
+                    data-testid="expense-head-select"
+                  >
+                    <option value="">Let Finix choose</option>
+                    {heads.map((h) => <option key={h.code} value={h.code}>{h.code} · {h.name}</option>)}
+                  </select>
+                  {ledgerTouched && ledgerCode && ledgerCode !== proposedHead && (
+                    <span className="text-amber-700 dark:text-amber-400">Finix will remember this for this vendor.</span>
+                  )}
+                </label>
               )}
             </div>
 

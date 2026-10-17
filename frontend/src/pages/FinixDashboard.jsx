@@ -26,6 +26,7 @@ import { currentFinancialYearRange, financialYearStartYear, toLocalISODate } fro
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { isCommercialTenant, isPlatformOwner } from '@/lib/commercialPermissionMatrix';
 import FinixAICommandCenter from '@/components/finix/FinixAICommandCenter.jsx';
+import FinixLearningPanel from '@/components/finix/FinixLearningPanel.jsx';
 
 const fmtC = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -1382,6 +1383,10 @@ function FinixDashboardInner() {
 
       {!loading && companyId && companyId !== ALL_COMPANIES_ID && (
         <FinixAICommandCenter companyId={companyId} isDark={isDark} />
+      )}
+
+      {!loading && companyId && companyId !== ALL_COMPANIES_ID && (
+        <FinixLearningPanel companyId={companyId} isDark={isDark} isAdmin={String(user?.role?.value || user?.role || '').toLowerCase() === 'admin'} />
       )}
 
       {companyId === ALL_COMPANIES_ID && !loading && (

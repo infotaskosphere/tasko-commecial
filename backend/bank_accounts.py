@@ -1570,6 +1570,7 @@ async def manual_match_transaction(txn_id: str, payload: ManualMatchInput, curre
         await learn_transaction_match(txn.get("description", ""), payload.matched_type, payload.matched_id, payload.matched_label)
     except Exception:
         pass
+    await _learn_bank_signal_for_bill(txn, payload.matched_type, payload.matched_id, current_user.id)
 
     # Auto-match other similar transactions across the system
     try:
@@ -1588,6 +1589,20 @@ async def manual_match_transaction(txn_id: str, payload: ManualMatchInput, curre
         confidence=payload.confidence, reason=payload.reason,
     )
     return {"success": True}
+
+
+async def _learn_bank_signal_for_bill(txn: dict, matched_type: str, bill_id: str, user_id: str) -> None:
+    """Finix learning: a person paid/matched a purchase bill from the bank. Best-effort — never blocks matching."""
+    if matched_type != "purchase" or not bill_id:
+        return
+    try:
+        from backend.accounting_ai import invoice_learning as _il
+        bill = await db.purchase_invoices.find_one({"id": bill_id}, {"_id": 0})
+        if bill:
+            await _il.learn_from_bank_bill_match(txn.get("company_id", "") or bill.get("company_id", ""), bill,
+                                                 txn_id=txn.get("id", ""), user_id=user_id)
+    except Exception:
+        pass
 
 
 @router.post("/bank-transactions/{txn_id}/edit-match")
@@ -1642,6 +1657,7 @@ async def edit_match_transaction(txn_id: str, payload: ManualMatchInput, current
         await learn_transaction_match(txn.get("description", ""), payload.matched_type, payload.matched_id, payload.matched_label)
     except Exception:
         pass
+    await _learn_bank_signal_for_bill(txn, payload.matched_type, payload.matched_id, current_user.id)
 
     # Auto-match other similar transactions across the system
     try:
@@ -1870,6 +1886,7 @@ async def manual_reconcile_transaction_api(
     company_id = payload.company_id or txn.get("company_id", "")
     match: Optional[dict] = None
     matched_label = None
+    acct: Optional[dict] = None
 
     if payload.matched_record_type == "invoice" and payload.matched_record_id:
         inv = await db.invoices.find_one({"id": payload.matched_record_id}, {"_id": 0})
@@ -1919,6 +1936,18 @@ async def manual_reconcile_transaction_api(
             "pending_approval": False,
         }},
     )
+
+    # Finix learning: a person matched this bank line to a bill, or categorised it to an expense ledger.
+    if match["type"] == "purchase":
+        await _learn_bank_signal_for_bill(txn, "purchase", match["id"], current_user.id)
+    elif match["type"] == "expense":
+        try:
+            from backend.accounting_ai import invoice_learning as _il
+            await _il.learn_from_bank_categorization(
+                company_id, txn.get("description", ""), (acct or {}).get("code", ""), (acct or {}).get("name", ""),
+                txn_id=txn_id, user_id=current_user.id)
+        except Exception:
+            pass
 
     # Reinforcement learning feedback — unchanged behavior from before.
     if payload.category and txn.get("description"):

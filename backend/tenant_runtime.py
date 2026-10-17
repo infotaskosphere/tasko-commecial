@@ -48,7 +48,7 @@ TENANT_COLLECTIONS = {
     "bank_accounts", "bank_transactions", "bank_rules", "bank_reconciliation",
     "bank_reconciliation_matches", "bank_reconciliation_audit", "bank_statistics",
     "bank_transaction_history", "bank_learning", "bank_statement_templates", "cashflow_history",
-    "chart_of_accounts", "accounting_audit_trail", "bulk_import_jobs", "finix_ai_proposals", "finix_ai_documents", "finix_ai_learning", "journal_entries", "journal_lines",
+    "chart_of_accounts", "accounting_audit_trail", "bulk_import_jobs", "finix_ai_proposals", "finix_ai_documents", "finix_ai_learning", "finix_vendor_memory", "finix_learning_events", "journal_entries", "journal_lines",
     "accounting_audit", "accounting_audit_locks", "accounting_audit_sequences",
     "accounting_locks", "accounting_posting_failures", "accounting_rules", "accounting_sequences",
     "adjustment_note_overrides", "ledger_learning", "posting_history", "posting_audit", "journal_templates", "voucher_history",
