@@ -142,6 +142,9 @@ function FinixDashboardInner() {
   const [statutorySummary, setStatutorySummary] = useState(null);
   const [anomalies, setAnomalies] = useState([]);
   const [cashflowForecast, setCashflowForecast] = useState(null);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagData, setDiagData] = useState(null);
   const [aiAvailability, setAiAvailability] = useState({ health: true, statutory: true, anomalies: true, cashflow: true });
   const [showHealthModal, setShowHealthModal] = useState(false);
 
@@ -659,6 +662,53 @@ function FinixDashboardInner() {
       await fetchMetrics(companyId, { force: true });
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Could not load orphan notes.');
+    }
+  };
+
+  // "Find the cause": lists the exact ledger entries behind a negative/phantom figure.
+  const loadDiagnostics = async () => {
+    if (!companyId || companyId === ALL_COMPANIES_ID) {
+      toast.error('Select a single company first.');
+      return;
+    }
+    setDiagOpen(true);
+    setDiagLoading(true);
+    try {
+      const { data } = await api.get('/finix/ai/ledger-diagnostics', { params: { company_id: companyId } });
+      setDiagData(data);
+    } catch (err) {
+      setDiagData(null);
+      toast.error(err?.response?.data?.detail || 'Could not load the diagnostics.');
+    } finally {
+      setDiagLoading(false);
+    }
+  };
+
+  const resyncBooks = async () => {
+    setDiagLoading(true);
+    try {
+      const { data } = await api.post('/finix/ai/resync', null, { params: { company_id: companyId } });
+      toast.success(data?.remaining_findings ? `Re-synced. ${data.remaining_findings} item(s) still need attention.` : 'Books re-synced. Nothing left to fix.');
+      await loadDiagnostics();
+      await fetchMetrics(companyId, { force: true });
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Re-sync failed.');
+      setDiagLoading(false);
+    }
+  };
+
+  const deleteDiagDocument = async (finding) => {
+    const doc = finding.document;
+    if (!doc) return;
+    if (!window.confirm(`Delete ${doc.invoice_no || doc.id} (${doc.client_name || 'Customer'}, ${fmtC(doc.grand_total)})?\n\n${finding.reason}`)) return;
+    try {
+      await api.delete(`/invoices/${doc.id}`);
+      toast.success('Deleted');
+      await loadDiagnostics();
+      await fetchMetrics(companyId, { force: true });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Could not delete this document.', { duration: 9000 });
     }
   };
 
@@ -1453,6 +1503,11 @@ function FinixDashboardInner() {
                       <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-300">
                         <strong>{healthScore.issues.length} data issue{healthScore.issues.length === 1 ? '' : 's'}</strong>
                         {healthScore.capped ? ' — score capped until fixed' : ''}: {healthScore.issues[0].message}
+                        {companyId !== ALL_COMPANIES_ID && (
+                          <button onClick={loadDiagnostics} className="block mt-1.5 px-2.5 py-1 rounded-md bg-slate-800 text-white font-semibold hover:bg-slate-900">
+                            Find the cause
+                          </button>
+                        )}
                         {healthScore.issues.some((i) => i.code === 'ORPHAN_NOTE') && companyId !== ALL_COMPANIES_ID && (
                           <button onClick={handleDeleteOrphanNotes} className="block mt-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
                             Review &amp; delete orphan notes
@@ -2007,6 +2062,61 @@ function FinixDashboardInner() {
             <Button onClick={() => setShowHealthModal(false)} className="rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
               Close
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Ledger diagnostics: what is behind a wrong figure ── */}
+      <Dialog open={diagOpen} onOpenChange={setDiagOpen}>
+        <DialogContent className={`max-w-2xl rounded-3xl max-h-[85vh] overflow-y-auto ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white'}`}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <AlertTriangle className="w-5 h-5 text-amber-500" /> What is behind the wrong figures
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              Ledger entries that reduce receivables or have no valid invoice, payment or bill behind them.
+            </DialogDescription>
+          </DialogHeader>
+          {diagLoading && <div className="py-6 text-sm text-slate-500">Checking the ledger…</div>}
+          {!diagLoading && diagData && (
+            <div className="space-y-3 text-xs">
+              <div className="text-slate-500">Receivables balance in the ledger: <strong>{fmtC(diagData.receivables_balance)}</strong></div>
+              {diagData.count === 0 && (
+                <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
+                  No faulty ledger entries were found. If a figure still looks wrong, tell support which one and its expected value.
+                </div>
+              )}
+              {diagData.findings.map((f) => (
+                <div key={f.entry_id} className={`p-3 rounded-xl border ${isDark ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-bold">{f.narration || f.source} <span className="font-normal text-slate-400">· {f.entry_date} · {f.source}</span></div>
+                      <div className="mt-0.5 text-amber-700 dark:text-amber-300">{f.reason}</div>
+                      {f.document && (
+                        <div className="mt-0.5 text-slate-500">
+                          {f.document.invoice_no} · {f.document.client_name || 'Customer'} · type {f.document.invoice_type || 'tax_invoice'} · status {f.document.status}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right font-mono font-bold whitespace-nowrap">{fmtC(f.receivables_effect)}</div>
+                  </div>
+                  {f.document && f.code !== 'SOURCE_MISSING' && (
+                    <Button size="sm" variant="outline" className="mt-2 h-7 text-xs rounded-lg" onClick={() => deleteDiagDocument(f)}>
+                      Delete this document
+                    </Button>
+                  )}
+                  {f.source === 'manual' && (
+                    <Link to="/journal-entries" className="inline-block mt-2 text-blue-600 hover:underline font-semibold">Open Journal Entries &rarr;</Link>
+                  )}
+                </div>
+              ))}
+              {diagData.findings.some((f) => f.code === 'SOURCE_MISSING' || f.code === 'PAYMENT_WITHOUT_INVOICE') && (
+                <Button size="sm" onClick={resyncBooks} className="rounded-xl">Re-sync books to remove entries with no source</Button>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setDiagOpen(false)} className="rounded-xl bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

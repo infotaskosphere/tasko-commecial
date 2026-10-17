@@ -564,3 +564,75 @@ async def anomalies(company_id: str, today: Optional[date] = None) -> dict:
                           "action": "Follow up for payment."})
 
     return {"company_id": company_id, "count": len(items), "clean": not items, "items": items[:60], "source": "general ledger"}
+
+
+# ── diagnostics: which ledger entries cause a wrong figure ───────────────────
+async def ledger_diagnostics(company_id: str) -> dict:
+    """Explain WHERE negative receivables / phantom sales come from.
+
+    Every journal entry that reduces receivables, or whose source document is
+    missing / should not be posted, is listed with the reason and the document
+    behind it, so the user can fix the real cause instead of guessing.
+    """
+    ledger = await load_ledger(company_id)
+    entries = await db.journal_entries.find({"company_id": company_id}, {"_id": 0}).to_list(500000)
+    by_entry: dict = defaultdict(list)
+    for l in ledger.lines:
+        by_entry[l.get("entry_id")].append(l)
+
+    invoices = {d["id"]: d for d in await db.invoices.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
+    payments = {d["id"]: d for d in await db.payments.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
+    purchases = {d["id"]: d for d in await db.purchase_invoices.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
+    pur_pay = {d["id"]: d for d in await db.purchase_payments.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
+
+    findings = []
+    for e in entries:
+        lines = by_entry.get(e["id"], [])
+        ar_effect = round(sum(safe_float(l.get("debit")) - safe_float(l.get("credit"))
+                              for l in lines if ledger.group_code(l.get("account_id")) == "1100"), 2)
+        source, sid = e.get("source"), e.get("source_id")
+        reason = code = None
+        doc = None
+        if source == "sale":
+            doc = invoices.get(sid)
+            if doc is None:
+                code, reason = "SOURCE_MISSING", "The invoice behind this entry no longer exists."
+            elif doc.get("status") == "cancelled" or (doc.get("invoice_type") or "tax_invoice") in NON_REVENUE_TYPES:
+                code, reason = "SHOULD_NOT_BE_POSTED", "This document is cancelled/proforma/estimate and should not be in the books."
+            elif doc.get("invoice_type") in ("credit_note", "debit_note") or doc.get("status") == "credit_note":
+                parent = invoices.get(doc.get("original_invoice_id")) if doc.get("original_invoice_id") else None
+                code = "CREDIT_NOTE_ENTRY"
+                if doc.get("invoice_type") not in ("credit_note", "debit_note"):
+                    reason = "An invoice was switched to status 'Credit Note' without being linked to an original invoice, so it posts negative sales."
+                elif parent is None:
+                    reason = "A credit/debit note whose original invoice is missing."
+                else:
+                    reason = (f"A credit note against {parent.get('invoice_no')} (status {parent.get('status')}); "
+                              "it reduces receivables by its full value.")
+                if ar_effect >= 0:
+                    code = reason = None
+        elif source == "payment":
+            doc = payments.get(sid)
+            if doc is None:
+                code, reason = "SOURCE_MISSING", "The payment behind this entry no longer exists."
+            elif doc.get("invoice_id") and doc["invoice_id"] not in invoices:
+                code, reason = "PAYMENT_WITHOUT_INVOICE", "This payment refers to an invoice that no longer exists."
+        elif source == "purchase" and sid not in purchases:
+            code, reason = "SOURCE_MISSING", "The purchase bill behind this entry no longer exists."
+        elif source == "purchase_payment" and sid not in pur_pay:
+            code, reason = "SOURCE_MISSING", "The purchase payment behind this entry no longer exists."
+        elif source in ("manual", "ai_zero_touch") and ar_effect < -0.5:
+            code, reason = "MANUAL_ENTRY_REDUCES_RECEIVABLES", "A manual/AI journal entry credits receivables with no invoice behind it."
+        if not code:
+            continue
+        findings.append({
+            "entry_id": e["id"], "entry_date": date_key(e.get("entry_date")), "source": source, "source_id": sid,
+            "narration": e.get("narration"), "total": round(safe_float(e.get("total_debit")), 2), "receivables_effect": ar_effect,
+            "code": code, "reason": reason,
+            "document": ({"id": doc["id"], "invoice_no": doc.get("invoice_no"), "invoice_type": doc.get("invoice_type"),
+                          "status": doc.get("status"), "client_name": doc.get("client_name"),
+                          "grand_total": doc.get("grand_total")} if doc and source in ("sale",) else None),
+        })
+    findings.sort(key=lambda f: abs(f["receivables_effect"]), reverse=True)
+    return {"company_id": company_id, "count": len(findings), "receivables_balance": ledger.balance("1100", "dr"),
+            "findings": findings[:50]}

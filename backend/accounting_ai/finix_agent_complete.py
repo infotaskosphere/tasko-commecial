@@ -308,3 +308,26 @@ async def agent_cashflow_forecast(company_id: str = "", current_user: User = Dep
         raise HTTPException(403, "Access denied.")
     from backend.accounting_ai import finix_metrics
     return await finix_metrics.cashflow_forecast(_company(current_user, company_id))
+
+
+@router.get("/ledger-diagnostics")
+async def agent_ledger_diagnostics(company_id: str = "", current_user: User = Depends(get_current_user)):
+    """List the journal entries behind negative receivables / phantom figures."""
+    if not _can_view(current_user):
+        raise HTTPException(403, "Access denied.")
+    from backend.accounting_ai import finix_metrics
+    return await finix_metrics.ledger_diagnostics(_company(current_user, company_id))
+
+
+@router.post("/resync")
+async def agent_resync(company_id: str = "", current_user: User = Depends(get_current_user)):
+    """Re-run the books reconcile now: removes ledger entries whose invoice/payment/bill is gone
+    (never touching locked-period or adjusted entries) and re-posts missing ones."""
+    if not _can_post(current_user):
+        raise HTTPException(403, "Re-syncing the books requires journal-posting permission.")
+    cid = _company(current_user, company_id)
+    from backend import invoicing
+    await invoicing._reconcile_and_sync_all_sales_and_payments_impl(cid)
+    await invoicing._reconcile_and_sync_all_purchases_and_payments_impl(cid)
+    from backend.accounting_ai import finix_metrics
+    return {"success": True, "remaining_findings": (await finix_metrics.ledger_diagnostics(cid))["count"]}

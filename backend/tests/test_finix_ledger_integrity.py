@@ -395,3 +395,34 @@ def test_ai_proposal_posts_gst_lines(env, monkeypatch):
         gst_line = [l for l in res["lines"] if l["account_name"] == "GST Output Payable"][0]
         assert gst_line["credit"] == 9000.0
     run(go())
+
+
+# ── diagnostics: finding the real cause of a wrong figure ────────────────────
+def test_diagnostics_finds_invoice_switched_to_credit_note_status(env):
+    async def go():
+        # NOT an orphan note: a plain invoice whose status was set to "credit_note" posts negative sales.
+        await post_invoice(env, "bad", status="credit_note", amount_due=0.0)
+        issues = await env.fm.integrity_issues(env.cid, await env.fm.load_ledger(env.cid))
+        codes = {i["code"] for i in issues}
+        assert "NEGATIVE_RECEIVABLES" in codes and "ORPHAN_NOTE" not in codes
+        diag = await env.fm.ledger_diagnostics(env.cid)
+        assert diag["count"] == 1
+        f = diag["findings"][0]
+        assert f["code"] == "CREDIT_NOTE_ENTRY" and f["document"]["id"] == "bad" and f["receivables_effect"] == -1180.0
+        # deleting that document (allowed: it's a note-like doc with no payments) clears the figure
+        await env.inv.delete_invoice("bad", USER)
+        assert (await env.fm.ledger_diagnostics(env.cid))["count"] == 0
+        assert (await env.fm.load_ledger(env.cid)).balance("1100", "dr") == 0
+    run(go())
+
+
+def test_diagnostics_finds_stale_entry_and_resync_removes_it(env):
+    async def go():
+        await post_invoice(env, "a")
+        await env.db.invoices.delete_one({"id": "a"})                     # document vanished, entry left behind
+        diag = await env.fm.ledger_diagnostics(env.cid)
+        assert [f["code"] for f in diag["findings"]] == ["SOURCE_MISSING"]
+        env.inv._reconcile_last_run.clear()
+        await env.inv._reconcile_and_sync_all_sales_and_payments_impl(env.cid)
+        assert await env.db.journal_entries.count_documents({"company_id": env.cid}) == 0
+    run(go())
