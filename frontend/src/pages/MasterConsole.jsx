@@ -48,7 +48,7 @@ const MODULE_LABELS = Object.freeze({
   finix: "Finix",
   aiweave: "AIWeave",
   compliance: "CompliGenie",
-  records: "Records",
+  records: "ClientSync",
   proposals: "LeadSense",
   people_matrix: "People Matrix"
 });
@@ -92,7 +92,7 @@ const FEATURE_FALLBACKS = Object.freeze({
   finix: [["can_view_finix_dashboard","Finix Dashboard"],["can_view_sale","Sales"],["can_view_purchase","Purchase"],["can_view_bank","Bank Accounts"],["can_view_journal_entries","Journal Entries"],["can_view_zero_touch_entries","Zero Touch Entries"],["can_view_accounting_reports","Accounting Reports"],["can_view_extended_accounts_reports","Extended Accounts Reports"],["can_view_gst_portal_sync","Live GST Portal Sync"],["can_view_accounting_integrity","Accounting Integrity"],["can_view_chart_of_accounts","Charts of Accounts"]],
   aiweave: [["can_view_aiweave","AIWeave"]],
   compliance: [["can_view_compliance_dashboard","Compliance Dashboard"],["can_view_compliance","Compliance Tracker"],["can_view_gst_reconciliation","GST Sphere"],["can_view_trademark_sphere","Trademark Sphere"],["can_view_roc_sphere","ROC Sphere"],["can_view_mis_report","MIS Report"],["can_view_salary_slips","Salary Slip Generator"]],
-  records: [["can_view_records_dashboard","Records Dashboard"],["can_view_all_dsc","DSC Register"],["can_view_documents","Document Register"],["can_view_clients_page","Clients"],["can_view_passwords","Password Vault"],["can_view_client_approvals","Client Approvals"]],
+  records: [["can_view_records_dashboard","ClientSync Dashboard"],["can_view_all_dsc","DSC Register"],["can_view_documents","Document Register"],["can_view_clients_page","Clients"],["can_view_passwords","Password Vault"],["can_view_client_approvals","Client Approvals"]],
   proposals: [["can_view_proposals_dashboard","Client Proposals Dashboard"],["can_view_all_leads","Lead Management"],["can_view_quotations","Quotations"],["can_view_client_discussion","Client Discussion"]],
   people_matrix: [["can_view_people_matrix_dashboard","People Matrix Dashboard"],["can_view_leave","Leave"],["can_view_payroll","Payroll"],["can_view_hr","HR"],["can_view_recruitment","Recruitment"]],
 });
