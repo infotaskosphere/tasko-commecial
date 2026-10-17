@@ -19,24 +19,14 @@
 import api from "@/lib/api";
 
 /** Always return an array of companies, whatever wrapper the API used. */
-export function normalizeCompanies(payload, options = {}) {
+export function normalizeCompanies(payload) {
   const d = payload?.data !== undefined ? payload.data : payload;
-  let list = [];
-  if (Array.isArray(d)) list = d;
-  else if (Array.isArray(d?.companies)) list = d.companies;
-  else if (Array.isArray(d?.data)) list = d.data;
-  else if (Array.isArray(d?.items)) list = d.items;
-  else if (Array.isArray(d?.results)) list = d.results;
-
-  const valid = list.filter((c) => c && typeof c === 'object');
-  if (options?.excludeCommercial) {
-    return valid.filter((c) => {
-      if (c.source === 'commercial-license' || c.source === 'license' || c.source === 'commercial') return false;
-      if (c.commercial_customer_id) return false;
-      return true;
-    });
-  }
-  return valid;
+  if (Array.isArray(d)) return d;
+  if (Array.isArray(d?.companies)) return d.companies;
+  if (Array.isArray(d?.data)) return d.data;
+  if (Array.isArray(d?.items)) return d.items;
+  if (Array.isArray(d?.results)) return d.results;
+  return [];
 }
 
 /** Full company master records (needs a logged-in user only). */
@@ -113,10 +103,49 @@ export function findCompany(companies, id) {
   return (Array.isArray(companies) ? companies : []).find((c) => c?.id === id) || null;
 }
 
+/**
+ * Options for <SearchableSelect> built from the company MASTER records
+ * (Admin → Master Data → Company Profiles). Use this for every "which company?"
+ * dropdown so the list always comes from the master and never from a hard-coded
+ * or client-derived list.
+ */
+export function companyOptions(companies) {
+  return (Array.isArray(companies) ? companies : [])
+    .filter((c) => c?.id && c?.name)
+    .map((c) => ({
+      value: c.id,
+      label: c.name,
+      sublabel: [c.gstin, c.city || c.state].filter(Boolean).join(" · "),
+    }));
+}
+
+/** Always return an array of clients, whatever wrapper the API used. */
+export function normalizeClients(payload) {
+  const d = payload?.data !== undefined ? payload.data : payload;
+  if (Array.isArray(d)) return d;
+  if (Array.isArray(d?.clients)) return d.clients;
+  if (Array.isArray(d?.items)) return d.items;
+  return [];
+}
+
+/** Options for <SearchableSelect> built from client records. */
+export function clientOptions(clients) {
+  return (Array.isArray(clients) ? clients : [])
+    .filter((c) => c?.id && (c?.company_name || c?.name))
+    .map((c) => ({
+      value: c.id,
+      label: c.company_name || c.name,
+      sublabel: [c.gstin || c.client_gstin, c.phone].filter(Boolean).join(" · "),
+    }));
+}
+
 export default {
   fetchCompanies,
   fetchCompanyList,
   normalizeCompanies,
   recordBelongsToCompany,
   findCompany,
+  companyOptions,
+  clientOptions,
+  normalizeClients,
 };
