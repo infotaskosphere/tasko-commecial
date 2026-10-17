@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { ClipboardCheck, Building2, Search, RefreshCw, CheckCircle2, XCircle, Eye, Loader2, KeyRound, ChevronDown, ArrowLeft, ArrowRight, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { getOnboardingApplications, reviewOnboardingApplication } from "@/lib/commercialConsoleApi";
@@ -281,14 +282,14 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {STATUSES.filter((s) => s.value !== "all").map((s) => <button key={s.value} onClick={() => setStatus(s.value)} className={"rounded-xl border p-3 text-left " + (status === s.value ? "border-blue-500 bg-blue-50" : "border-slate-200")}>
-          <div className="text-xs text-slate-500">{s.label}</div><div className="mt-1 text-xl font-bold text-slate-900">{items.filter((i) => i.status === s.value).length}</div>
+          <div className="whitespace-nowrap text-xs text-slate-500">{s.label}</div><div className="mt-1 text-xl font-bold text-slate-900">{items.filter((i) => i.status === s.value).length}</div>
         </button>)}
       </div>
     </div>
 
     {loading ? <div className="flex items-center justify-center gap-2 py-14 text-sm text-slate-500"><Loader2 className="animate-spin" size={18}/> Loading applications…</div>
       : visibleItems.length === 0 ? <div className={card + " p-10 text-center"}><Building2 className="mx-auto mb-3 text-slate-300" size={34}/><p className="font-semibold text-slate-800">No applications found</p><p className="mt-1 text-sm text-slate-500">Google Form submissions appear after the Apps Script bridge is configured.</p></div>
-      : <div className={card + " overflow-hidden"}><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm">
+      : <div className={card + " overflow-hidden"}><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm"><colgroup><col className="w-[160px]"/><col className="w-[180px]"/><col className="w-[150px]"/><col className="w-[200px]"/><col className="w-[110px]"/><col className="w-[170px]"/><col className="w-[100px]"/></colgroup>
         <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500"><tr>{["Application ID","Applicant","Contact","License request","Submitted","Status","Action"].map((h) => <th key={h} className="px-4 py-3 text-left font-bold">{h}</th>)}</tr></thead>
         <tbody>{visibleItems.map((item) => <tr key={item.application_id} className="border-t border-slate-100">
           <td className="px-4 py-3 align-top"><div className="font-bold">{item.application_id}</div><div className="mt-1 text-xs text-slate-500">{[item.city, item.state].filter(Boolean).join(", ")}</div></td>
@@ -296,12 +297,12 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
           <td className="px-4 py-3 align-top"><div>{item.contact_name || "—"}</div><div className="text-xs text-slate-500">{item.mobile || "—"}</div></td>
           <td className="px-4 py-3 align-top"><div>{item.license_type && item.license_type !== "To be assigned" ? item.license_type : (item.business_type || (item.legacy_approved ? "Previously issued license" : "—"))}</div><div className="mt-1 text-xs text-slate-500">{item.user_count || "—"} employees</div>{(item.modules || []).length > 0 && <div className="mt-1 text-xs text-slate-500">{(item.modules || []).join(", ")}</div>}</td>
           <td className="px-4 py-3 align-top whitespace-nowrap">{item.created_at ? new Date(item.created_at).toLocaleDateString("en-IN") : (item.expires_at ? `Valid until ${new Date(item.expires_at).toLocaleDateString("en-IN")}` : "—")}</td>
-          <td className="px-4 py-3 align-top"><span className={"inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold " + (item.status === "approved" ? "bg-emerald-100 text-emerald-800" : item.status === "rejected" ? "bg-rose-100 text-rose-800" : item.status === "under_review" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800")}>{item.legacy_approved ? "Previously approved" : nice(item.status)}</span></td>
-          <td className="px-4 py-3 align-top"><button onClick={() => openDetails(item)} className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold text-slate-700"><Eye size={14}/> {["pending","under_review"].includes(item.status) && !item.legacy_approved ? "Review" : "View"}</button></td>
+          <td className="w-[170px] px-4 py-3 align-top"><span className={"inline-flex w-max max-w-none whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold " + (item.status === "approved" ? "bg-emerald-100 text-emerald-800" : item.status === "rejected" ? "bg-rose-100 text-rose-800" : item.status === "under_review" ? "bg-blue-100 text-blue-800" : "bg-amber-100 text-amber-800")}>{item.legacy_approved ? "Previously approved" : nice(item.status)}</span></td>
+          <td className="w-[100px] whitespace-nowrap px-4 py-3 align-top"><button onClick={() => openDetails(item)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold text-slate-700"><Eye size={14}/> {["pending","under_review"].includes(item.status) && !item.legacy_approved ? "Review" : "View"}</button></td>
         </tr>)}</tbody>
       </table></div></div>}
 
-    {selected && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="commercial-onboarding-title">
+    {selected && createPortal(<div className="fixed inset-0 z-[110] flex min-h-screen w-screen items-center justify-center bg-slate-950/60 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="commercial-onboarding-title">
       <div className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
         <div className="flex items-start justify-between gap-3"><div><h3 id="commercial-onboarding-title" className="text-xl font-bold text-slate-900">{selected.trade_name || selected.legal_name}</h3><p className="mt-1 text-xs text-slate-500">{selected.application_id} · {selected.created_at ? new Date(selected.created_at).toLocaleString("en-IN") : "Previously issued license"}</p></div><button onClick={() => { setSelected(null); setIssued(null); }} className="rounded-lg border px-3 py-1.5 text-sm">Close</button></div>
 
@@ -335,6 +336,6 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
           {["pending","under_review"].includes(selected.status) && !selected.legacy_approved && !issued && stage === "setup" && <><button disabled={busy} onClick={()=>setStage("review")} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50"><ArrowLeft size={15}/> Back to application</button><button disabled={busy || !approvedModules.length || !invoiceCompanyId} onClick={()=>action("approve")} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"><KeyRound size={15}/> {busy ? "Generating…" : "Generate license"}</button></>}
         </div>
       </div>
-    </div>}
+    </div>, document.body)}
   </div>;
 }
