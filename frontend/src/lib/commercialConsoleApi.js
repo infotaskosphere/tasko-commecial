@@ -160,7 +160,11 @@ export async function triggerUserWelcomeEmail(userId) {
 
 // ── Commercial Onboarding Approval ────────────────────────────────────────────
 export async function getOnboardingApplications(params = {}) {
-  const res = await api.get("/commercial-console/onboarding/submissions", { params });
+  const query = { ...params };
+  // "all" means no status filter. Omit it because the backend accepts only
+  // concrete workflow statuses as values for the status query parameter.
+  if (query.status === "all") delete query.status;
+  const res = await api.get("/commercial-console/onboarding/submissions", { params: query });
   return res.data;
 }
 
