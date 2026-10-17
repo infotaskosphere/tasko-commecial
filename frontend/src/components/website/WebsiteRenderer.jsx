@@ -35,7 +35,7 @@ export const DEFAULT_BUILDER = {
           { title: "Accounting & Banking", description: "Ledgers, banking, financial reports and audit controls.", route: "/accounting-reports" },
           { title: "HRMS & People", description: "Attendance, leave, payroll, recruitment and staff activity.", route: "/people-matrix" },
           { title: "Compliance & GST", description: "GST reconciliation, ROC, trademark and legal dates.", route: "/compliance-dashboard" },
-          { title: "Client Records", description: "Client records, DSC repository, documents and approvals.", route: "/records-dashboard" },
+          { title: "ClientSync", description: "Client records, DSC repository, documents and approvals.", route: "/records-dashboard" },
           { title: "AI & Automation", description: "Intelligent document processing and operational assistance.", route: "/ai-reader" }
         ]
       }},
