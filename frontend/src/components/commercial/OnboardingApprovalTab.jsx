@@ -12,7 +12,7 @@ const STATUSES = [
 ];
 const MODULES = [
   ["taskosphere", "Taskosphere"], ["finix", "Finix / Accounting"], ["aiweave", "AIWeave"],
-  ["compliance", "CompliGenie / Compliance"], ["records", "Records"],
+  ["compliance", "CompliGenie / Compliance"], ["records", "ClientSync"],
   ["proposals", "LeadSense / Proposals"], ["people_matrix", "People Matrix / HR"],
 ];
 const nice = (v) => String(v || "").replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
