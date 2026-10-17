@@ -49,6 +49,7 @@ def _clean(doc: Optional[dict]) -> Optional[dict]:
 
 class OnboardingSubmission(BaseModel):
     source: str = Field(default="google_form", max_length=40)
+    external_reference: Optional[str] = Field(default=None, max_length=80)
     legal_name: str = Field(min_length=2, max_length=200)
     trade_name: Optional[str] = Field(default=None, max_length=200)
     constitution: str = Field(min_length=2, max_length=80)
@@ -57,6 +58,7 @@ class OnboardingSubmission(BaseModel):
     registration_no: Optional[str] = Field(default=None, max_length=40)
     address: str = Field(min_length=5, max_length=1000)
     city: str = Field(min_length=2, max_length=100)
+    country: Optional[str] = Field(default="India", max_length=100)
     state: str = Field(min_length=2, max_length=100)
     pin: str = Field(min_length=4, max_length=10)
     website: Optional[str] = Field(default=None, max_length=300)
@@ -68,12 +70,14 @@ class OnboardingSubmission(BaseModel):
     business_type: str = Field(min_length=2, max_length=100)
     business_description: str = Field(min_length=3, max_length=3000)
     client_count: Optional[str] = Field(default=None, max_length=60)
-    modules: List[str] = Field(min_length=1, max_length=30)
-    license_type: str = Field(min_length=2, max_length=60)
+    # Optional: the platform owner chooses the modules when approving the application.
+    modules: List[str] = Field(default_factory=list, max_length=30)
+    # Chosen by the platform owner on approval; applicants no longer pick it.
+    license_type: str = Field(default="To be assigned", min_length=2, max_length=60)
     user_count: int = Field(ge=1, le=100000)
     entity_count: Optional[str] = Field(default=None, max_length=60)
     commercial_notes: Optional[str] = Field(default=None, max_length=3000)
-    deployment: str = Field(min_length=2, max_length=100)
+    deployment: str = Field(default="Hosted on the OneNexa platform", min_length=2, max_length=100)
     migration: Optional[str] = Field(default="To be discussed", max_length=60)
     migration_details: Optional[str] = Field(default=None, max_length=3000)
     isolation: Optional[str] = Field(default="Yes – Dedicated / Isolated", max_length=100)
@@ -113,8 +117,8 @@ class OnboardingSubmission(BaseModel):
             value = MODULE_KEYS.get(value, MODULE_KEYS.get(value.replace(" ", "_"), ""))
             if value and value not in clean:
                 clean.append(value)
-        if not clean:
-            raise ValueError("Select one or more supported commercial modules")
+        if values and not clean:
+            raise ValueError("None of the requested modules are supported commercial modules")
         return clean
 
     @field_validator("declaration")
@@ -160,6 +164,12 @@ async def _persist_application(body: OnboardingSubmission) -> dict:
     if body.gstin:
         duplicate_q["$or"].append({"gstin": body.gstin})
     previous = _clean(await db.commercial_onboarding_applications.find_one(duplicate_q))
+    if previous and body.external_reference and previous.get("external_reference") == body.external_reference:
+        # The same submission is being re-sent (e.g. the sender timed out after we stored it): idempotent success.
+        return {
+            "success": True, "application_id": previous.get("application_id"), "status": previous.get("status", "pending"),
+            "message": "Application already received.", "duplicate_delivery": True,
+        }
     if previous:
         raise HTTPException(status_code=409, detail={
             "message": "An application already exists for this email, PAN or GSTIN.",
@@ -200,7 +210,7 @@ async def create_google_form_submission(
 async def create_submission(body: OnboardingSubmission):
     """Public intake. It creates a pending application only and never provisions."""
     body.source = "onenexa_public_web_form" if body.source == "web_form" else body.source
-    return await _store_submission(body)
+    return await _persist_application(body)
 
 
 @router.get("/submissions")
@@ -223,6 +233,7 @@ async def list_submissions(
             {"trade_name": {"$regex": term, "$options": "i"}},
             {"email": {"$regex": term, "$options": "i"}},
             {"pan": {"$regex": term, "$options": "i"}},
+            {"external_reference": {"$regex": term, "$options": "i"}},
         ]
         if status_filter:
             query = {"$and": [query, {"$or": search_terms}]}
