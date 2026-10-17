@@ -11,3 +11,43 @@ body:not(.website-surface) #root .commercial-console-sidebar-icon::before { cont
 body:not(.website-surface) #root .commercial-console-sidebar-icon::after { content: "" !important; position: absolute !important; width: 6px !important; height: 1.5px !important; left: 5px !important; top: 8px !important; background: currentColor !important; box-shadow: -2px -3px 0 -0.2px currentColor !important; }
 body:not(.website-surface).biz-master-console #root .commercial-console-sidebar-icon, body:not(.website-surface) #root .commercial-console-sidebar-link:hover .commercial-console-sidebar-icon { color: #f8fafc !important; }
 @media (max-width: 1023px) { body:not(.website-surface) #root .commercial-console-sidebar-link { display: none !important; } }
+
+/* Onboarding Approval: use the available panel width instead of a forced 980px
+   table width. This removes the dead area after the View button and keeps the
+   status/action columns sized to their actual content. */
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] {
+  width: 100% !important;
+  min-width: 0 !important;
+  table-layout: fixed !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(1) { width: 17% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(2) { width: 18% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(3) { width: 14% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(4) { width: 18% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(5) { width: 10% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(6) { width: 14% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] col:nth-child(7) { width: 9% !important; }
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] th,
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td {
+  min-width: 0 !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] th:nth-child(6),
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(6),
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] th:nth-child(7),
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(7) {
+  white-space: nowrap !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(6) {
+  overflow: hidden !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(6) > span {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(7) {
+  text-align: left !important;
+}
+body:not(.website-surface).biz-master-console #root table.min-w-\[980px\] td:nth-child(7) > button {
+  white-space: nowrap !important;
+}
