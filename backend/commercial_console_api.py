@@ -19,8 +19,10 @@ from pydantic import BaseModel, Field
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.platform_owner import is_platform_owner
+from backend.commercial_onboarding_approval import router as commercial_onboarding_approval_router
 
 router = APIRouter(prefix="/api/commercial-console", tags=["commercial-console"])
+router.include_router(commercial_onboarding_approval_router)
 
 
 def _now_iso() -> str:
