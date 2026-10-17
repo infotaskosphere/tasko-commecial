@@ -17,7 +17,7 @@ from email.mime.application import MIMEApplication
 
 from datetime import datetime, timezone, date, timedelta
 from io import BytesIO, StringIO
-from typing import List, Optional, Literal, Any, Dict
+from typing import List, Optional, Literal, Any, Dict, Tuple
 
 from fastapi import (
     APIRouter,
@@ -36,8 +36,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from backend.dependencies import db, get_current_user, check_module_permission
 from backend.models import User
-from backend.tenant_runtime import enforce_company_value
-from backend.platform_owner import is_platform_owner
 
 # Google Drive is centralized in backend.google_drive_service.
 # Service-account authentication is preferred; legacy OAuth remains only
@@ -57,23 +55,16 @@ from backend.google_drive_service import (
 try:
     from fpdf import FPDF
 except ImportError:
-    try:
-        import subprocess, sys
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "fpdf2", "--break-system-packages"])
-        from fpdf import FPDF
-    except Exception:
-        class FPDF:
-            pass
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "fpdf2"])
+    from fpdf import FPDF
 
 try:
     import openpyxl
 except ImportError:
-    try:
-        import subprocess, sys
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl", "--break-system-packages"])
-        import openpyxl
-    except Exception:
-        openpyxl = None
+    import subprocess, sys
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
+    import openpyxl
 
 try:
     import xml.etree.ElementTree as ET
@@ -1378,9 +1369,9 @@ class PaymentCreate(BaseModel):
     payment_mode: str = "neft"
     reference_no: str = ""
     notes: str = ""
-    # Distinguishes an advance receipt from a later partial receipt while
-    # keeping both as canonical records in db.payments for the Party Ledger.
-    payment_type: Literal["advance", "partial", "payment"] = "payment"
+    # Distinguishes an advance from a later partial receipt while keeping
+    # both as canonical records in db.payments for the Party Ledger.
+    payment_type: str = "payment"
 
 
 class Payment(PaymentCreate):
@@ -2357,14 +2348,8 @@ async def get_backup_sources(
         if src in source_map:
             source_map[src]["client_count"] = doc["count"]
 
-    # Count products per source. Products are not in the central tenant
-    # collection registry because legacy rows may lack company_id, so scope
-    # this aggregation explicitly rather than exposing cross-tenant totals.
-    product_match = {} if is_platform_owner(current_user) else {
-        "company_id": enforce_company_value(current_user, None)
-    }
+    # Count products per source
     async for doc in db.products.aggregate([
-        {"$match": product_match},
         {"$group": {"_id": "$imported_from", "count": {"$sum": 1}}},
         {"$match": {"_id": {"$ne": None}}},
     ]):
@@ -2387,14 +2372,9 @@ async def remove_backup(
     if not source:
         raise HTTPException(status_code=400, detail="source query param is required")
 
-    company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
-    scoped_filter = {"imported_from": source}
-    if company_id is not None:
-        scoped_filter["company_id"] = company_id
-
-    inv_res    = await db.invoices.delete_many(scoped_filter)
-    client_res = await db.clients.delete_many(scoped_filter)
-    prod_res   = await db.products.delete_many(scoped_filter)
+    inv_res    = await db.invoices.delete_many({"imported_from": source})
+    client_res = await db.clients.delete_many({"imported_from": source})
+    prod_res   = await db.products.delete_many({"imported_from": source})
 
     return {
         "source": source,
@@ -2486,9 +2466,8 @@ async def upload_pdf_bytes_to_drive(
 @router.post("/products", response_model=Product)
 async def create_product(data: ProductCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
-    company_id = enforce_company_value(current_user, None)
     now = datetime.now(timezone.utc).isoformat()
-    doc = {"id": str(uuid.uuid4()), **data.model_dump(), "company_id": company_id, "created_by": current_user.id, "created_at": now}
+    doc = {"id": str(uuid.uuid4()), **data.model_dump(), "created_by": current_user.id, "created_at": now}
     await db.products.insert_one(doc); doc.pop("_id", None)
     return doc
 
@@ -2496,10 +2475,8 @@ async def create_product(data: ProductCreate, current_user: User = Depends(check
 @router.get("/products")
 async def list_products(search: Optional[str] = None, current_user: User = Depends(check_module_permission("invoicing", "view"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
-    company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
-    q: dict = {} if company_id is None else {"company_id": company_id}
-    if current_user.role != "admin":
-        q["created_by"] = current_user.id
+    q: dict = {}
+    if current_user.role != "admin": q["created_by"] = current_user.id
     if search:
         q["$or"] = [{"name": {"$regex": search, "$options": "i"}},
                     {"description": {"$regex": search, "$options": "i"}}]
@@ -2509,24 +2486,18 @@ async def list_products(search: Optional[str] = None, current_user: User = Depen
 @router.put("/products/{pid}")
 async def update_product(pid: str, data: ProductCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
-    company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
-    query = {"id": pid} if company_id is None else {"id": pid, "company_id": company_id}
-    ex = await db.products.find_one(query)
+    ex = await db.products.find_one({"id": pid})
     if not ex: raise HTTPException(404, "Product not found")
     if current_user.role != "admin" and ex.get("created_by") != current_user.id:
         raise HTTPException(403, "Not authorized")
-    await db.products.update_one(query, {"$set": {**data.model_dump(), "company_id": ex.get("company_id") or company_id}})
-    return await db.products.find_one(query, {"_id": 0})
+    await db.products.update_one({"id": pid}, {"$set": data.model_dump()})
+    return await db.products.find_one({"id": pid}, {"_id": 0})
 
 
 @router.delete("/products/{pid}")
 async def delete_product(pid: str, current_user: User = Depends(check_module_permission("invoicing", "delete"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
-    company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
-    query = {"id": pid} if company_id is None else {"id": pid, "company_id": company_id}
-    result = await db.products.delete_one(query)
-    if result.deleted_count == 0:
-        raise HTTPException(404, "Product not found")
+    await db.products.delete_one({"id": pid})
     return {"message": "Product deleted"}
 
 
@@ -2779,35 +2750,248 @@ async def _match_purchase_client(parsed: dict, current_user: User, client_id: st
 def _purchase_scope_query(current_user: User) -> dict:
     return {} if getattr(current_user, "role", None) == "admin" else {"created_by": current_user.id}
 
+# ═══════════════════════════════════════════════════════════
+# PURCHASE REGISTER — filters, sorting, totals
+# (reading / preview / confirm / export live further below)
+# ═══════════════════════════════════════════════════════════
+
+from backend import purchase_reader as _pr
+from backend import purchase_exports as _px
+
+# Columns the register may be sorted by (whitelist — never trust a client-supplied field name).
+_PURCHASE_SORT_FIELDS = {
+    "invoice_date", "created_at", "supplier_name", "invoice_no", "grand_total", "total_gst",
+    "taxable_amount", "amount_due", "amount_paid", "status", "expense_ledger_name",
+}
+_PURCHASE_TEXT_SORTS = {"supplier_name", "invoice_no", "status", "expense_ledger_name"}
+
+
+def _purchase_visibility_query(user: User) -> dict:
+    """Which purchase bills this user may see/touch (admin: all · company user: own company · else: own)."""
+    if getattr(user, "role", None) == "admin":
+        return {}
+    if getattr(user, "company_id", None):
+        return {"company_id": user.company_id}
+    return {"created_by": user.id}
+
+
+def _assert_purchase_access(doc: dict, user: User) -> None:
+    vis = _purchase_visibility_query(user)
+    for k, v in vis.items():
+        if doc.get(k) != v:
+            raise HTTPException(403, "You do not have access to this purchase invoice")
+
+
+def _csv_list(value: Optional[str]) -> List[str]:
+    return [x.strip() for x in (value or "").split(",") if x.strip()]
+
+
+def _build_purchase_query(
+    user: User,
+    *,
+    company_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    search: Optional[str] = None,
+    status: Optional[str] = None,
+    supplier: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    amount_min: Optional[float] = None,
+    amount_max: Optional[float] = None,
+    ledger: Optional[str] = None,
+    source: Optional[str] = None,
+    tally: Optional[str] = None,
+    review: Optional[str] = None,
+    gst_type: Optional[str] = None,
+    ids: Optional[List[str]] = None,
+) -> dict:
+    clauses: List[dict] = []
+    vis = _purchase_visibility_query(user)
+    if vis:
+        clauses.append(vis)
+    if company_id:
+        if "company_id" in vis and vis["company_id"] != company_id:
+            clauses.append({"company_id": "__no_access__"})   # a company-bound user can't widen scope via ?company_id=
+        else:
+            clauses.append({"company_id": company_id})
+    if client_id:
+        clauses.append({"client_id": client_id})
+    if ids:
+        clauses.append({"id": {"$in": list(ids)[:5000]}})
+    st = [s for s in _csv_list(status) if s in PURCHASE_STATUS]
+    if st:
+        clauses.append({"status": {"$in": st}})
+    if search and search.strip():
+        rx = {"$regex": re.escape(search.strip()), "$options": "i"}
+        clauses.append({"$or": [{f: rx} for f in (
+            "supplier_name", "invoice_no", "supplier_gstin", "client_name", "buyer_name",
+            "expense_ledger_name", "file_name")]})
+    if supplier and supplier.strip():
+        sup = supplier.strip()
+        clauses.append({"$or": [
+            {"supplier_name": {"$regex": f"^{re.escape(sup)}$", "$options": "i"}},
+            {"supplier_gstin": sup.upper()},
+        ]})
+    rng: dict = {}
+    if date_from:
+        rng["$gte"] = date_from[:10]
+    if date_to:
+        rng["$lte"] = date_to[:10]
+    if rng:
+        clauses.append({"invoice_date": rng})
+    amt: dict = {}
+    if amount_min is not None:
+        amt["$gte"] = float(amount_min)
+    if amount_max is not None:
+        amt["$lte"] = float(amount_max)
+    if amt:
+        clauses.append({"grand_total": amt})
+    if ledger and ledger.strip():
+        clauses.append({"expense_ledger_name": ledger.strip()})
+    if source in ("upload", "manual", "gstr2b"):
+        if source == "gstr2b":
+            clauses.append({"source": "gstr2b"})
+        elif source == "upload":
+            clauses.append({"$or": [{"source": "upload"},
+                                    {"source": {"$exists": False}, "file_name": {"$nin": ["", None]}}]})
+        else:
+            clauses.append({"$or": [{"source": "manual"},
+                                    {"source": {"$exists": False}, "file_name": {"$in": ["", None]}}]})
+    if tally == "exported":
+        clauses.append({"tally_exported_at": {"$nin": ["", None]}})
+    elif tally == "pending":
+        clauses.append({"$or": [{"tally_exported_at": {"$exists": False}}, {"tally_exported_at": {"$in": ["", None]}}]})
+    if review == "yes":
+        clauses.append({"$or": [{"needs_review": True}, {"grand_total": {"$lte": 0}}]})
+    elif review == "no":
+        clauses.append({"needs_review": {"$ne": True}, "grand_total": {"$gt": 0}})
+    if gst_type == "igst":
+        clauses.append({"igst_amount": {"$gt": 0}})
+    elif gst_type == "cgst_sgst":
+        clauses.append({"cgst_amount": {"$gt": 0}})
+    elif gst_type == "none":
+        clauses.append({"$or": [{"total_gst": {"$lte": 0}}, {"total_gst": {"$exists": False}}]})
+    if not clauses:
+        return {}
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+
+
+def _totals_mismatch(doc: dict) -> float:
+    """grand_total − (taxable + GST + round-off); 0 when the bill adds up (or there is nothing to check)."""
+    g = float(doc.get("grand_total") or 0)
+    t = float(doc.get("taxable_amount") or 0)
+    gst = float(doc.get("total_gst") or 0)
+    ro = float(doc.get("round_off") or 0)
+    if g <= 0 or (t <= 0 and gst <= 0):
+        return 0.0
+    return round(g - (t + gst + ro), 2)
+
+
+def _decorate_purchase(doc: dict, company_names: Optional[Dict[str, str]] = None) -> dict:
+    """Derived, read-only fields the UI needs (never persisted)."""
+    doc["needs_amount_review"] = bool(
+        doc.get("needs_review") or float(doc.get("grand_total") or 0) <= 0 or abs(_totals_mismatch(doc)) > 1.0)
+    doc["company_name"] = (company_names or {}).get(doc.get("company_id") or "", doc.get("company_name") or "")
+    return doc
+
+
+async def _company_name_map() -> Dict[str, str]:
+    rows = await db.companies.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
+    return {r["id"]: r.get("name", "") for r in rows if r.get("id")}
+
+
+async def _purchase_totals(q: dict) -> dict:
+    pipeline = [
+        {"$match": q},
+        {"$match": {"status": {"$ne": "cancelled"}}},
+        {"$group": {"_id": None, "count": {"$sum": 1}, "taxable": {"$sum": "$taxable_amount"},
+                    "gst": {"$sum": "$total_gst"}, "total": {"$sum": "$grand_total"},
+                    "paid": {"$sum": "$amount_paid"}, "due": {"$sum": "$amount_due"}}},
+    ]
+    rows = await db.purchase_invoices.aggregate(pipeline).to_list(1)
+    r = rows[0] if rows else {}
+    return {k: (int(r.get(k, 0)) if k == "count" else round(float(r.get(k) or 0), 2))
+            for k in ("count", "taxable", "gst", "total", "paid", "due")}
+
+
+async def _find_purchases_sorted(q: dict, sort_by: str, sort_dir: str, skip: int, limit: int) -> List[dict]:
+    if sort_by not in _PURCHASE_SORT_FIELDS:
+        sort_by = "created_at"
+    direction = 1 if sort_dir == "asc" else -1
+    sort = [(sort_by, direction)]
+    if sort_by != "created_at":
+        sort.append(("created_at", -1))
+    cur = db.purchase_invoices.find(q, {"_id": 0}).sort(sort).skip(skip).limit(limit)
+    if sort_by in _PURCHASE_TEXT_SORTS:
+        try:   # case-insensitive, and "INV-2" before "INV-10"
+            cur = cur.collation({"locale": "en", "strength": 2, "numericOrdering": sort_by == "invoice_no"})
+        except Exception:
+            pass
+    return await cur.to_list(limit)
+
+
 @router.get("/purchase-invoices")
 async def list_purchase_invoices(
     client_id: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    page: int = Query(1, ge=1),
-    page_size: int = Query(100, ge=1, le=2000),
     company_id: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user)
+    search: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status", description="comma separated: outstanding,partially_paid,paid,cancelled"),
+    supplier: Optional[str] = Query(None, description="exact supplier name or GSTIN"),
+    date_from: Optional[str] = Query(None, description="invoice date >= (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="invoice date <= (YYYY-MM-DD)"),
+    amount_min: Optional[float] = Query(None),
+    amount_max: Optional[float] = Query(None),
+    ledger: Optional[str] = Query(None, description="expense ledger / head"),
+    source: Optional[str] = Query(None, description="upload | manual | gstr2b"),
+    tally: Optional[str] = Query(None, description="exported | pending"),
+    review: Optional[str] = Query(None, description="yes | no"),
+    gst_type: Optional[str] = Query(None, description="igst | cgst_sgst | none"),
+    sort_by: str = Query("created_at"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_current_user),
 ):
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    q = {}
-    if current_user.role != "admin":
-        if current_user.company_id:
-            q["company_id"] = current_user.company_id
-        else:
-            q["created_by"] = current_user.id
-
-    if company_id:
-        q["company_id"] = company_id
-
-    if client_id:
-        q["client_id"] = client_id
-    if search:
-        q["$or"] = [{"client_name": {"$regex": search, "$options": "i"}}, {"supplier_name": {"$regex": search, "$options": "i"}}, {"invoice_no": {"$regex": search, "$options": "i"}}, {"supplier_gstin": {"$regex": search, "$options": "i"}}]
+    q = _build_purchase_query(
+        current_user, company_id=company_id, client_id=client_id, search=search, status=status_filter,
+        supplier=supplier, date_from=date_from, date_to=date_to, amount_min=amount_min, amount_max=amount_max,
+        ledger=ledger, source=source, tally=tally, review=review, gst_type=gst_type)
     total = await db.purchase_invoices.count_documents(q)
-    skip = (page - 1) * page_size
-    items = await db.purchase_invoices.find(q, {"_id": 0}).sort("created_at", -1).skip(skip).limit(page_size).to_list(page_size)
-    return {"purchase_invoices": items, "total": total, "page": page, "page_size": page_size}
+    items = await _find_purchases_sorted(q, sort_by, sort_dir, (page - 1) * page_size, page_size)
+    names = await _company_name_map()
+    items = [_decorate_purchase(i, names) for i in items]
+    return {"purchase_invoices": items, "total": total, "page": page, "page_size": page_size,
+            "totals": await _purchase_totals(q), "sort_by": sort_by, "sort_dir": sort_dir}
+
+
+@router.get("/purchase-invoices/facets")
+async def purchase_invoice_facets(
+    company_id: Optional[str] = Query(None),
+    current_user: User = Depends(get_current_user),
+):
+    """Values for the register's filter dropdowns (suppliers, expense heads), scoped like the list."""
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    q = _build_purchase_query(current_user, company_id=company_id)
+    sup_rows = await db.purchase_invoices.aggregate([
+        {"$match": q},
+        {"$group": {"_id": {"name": "$supplier_name", "gstin": "$supplier_gstin"}, "count": {"$sum": 1},
+                    "total": {"$sum": "$grand_total"}}},
+        {"$sort": {"total": -1}}, {"$limit": 500},
+    ]).to_list(500)
+    led_rows = await db.purchase_invoices.aggregate([
+        {"$match": q}, {"$group": {"_id": "$expense_ledger_name", "count": {"$sum": 1}}}, {"$sort": {"count": -1}},
+    ]).to_list(200)
+    return {
+        "suppliers": [{"name": (r["_id"] or {}).get("name") or "", "gstin": (r["_id"] or {}).get("gstin") or "",
+                       "count": r["count"], "total": round(float(r.get("total") or 0), 2)}
+                      for r in sup_rows if (r.get("_id") or {}).get("name")],
+        "ledgers": [{"name": r["_id"], "count": r["count"]} for r in led_rows if r.get("_id")],
+        "statuses": PURCHASE_STATUS,
+    }
+
 
 async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplier_gstin: str = "", notes: str = "") -> dict:
     """Runs the same AI ledger-mapping cascade the Zero-Touch Entry engine uses
@@ -2852,62 +3036,451 @@ async def _classify_purchase_ledger(company_id: str, supplier_name: str, supplie
         }
 
 
-@router.post("/purchase-invoices/upload")
-async def upload_purchase_invoice(file: UploadFile = File(...), client_id: Optional[str] = Form(None), company_id: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
-        raise HTTPException(403, "Access denied")
+# ═══════════════════════════════════════════════════════════
+# PURCHASE INVOICE — reading, EDITABLE PREVIEW, confirm, manual create
+#
+#   POST /purchase-invoices/preview   read a file → fields + warnings (NOTHING is saved)
+#   POST /purchase-invoices/confirm   save the (possibly corrected) fields
+#   POST /purchase-invoices/upload    legacy one-step upload (same reader, saves immediately)
+#   POST /purchase-invoices           manual entry
+# ═══════════════════════════════════════════════════════════
+
+_PURCHASE_FILE_TYPES = {"pdf", "png", "jpg", "jpeg", "webp", "txt", "csv"}
+_PURCHASE_MAX_BYTES = 15 * 1024 * 1024
+_PURCHASE_TEXT_KEYS = ("supplier_name", "buyer_name", "invoice_no", "client_name", "place_of_supply", "currency", "document_type")
+_PURCHASE_AMOUNT_KEYS = ("taxable_amount", "cgst_amount", "sgst_amount", "igst_amount", "cess_amount",
+                         "total_gst", "round_off", "grand_total")
+_PURCHASE_EXTRACT_KEYS = (
+    "supplier_name", "supplier_gstin", "buyer_name", "buyer_gstin", "invoice_no", "invoice_date", "due_date",
+    *_PURCHASE_AMOUNT_KEYS, "currency", "place_of_supply", "document_type",
+)
+
+
+async def _purchase_parties(current_user: User) -> List[dict]:
+    """Everyone who can be the BUYER on a bill: master Company Profiles first, then the user's clients."""
+    parties: List[dict] = []
+    for c in await db.companies.find({}, {"_id": 0, "id": 1, "name": 1, "gstin": 1}).to_list(500):
+        if c.get("name"):
+            parties.append({"id": c.get("id"), "name": c["name"], "gstin": (c.get("gstin") or "").strip().upper(), "kind": "company"})
+    access = _client_access_query_for_purchase(current_user)
+    for c in await db.clients.find(access, {"_id": 0, "id": 1, "company_name": 1, "gstin": 1, "client_gstin": 1}).to_list(5000):
+        g = (c.get("gstin") or c.get("client_gstin") or "").strip().upper()
+        if c.get("company_name"):
+            parties.append({"id": c.get("id"), "name": c["company_name"], "gstin": g, "kind": "client"})
+    return parties
+
+
+def _match_buyer_party(parsed: dict, parties: List[dict]) -> dict:
+    """Which master company / client is the buyer of this bill? GSTIN is exact; name is a fallback."""
+    out: Dict[str, Any] = {"company": None, "client": None, "method": ""}
+    supplier_g = (parsed.get("supplier_gstin") or "").upper()
+    cand_g = [g.upper() for g in [parsed.get("buyer_gstin"), *(parsed.get("all_gstins") or [])] if g]
+    cand_g = [g for g in dict.fromkeys(cand_g) if g != supplier_g]
+    for kind in ("company", "client"):
+        pool = [p for p in parties if p["kind"] == kind]
+        hit = next((p for g in cand_g for p in pool if p["gstin"] and p["gstin"] == g), None)
+        if hit:
+            out[kind] = hit
+            out["method"] = out["method"] or "gstin"
+            continue
+        bname = parsed.get("buyer_name") or ""
+        if bname:
+            scored = sorted(((_pr.name_similarity(bname, p["name"]), p) for p in pool), key=lambda t: -t[0])
+            if scored and scored[0][0] >= 0.8:
+                out[kind] = scored[0][1]
+                out["method"] = out["method"] or "name"
+    return out
+
+
+async def _purchase_vendor_memory(supplier_gstin: str, supplier_name: str) -> Optional[dict]:
+    """What we already know about this vendor from earlier bills (canonical name, expense head)."""
+    ors: List[dict] = []
+    if supplier_gstin:
+        ors.append({"supplier_gstin": supplier_gstin.upper()})
+    if supplier_name:
+        ors.append({"supplier_name": {"$regex": f"^{re.escape(supplier_name.strip())}$", "$options": "i"}})
+    if not ors:
+        return None
+    q = {"$or": ors}
+    last = await db.purchase_invoices.find_one(q, {"_id": 0}, sort=[("created_at", -1)])
+    if not last:
+        return None
+    return {
+        "supplier_name": last.get("supplier_name") or "", "supplier_gstin": last.get("supplier_gstin") or "",
+        "expense_ledger_code": last.get("expense_ledger_code") or "", "expense_ledger_name": last.get("expense_ledger_name") or "",
+        "count": await db.purchase_invoices.count_documents(q), "last_invoice_date": last.get("invoice_date") or "",
+    }
+
+
+def _norm_invoice_key(s: Optional[str]) -> str:
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+async def _find_duplicate_purchase(supplier_name: str, supplier_gstin: str, invoice_no: str,
+                                   exclude_id: Optional[str] = None) -> Optional[dict]:
+    """Same supplier + same invoice number (ignoring case, spaces, dashes and slashes) — across the whole organisation."""
+    key = _norm_invoice_key(invoice_no)
+    if not key:
+        return None
+    ors: List[dict] = []
+    if supplier_gstin:
+        ors.append({"supplier_gstin": supplier_gstin.upper()})
+    if supplier_name and supplier_name.strip():
+        ors.append({"supplier_name": {"$regex": f"^{re.escape(supplier_name.strip())}$", "$options": "i"}})
+    if not ors:
+        return None
+    async for d in db.purchase_invoices.find({"$or": ors}, {"_id": 0}):
+        if exclude_id and d.get("id") == exclude_id:
+            continue
+        if _norm_invoice_key(d.get("invoice_no")) == key:
+            return d
+    return None
+
+
+def _duplicate_summary(d: Optional[dict]) -> Optional[dict]:
+    if not d:
+        return None
+    return {k: d.get(k) for k in ("id", "invoice_no", "supplier_name", "invoice_date", "grand_total", "status", "created_at")}
+
+
+async def _read_purchase_upload(file: UploadFile, current_user: User, company_id: Optional[str], client_id: Optional[str]) -> dict:
+    """Shared by /preview and the legacy /upload: read the file, match parties, look for duplicates."""
     filename = file.filename or "purchase-invoice"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in {"pdf", "png", "jpg", "jpeg", "webp", "txt", "csv"}:
+    if ext not in _PURCHASE_FILE_TYPES:
         raise HTTPException(400, "Unsupported file type. Upload PDF, image, TXT, or CSV invoices.")
     contents = await file.read()
     if not contents:
         raise HTTPException(400, "Uploaded file is empty")
-    parsed = await _extract_purchase_invoice(contents, filename, file.content_type or "")
-    matched_client = await _match_purchase_client(parsed, current_user, client_id)
-    gstins = [g.upper() for g in (parsed.get("all_gstins") or []) if g]
-    client_gstin = ((matched_client or {}).get("gstin") or (matched_client or {}).get("client_gstin") or "").upper()
-    supplier_gstin = (parsed.get("supplier_gstin") or "").upper()
-    buyer_gstin = (parsed.get("buyer_gstin") or "").upper()
-    if matched_client and client_gstin:
-        buyer_gstin = client_gstin
-        supplier_gstin = next((g for g in gstins if g != client_gstin), supplier_gstin)
-    elif len(gstins) >= 2 and not buyer_gstin:
-        buyer_gstin = gstins[1]
-    now = datetime.now(timezone.utc).isoformat()
-    invoice_no = (parsed.get("invoice_no") or f"PUR-{str(uuid.uuid4())[:8].upper()}").strip()
-    duplicate_q = {"invoice_no": invoice_no, "created_by": current_user.id}
-    if matched_client:
-        duplicate_q["client_id"] = matched_client.get("id")
-    if supplier_gstin:
-        duplicate_q["supplier_gstin"] = supplier_gstin
-    existing = await db.purchase_invoices.find_one(duplicate_q, {"_id": 0}) if invoice_no else None
-    if existing:
-        return {"purchase_invoice": existing, "matched_client": matched_client, "duplicate": True}
-    grand_total_val = _money_to_float(parsed.get("grand_total"))
-    doc = {
-        "id": str(uuid.uuid4()), "company_id": company_id or "", "client_id": (matched_client or {}).get("id", client_id or ""),
-        "client_name": (matched_client or {}).get("company_name", parsed.get("buyer_name", "")), "supplier_name": parsed.get("supplier_name", ""),
-        "supplier_gstin": supplier_gstin, "buyer_name": parsed.get("buyer_name", ""), "buyer_gstin": buyer_gstin, "invoice_no": invoice_no,
-        "invoice_date": parsed.get("invoice_date") or date.today().isoformat(), "taxable_amount": _money_to_float(parsed.get("taxable_amount")),
-        "total_gst": _money_to_float(parsed.get("total_gst")), "grand_total": grand_total_val, "currency": parsed.get("currency") or "INR",
-        "file_name": filename, "file_size": len(contents), "content_type": file.content_type or "application/octet-stream", "parse_confidence": float(parsed.get("parse_confidence") or 0),
-        "raw_text_excerpt": parsed.get("raw_text_excerpt", "")[:5000], "created_by": current_user.id, "created_at": now, "updated_at": now,
-        # Ledger automation: every saved purchase invoice is a real bill the moment it's
-        # confirmed, so it starts "outstanding" (unlike Sales, there's no draft step here)
-        # and immediately posts to the ledger — mirroring the Dr Purchases/GST Input,
-        # Cr Accounts Payable entry an accountant would make by hand.
-        "status": "outstanding", "amount_paid": 0.0, "amount_due": round(grand_total_val, 2),
+    if len(contents) > _PURCHASE_MAX_BYTES:
+        raise HTTPException(413, "File is larger than 15 MB")
+
+    parties = await _purchase_parties(current_user)
+    try:
+        result = await asyncio.wait_for(_pr.read_purchase_invoice(contents, filename, parties), timeout=100)
+    except asyncio.TimeoutError:
+        logger.warning("Purchase invoice reading timed out for %s", filename)
+        result = _pr._blank_result(filename)
+        result.update({"file_name": filename, "extraction_method": "none", "pages": 0, "ai_used": False,
+                       "warnings": [_pr._w("file", "timeout", "error", "Reading took too long. Fill the fields by hand, or try again.")],
+                       "needs_review": True})
+    except Exception:
+        logger.exception("Purchase invoice reading failed for %s", filename)
+        result = _pr._blank_result(filename)
+        result.update({"file_name": filename, "extraction_method": "none", "pages": 0, "ai_used": False,
+                       "warnings": [_pr._w("file", "read_failed", "error", "This file could not be read. Fill the fields by hand.")],
+                       "needs_review": True})
+
+    warnings = list(result.get("warnings") or [])
+    match = _match_buyer_party(result, parties)
+    own_gstins = {p["gstin"] for p in parties if p["kind"] == "company" and p["gstin"]}
+    sup_g = (result.get("supplier_gstin") or "").upper()
+    if sup_g and sup_g in own_gstins:
+        who = next(p["name"] for p in parties if p["kind"] == "company" and p["gstin"] == sup_g)
+        warnings.insert(0, _pr._w("supplier_gstin", "own_company_is_supplier", "error",
+                                  f"The supplier GSTIN on this document is your own company ({who}). This looks like a SALES invoice, "
+                                  "not a purchase - check you uploaded the right file."))
+
+    chosen_company = company_id if company_id and company_id != "none" else ""
+    company_pick = next((p for p in parties if p["kind"] == "company" and p["id"] == chosen_company), None) if chosen_company else None
+    suggested_company = company_pick or match["company"]
+    if not suggested_company and getattr(current_user, "company_id", None):
+        suggested_company = next((p for p in parties if p["kind"] == "company" and p["id"] == current_user.company_id), None)
+    chosen_client = client_id if client_id and client_id != "auto" else ""
+    client_pick = next((p for p in parties if p["kind"] == "client" and p["id"] == chosen_client), None) if chosen_client else None
+    suggested_client = client_pick or match["client"]
+    if not suggested_company:
+        warnings.append(_pr._w("company_id", "company_not_matched", "warn",
+                               "The buyer on this bill was not matched to a company in Master Data. Pick the company this purchase belongs to."))
+
+    vendor = await _purchase_vendor_memory(result.get("supplier_gstin") or "", result.get("supplier_name") or "")
+    if vendor and vendor["supplier_name"]:
+        if not result.get("supplier_name"):
+            result["supplier_name"] = vendor["supplier_name"]
+        elif _pr.norm_name(vendor["supplier_name"]) == _pr.norm_name(result["supplier_name"]):
+            result["supplier_name"] = vendor["supplier_name"]       # same vendor, keep the name already in your books
+        elif (result.get("supplier_gstin") or "").upper() == vendor["supplier_gstin"].upper() and vendor["supplier_gstin"]:
+            warnings.append(_pr._w("supplier_name", "vendor_known_as", "info",
+                                   f"This GSTIN is saved in your books as \"{vendor['supplier_name']}\" ({vendor['count']} earlier bill(s)). "
+                                   "Use the saved name to keep the supplier ledger consistent."))
+    dup = await _find_duplicate_purchase(result.get("supplier_name") or "", result.get("supplier_gstin") or "", result.get("invoice_no") or "")
+    if dup:
+        warnings.insert(0, _pr._w("invoice_no", "duplicate", "error",
+                                  f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} is already in the Purchase Register "
+                                  f"(added {str(dup.get('created_at') or '')[:10]})."))
+
+    ledger = None
+    if suggested_company and result.get("supplier_name"):
+        try:
+            ledger = await _classify_purchase_ledger(
+                suggested_company["id"], result.get("supplier_name") or "", result.get("supplier_gstin") or "",
+                (result.get("raw_text_excerpt") or "")[:500])
+        except Exception:
+            ledger = None
+
+    extracted = {k: result.get(k, "" if k not in _PURCHASE_AMOUNT_KEYS else 0.0) for k in _PURCHASE_EXTRACT_KEYS}
+    extracted["currency"] = extracted.get("currency") or "INR"
+    extracted["document_type"] = extracted.get("document_type") or "tax_invoice"
+    severity_rank = {"error": 0, "warn": 1, "info": 2}
+    warnings.sort(key=lambda w: severity_rank.get(w.get("severity"), 3))
+    return {
+        "extracted": extracted,
+        "warnings": warnings,
+        "needs_review": bool(result.get("needs_review")) or any(w.get("severity") == "error" for w in warnings),
+        "parse_confidence": float(result.get("parse_confidence") or 0),
+        "field_confidence": result.get("field_confidence") or {},
+        "extraction_method": result.get("extraction_method") or "none",
+        "amount_in_words_value": result.get("amount_in_words_value"),
+        "advance_info": result.get("advance_info"),
+        "suggested": {
+            "company_id": (suggested_company or {}).get("id", ""), "company_name": (suggested_company or {}).get("name", ""),
+            "client_id": (suggested_client or {}).get("id", ""), "client_name": (suggested_client or {}).get("name", ""),
+            "match_method": match["method"],
+        },
+        "vendor": vendor,
+        "duplicate": _duplicate_summary(dup),
+        "ledger": ledger,
+        "file": {"name": filename, "size": len(contents), "content_type": file.content_type or "application/octet-stream"},
+        "raw_text_excerpt": (result.get("raw_text_excerpt") or "")[:5000],
+        "ai_available": bool(result.get("ai_available")),
+        "ocr_available": bool(result.get("ocr_available")),
+        "pages": int(result.get("pages") or 0),
     }
-    doc.update(await _classify_purchase_ledger(
-        company_id or "", doc["supplier_name"], supplier_gstin, parsed.get("raw_text_excerpt", "")[:500]
-    ))
-    await db.purchase_invoices.insert_one(doc)
-    if matched_client:
-        await db.clients.update_one({"id": matched_client["id"]}, {"$set": {"last_purchase_invoice_at": now}, "$inc": {"purchase_invoice_count": 1}})
+
+
+@router.post("/purchase-invoices/preview")
+async def preview_purchase_invoice(
+    file: UploadFile = File(...),
+    client_id: Optional[str] = Form(None),
+    company_id: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+):
+    """Step 1 of adding a vendor bill: read it and return an EDITABLE draft. Nothing is saved here."""
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    return await _read_purchase_upload(file, current_user, company_id, client_id)
+
+
+def _normalise_purchase_payload(p: dict) -> dict:
+    out = dict(p)
+    for k in _PURCHASE_TEXT_KEYS:
+        out[k] = re.sub(r"\s+", " ", str(out.get(k) or "")).strip()
+    for k in ("supplier_gstin", "buyer_gstin"):
+        out[k] = re.sub(r"\s+", "", str(out.get(k) or "")).upper()
+    out["invoice_date"] = _pr.normalise_date(out.get("invoice_date")) or str(out.get("invoice_date") or "").strip()
+    out["due_date"] = _pr.normalise_date(out.get("due_date")) if out.get("due_date") else ""
+    for k in _PURCHASE_AMOUNT_KEYS:
+        out[k] = round(_pr.to_num(out.get(k)), 2)
+    comp = round(out["cgst_amount"] + out["sgst_amount"] + out["igst_amount"] + out["cess_amount"], 2)
+    if comp > 0:                      # the printed CGST/SGST/IGST/Cess are the source of truth for Total GST
+        out["total_gst"] = comp
+    out["currency"] = out.get("currency") or "INR"
+    out["document_type"] = out.get("document_type") or "tax_invoice"
+    return out
+
+
+def _validate_purchase_payload(p: dict, acknowledge_mismatch: bool = False) -> Tuple[List[dict], List[dict]]:
+    """(blocking errors, non-blocking warnings) for a payload about to be saved."""
+    errs: List[dict] = []
+    warns: List[dict] = []
+
+    def e(field: str, code: str, msg: str) -> None:
+        errs.append({"field": field, "code": code, "message": msg})
+
+    if not p["supplier_name"]:
+        e("supplier_name", "missing_supplier", "Supplier name is required.")
+    if not p["invoice_no"]:
+        e("invoice_no", "missing_invoice_no", "Invoice number is required.")
+    try:
+        date.fromisoformat(p["invoice_date"])
+    except ValueError:
+        e("invoice_date", "bad_date", "Invoice date is required (YYYY-MM-DD).")
+    if p["grand_total"] <= 0:
+        e("grand_total", "missing_total", "Invoice total must be greater than zero.")
+    for k in _PURCHASE_AMOUNT_KEYS:
+        if k != "round_off" and p[k] < 0:
+            e(k, "negative_amount", f"{k.replace('_', ' ').title()} cannot be negative.")
+    if abs(p["round_off"]) > 5:
+        e("round_off", "round_off_large", "Round-off looks wrong (more than ₹5).")
+    for k, label in (("supplier_gstin", "Supplier"), ("buyer_gstin", "Buyer")):
+        g = p[k]
+        if g and not (_pr.GSTIN_RE.fullmatch(g) or _pr.is_oidar_id(g)):
+            e(k, "bad_gstin", f"{label} GSTIN must be 15 characters in the GST format.")
+        elif g and _pr.GSTIN_RE.fullmatch(g) and not _pr.gstin_is_valid(g):
+            warns.append({"field": k, "code": "gstin_checksum", "message": f"{label} GSTIN {g} fails the GST check-digit - double-check it."})
+    if p["supplier_gstin"] and p["supplier_gstin"] == p["buyer_gstin"]:
+        e("buyer_gstin", "same_gstin", "Supplier and buyer GSTIN are the same.")
+    if p["grand_total"] > 0:
+        diff = round(p["grand_total"] - (p["taxable_amount"] + p["total_gst"] + p["round_off"]), 2)
+        if abs(diff) > 1.0:
+            if acknowledge_mismatch:
+                warns.append({"field": "grand_total", "code": "totals_mismatch",
+                              "message": f"Taxable + GST + round-off differs from the total by ₹{abs(diff):,.2f} (saved as confirmed by you)."})
+            else:
+                e("grand_total", "totals_mismatch",
+                  f"Taxable + GST + round-off is ₹{abs(diff):,.2f} away from the invoice total. Correct the amounts, or confirm that the bill really is like this.")
+    return errs, warns
+
+
+async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta: Optional[dict] = None,
+                                 require_company: bool = True, acknowledge_mismatch: bool = False,
+                                 force_duplicate: bool = False, extra: Optional[dict] = None) -> Tuple[Optional[dict], Optional[dict]]:
+    """Validate + store one purchase bill and post it to the ledger. Returns (doc, duplicate_of)."""
+    p = _normalise_purchase_payload(p)
+    errs, warns = _validate_purchase_payload(p, acknowledge_mismatch)
+    if errs:
+        raise HTTPException(422, detail={"code": "validation", "message": errs[0]["message"], "errors": errs})
+
+    company_id = (p.get("company_id") or "").strip()
+    company_doc = None
+    if company_id:
+        company_doc = await db.companies.find_one({"id": company_id}, {"_id": 0, "id": 1, "name": 1})
+        if not company_doc:
+            raise HTTPException(400, detail={"code": "bad_company", "message": "That company is not in Master Data. Pick one from the list."})
+    elif require_company:
+        raise HTTPException(400, detail={"code": "company_required", "message": "Select the company this purchase belongs to."})
+
+    dup = await _find_duplicate_purchase(p["supplier_name"], p["supplier_gstin"], p["invoice_no"])
+    if dup and not force_duplicate:
+        return None, dup
+
+    client = None
+    client_id = (p.get("client_id") or "").strip()
+    if client_id:
+        access = _client_access_query_for_purchase(user)
+        q = {"$and": [access, {"id": client_id}]} if access else {"id": client_id}
+        client = await db.clients.find_one(q, {"_id": 0, "id": 1, "company_name": 1})
+        if not client:
+            raise HTTPException(400, detail={"code": "bad_client", "message": "That client was not found or you do not have access to it."})
+
+    now = datetime.now(timezone.utc).isoformat()
+    fm = file_meta or {}
+    mismatch = abs(round(p["grand_total"] - (p["taxable_amount"] + p["total_gst"] + p["round_off"]), 2)) > 1.0
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id, "company_name": (company_doc or {}).get("name", ""),
+        "client_id": (client or {}).get("id", ""), "client_name": (client or {}).get("company_name", "") or p.get("client_name", ""),
+        "supplier_name": p["supplier_name"], "supplier_gstin": p["supplier_gstin"],
+        "buyer_name": p.get("buyer_name", ""), "buyer_gstin": p["buyer_gstin"],
+        "invoice_no": p["invoice_no"], "invoice_date": p["invoice_date"], "due_date": p.get("due_date", ""),
+        "taxable_amount": p["taxable_amount"], "cgst_amount": p["cgst_amount"], "sgst_amount": p["sgst_amount"],
+        "igst_amount": p["igst_amount"], "cess_amount": p["cess_amount"], "total_gst": p["total_gst"],
+        "round_off": p["round_off"], "grand_total": p["grand_total"], "currency": p["currency"],
+        "place_of_supply": p.get("place_of_supply", ""), "document_type": p["document_type"],
+        "file_name": fm.get("name", ""), "file_size": int(fm.get("size") or 0),
+        "content_type": fm.get("content_type", "") or "", "parse_confidence": float(p.get("parse_confidence") or (1.0 if source == "manual" else 0)),
+        "extraction_method": p.get("extraction_method", "manual" if source == "manual" else ""),
+        "raw_text_excerpt": (p.get("raw_text_excerpt") or "")[:5000],
+        "edited_fields": [str(x) for x in (p.get("edited_fields") or [])][:40],
+        "needs_review": bool(p.get("needs_review")) or mismatch,
+        "source": source, "created_by": user.id, "created_at": now, "updated_at": now,
+        # A saved purchase bill is a real liability immediately (no draft step) and posts
+        # Dr expense head + Dr GST Input, Cr Accounts Payable.
+        "status": "outstanding", "amount_paid": 0.0, "amount_due": round(p["grand_total"], 2),
+    }
+    if extra:
+        doc.update(extra)
+    override_code = (p.get("expense_ledger_code") or "").strip()
+    doc.update(await _classify_purchase_ledger(company_id, doc["supplier_name"], doc["supplier_gstin"], doc["raw_text_excerpt"][:500]))
+    if override_code and override_code != doc.get("expense_ledger_code"):
+        try:
+            from backend.accounting_ai.chart_of_accounts import ChartOfAccountsManager
+            acct = await ChartOfAccountsManager.lookup_by_code(company_id, override_code)
+            if acct:
+                doc.update({"expense_ledger_code": override_code, "expense_ledger_name": acct.get("name") or doc.get("expense_ledger_name"),
+                            "expense_nature": acct.get("type") or "expense", "expense_category": acct.get("sub_type") or "operating_expense",
+                            "classification_confidence": 1.0})
+        except Exception as ex:
+            logger.warning("Expense ledger override %s failed: %s", override_code, ex)
+    await db.purchase_invoices.insert_one(dict(doc))
+    if client:
+        await db.clients.update_one({"id": client["id"]}, {"$set": {"last_purchase_invoice_at": now}, "$inc": {"purchase_invoice_count": 1}})
     await sync_purchase_journal_entry(doc["id"])
-    doc.pop("_id", None)
-    return {"purchase_invoice": doc, "matched_client": matched_client, "duplicate": False}
+    doc["save_warnings"] = warns
+    return doc, dup
+
+
+class PurchaseInvoiceConfirm(BaseModel):
+    """What the user confirmed in the editable preview."""
+    company_id: str
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    supplier_name: str = ""
+    supplier_gstin: Optional[str] = ""
+    buyer_name: Optional[str] = ""
+    buyer_gstin: Optional[str] = ""
+    invoice_no: str = ""
+    invoice_date: str = ""
+    due_date: Optional[str] = ""
+    taxable_amount: float = 0.0
+    cgst_amount: float = 0.0
+    sgst_amount: float = 0.0
+    igst_amount: float = 0.0
+    cess_amount: float = 0.0
+    total_gst: float = 0.0
+    round_off: float = 0.0
+    grand_total: float = 0.0
+    currency: Optional[str] = "INR"
+    place_of_supply: Optional[str] = ""
+    document_type: Optional[str] = "tax_invoice"
+    expense_ledger_code: Optional[str] = None
+    # audit trail of the reading
+    file_name: Optional[str] = ""
+    file_size: Optional[int] = 0
+    content_type: Optional[str] = ""
+    extraction_method: Optional[str] = ""
+    parse_confidence: Optional[float] = 0.0
+    raw_text_excerpt: Optional[str] = ""
+    edited_fields: List[str] = Field(default_factory=list)
+    needs_review: bool = False
+    # explicit overrides
+    force_duplicate: bool = False
+    acknowledge_mismatch: bool = False
+
+
+@router.post("/purchase-invoices/confirm")
+async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: User = Depends(get_current_user)):
+    """Step 2: store the invoice exactly as corrected in the preview."""
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    payload = data.model_dump()
+    doc, dup = await _save_purchase_invoice(
+        payload, current_user, source="upload" if data.file_name else "manual",
+        file_meta={"name": data.file_name or "", "size": data.file_size or 0, "content_type": data.content_type or ""},
+        acknowledge_mismatch=data.acknowledge_mismatch, force_duplicate=data.force_duplicate)
+    if doc is None:
+        raise HTTPException(409, detail={"code": "duplicate", "message":
+                            f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} already exists.",
+                            "existing": _duplicate_summary(dup)})
+    return {"purchase_invoice": doc, "duplicate": False, "warnings": doc.get("save_warnings", [])}
+
+
+@router.post("/purchase-invoices/upload")
+async def upload_purchase_invoice(file: UploadFile = File(...), client_id: Optional[str] = Form(None), company_id: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
+    """Legacy one-step upload (read + save). New screens use /preview then /confirm so a person can correct the reading."""
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    prev = await _read_purchase_upload(file, current_user, company_id, client_id)
+    ex = prev["extracted"]
+    if prev["duplicate"]:
+        existing = await db.purchase_invoices.find_one({"id": prev["duplicate"]["id"]}, {"_id": 0})
+        return {"purchase_invoice": existing, "matched_client": {"id": prev["suggested"]["client_id"], "company_name": prev["suggested"]["client_name"]} if prev["suggested"]["client_id"] else None, "duplicate": True}
+    payload = {**ex, "company_id": prev["suggested"]["company_id"] if company_id in (None, "", "none") else company_id,
+               "client_id": prev["suggested"]["client_id"], "parse_confidence": prev["parse_confidence"],
+               "extraction_method": prev["extraction_method"], "raw_text_excerpt": prev["raw_text_excerpt"],
+               "needs_review": prev["needs_review"]}
+    if not payload.get("invoice_no"):
+        payload["invoice_no"] = f"PUR-{str(uuid.uuid4())[:8].upper()}"
+    if not payload.get("invoice_date"):
+        payload["invoice_date"] = date.today().isoformat()
+    if not payload.get("supplier_name"):
+        payload["supplier_name"] = "Unknown Supplier"
+    doc, dup = await _save_purchase_invoice(
+        payload, current_user, source="upload", file_meta=prev["file"], require_company=False,
+        acknowledge_mismatch=True, force_duplicate=False, extra={"needs_review": True} if prev["needs_review"] else None)
+    if doc is None:
+        return {"purchase_invoice": dup, "matched_client": None, "duplicate": True}
+    return {"purchase_invoice": doc, "matched_client": {"id": doc["client_id"], "company_name": doc["client_name"]} if doc.get("client_id") else None, "duplicate": False}
 
 
 class PurchaseInvoiceCreate(BaseModel):
@@ -2916,93 +3489,145 @@ class PurchaseInvoiceCreate(BaseModel):
     client_name: Optional[str] = None
     supplier_name: str
     supplier_gstin: Optional[str] = ""
+    buyer_name: Optional[str] = ""
     buyer_gstin: Optional[str] = ""
-    invoice_no: str = ""
+    invoice_no: str
     invoice_date: str
     taxable_amount: float
     total_gst: float
     grand_total: float
+    cgst_amount: float = 0.0
+    sgst_amount: float = 0.0
+    igst_amount: float = 0.0
+    cess_amount: float = 0.0
+    round_off: float = 0.0
     currency: Optional[str] = "INR"
-    notes: Optional[str] = ""
+    place_of_supply: Optional[str] = ""
+    raw_text_excerpt: Optional[str] = "Manually created"
 
 
 @router.post("/purchase-invoices")
 async def create_purchase_invoice(data: PurchaseInvoiceCreate, current_user: User = Depends(get_current_user)):
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-
-    supplier_name = str(data.supplier_name or "").strip()
-    if not supplier_name:
-        raise HTTPException(422, "Enter the supplier or shop name.")
-    if not str(data.invoice_date or "").strip():
-        raise HTTPException(422, "Select the bill date.")
-    try:
-        # The simple manual-entry screen sends YYYY-MM-DD; retain ISO support
-        # for other existing clients without changing their payload contract.
-        datetime.fromisoformat(str(data.invoice_date).strip()[:10])
-    except (TypeError, ValueError):
-        raise HTTPException(422, "Enter a valid bill date.")
-    import math
-    amount_values = (
-        float(data.taxable_amount or 0),
-        float(data.total_gst or 0),
-        float(data.grand_total or 0),
-    )
-    if not all(math.isfinite(value) for value in amount_values):
-        raise HTTPException(422, "Enter valid numeric amounts from the bill.")
-    if amount_values[2] <= 0:
-        raise HTTPException(422, "Enter a bill total greater than zero.")
-    if amount_values[0] < 0 or amount_values[1] < 0:
-        raise HTTPException(422, "Bill and GST amounts cannot be negative.")
-
-    invoice_no = str(data.invoice_no or "").strip()
-    now = datetime.now(timezone.utc).isoformat()
-    
-    # Check duplicate
-    duplicate_q = {"invoice_no": invoice_no, "created_by": current_user.id}
-    if data.client_id:
-        duplicate_q["client_id"] = data.client_id
-    if data.supplier_gstin:
-        duplicate_q["supplier_gstin"] = data.supplier_gstin
-    existing = await db.purchase_invoices.find_one(duplicate_q, {"_id": 0}) if invoice_no else None
-    if existing:
-        raise HTTPException(400, f"A purchase invoice with number {invoice_no} already exists.")
-        
-    doc = {
-        "id": str(uuid.uuid4()),
-        "company_id": data.company_id or "",
-        "client_id": data.client_id or "",
-        "client_name": data.client_name or "",
-        "supplier_name": supplier_name,
-        "supplier_gstin": str(data.supplier_gstin or "").strip().upper(),
-        "buyer_name": data.client_name or "",
-        "buyer_gstin": str(data.buyer_gstin or "").strip().upper(),
-        "invoice_no": invoice_no,
-        "invoice_date": data.invoice_date,
-        "taxable_amount": data.taxable_amount,
-        "total_gst": data.total_gst,
-        "grand_total": data.grand_total,
-        "currency": data.currency or "INR",
-        "file_name": "",
-        "file_size": 0,
-        "content_type": "",
-        "parse_confidence": 1.0,
-        "notes": str(data.notes or "").strip()[:1000],
-        "raw_text_excerpt": str(data.notes or "").strip()[:1000] or "Manually entered purchase bill",
-        "created_by": current_user.id,
-        "created_at": now,
-        "updated_at": now,
-        "status": "outstanding",
-        "amount_paid": 0.0,
-        "amount_due": round(data.grand_total, 2),
-    }
-    doc.update(await _classify_purchase_ledger(data.company_id or "", data.supplier_name, data.supplier_gstin or ""))
-    await db.purchase_invoices.insert_one(doc)
-    if data.client_id:
-        await db.clients.update_one({"id": data.client_id}, {"$set": {"last_purchase_invoice_at": now}, "$inc": {"purchase_invoice_count": 1}})
-    await sync_purchase_journal_entry(doc["id"])
-    doc.pop("_id", None)
+    payload = data.model_dump()
+    # Older callers (bank-statement matching) only know taxable + GST + total: absorb any rounding into round_off.
+    if not payload["round_off"] and not (payload["cgst_amount"] or payload["sgst_amount"] or payload["igst_amount"]):
+        rem = round(payload["grand_total"] - payload["taxable_amount"] - payload["total_gst"], 2)
+        if abs(rem) <= 1.0:
+            payload["round_off"] = rem
+    doc, dup = await _save_purchase_invoice(payload, current_user, source="manual", acknowledge_mismatch=True)
+    if doc is None:
+        raise HTTPException(400, f"A purchase invoice with number {dup.get('invoice_no')} already exists.")
+    doc.pop("save_warnings", None)
     return {"purchase_invoice": doc}
+
+
+# ═══════════════════════════════════════════════════════════
+# PURCHASE REGISTER EXPORT — Tally XML · Excel register · CSV
+# ═══════════════════════════════════════════════════════════
+
+_EXPORT_FILTER_KEYS = ("company_id", "client_id", "search", "status", "supplier", "date_from", "date_to", "amount_min",
+                       "amount_max", "ledger", "source", "tally", "review", "gst_type")
+
+
+class PurchaseExportRequest(BaseModel):
+    format: Literal["tally_xml", "tally_masters", "xlsx", "csv"] = "xlsx"
+    ids: Optional[List[str]] = None                 # export exactly these bills …
+    filters: Dict[str, Any] = Field(default_factory=dict)   # … or everything matching the register filters
+    options: Dict[str, Any] = Field(default_factory=dict)   # Tally ledger names etc. (see purchase_exports.DEFAULT_TALLY_OPTIONS)
+    sort_by: str = "invoice_date"
+    sort_dir: str = "asc"
+    mark_exported: bool = False
+    allow_mixed_companies: bool = False
+    dry_run: bool = False                           # just report what would be exported
+
+
+def _exportable(inv: dict) -> bool:
+    return inv.get("status") != "cancelled" and float(inv.get("grand_total") or 0) > 0 and bool((inv.get("supplier_name") or "").strip())
+
+
+def _safe_filename(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[:90] or "export"
+
+
+@router.post("/purchase-invoices/export")
+async def export_purchase_invoices(body: PurchaseExportRequest, current_user: User = Depends(get_current_user)):
+    """
+    Full purchase export.
+      xlsx           Register + Tally voucher lines + month/supplier summary
+      csv            flat register
+      tally_xml      Tally 'Import Data' file (Purchase vouchers, optionally with ledger masters)
+      tally_masters  only the ledger masters (import this first if the ledgers do not exist yet)
+    """
+    if not _perm(current_user):
+        raise HTTPException(403, "Access denied")
+    flt = {k: v for k, v in (body.filters or {}).items() if k in _EXPORT_FILTER_KEYS and v not in (None, "")}
+    for k in ("amount_min", "amount_max"):
+        if k in flt:
+            try:
+                flt[k] = float(flt[k])
+            except (TypeError, ValueError):
+                flt.pop(k)
+    if body.ids:
+        flt = {}
+    q = _build_purchase_query(current_user, ids=body.ids, **flt)
+    docs = await _find_purchases_sorted(q, body.sort_by, "desc" if body.sort_dir == "desc" else "asc", 0, 5000)
+    if not docs:
+        raise HTTPException(404, "No purchase bills match this selection.")
+    names = await _company_name_map()
+    docs = [_decorate_purchase(d, names) for d in docs]
+    is_tally = body.format in ("tally_xml", "tally_masters")
+
+    company_ids = sorted({d.get("company_id") or "" for d in docs})
+    if is_tally and len(company_ids) > 1 and not body.allow_mixed_companies:
+        raise HTTPException(400, detail={
+            "code": "mixed_companies",
+            "message": f"These bills belong to {len(company_ids)} different companies. A Tally file is imported into one company at a time - "
+                       "filter the register by company first.",
+            "companies": [names.get(c, "(no company)") for c in company_ids]})
+
+    options = {k: v for k, v in (body.options or {}).items() if k in _px.DEFAULT_TALLY_OPTIONS}
+    summary_total = round(sum(float(d.get("grand_total") or 0) for d in docs if d.get("status") != "cancelled"), 2)
+    tally_res = None
+    if is_tally:
+        tally_res = _px.build_tally_xml(docs, options, part="masters" if body.format == "tally_masters" else
+                                        ("all" if options.get("create_masters", True) else "vouchers"))
+
+    if body.dry_run:
+        issues: List[str] = []
+        for d in docs:
+            issues.extend(_px._issues_for(d))
+        return {
+            "count": len(docs), "total": summary_total,
+            "already_exported": sum(1 for d in docs if d.get("tally_exported_at")),
+            "companies": [names.get(c, "(no company)") for c in company_ids],
+            "voucher_count": (tally_res or {}).get("voucher_count"), "masters": (tally_res or {}).get("masters"),
+            "skipped": (tally_res or {}).get("skipped", []), "issues": issues[:100], "issue_count": len(issues),
+        }
+
+    only = names.get(company_ids[0], "") if len(company_ids) == 1 else "All_Companies"
+    dates = sorted(d.get("invoice_date") or "" for d in docs if d.get("invoice_date"))
+    span = f"{dates[0]}_to_{dates[-1]}" if dates else date.today().isoformat()
+    base = _safe_filename(f"{only}_{span}")
+    if body.format == "xlsx":
+        meta = {"title": f"Purchase Register - {only.replace('_', ' ')}", "subtitle": f"Invoice dates {span.replace('_', ' ')}"}
+        data = _px.build_register_xlsx(docs, meta, options)
+        media, fname = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"Purchase_Register_{base}.xlsx"
+    elif body.format == "csv":
+        data = _px.build_register_csv(docs)
+        media, fname = "text/csv; charset=utf-8", f"Purchase_Register_{base}.csv"
+    else:
+        data = tally_res["xml"].encode("utf-8")
+        media = "application/xml"
+        fname = f"Tally_{'Ledger_Masters' if body.format == 'tally_masters' else 'Purchase_Vouchers'}_{base}.xml"
+        if body.mark_exported and body.format == "tally_xml":
+            ids = [d["id"] for d in docs if _exportable(d)]
+            if ids:
+                await db.purchase_invoices.update_many({"id": {"$in": ids}}, {"$set": {
+                    "tally_exported_at": datetime.now(timezone.utc).isoformat(), "tally_exported_by": current_user.id}})
+    return StreamingResponse(BytesIO(data), media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{fname}"', "Cache-Control": "no-store"})
 
 
 @router.post("/purchase-invoices/upload-gstr2b")
@@ -3036,6 +3661,8 @@ async def upload_gstr2b_purchases(
     """
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
+    if not await db.companies.find_one({"id": company_id}, {"_id": 0, "id": 1}):
+        raise HTTPException(400, "That company is not in Master Data. Pick one from the list.")
     filename = file.filename or "gstr2b.xlsx"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in {"xlsx", "xls"}:
@@ -3099,6 +3726,9 @@ async def upload_gstr2b_purchases(
             "client_name": (matched_client or {}).get("company_name", ""), "supplier_name": supplier_name,
             "supplier_gstin": supplier_gstin, "buyer_name": "", "buyer_gstin": "", "invoice_no": invoice_no,
             "invoice_date": invoice_date, "taxable_amount": round(taxable, 2), "total_gst": total_gst,
+            "cgst_amount": round(cgst, 2), "sgst_amount": round(sgst, 2), "igst_amount": round(igst, 2), "cess_amount": round(cess, 2),
+            "round_off": round(grand_total - taxable - total_gst, 2) if abs(grand_total - taxable - total_gst) <= 1.0 else 0.0,
+            "document_type": "tax_invoice", "needs_review": False,
             "grand_total": round(grand_total, 2), "currency": "INR",
             "file_name": filename, "file_size": 0,
             "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3142,10 +3772,28 @@ class PurchaseInvoiceUpdate(BaseModel):
     buyer_gstin: Optional[str] = None
     invoice_no: Optional[str] = None
     invoice_date: Optional[str] = None
+    due_date: Optional[str] = None
     taxable_amount: Optional[float] = None
+    cgst_amount: Optional[float] = None
+    sgst_amount: Optional[float] = None
+    igst_amount: Optional[float] = None
+    cess_amount: Optional[float] = None
     total_gst: Optional[float] = None
+    round_off: Optional[float] = None
     grand_total: Optional[float] = None
     currency: Optional[str] = None
+    place_of_supply: Optional[str] = None
+    document_type: Optional[str] = None
+    expense_ledger_code: Optional[str] = None
+    acknowledge_mismatch: bool = False
+    force_duplicate: bool = False
+
+
+_PURCHASE_EDITABLE = (
+    "client_id", "client_name", "company_id", "supplier_name", "supplier_gstin", "buyer_name", "buyer_gstin", "invoice_no",
+    "invoice_date", "due_date", "taxable_amount", "cgst_amount", "sgst_amount", "igst_amount", "cess_amount", "total_gst",
+    "round_off", "grand_total", "currency", "place_of_supply", "document_type",
+)
 
 
 @router.put("/purchase-invoices/{invoice_id}")
@@ -3155,16 +3803,56 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
     if not existing:
         raise HTTPException(404, "Purchase invoice not found")
-    
-    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    _assert_purchase_access(existing, current_user)
+
+    raw = data.model_dump()
+    changes = {k: raw[k] for k in _PURCHASE_EDITABLE if raw.get(k) is not None}
+    merged = _normalise_purchase_payload({**{k: existing.get(k) for k in _PURCHASE_EDITABLE}, **changes})
+
+    # Validate only what this edit touches, so a bill with one old problem can still be fixed one field at a time.
+    touched = set(changes)
+    amount_touched = bool(touched & set(_PURCHASE_AMOUNT_KEYS))
+    errs, _warns = _validate_purchase_payload(merged, data.acknowledge_mismatch)
+    blocking = [e for e in errs if e["field"] in touched or (e["code"] == "totals_mismatch" and amount_touched)]
+    if blocking:
+        raise HTTPException(422, detail={"code": "validation", "message": blocking[0]["message"], "errors": blocking})
+
+    update_data = {k: merged[k] for k in changes}
+    if amount_touched and "total_gst" not in update_data:
+        update_data["total_gst"] = merged["total_gst"]          # re-derived from CGST/SGST/IGST/Cess
+    if "company_id" in changes and changes["company_id"] != existing.get("company_id"):
+        comp = await db.companies.find_one({"id": changes["company_id"]}, {"_id": 0, "name": 1}) if changes["company_id"] else None
+        if changes["company_id"] and not comp:
+            raise HTTPException(400, detail={"code": "bad_company", "message": "That company is not in Master Data. Pick one from the list."})
+        update_data["company_name"] = (comp or {}).get("name", "")
+    if {"invoice_no", "supplier_name", "supplier_gstin"} & touched and not data.force_duplicate:
+        dup = await _find_duplicate_purchase(merged["supplier_name"], merged["supplier_gstin"], merged["invoice_no"], exclude_id=invoice_id)
+        if dup:
+            raise HTTPException(409, detail={"code": "duplicate", "message":
+                                f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} already exists.",
+                                "existing": _duplicate_summary(dup)})
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    if amount_touched:
+        merged_for_flag = {**existing, **update_data}
+        update_data["needs_review"] = abs(_totals_mismatch(merged_for_flag)) > 1.0
 
     # If the grand total changed, amount_due should move with it (unless the
-    # invoice was already fully paid — don't silently reopen a paid bill).
+    # invoice was already fully paid - don't silently reopen a paid bill).
     if "grand_total" in update_data and existing.get("status") != "paid":
         new_total = float(update_data["grand_total"] or 0)
         paid_so_far = float(existing.get("amount_paid") or 0)
         update_data["amount_due"] = round(max(new_total - paid_so_far, 0), 2)
+
+    override = (data.expense_ledger_code or "").strip()
+    if override and override != existing.get("expense_ledger_code"):
+        try:
+            from backend.accounting_ai.chart_of_accounts import ChartOfAccountsManager
+            acct = await ChartOfAccountsManager.lookup_by_code(update_data.get("company_id", existing.get("company_id") or ""), override)
+            if acct:
+                update_data.update({"expense_ledger_code": override, "expense_ledger_name": acct.get("name") or existing.get("expense_ledger_name"),
+                                    "expense_nature": acct.get("type") or "expense", "expense_category": acct.get("sub_type") or "operating_expense"})
+        except Exception as ex:
+            logger.warning("Expense ledger override %s failed: %s", override, ex)
 
     # If client_id is changed, update client names/counters if needed
     if "client_id" in update_data and update_data["client_id"] != existing.get("client_id"):
@@ -3174,6 +3862,8 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
             if client:
                 update_data["client_name"] = client.get("company_name", "")
                 await db.clients.update_one({"id": new_client_id}, {"$set": {"last_purchase_invoice_at": update_data["updated_at"]}, "$inc": {"purchase_invoice_count": 1}})
+        else:
+            update_data["client_name"] = ""
         old_client_id = existing.get("client_id")
         if old_client_id:
             await db.clients.update_one({"id": old_client_id}, {"$inc": {"purchase_invoice_count": -1}})
@@ -3181,7 +3871,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
     await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": update_data})
     await sync_purchase_journal_entry(invoice_id)
     updated = await db.purchase_invoices.find_one({"id": invoice_id}, {"_id": 0})
-    return updated
+    return _decorate_purchase(updated, await _company_name_map())
 
 
 @router.delete("/purchase-invoices/{invoice_id}")
@@ -3191,20 +3881,23 @@ async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
     if not existing:
         raise HTTPException(404, "Purchase invoice not found")
+    _assert_purchase_access(existing, current_user)
 
-    # Preserve the accounting trail when the source document is deleted:
-    # reverse each posted payment and the bill itself before removing the
-    # operational records.
-    from backend.accounting_lock import reverse_journal_entry
+    # Clean up any payments recorded against this bill (and their journal entries)
+    # before deleting the bill's own journal entry, so nothing dangles in the ledger.
     payments = await db.purchase_payments.find({"purchase_invoice_id": invoice_id}, {"_id": 0, "id": 1}).to_list(500)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"], "reversed": {"$ne": True}})
+        existing_pe = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": p["id"]})
         if existing_pe:
-            await reverse_journal_entry(existing_pe["id"], "Purchase payment deleted", current_user.id)
-    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}}, {"_id": 0, "id": 1}).to_list(50)
-    for entry in _old_entries:
-        await reverse_journal_entry(entry["id"], "Purchase invoice deleted", current_user.id)
+            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
+            await db.journal_entries.delete_one({"id": existing_pe["id"]})
     await db.purchase_payments.delete_many({"purchase_invoice_id": invoice_id})
+
+    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
+    if _old_entries:
+        _old_ids = [e["id"] for e in _old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
 
     await db.purchase_invoices.delete_one({"id": invoice_id})
     client_id = existing.get("client_id")
@@ -3245,6 +3938,7 @@ async def update_purchase_invoice_status(
     inv = await db.purchase_invoices.find_one({"id": invoice_id})
     if not inv:
         raise HTTPException(404, "Purchase invoice not found")
+    _assert_purchase_access(inv, current_user)
 
     now_iso = datetime.now(timezone.utc).isoformat()
     grand_total = float(inv.get("grand_total") or 0)
@@ -3299,6 +3993,12 @@ async def list_purchase_payments(purchase_invoice_id: Optional[str] = None, curr
     q: dict = {}
     if purchase_invoice_id:
         q["purchase_invoice_id"] = purchase_invoice_id
+    vis = _purchase_visibility_query(current_user)
+    if vis:   # non-admins only see payments of bills they can see
+        visible = [d["id"] for d in await db.purchase_invoices.find(vis, {"_id": 0, "id": 1}).to_list(20000)]
+        if purchase_invoice_id and purchase_invoice_id not in set(visible):
+            raise HTTPException(403, "You do not have access to this purchase invoice")
+        q["purchase_invoice_id"] = purchase_invoice_id if purchase_invoice_id else {"$in": visible}
     return await db.purchase_payments.find(q, {"_id": 0}).sort("created_at", -1).to_list(1000)
 
 
@@ -3310,19 +4010,14 @@ async def delete_purchase_payment(payment_id: str, current_user: User = Depends(
     if not payment:
         raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("purchase_invoice_id")
-
-    # Reverse the vendor-payment posting before deleting the operational record.
-    from backend.accounting_lock import reverse_journal_entry
-    existing_je = await db.journal_entries.find_one(
-        {"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}},
-        {"_id": 0, "id": 1},
-    )
-    if existing_je:
-        await reverse_journal_entry(existing_je["id"], "Purchase payment deleted", current_user.id)
+    _pay_inv = await db.purchase_invoices.find_one({"id": invoice_id}, {"_id": 0, "company_id": 1, "created_by": 1}) if invoice_id else None
+    if _pay_inv:
+        _assert_purchase_access(_pay_inv, current_user)
 
     result = await db.purchase_payments.delete_one({"id": payment_id})
     if result.deleted_count == 0:
         raise HTTPException(404, f"Payment {payment_id} not found")
+    await sync_purchase_payment_journal_entry(payment_id)  # cleans up its journal entry (payment doc is gone)
 
     if invoice_id:
         inv = await db.purchase_invoices.find_one({"id": invoice_id})
@@ -4246,51 +4941,29 @@ async def bulk_delete_invoices(ids: List[str], current_user: User = Depends(chec
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     if not ids: raise HTTPException(400, "No IDs provided")
     deleted, failed = 0, 0
-    from backend.accounting_lock import reverse_journal_entry
     for inv_id in ids:
         try:
             _existing = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1, "original_invoice_id": 1})
             _parent_id = _existing.get("original_invoice_id") if _existing and _existing.get("invoice_type") in ("credit_note", "debit_note") else None
 
-            # Preserve the accounting trail: reverse posted payment journals
-            # before removing the operational payment records.
+            # Delete journal entries for associated payments
             payments = await db.payments.find({"invoice_id": inv_id}).to_list(1000)
             for p in payments:
-                existing_pe = await db.journal_entries.find_one({
-                    "source": "payment",
-                    "source_id": p["id"],
-                    "reversed": {"$ne": True},
-                })
+                existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"]})
                 if existing_pe:
-                    await reverse_journal_entry(
-                        existing_pe["id"],
-                        "Customer payment deleted with invoice",
-                        current_user.id,
-                    )
+                    await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
+                    await db.journal_entries.delete_one({"id": existing_pe["id"]})
             await db.payments.delete_many({"invoice_id": inv_id})
-
-            # Reverse the invoice posting before deleting the operational
-            # invoice. Journal history is append-only and never erased.
-            invoice_entries = await db.journal_entries.find(
-                {"source": "sale", "source_id": inv_id, "reversed": {"$ne": True}},
-                {"_id": 0, "id": 1},
-            ).to_list(50)
-            for entry in invoice_entries:
-                await reverse_journal_entry(
-                    entry["id"],
-                    "Sales invoice deleted",
-                    current_user.id,
-                )
 
             r = await db.invoices.delete_one({"id": inv_id})
             if r.deleted_count:
                 deleted += 1
+                await sync_invoice_journal_entry(inv_id)
                 if _parent_id:
                     await recalculate_invoice_accounting(_parent_id)
             else:
                 failed += 1
-        except Exception:
-            failed += 1
+        except Exception: failed += 1
     return {"deleted": deleted, "failed": failed, "total": len(ids)}
 
 
@@ -4303,25 +4976,18 @@ async def delete_invoice(inv_id: str, current_user: User = Depends(check_module_
     _existing = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1, "original_invoice_id": 1})
     _parent_id = _existing.get("original_invoice_id") if _existing and _existing.get("invoice_type") in ("credit_note", "debit_note") else None
 
-    # Preserve the accounting trail when deleting the operational invoice:
-    # reverse all posted receipts first; never erase their journal history.
-    from backend.accounting_lock import reverse_journal_entry
+    # Delete journal entries for associated payments
     payments = await db.payments.find({"invoice_id": inv_id}).to_list(1000)
     for p in payments:
-        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"], "reversed": {"$ne": True}})
+        existing_pe = await db.journal_entries.find_one({"source": "payment", "source_id": p["id"]})
         if existing_pe:
-            await reverse_journal_entry(existing_pe["id"], "Customer payment deleted with invoice", current_user.id)
+            await db.journal_lines.delete_many({"entry_id": existing_pe["id"]})
+            await db.journal_entries.delete_one({"id": existing_pe["id"]})
     await db.payments.delete_many({"invoice_id": inv_id})
 
-    # Reverse the invoice posting before deleting the operational record.
-    _invoice_entries = await db.journal_entries.find(
-        {"source": "sale", "source_id": inv_id, "reversed": {"$ne": True}},
-        {"_id": 0, "id": 1},
-    ).to_list(50)
-    for entry in _invoice_entries:
-        await reverse_journal_entry(entry["id"], "Sales invoice deleted", current_user.id)
     result = await db.invoices.delete_one({"id": inv_id})
     if result.deleted_count == 0: raise HTTPException(404, "Invoice not found")
+    await sync_invoice_journal_entry(inv_id)
     if _parent_id:
         await recalculate_invoice_accounting(_parent_id)
     return {"message": f"Invoice {inv_id} deleted"}
@@ -4693,24 +5359,14 @@ async def generate_recurring(inv_id: str, current_user: User = Depends(check_mod
 @router.post("/payments")
 async def record_payment(data: PaymentCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
-    if float(data.amount or 0) <= 0:
-        raise HTTPException(400, "Payment amount must be greater than zero.")
     inv = await db.invoices.find_one({"id": data.invoice_id})
     if not inv: raise HTTPException(404, "Invoice not found")
-    if inv.get("status") == "cancelled":
-        raise HTTPException(400, "Cannot record a payment against a cancelled invoice.")
-    if inv.get("paid_bank_txn_id"):
-        raise HTTPException(409, "This invoice is already settled through bank reconciliation.")
-    current_payments = await db.payments.find({"invoice_id": data.invoice_id}, {"_id": 0, "amount": 1}).to_list(2000)
-    current_paid = round(sum(float(p.get("amount") or 0) for p in current_payments), 2)
-    credit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "credit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
-    debit_notes = await db.invoices.find({"original_invoice_id": data.invoice_id, "invoice_type": "debit_note", "status": {"$ne": "cancelled"}}, {"_id": 0, "grand_total": 1}).to_list(2000)
-    outstanding = round(float(inv.get("grand_total") or 0) - current_paid
-                        - sum(float(n.get("grand_total") or 0) for n in credit_notes)
-                        + sum(float(n.get("grand_total") or 0) for n in debit_notes), 2)
-    if data.amount > max(outstanding, 0):
-        raise HTTPException(400, f"Payment exceeds outstanding amount of ₹{max(outstanding, 0):,.2f}.")
+    payment_type = str(data.payment_type or "payment").strip().lower()
+    if payment_type not in {"advance", "partial", "payment"}:
+        raise HTTPException(400, "Invalid payment_type. Use advance, partial, or payment.")
+
     payment_data = {**data.model_dump(), "id": str(uuid.uuid4()),
+                    "payment_type": payment_type,
                     "company_id": inv.get("company_id") or "",
                     "client_name": inv.get("client_name") or "",
                     "created_by": current_user.id, "created_at": datetime.now(timezone.utc).isoformat()}
@@ -4738,17 +5394,12 @@ async def delete_payment(pid: str, current_user: User = Depends(check_module_per
     if not payment: raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("invoice_id")
 
-    # Reverse the posted receipt before deleting the operational payment.
-    from backend.accounting_lock import reverse_journal_entry
-    existing_je = await db.journal_entries.find_one(
-        {"source": "payment", "source_id": pid, "reversed": {"$ne": True}},
-        {"_id": 0, "id": 1},
-    )
-    if existing_je:
-        await reverse_journal_entry(existing_je["id"], "Customer payment deleted", current_user.id)
-
+    # Delete from DB
     result = await db.payments.delete_one({"id": pid})
     if result.deleted_count == 0: raise HTTPException(404, f"Payment {pid} not found")
+
+    # Sync payment to ledger (will delete its journal entry)
+    await sync_payment_journal_entry(pid)
 
     # Recalculate invoice payments & status — single source of truth.
     if invoice_id:
@@ -4903,10 +5554,6 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
     else:
         new_status = current_status
 
-    # Never allow accounting to produce a negative receivable. A credit/debit
-    # note may move the balance through zero, but the invoice's stored
-    # outstanding amount remains bounded at zero.
-    outstanding = round(max(outstanding, 0.0), 2)
     await db.invoices.update_one(
         {"id": invoice_id},
         {"$set": {
@@ -4927,8 +5574,13 @@ async def recalculate_invoice_accounting(invoice_id: str) -> Optional[dict]:
 async def sync_invoice_journal_entry(invoice_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # Historical journal entries are immutable. Any changed business document
-    # must be corrected with a compensating reversal and a fresh posting.
+    # 1. Clean up any existing journal entries for this invoice
+    _old_entries = await db.journal_entries.find({"source": "sale", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
+    if _old_entries:
+        _old_ids = [e["id"] for e in _old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
+        
     # 2. Fetch the current invoice document
     inv = await db.invoices.find_one({"id": invoice_id})
     if not inv:
@@ -4940,19 +5592,7 @@ async def sync_invoice_journal_entry(invoice_id: str):
     # that Accounting Reports (Trial Balance / P&L / Balance Sheet) reflect
     # the same figure as the Sales/Invoicing page.
     status = inv.get("status", "draft")
-    invoice_type = inv.get("invoice_type") or "tax_invoice"
-    if status == "cancelled" or invoice_type in ("proforma", "estimate"):
-        _active = await db.journal_entries.find_one(
-            {"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}},
-            {"_id": 0, "id": 1},
-        )
-        if _active:
-            from backend.accounting_lock import reverse_journal_entry
-            await reverse_journal_entry(
-                _active["id"],
-                "Sales document cancelled or changed to non-posting type",
-                inv.get("updated_by") or inv.get("created_by") or "system",
-            )
+    if status == "cancelled":
         return
 
     # 3b. Proforma invoices / estimates are quotations, not real invoices —
@@ -5007,17 +5647,6 @@ async def sync_invoice_journal_entry(invoice_id: str):
             lines.append({"account_id": gst_pay_id, "account_name": "GST Output Payable", "debit": 0.0, "credit": total_gst, "memo": f"GST Output on Invoice {invoice_no}"})
         narration = f"Sales Invoice {invoice_no} to {client_name}"
         
-    # If an active posting exists, compare its amount. Matching entries are
-    # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({"source": "sale", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
-    if _active:
-        _desired_total = round(float(float(inv.get("grand_total") or 0)), 2)
-        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
-            return
-        from backend.accounting_lock import reverse_journal_entry
-        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", inv.get("created_by", "system"))
-        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
-
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5035,8 +5664,13 @@ async def sync_invoice_journal_entry(invoice_id: str):
 async def sync_payment_journal_entry(payment_id: str):
     from backend.accounting_core import get_default_account_id, post_journal_entry
     
-    # Historical journal entries are immutable. Any changed business document
-    # must be corrected with a compensating reversal and a fresh posting.
+    # 1. Clean up any existing journal entries for this payment
+    _old_entries = await db.journal_entries.find({"source": "payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
+    if _old_entries:
+        _old_ids = [e["id"] for e in _old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
+        
     # 2. Fetch the current payment document
     payment = await db.payments.find_one({"id": payment_id})
     if not payment:
@@ -5091,17 +5725,6 @@ async def sync_payment_journal_entry(payment_id: str):
         f"Receipt from {client_name} ({payment_mode.upper()})"
     )
     
-    # If an active posting exists, compare its amount. Matching entries are
-    # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({"source": "payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
-    if _active:
-        _desired_total = round(float(amount), 2)
-        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
-            return
-        from backend.accounting_lock import reverse_journal_entry
-        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", inv.get("created_by", "system"))
-        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
-
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5123,27 +5746,20 @@ async def sync_purchase_journal_entry(invoice_id: str):
     liability), and removed again if the bill is cancelled or deleted."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # Historical journal entries are immutable. Any changed business document
-    # must be corrected with a compensating reversal and a fresh posting.
+    # 1. Clean up any existing journal entry for this purchase bill
+    _old_entries = await db.journal_entries.find({"source": "purchase", "source_id": invoice_id}, {"_id": 0, "id": 1}).to_list(50)
+    if _old_entries:
+        _old_ids = [e["id"] for e in _old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
+
     # 2. Fetch the current purchase invoice document
     inv = await db.purchase_invoices.find_one({"id": invoice_id})
     if not inv:
         return
 
-    # 3. Cancelled bills don't sit in the ledger. Preserve any existing
-    # posting by reversing it rather than deleting its history.
+    # 3. Cancelled bills don't sit in the ledger
     if inv.get("status") == "cancelled":
-        _active = await db.journal_entries.find_one(
-            {"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}},
-            {"_id": 0, "id": 1},
-        )
-        if _active:
-            from backend.accounting_lock import reverse_journal_entry
-            await reverse_journal_entry(
-                _active["id"],
-                "Purchase bill cancelled",
-                inv.get("updated_by") or inv.get("created_by") or "system",
-            )
         return
 
     company_id = inv.get("company_id") or ""
@@ -5187,17 +5803,6 @@ async def sync_purchase_journal_entry(invoice_id: str):
         lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
     narration = f"Purchase Bill {invoice_no} from {supplier_name}"
 
-    # If an active posting exists, compare its amount. Matching entries are
-    # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({"source": "purchase", "source_id": invoice_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
-    if _active:
-        _desired_total = round(float(grand_total), 2)
-        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
-            return
-        from backend.accounting_lock import reverse_journal_entry
-        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", inv.get("created_by", "system"))
-        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
-
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5217,8 +5822,13 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
     Cr Cash/Bank — the entry for actually paying a vendor bill."""
     from backend.accounting_core import get_default_account_id, post_journal_entry
 
-    # Historical journal entries are immutable. Any changed business document
-    # must be corrected with a compensating reversal and a fresh posting.
+    # 1. Clean up any existing journal entry for this payment
+    _old_entries = await db.journal_entries.find({"source": "purchase_payment", "source_id": payment_id}, {"_id": 0, "id": 1}).to_list(50)
+    if _old_entries:
+        _old_ids = [e["id"] for e in _old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": _old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": _old_ids}})
+
     # 2. Fetch the current payment document
     payment = await db.purchase_payments.find_one({"id": payment_id})
     if not payment:
@@ -5252,17 +5862,6 @@ async def sync_purchase_payment_journal_entry(payment_id: str):
         {"account_id": credit_acct_id, "account_name": credit_acct_name, "debit": 0.0, "credit": amount, "memo": f"Payment for Bill {invoice_no} via {payment_mode.upper()}"},
     ]
     narration = f"Payment to {supplier_name} for Bill {invoice_no} ({payment_mode.upper()})"
-
-    # If an active posting exists, compare its amount. Matching entries are
-    # left untouched; changed source data gets an auditable reversal first.
-    _active = await db.journal_entries.find_one({"source": "purchase_payment", "source_id": payment_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}}, {"_id": 0})
-    if _active:
-        _desired_total = round(float(amount), 2)
-        if abs(float(_active.get("total_debit") or 0) - _desired_total) <= 0.01:
-            return
-        from backend.accounting_lock import reverse_journal_entry
-        await reverse_journal_entry(_active["id"], "Source document changed; superseded by latest posting", inv.get("created_by", "system"))
-        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
 
     try:
         await post_journal_entry(
@@ -5407,23 +6006,8 @@ async def _dedupe_journal_entries(company_id: str, source: str):
         es.sort(key=lambda x: x.get("created_at") or "", reverse=True)
         dup_ids.extend(e["id"] for e in es[1:])
     if dup_ids:
-        # Duplicate system postings are historical facts, not disposable rows.
-        # Reverse each duplicate and mark it superseded so reconciliation fixes
-        # the ledger without erasing the audit trail.
-        from backend.accounting_lock import reverse_journal_entry
-        for duplicate_id in dup_ids:
-            try:
-                await reverse_journal_entry(
-                    duplicate_id,
-                    f"Duplicate {source} posting removed by reconciliation",
-                    "system",
-                )
-                await db.journal_entries.update_one(
-                    {"id": duplicate_id},
-                    {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}},
-                )
-            except Exception:
-                logging.exception("Failed to reverse duplicate journal entry %s", duplicate_id)
+        await db.journal_lines.delete_many({"entry_id": {"$in": dup_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": dup_ids}})
 
 
 async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
@@ -5464,10 +6048,8 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_sale_ids.append(se["id"])
                 
         if stale_sale_ids:
-            from backend.accounting_lock import reverse_journal_entry
-            for stale_id in stale_sale_ids:
-                await reverse_journal_entry(stale_id, "Stale sales posting removed by reconciliation", "system")
-                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+            await db.journal_lines.delete_many({"entry_id": {"$in": stale_sale_ids}})
+            await db.journal_entries.delete_many({"id": {"$in": stale_sale_ids}})
             
         # 4. Sync missing/outdated sale entries & auto-reconcile invoice payments with db.payments
         for inv in active_invoices:
@@ -5629,10 +6211,8 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 stale_pay_ids.append(pe["id"])
                 
         if stale_pay_ids:
-            from backend.accounting_lock import reverse_journal_entry
-            for stale_id in stale_pay_ids:
-                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
-                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
+            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
             
         # 8. Sync missing/outdated payment entries. Also re-sync entries that
         # were posted before the client_name fallback fix, which show up as
@@ -5652,9 +6232,8 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 # Payment belongs to a bank-reconciled invoice — its journal
                 # entry (if any survived) must be removed, not re-posted.
                 if pe:
-                    from backend.accounting_lock import reverse_journal_entry
-                    await reverse_journal_entry(pe["id"], "Payment journal superseded by bank reconciliation", "system")
-                    await db.journal_entries.update_one({"id": pe["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+                    await db.journal_lines.delete_many({"entry_id": pe["id"]})
+                    await db.journal_entries.delete_one({"id": pe["id"]})
                 continue
             stale_narration = pe and "for Invoice Unknown" in (pe.get("narration") or "") and (p.get("client_name") or "").strip()
             if not pe or stale_narration or abs(float(pe.get("total_debit", 0)) - float(p.get("amount", 0))) > 0.01:
@@ -5689,10 +6268,8 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_ids = [e["id"] for source_id, e in entry_by_source_id.items() if source_id not in active_invoice_ids]
         if stale_ids:
-            from backend.accounting_lock import reverse_journal_entry
-            for stale_id in stale_ids:
-                await reverse_journal_entry(stale_id, "Stale purchase posting removed by reconciliation", "system")
-                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+            await db.journal_lines.delete_many({"entry_id": {"$in": stale_ids}})
+            await db.journal_entries.delete_many({"id": {"$in": stale_ids}})
 
         for inv in active_invoices:
             inv_id = inv["id"]
@@ -5730,9 +6307,8 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
                 )
                 if not wrong_debit:
                     continue
-                from backend.accounting_lock import reverse_journal_entry
-                await reverse_journal_entry(bank_je["id"], "Legacy bank reconciliation posting corrected", "system")
-                await db.journal_entries.update_one({"id": bank_je["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+                await db.journal_lines.delete_many({"entry_id": bank_je["id"]})
+                await db.journal_entries.delete_one({"id": bank_je["id"]})
                 amount = float(inv.get("grand_total") or 0) or float(bank_je.get("total_debit") or 0)
                 if amount > 0 and ap_id and bnk_id:
                     await _post_je(
@@ -5780,10 +6356,8 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         stale_pay_ids = [pe["id"] for source_id, pe in pay_entry_by_source_id.items() if source_id not in payment_ids]
         if stale_pay_ids:
-            from backend.accounting_lock import reverse_journal_entry
-            for stale_id in stale_pay_ids:
-                await reverse_journal_entry(stale_id, "Stale purchase payment posting removed by reconciliation", "system")
-                await db.journal_entries.update_one({"id": stale_id}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
+            await db.journal_lines.delete_many({"entry_id": {"$in": stale_pay_ids}})
+            await db.journal_entries.delete_many({"id": {"$in": stale_pay_ids}})
 
         for p in payments:
             p_id = p["id"]
@@ -5809,8 +6383,13 @@ class UnpreparedIncomeCreate(BaseModel):
 
 async def sync_unprepared_income_journal_entry(income_id: str):
     from backend.accounting_core import post_journal_entry
-    # Existing unprepared-income postings are immutable. Changed records are
-    # corrected by reversal + fresh posting below.
+    # 1. Clean up existing journal entries
+    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
+    if old_entries:
+        old_ids = [e["id"] for e in old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
+        
     # 2. Fetch the current record
     inc = await db.unprepared_incomes.find_one({"id": income_id})
     if not inc:
@@ -5844,17 +6423,6 @@ async def sync_unprepared_income_journal_entry(income_id: str):
     if description:
         narration += f" - {description}"
         
-    _active = await db.journal_entries.find_one(
-        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}, "superseded_at": {"$exists": False}},
-        {"_id": 0},
-    )
-    if _active:
-        if abs(float(_active.get("total_debit") or 0) - round(float(amount), 2)) <= 0.01:
-            return
-        from backend.accounting_lock import reverse_journal_entry
-        await reverse_journal_entry(_active["id"], "Unprepared income changed; superseded by latest posting", inc.get("created_by") or "system")
-        await db.journal_entries.update_one({"id": _active["id"]}, {"$set": {"superseded_at": datetime.now(timezone.utc).isoformat()}})
-
     try:
         await post_journal_entry(
             company_id=company_id,
@@ -5873,19 +6441,20 @@ async def sync_unprepared_income_journal_entry(income_id: str):
 async def list_unprepared_incomes(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    company_id = enforce_company_value(current_user, company_id or None)
-    return await db.unprepared_incomes.find({"company_id": company_id}).sort("date", -1).to_list(5000)
+    q = {}
+    if company_id:
+        q["company_id"] = company_id
+    return await db.unprepared_incomes.find(q).sort("date", -1).to_list(5000)
 
 
 @router.post("/unprepared-incomes")
 async def create_unprepared_income(payload: UnpreparedIncomeCreate, current_user: User = Depends(get_current_user)):
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    company_id = enforce_company_value(current_user, payload.company_id)
     now = datetime.now(timezone.utc).isoformat()
     doc = {
         "id": str(uuid.uuid4()),
-        "company_id": company_id,
+        "company_id": payload.company_id,
         "date": payload.date,
         "amount": payload.amount,
         "payer_name": payload.payer_name,
@@ -5906,15 +6475,13 @@ async def create_unprepared_income(payload: UnpreparedIncomeCreate, current_user
 async def update_unprepared_income(income_id: str, payload: UnpreparedIncomeCreate, current_user: User = Depends(get_current_user)):
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    existing = await db.unprepared_incomes.find_one(
-        {"id": income_id, "company_id": enforce_company_value(current_user, payload.company_id)}
-    )
+    existing = await db.unprepared_incomes.find_one({"id": income_id})
     if not existing:
         raise HTTPException(404, "Income record not found")
     
     now = datetime.now(timezone.utc).isoformat()
     update = {
-        "company_id": existing.get("company_id"),
+        "company_id": payload.company_id,
         "date": payload.date,
         "amount": payload.amount,
         "payer_name": payload.payer_name,
@@ -5935,17 +6502,13 @@ async def delete_unprepared_income(income_id: str, current_user: User = Depends(
     existing = await db.unprepared_incomes.find_one({"id": income_id})
     if not existing:
         raise HTTPException(404, "Income record not found")
-    if not is_platform_owner(current_user):
-        enforce_company_value(current_user, existing.get("company_id"))
     
-    # Preserve the accounting trail when deleting the operational record.
-    from backend.accounting_lock import reverse_journal_entry
-    old_entries = await db.journal_entries.find(
-        {"source": "unprepared_income", "source_id": income_id, "reversed": {"$ne": True}},
-        {"_id": 0, "id": 1},
-    ).to_list(50)
-    for entry in old_entries:
-        await reverse_journal_entry(entry["id"], "Unprepared income deleted", current_user.id)
-
+    # Delete journal entries
+    old_entries = await db.journal_entries.find({"source": "unprepared_income", "source_id": income_id}).to_list(50)
+    if old_entries:
+        old_ids = [e["id"] for e in old_entries]
+        await db.journal_lines.delete_many({"entry_id": {"$in": old_ids}})
+        await db.journal_entries.delete_many({"id": {"$in": old_ids}})
+        
     await db.unprepared_incomes.delete_one({"id": income_id})
     return {"success": True}
