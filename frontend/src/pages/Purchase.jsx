@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import SearchableSelect from '@/components/ui/SearchableSelect.jsx';
 import api from '@/lib/api';
-import { clientOptions, companyOptions, fetchCompanyList, normalizeClients } from '@/lib/companies';
+import { clientOptions, companyOptions, fetchPurchaseMasters, normalizeClients } from '@/lib/companies';
 import { useDark } from '@/hooks/useDark';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
 import InvoiceForm from '@/components/purchase/InvoiceForm.jsx';
@@ -56,6 +56,31 @@ function StatusBadge({ status, inv }) {
   );
 }
 
+function MastersNotice({ state, count, onRetry, compact = false }) {
+  if (state.loading) return <p className="text-[11px] text-slate-400">Loading companies from Master Data…</p>;
+  const d = state.diagnostics || {};
+  const retry = <button type="button" onClick={onRetry} className="underline font-semibold ml-1">Retry</button>;
+  if (count > 0) {
+    return d.companies_without_id > 0 ? (
+      <p className="text-[11px] text-amber-600">
+        {count} {count === 1 ? 'company' : 'companies'} loaded. {d.companies_without_id} more in Master Data {d.companies_without_id === 1 ? 'has' : 'have'} no ID and cannot be chosen — open each in Admin → Master Data → Company Profiles and save it once.
+      </p>
+    ) : (compact ? null : <p className="text-[11px] text-slate-400">{count} {count === 1 ? 'company' : 'companies'} from Master Data</p>);
+  }
+  let msg;
+  if (state.error) {
+    const st = state.error?.response?.status;
+    msg = `Couldn’t load companies from Master Data${st ? ` (HTTP ${st})` : ''}. Check your connection or permissions.`;
+  } else if (d.restricted_to_company) {
+    msg = 'Your login is tied to a company that is not in Master Data.';
+  } else if (d.companies_without_id > 0) {
+    msg = `${d.companies_without_id} ${d.companies_without_id === 1 ? 'company' : 'companies'} in Master Data have no ID. Open each in Admin → Master Data → Company Profiles and save it once.`;
+  } else {
+    msg = 'No companies in Master Data yet. Add them in Admin → Master Data → Company Profiles.';
+  }
+  return <p className="text-[11px] text-amber-600">{msg}{retry}</p>;
+}
+
 function Purchase() {
   const isDark = useDark();
   const fileRef = useRef(null);
@@ -69,6 +94,7 @@ function Purchase() {
   const [clients, setClients] = useState([]);
   const [facets, setFacets] = useState({ suppliers: [], ledgers: [] });
   const [mastersLoaded, setMastersLoaded] = useState(false);
+  const [mastersState, setMastersState] = useState({ loading: true, error: null, source: '', diagnostics: null });
 
   // register
   const [rows, setRows] = useState([]);
@@ -117,20 +143,15 @@ function Purchase() {
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
   // ── master data: companies come from Company Profiles (Master Data), clients from Clients ──
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const [co, cl] = await Promise.allSettled([
-        fetchCompanyList(),
-        api.get('/clients', { params: { page_size: 1000 } }),
-      ]);
-      if (!alive) return;
-      setCompanies(co.status === 'fulfilled' ? co.value : []);
-      setClients(cl.status === 'fulfilled' ? normalizeClients(cl.value) : []);
-      setMastersLoaded(true);
-    })();
-    return () => { alive = false; };
+  const loadMasters = useCallback(async () => {
+    setMastersState((m) => ({ ...m, loading: true, error: null }));
+    const res = await fetchPurchaseMasters();
+    setCompanies(res.companies || []);
+    setClients(normalizeClients(res.clients || []));
+    setMastersState({ loading: false, error: res.error || null, source: res.source, diagnostics: res.diagnostics });
+    setMastersLoaded(true);
   }, []);
+  useEffect(() => { loadMasters(); }, [loadMasters]);
 
   const companyOpts = useMemo(() => companyOptions(companies), [companies]);
   const clientOpts = useMemo(() => clientOptions(clients), [clients]);
@@ -419,11 +440,11 @@ function Purchase() {
     </th>
   );
 
-  const RowActions = ({ inv }) => (
-    <div className="flex items-center gap-1 justify-end">
+  const RowActions = ({ inv, compact = false }) => (
+    <div className="flex items-center gap-1 justify-end flex-nowrap">
       {inv.status !== 'paid' && inv.status !== 'cancelled' && (
-        <Button size="sm" onClick={() => startPayment(inv)} className="h-7 rounded-lg text-white px-2 text-xs" style={{ background: COLORS.emeraldGreen }} title="Record payment — posts a ledger entry">
-          <Wallet className="h-3.5 w-3.5 mr-1" /> Pay
+        <Button size="sm" onClick={() => startPayment(inv)} className={`h-7 rounded-lg text-white text-xs ${compact ? 'w-7 px-0' : 'px-2'}`} style={{ background: COLORS.emeraldGreen }} title="Record payment — posts a ledger entry" aria-label="Record payment">
+          <Wallet className={`h-3.5 w-3.5 ${compact ? '' : 'mr-1'}`} />{!compact && ' Pay'}
         </Button>
       )}
       <Button size="icon" variant="ghost" onClick={() => startEdit(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Edit / correct this bill">
@@ -498,121 +519,124 @@ function Purchase() {
           ))}
         </div>
 
-        <div className="grid xl:grid-cols-[400px_minmax(0,1fr)] gap-5 items-start">
-          {/* ── left: upload cards ── */}
-          <div className="space-y-5">
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={{ background: COLORS.mediumBlue }}>
-                  <UploadCloud className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Upload purchase invoice</h2>
-                  <p className="text-xs text-slate-400">You’ll see an editable preview before anything is added.</p>
-                </div>
+        {/* ── add bills: upload + GSTR-2B side by side, register gets the full width below ── */}
+        <div className="grid lg:grid-cols-2 gap-5 items-stretch">
+          <div className={`${card} p-5 flex flex-col`}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={{ background: COLORS.mediumBlue }}>
+                <UploadCloud className="h-5 w-5" />
               </div>
+              <div>
+                <h2 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Upload purchase invoice</h2>
+                <p className="text-xs text-slate-400">You’ll see an editable preview before anything is added.</p>
+              </div>
+            </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Concerned company (Master Data)</label>
-                  <div className="mt-2">
+            <div className="space-y-3 flex-1 flex flex-col">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <label className={miniLabel}>Concerned company (Master Data)</label>
+                  <div className="mt-1.5">
                     <SearchableSelect
                       options={[{ value: 'auto', label: 'Auto-detect from the bill' }, ...companyOpts]}
                       value={uploadCompanyId} onChange={setUploadCompanyId} isDark={isDark}
-                      placeholder="Select company…" emptyText="No company in Master Data"
+                      placeholder="Select company…" emptyText="No company in Master Data" loading={mastersState.loading}
                     />
                   </div>
-                  {mastersLoaded && companyOpts.length === 0 && (
-                    <p className="text-[11px] text-amber-600 mt-1">No companies found. Add them in Admin → Master Data → Company Profiles.</p>
-                  )}
                 </div>
-
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Linked client (optional)</label>
-                  <div className="mt-2">
+                <div className="min-w-0">
+                  <label className={miniLabel}>Linked client (optional)</label>
+                  <div className="mt-1.5">
                     <SearchableSelect
                       options={[{ value: 'auto', label: 'Auto-detect from the bill' }, ...clientOpts]}
                       value={uploadClientId} onChange={setUploadClientId} isDark={isDark}
-                      placeholder="Auto-detect" emptyText="No clients"
+                      placeholder="Auto-detect" emptyText="No clients" loading={mastersState.loading}
                     />
                   </div>
                 </div>
+              </div>
+              <MastersNotice state={mastersState} count={companyOpts.length} onRetry={loadMasters} />
 
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                  onDragLeave={() => setDragOver(false)}
-                  onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFiles(e.dataTransfer.files); }}
-                  className={`border-2 border-dashed rounded-2xl p-5 text-center transition ${dragOver ? 'border-blue-500 bg-blue-50/70' : isDark ? 'border-slate-700 bg-slate-900/60' : 'border-blue-100 bg-blue-50/60'}`}
-                >
-                  <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv" className="hidden" onChange={(e) => pickFiles(e.target.files)} />
-                  <UploadCloud className="h-9 w-9 mx-auto mb-3" style={{ color: COLORS.mediumBlue }} />
-                  <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFiles(e.dataTransfer.files); }}
+                className={`border-2 border-dashed rounded-2xl p-4 flex items-center gap-4 transition ${dragOver ? 'border-blue-500 bg-blue-50/70' : isDark ? 'border-slate-700 bg-slate-900/60' : 'border-blue-100 bg-blue-50/60'}`}
+              >
+                <input ref={fileRef} type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv" className="hidden" onChange={(e) => pickFiles(e.target.files)} />
+                <UploadCloud className="h-9 w-9 flex-shrink-0" style={{ color: COLORS.mediumBlue }} />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-semibold truncate ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
                     {queue.files.length === 0 ? 'Drop invoices here or browse' : queue.files.length === 1 ? queue.files[0].name : `${queue.files.length} invoices selected`}
                   </p>
-                  {queue.files.length > 1 && (
-                    <p className="text-[11px] text-slate-400 mt-1 truncate">{queue.files.map((f) => f.name).join(', ')}</p>
+                  <p className="text-[11px] text-slate-400 truncate">
+                    {queue.files.length > 1 ? queue.files.map((f) => f.name).join(', ') : 'PDF, photo or scan · up to 25 bills at once'}
+                  </p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="rounded-xl">Browse</Button>
+                  {queue.files.length > 0 && (
+                    <Button type="button" variant="ghost" onClick={cancelQueue} className="rounded-xl px-2" title="Clear selection"><X className="h-4 w-4" /></Button>
                   )}
-                  <p className="text-[11px] text-slate-400 mt-1">PDF, photo or scan · up to 25 bills at once</p>
-                  <div className="mt-4 flex justify-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} className="rounded-xl">Browse</Button>
-                    {queue.files.length > 0 && (
-                      <Button type="button" variant="ghost" onClick={cancelQueue} className="rounded-xl"><X className="h-4 w-4" /></Button>
-                    )}
-                  </div>
                 </div>
+              </div>
 
-                <Button onClick={startReading} disabled={reading || queue.files.length === 0} className="w-full rounded-xl text-white" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
-                  {reading ? <span className="inline-flex items-center gap-2"><MiniLoader height={18} /> Reading the bill…</span> : <><Eye className="h-4 w-4 mr-2" /> Read & preview</>}
-                </Button>
-              </div>
-            </div>
-
-            <div className={`${card} p-5`}>
-              <div className="flex items-center gap-3 mb-5">
-                <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${COLORS.emeraldGreen}, #0F5C63)` }}>
-                  <FileSpreadsheet className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Import GSTR-2B report</h2>
-                  <p className="text-xs text-slate-400">Bulk-add every B2B bill from a portal Excel, PDF, or a zipped batch of months — in one go.</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Company/book (Master Data)</label>
-                  <div className="mt-2">
-                    <SearchableSelect options={companyOpts} value={gstr2bCompanyId} onChange={setGstr2bCompanyId} isDark={isDark}
-                      placeholder="Select company…" emptyText="No company in Master Data" />
-                  </div>
-                </div>
-                <div className={`border-2 border-dashed rounded-2xl p-5 text-center ${isDark ? 'border-slate-700 bg-slate-900/60' : 'border-emerald-100 bg-emerald-50/60'}`}>
-                  <input ref={gstr2bFileRef} type="file" accept=".xlsx,.xls,.pdf,.zip" className="hidden" onChange={(e) => setGstr2bFile(e.target.files?.[0] || null)} />
-                  <FileSpreadsheet className="h-9 w-9 mx-auto mb-3" style={{ color: COLORS.emeraldGreen }} />
-                  <p className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{gstr2bFile ? gstr2bFile.name : 'Choose GSTR-2B file — Excel, PDF, or ZIP'}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">Accepts .xlsx, .xls, .pdf, or a .zip bundling several monthly exports</p>
-                  {gstr2bFile && <p className="text-xs text-slate-400 mt-1">{(gstr2bFile.size / 1024).toFixed(0)} KB</p>}
-                  <div className="mt-4 flex justify-center gap-2">
-                    <Button type="button" variant="outline" onClick={() => gstr2bFileRef.current?.click()} className="rounded-xl">Browse</Button>
-                    {gstr2bFile && (
-                      <Button type="button" variant="ghost" onClick={() => { setGstr2bFile(null); if (gstr2bFileRef.current) gstr2bFileRef.current.value = ''; }} className="rounded-xl"><X className="h-4 w-4" /></Button>
-                    )}
-                  </div>
-                </div>
-                <Button onClick={handleGstr2bUpload} disabled={gstr2bUploading || !gstr2bFile} className="w-full rounded-xl text-white" style={{ background: `linear-gradient(135deg, ${COLORS.emeraldGreen}, #0F5C63)` }}>
-                  {gstr2bUploading ? <MiniLoader height={18} /> : <><Database className="h-4 w-4 mr-2" /> Import into Purchase Book</>}
-                </Button>
-                {gstr2bResult && (
-                  <div className={`rounded-2xl border p-3 text-xs space-y-1 ${isDark ? 'bg-slate-900/60 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
-                    {gstr2bResult.files_processed > 1 && <div className="flex justify-between"><span>Files combined</span><span className="font-semibold">{gstr2bResult.files_processed}</span></div>}
-                    <div className="flex justify-between"><span>Bills added</span><span className="font-bold text-emerald-500">{gstr2bResult.created}</span></div>
-                    <div className="flex justify-between"><span>Already in Purchase Book</span><span className="font-semibold">{gstr2bResult.duplicates}</span></div>
-                    <div className="flex justify-between"><span>ITC not eligible</span><span className="font-semibold">{gstr2bResult.ineligible_itc}</span></div>
-                    <div className="flex justify-between"><span>Total value imported</span><span className="font-semibold">{fmtC(gstr2bResult.total_value)}</span></div>
-                  </div>
-                )}
-              </div>
+              <Button onClick={startReading} disabled={reading || queue.files.length === 0} className="w-full rounded-xl text-white mt-auto" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>
+                {reading ? <span className="inline-flex items-center gap-2"><MiniLoader height={18} /> Reading the bill…</span> : <><Eye className="h-4 w-4 mr-2" /> Read & preview</>}
+              </Button>
             </div>
           </div>
+
+          <div className={`${card} p-5 flex flex-col`}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center text-white" style={{ background: `linear-gradient(135deg, ${COLORS.emeraldGreen}, #0F5C63)` }}>
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Import GSTR-2B report</h2>
+                <p className="text-xs text-slate-400">Bulk-add every B2B bill from a portal Excel, PDF, or a zipped batch of months.</p>
+              </div>
+            </div>
+            <div className="space-y-3 flex-1 flex flex-col">
+              <div>
+                <label className={miniLabel}>Company/book (Master Data)</label>
+                <div className="mt-1.5">
+                  <SearchableSelect options={companyOpts} value={gstr2bCompanyId} onChange={setGstr2bCompanyId} isDark={isDark}
+                    placeholder="Select company…" emptyText="No company in Master Data" loading={mastersState.loading} />
+                </div>
+              </div>
+              <MastersNotice state={mastersState} count={companyOpts.length} onRetry={loadMasters} compact />
+
+              <div className={`border-2 border-dashed rounded-2xl p-4 flex items-center gap-4 ${isDark ? 'border-slate-700 bg-slate-900/60' : 'border-emerald-100 bg-emerald-50/60'}`}>
+                <input ref={gstr2bFileRef} type="file" accept=".xlsx,.xls,.pdf,.zip" className="hidden" onChange={(e) => setGstr2bFile(e.target.files?.[0] || null)} />
+                <FileSpreadsheet className="h-9 w-9 flex-shrink-0" style={{ color: COLORS.emeraldGreen }} />
+                <div className="min-w-0 flex-1">
+                  <p className={`text-sm font-semibold truncate ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{gstr2bFile ? gstr2bFile.name : 'Choose GSTR-2B file — Excel, PDF, or ZIP'}</p>
+                  <p className="text-[11px] text-slate-400 truncate">{gstr2bFile ? `${(gstr2bFile.size / 1024).toFixed(0)} KB` : '.xlsx, .xls, .pdf or a .zip of several monthly exports'}</p>
+                </div>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button type="button" variant="outline" onClick={() => gstr2bFileRef.current?.click()} className="rounded-xl">Browse</Button>
+                  {gstr2bFile && (
+                    <Button type="button" variant="ghost" onClick={() => { setGstr2bFile(null); if (gstr2bFileRef.current) gstr2bFileRef.current.value = ''; }} className="rounded-xl px-2" title="Clear file"><X className="h-4 w-4" /></Button>
+                  )}
+                </div>
+              </div>
+
+              <Button onClick={handleGstr2bUpload} disabled={gstr2bUploading || !gstr2bFile} className="w-full rounded-xl text-white mt-auto" style={{ background: `linear-gradient(135deg, ${COLORS.emeraldGreen}, #0F5C63)` }}>
+                {gstr2bUploading ? <MiniLoader height={18} /> : <><Database className="h-4 w-4 mr-2" /> Import into Purchase Book</>}
+              </Button>
+              {gstr2bResult && (
+                <div className={`rounded-2xl border p-3 text-xs grid grid-cols-2 gap-x-6 gap-y-1 ${isDark ? 'bg-slate-900/60 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                  {gstr2bResult.files_processed > 1 && <div className="flex justify-between"><span>Files combined</span><span className="font-semibold">{gstr2bResult.files_processed}</span></div>}
+                  <div className="flex justify-between"><span>Bills added</span><span className="font-bold text-emerald-500">{gstr2bResult.created}</span></div>
+                  <div className="flex justify-between"><span>Already in book</span><span className="font-semibold">{gstr2bResult.duplicates}</span></div>
+                  <div className="flex justify-between"><span>ITC not eligible</span><span className="font-semibold">{gstr2bResult.ineligible_itc}</span></div>
+                  <div className="flex justify-between col-span-2"><span>Total value imported</span><span className="font-semibold">{fmtC(gstr2bResult.total_value)}</span></div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
           {/* ── right: the register ── */}
           <div className={`${card} overflow-hidden min-w-0`}>
@@ -783,42 +807,60 @@ function Purchase() {
                 </div>
               ) : view === 'table' ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1100px]">
+                  <table className="w-full text-sm table-fixed min-w-[1240px]">
+                    <colgroup>
+                      <col style={{ width: 40 }} />
+                      <col style={{ width: 98 }} />
+                      <col style={{ width: 150 }} />
+                      <col />
+                      <col style={{ width: 190 }} />
+                      <col style={{ width: 104 }} />
+                      <col style={{ width: 94 }} />
+                      <col style={{ width: 114 }} />
+                      <col style={{ width: 104 }} />
+                      <col style={{ width: 140 }} />
+                      <col style={{ width: 138 }} />
+                    </colgroup>
                     <thead className={isDark ? 'bg-slate-900/60' : 'bg-slate-50'}>
                       <tr className="text-left">
-                        <th className="px-3 py-2 w-8"><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
+                        <th className="px-3 py-2.5"><input type="checkbox" checked={allOnPage} onChange={togglePage} aria-label="Select all on this page" /></th>
                         <SortHead field="invoice_date">Date</SortHead>
                         <SortHead field="invoice_no">Bill no.</SortHead>
                         <SortHead field="supplier_name">Supplier</SortHead>
-                        <th className="px-3 py-2 font-semibold text-[11px] uppercase tracking-wider text-slate-400">Company</th>
+                        <th className="px-3 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-slate-400">Company</th>
                         <SortHead field="taxable_amount" className="text-right">Taxable</SortHead>
                         <SortHead field="total_gst" className="text-right">GST</SortHead>
                         <SortHead field="grand_total" className="text-right">Total</SortHead>
                         <SortHead field="amount_due" className="text-right">Due</SortHead>
                         <SortHead field="status">Status</SortHead>
-                        <th className="px-3 py-2" />
+                        <th className="px-3 py-2.5 font-semibold text-[11px] uppercase tracking-wider text-slate-400 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y" style={{ borderColor: border }}>
                       {rows.map((inv) => (
-                        <tr key={inv.id} className={`${selected.has(inv.id) ? (isDark ? 'bg-blue-950/30' : 'bg-blue-50/60') : ''} ${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
-                          <td className="px-3 py-2"><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} aria-label={`Select ${inv.invoice_no}`} /></td>
-                          <td className="px-3 py-2 whitespace-nowrap text-slate-500">{fmtDate(inv.invoice_date)}</td>
-                          <td className="px-3 py-2 font-semibold whitespace-nowrap">
-                            {inv.invoice_no || '—'}
-                            {inv.needs_amount_review && <span title="The figures on this bill don't add up — open Edit to correct them" className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">Verify</span>}
+                        <tr key={inv.id} className={`align-middle ${selected.has(inv.id) ? (isDark ? 'bg-blue-950/30' : 'bg-blue-50/60') : ''} ${isDark ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
+                          <td className="px-3 py-2.5"><input type="checkbox" checked={selected.has(inv.id)} onChange={() => toggleRow(inv.id)} aria-label={`Select ${inv.invoice_no}`} /></td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-slate-500">{fmtDate(inv.invoice_date)}</td>
+                          <td className="px-3 py-2.5 overflow-hidden">
+                            <p className="font-semibold truncate" title={inv.invoice_no || ''}>{inv.invoice_no || '—'}</p>
+                            {inv.needs_amount_review && (
+                              <span title="The figures on this bill don't add up — open Edit to correct them" className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-px rounded bg-rose-50 text-rose-700 border border-rose-200">Verify amounts</span>
+                            )}
                           </td>
-                          <td className="px-3 py-2 max-w-[260px]">
-                            <p className="truncate font-medium">{inv.supplier_name || 'Unknown supplier'}</p>
-                            {inv.supplier_gstin && <p className="text-[11px] text-slate-400 font-mono">{inv.supplier_gstin}</p>}
+                          <td className="px-3 py-2.5 overflow-hidden">
+                            <p className="truncate font-medium" title={inv.supplier_name || ''}>{inv.supplier_name || 'Unknown supplier'}</p>
+                            {inv.supplier_gstin && <p className="text-[11px] text-slate-400 font-mono truncate">{inv.supplier_gstin}</p>}
                           </td>
-                          <td className="px-3 py-2 max-w-[200px]"><p className="truncate text-slate-500">{inv.company_name || <span className="text-amber-600">Not set</span>}</p>{inv.client_name && <p className="text-[11px] text-slate-400 truncate">{inv.client_name}</p>}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtC(inv.taxable_amount)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtC(inv.total_gst)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-bold">{fmtC(inv.grand_total)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{inv.status !== 'cancelled' && Number(inv.amount_due) > 0 ? <span style={{ color: COLORS.coral }} className="font-semibold">{fmtC(inv.amount_due)}</span> : <span className="text-slate-300">—</span>}</td>
-                          <td className="px-3 py-2"><div className="flex items-center gap-1 flex-wrap"><StatusBadge status={inv.status} inv={inv} /><TallyBadge inv={inv} /></div></td>
-                          <td className="px-3 py-2"><RowActions inv={inv} /></td>
+                          <td className="px-3 py-2.5 overflow-hidden">
+                            <p className="truncate text-slate-500" title={inv.company_name || ''}>{inv.company_name || <span className="text-amber-600">Not set</span>}</p>
+                            {inv.client_name && <p className="text-[11px] text-slate-400 truncate" title={inv.client_name}>{inv.client_name}</p>}
+                          </td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{fmtC(inv.taxable_amount)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{fmtC(inv.total_gst)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums font-bold">{fmtC(inv.grand_total)}</td>
+                          <td className="px-3 py-2.5 text-right tabular-nums">{inv.status !== 'cancelled' && Number(inv.amount_due) > 0 ? <span style={{ color: COLORS.coral }} className="font-semibold">{fmtC(inv.amount_due)}</span> : <span className="text-slate-300">—</span>}</td>
+                          <td className="px-3 py-2.5"><div className="flex items-center gap-1 flex-wrap"><StatusBadge status={inv.status} inv={inv} /><TallyBadge inv={inv} /></div></td>
+                          <td className="px-3 py-2.5"><RowActions inv={inv} compact /></td>
                         </tr>
                       ))}
                     </tbody>
@@ -877,7 +919,6 @@ function Purchase() {
               </div>
             </div>
           </div>
-        </div>
       </div>
 
       {/* ── editable preview (after reading, before adding) ── */}
