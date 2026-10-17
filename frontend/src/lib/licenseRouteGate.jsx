@@ -27,8 +27,8 @@ export const MODULE_REGISTRY = Object.freeze({
   },
   records: {
     id: 'records',
-    displayName: 'Records',
-    aliases: ['records', 'documents', 'dsc', 'record', 'vault'],
+    displayName: 'ClientSync',
+    aliases: ['records', 'documents', 'dsc', 'record', 'vault', 'clientsync', 'client sync', 'client-sync'],
     flag: 'can_access_records',
     landingPath: '/records-dashboard',
     themeColor: '#0369A1',
