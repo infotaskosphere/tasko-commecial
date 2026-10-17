@@ -29,52 +29,87 @@ export function normalizeCompanies(payload) {
   return [];
 }
 
+/**
+ * api.js turns a failed collection GET (404 / 502 / 503 / 504) on /companies and
+ * /companies/list into a fake "200 OK, empty list" (res._degraded === true) after its
+ * retries. A page cannot tell that from "the Master really has no companies", so these
+ * helpers treat a degraded answer as a failure and try the other endpoint.
+ */
+const isDegraded = (res) => Boolean(res && res._degraded);
+
 /** Full company master records (needs a logged-in user only). */
 export async function fetchCompanies({ silent = true } = {}) {
-  try {
-    const res = await api.get("/companies");
-    return normalizeCompanies(res);
-  } catch (err) {
-    // Older deployments of the backend exposed the same organization-wide
-    // records through the dropdown endpoint but did not yet register the full
-    // `/companies` route. Keep the Master Data page usable during a rolling
-    // frontend/backend deploy, while the canonical endpoint remains preferred.
-    if (err?.response?.status === 404) {
-      try {
-        const fallback = await api.get("/companies/list");
-        return normalizeCompanies(fallback);
-      } catch (_) {
-        // Fall through to the existing silent/throw behavior below.
-      }
+  let lastErr = null;
+  // The canonical route first; older backends only expose the dropdown route.
+  for (const url of ["/companies", "/companies/list"]) {
+    try {
+      const res = await api.get(url);
+      if (isDegraded(res)) { lastErr = new Error(`${url} unavailable`); continue; }
+      const list = normalizeCompanies(res);
+      if (list.length) return list;
+    } catch (err) {
+      lastErr = err;
     }
-    if (!silent) throw err;
-    // eslint-disable-next-line no-console
-    console.warn("[companies] failed to load /companies:", err?.response?.status || err?.message);
-    return [];
   }
+  if (lastErr && !silent) throw lastErr;
+  if (lastErr) {
+    // eslint-disable-next-line no-console
+    console.warn("[companies] failed to load /companies:", lastErr?.response?.status || lastErr?.message);
+  }
+  return [];
 }
 
 /** Company list for dropdowns & document headers. */
 export async function fetchCompanyList({ silent = true } = {}) {
-  try {
-    // Prefer the lightweight endpoint, but support older backend deployments
-    // where only the canonical /companies route was registered.
-    const res = await api.get("/companies/list");
-    return normalizeCompanies(res);
-  } catch (err) {
-    if (err?.response?.status === 404) {
-      try {
-        const fallback = await api.get("/companies");
-        return normalizeCompanies(fallback);
-      } catch (_) {
-        // Fall through to the existing silent/throw behavior below.
-      }
+  let lastErr = null;
+  for (const url of ["/companies/list", "/companies"]) {
+    try {
+      const res = await api.get(url);
+      if (isDegraded(res)) { lastErr = new Error(`${url} unavailable`); continue; }
+      const list = normalizeCompanies(res);
+      if (list.length) return list;
+    } catch (err) {
+      lastErr = err;
     }
-    if (!silent) throw err;
-    // eslint-disable-next-line no-console
-    console.warn("[companies] failed to load /companies/list:", err?.response?.status || err?.message);
-    return [];
   }
+  if (lastErr && !silent) throw lastErr;
+  if (lastErr) {
+    // eslint-disable-next-line no-console
+    console.warn("[companies] could not load the company master:", lastErr?.response?.status || lastErr?.message);
+  }
+  return [];
+}
+
+/**
+ * Purchase page: companies (Master Data) + clients in one light call, falling back to the
+ * generic company endpoints. Resolves { companies, clients, error, source, diagnostics } and
+ * NEVER throws, so the page can tell "failed to load" apart from "master is empty".
+ */
+export async function fetchPurchaseMasters() {
+  let error = null;
+  try {
+    const res = await api.get("/purchase-invoices/masters", { _silent: true });
+    const d = res?.data || {};
+    const companies = Array.isArray(d.companies) ? d.companies : [];
+    const clients = Array.isArray(d.clients) ? d.clients : [];
+    if (companies.length) return { companies, clients, error: null, source: "purchase-masters", diagnostics: d.diagnostics || null };
+    // Server answered but found nothing — still try the generic endpoints before saying "empty".
+    const fallback = await fetchCompanyList({ silent: true });
+    return {
+      companies: fallback, clients, error: null,
+      source: fallback.length ? "companies-list" : "purchase-masters",
+      diagnostics: d.diagnostics || null,
+    };
+  } catch (err) {
+    error = err;
+  }
+  const fallback = await fetchCompanyList({ silent: true });
+  return {
+    companies: fallback, clients: [],
+    error: fallback.length ? null : error,
+    source: fallback.length ? "companies-list" : "none",
+    diagnostics: null,
+  };
 }
 
 /**
@@ -142,6 +177,7 @@ export function clientOptions(clients) {
 export default {
   fetchCompanies,
   fetchCompanyList,
+  fetchPurchaseMasters,
   normalizeCompanies,
   recordBelongsToCompany,
   findCompany,
