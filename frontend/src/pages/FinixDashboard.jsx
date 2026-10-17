@@ -712,6 +712,19 @@ function FinixDashboardInner() {
     }
   };
 
+  const deleteDiagEntry = async (finding) => {
+    if (!window.confirm(`Delete this journal entry?\n\n${finding.narration || finding.source} (${fmtC(finding.total)})\n\n${finding.reason}`)) return;
+    try {
+      await api.delete(`/journal-entries/${finding.entry_id}`);
+      toast.success('Entry deleted');
+      await loadDiagnostics();
+      await fetchMetrics(companyId, { force: true });
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Could not delete this entry.', { duration: 9000 });
+    }
+  };
+
   const fetchMetrics = async (requestedCid, { force = false } = {}) => {
     let cid;
     try {
@@ -2103,6 +2116,11 @@ function FinixDashboardInner() {
                   {f.document && f.code !== 'SOURCE_MISSING' && (
                     <Button size="sm" variant="outline" className="mt-2 h-7 text-xs rounded-lg" onClick={() => deleteDiagDocument(f)}>
                       Delete this document
+                    </Button>
+                  )}
+                  {f.deletable_entry && (
+                    <Button size="sm" variant="outline" className="mt-2 h-7 text-xs rounded-lg" onClick={() => deleteDiagEntry(f)}>
+                      Delete this orphaned entry
                     </Button>
                   )}
                   {f.source === 'manual' && (

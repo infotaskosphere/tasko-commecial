@@ -704,7 +704,8 @@ async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_c
     # been corrected through the Adjustment Note workflow. Admin access does
     # not bypass this accounting control because deletion would erase the
     # source-of-truth audit history.
-    if entry.get("source") != "manual":
+    from backend.accounting_lock import is_dangling_reversal
+    if entry.get("source") != "manual" and not await is_dangling_reversal(entry):
         raise HTTPException(400, "System-generated journal entries are locked and cannot be deleted. Use the source document or an Adjustment Note Override.")
     if entry.get("has_adjustment_history"):
         raise HTTPException(400, "Journal entries with adjustment history cannot be deleted. Raise a further Adjustment Note Override instead.")

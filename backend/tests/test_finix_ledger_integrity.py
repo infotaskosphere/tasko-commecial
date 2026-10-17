@@ -426,3 +426,31 @@ def test_diagnostics_finds_stale_entry_and_resync_removes_it(env):
         await env.inv._reconcile_and_sync_all_sales_and_payments_impl(env.cid)
         assert await env.db.journal_entries.count_documents({"company_id": env.cid}) == 0
     run(go())
+
+
+def test_dangling_reversal_is_detected_and_deletable_but_a_live_one_is_not(env):
+    async def go():
+        sales = await env.ac.get_default_account_id(env.cid, "4000")
+        gst = await env.ac.get_default_account_id(env.cid, "2100")
+        ar = await env.ac.get_default_account_id(env.cid, "1100")
+        # the exact shape seen in production: Dr Sales / Dr GST / Cr AR, source "reversal", original gone
+        rev = await env.ac.post_journal_entry(env.cid, "2026-10-12", "Reversal of gone-entry — Sales invoice deleted", [
+            {"account_id": sales, "account_name": "Sales", "debit": 767808.0, "credit": 0.0},
+            {"account_id": gst, "account_name": "GST", "debit": 138205.44, "credit": 0.0},
+            {"account_id": ar, "account_name": "AR", "debit": 0.0, "credit": 906013.44}], "reversal", "gone-entry", "u1")
+        issues = await env.fm.integrity_issues(env.cid, await env.fm.load_ledger(env.cid))
+        assert any(i["code"] == "DANGLING_REVERSAL" for i in issues)
+        diag = await env.fm.ledger_diagnostics(env.cid)
+        assert diag["findings"][0]["code"] == "DANGLING_REVERSAL" and diag["findings"][0]["deletable_entry"] is True
+        await env.ac.delete_journal_entry(rev["id"], USER)
+        assert await env.db.journal_entries.count_documents({"company_id": env.cid}) == 0
+        assert (await env.fm.load_ledger(env.cid)).balance("1100", "dr") == 0
+
+        # a reversal whose original still exists stays locked
+        await post_invoice(env, "a")
+        original = await env.db.journal_entries.find_one({"source": "sale", "source_id": "a"})
+        live = await env.lk.reverse_journal_entry(original["id"], "test", "u1")
+        with pytest.raises(HTTPException) as exc:
+            await env.ac.delete_journal_entry(live["id"], USER)
+        assert exc.value.status_code == 400
+    run(go())

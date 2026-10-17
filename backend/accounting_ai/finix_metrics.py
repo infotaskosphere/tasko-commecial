@@ -194,6 +194,15 @@ async def integrity_issues(company_id: str, ledger: Ledger) -> list:
         issues.append({"code": "ORPHAN_NOTE", "severity": "high", "blocker": True, "count": len(orphans),
                        "message": f"{len(orphans)} credit/debit note(s) refer to an invoice that no longer exists ({names}). "
                                   "They still affect sales and receivables — delete them."})
+    reversals = await db.journal_entries.find({"company_id": company_id, "source": "reversal"}, {"_id": 0, "id": 1, "source_id": 1}).to_list(20000)
+    if reversals:
+        originals = {e["id"] for e in await db.journal_entries.find(
+            {"id": {"$in": [r.get("source_id") for r in reversals if r.get("source_id")]}}, {"_id": 0, "id": 1}).to_list(20000)}
+        dangling = [r for r in reversals if r.get("source_id") not in originals]
+        if dangling:
+            issues.append({"code": "DANGLING_REVERSAL", "severity": "high", "blocker": True, "count": len(dangling),
+                           "message": f"{len(dangling)} reversal entr{'y' if len(dangling) == 1 else 'ies'} cancel(s) an entry that no longer exists, "
+                                      "leaving a one-sided credit in sales, GST and receivables. Use Find the cause to remove it."})
     dr, cr = ledger.totals()
     if abs(dr - cr) >= 0.05:
         issues.append({"code": "TRIAL_BALANCE_OUT", "severity": "high", "blocker": True,
@@ -585,6 +594,7 @@ async def ledger_diagnostics(company_id: str) -> dict:
     purchases = {d["id"]: d for d in await db.purchase_invoices.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
     pur_pay = {d["id"]: d for d in await db.purchase_payments.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
 
+    entry_ids = {x["id"] for x in entries}
     findings = []
     for e in entries:
         lines = by_entry.get(e["id"], [])
@@ -621,6 +631,9 @@ async def ledger_diagnostics(company_id: str) -> dict:
             code, reason = "SOURCE_MISSING", "The purchase bill behind this entry no longer exists."
         elif source == "purchase_payment" and sid not in pur_pay:
             code, reason = "SOURCE_MISSING", "The purchase payment behind this entry no longer exists."
+        elif source == "reversal":
+            if sid and sid not in entry_ids:
+                code, reason = "DANGLING_REVERSAL", "This reversal cancels an entry that no longer exists, so it leaves a one-sided credit in the books."
         elif source in ("manual", "ai_zero_touch") and ar_effect < -0.5:
             code, reason = "MANUAL_ENTRY_REDUCES_RECEIVABLES", "A manual/AI journal entry credits receivables with no invoice behind it."
         if not code:
@@ -628,7 +641,7 @@ async def ledger_diagnostics(company_id: str) -> dict:
         findings.append({
             "entry_id": e["id"], "entry_date": date_key(e.get("entry_date")), "source": source, "source_id": sid,
             "narration": e.get("narration"), "total": round(safe_float(e.get("total_debit")), 2), "receivables_effect": ar_effect,
-            "code": code, "reason": reason,
+            "code": code, "reason": reason, "deletable_entry": code == "DANGLING_REVERSAL",
             "document": ({"id": doc["id"], "invoice_no": doc.get("invoice_no"), "invoice_type": doc.get("invoice_type"),
                           "status": doc.get("status"), "client_name": doc.get("client_name"),
                           "grand_total": doc.get("grand_total")} if doc and source in ("sale",) else None),

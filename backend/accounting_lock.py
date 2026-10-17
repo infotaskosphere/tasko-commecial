@@ -338,6 +338,19 @@ async def list_locked_entries(company_id: str = Query(""), current_user: User = 
     return entries
 
 
+async def is_dangling_reversal(entry: dict) -> bool:
+    """A reversal entry whose original entry no longer exists.
+
+    A reversal only makes sense next to the entry it cancels. When the original is
+    gone (for example removed by an old hard-delete) the reversal alone leaves a
+    one-sided credit in the books - negative sales, GST and receivables - with no
+    document behind it. It is safe to remove (period lock and audit still apply).
+    """
+    if not entry or entry.get("source") != "reversal" or not entry.get("source_id"):
+        return False
+    return await db.journal_entries.find_one({"id": entry["source_id"]}, {"_id": 0, "id": 1}) is None
+
+
 async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
     """Call this before any hard-delete of a journal entry — raises if deletion
     would erase ledger history.
@@ -360,7 +373,7 @@ async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
             "This entry has adjustment-note history and is part of the permanent audit trail — "
             "it cannot be deleted. Raise a further Adjustment Note Override instead.",
         )
-    if entry.get("source") != "manual":
+    if entry.get("source") != "manual" and not await is_dangling_reversal(entry):
         raise HTTPException(
             400,
             f"This entry was system-generated (source='{entry.get('source')}') and is locked. "
