@@ -94,9 +94,20 @@ async def _build_proposal(text: str, company_id: str, accounting_date: str, curr
     tds_result = None
 
     if event == "SALE":
-        lines = [await _party(company_id, party_name, "customer", debit=amount, created_by=current_user.id), await _account(company_id, "4000", "Sales / Fee Income", credit=amount)]
+        taxable = float(interpretation.get("taxable_amount") or amount)
+        gst_amt = float(interpretation.get("gst_amount") or 0)
+        gross = float(interpretation.get("gross_amount") or amount)
+        lines = [await _party(company_id, party_name, "customer", debit=gross, created_by=current_user.id), await _account(company_id, "4000", "Sales / Fee Income", credit=taxable)]
+        if gst_amt > 0:
+            lines.append(await _account(company_id, "2100", "GST Output Payable", credit=gst_amt))
     elif event == "PURCHASE":
-        lines = [await _account(company_id, "5000", "Purchases", debit=amount), await _party(company_id, party_name, "vendor", credit=amount, created_by=current_user.id)]
+        taxable = float(interpretation.get("taxable_amount") or amount)
+        gst_amt = float(interpretation.get("gst_amount") or 0)
+        gross = float(interpretation.get("gross_amount") or amount)
+        lines = [await _account(company_id, "5000", "Purchases", debit=taxable)]
+        if gst_amt > 0:
+            lines.append(await _account(company_id, "1200", "GST Input Credit", debit=gst_amt))
+        lines.append(await _party(company_id, party_name, "vendor", credit=gross, created_by=current_user.id))
     elif event == "PAYMENT":
         expense = _expense(text)
         if not expense:
@@ -132,7 +143,7 @@ async def _build_proposal(text: str, company_id: str, accounting_date: str, curr
 
     now = datetime.now(timezone.utc).isoformat()
     proposal_id = str(uuid.uuid4())
-    proposal = {"id": proposal_id, "company_id": company_id, "accounting_date": accounting_date, "narration": text.strip(), "event": event, "amount": amount, "party_name": party_name, "interpretation": interpretation, "lines": lines, "status": "PROPOSED", "created_by": current_user.id, "created_at": now, "updated_at": now, "source": "finix_ai_agent"}
+    proposal = {"id": proposal_id, "company_id": company_id, "accounting_date": accounting_date, "narration": text.strip(), "event": event, "amount": float(interpretation.get("gross_amount") or amount), "party_name": party_name, "interpretation": interpretation, "lines": lines, "status": "PROPOSED", "created_by": current_user.id, "created_at": now, "updated_at": now, "source": "finix_ai_agent"}
     await db.finix_ai_proposals.insert_one(proposal)
     result.update({"success": True, "proposal_id": proposal_id, "status": "PROPOSED", "agent_stage": "PROPOSAL_READY", "lines": lines, "narration": text.strip(), "total_debit": debit, "total_credit": credit})
     if tds_result:

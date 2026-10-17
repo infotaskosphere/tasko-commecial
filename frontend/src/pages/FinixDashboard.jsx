@@ -22,6 +22,7 @@ import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { runVerifyAndFix, describeValidationResult } from '@/lib/verifyAndFixLedger';
+import { currentFinancialYearRange, financialYearStartYear, toLocalISODate } from '@/lib/financialYear';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { isCommercialTenant, isPlatformOwner } from '@/lib/commercialPermissionMatrix';
 import FinixAICommandCenter from '@/components/finix/FinixAICommandCenter.jsx';
@@ -141,6 +142,7 @@ function FinixDashboardInner() {
   const [statutorySummary, setStatutorySummary] = useState(null);
   const [anomalies, setAnomalies] = useState([]);
   const [cashflowForecast, setCashflowForecast] = useState(null);
+  const [aiAvailability, setAiAvailability] = useState({ health: true, statutory: true, anomalies: true, cashflow: true });
   const [showHealthModal, setShowHealthModal] = useState(false);
 
   // Quick Voucher Modal
@@ -154,7 +156,7 @@ function FinixDashboardInner() {
     debitAccount: '',
     creditAccount: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: toLocalISODate(new Date()),
     narration: '',
   });
 
@@ -400,7 +402,7 @@ function FinixDashboardInner() {
 
   const buildMonthlyTrend = async (cid) => {
     const now = new Date();
-    const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+    const fyStartYear = financialYearStartYear(now);
     const months = [];
     let cursor = new Date(fyStartYear, 3, 1);
     while (cursor <= now) {
@@ -411,8 +413,8 @@ function FinixDashboardInner() {
       const start = new Date(m.getFullYear(), m.getMonth(), 1);
       const lastDay = new Date(m.getFullYear(), m.getMonth() + 1, 0);
       const end = lastDay > now ? now : lastDay;
-      const df = start.toISOString().split('T')[0];
-      const dt = end.toISOString().split('T')[0];
+      const df = toLocalISODate(start);
+      const dt = toLocalISODate(end);
       return api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df, date_to: dt } })
         .then((r) => ({ label: m.toLocaleString('en-US', { month: 'short' }), data: r.data }));
     }));
@@ -444,14 +446,14 @@ function FinixDashboardInner() {
       }
     }
 
-    const df = `${new Date().getFullYear()}-04-01`;
-    const dt = `${new Date().getFullYear() + 1}-03-31`;
+    // Jan–Mar belongs to the financial year that began the previous April.
+    const { from: df, to: dt } = currentFinancialYearRange(new Date());
 
     const [batchSettled, trend, validationResult, healthScoreRes, statutoryRes, anomaliesRes, cashflowRes] = await Promise.all([
       Promise.allSettled([
         api.get('/reports/trial-balance', { params: { company_id: cid, date_from: df, date_to: dt } }),
         api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df, date_to: dt } }),
-        api.get('/reports/balance-sheet', { params: { company_id: cid, as_of: new Date().toISOString().split('T')[0] } }),
+        api.get('/reports/balance-sheet', { params: { company_id: cid, as_of: toLocalISODate(new Date()) } }),
       ]),
       buildMonthlyTrend(cid),
       (async () => {
@@ -485,34 +487,36 @@ function FinixDashboardInner() {
       revTotal = salesAcct ? Math.abs((salesAcct.credit || 0) - (salesAcct.debit || 0)) : 0;
     }
 
-    let arTotal = 0;
-    if (tbData?.rows) {
-      const arAcct = tbData.rows.find(r => r.code === '1200' || r.code === '1100');
-      arTotal = arAcct ? ((arAcct.debit || 0) - (arAcct.credit || 0)) : 0;
-    }
-    if (!arTotal && bsData?.assets) {
-      const arRow = bsData.assets.find(a => a.code === '1200' || a.code === '1100' || a.name?.toLowerCase().includes('receivable'));
-      arTotal = arRow ? arRow.amount : 0;
+    // Trial-balance rows for a control account AND its party sub-ledgers
+    // (codes like 1100-AB12CD34), so receivables/payables are never understated
+    // by entries posted straight to a customer/vendor ledger. 1200 is GST Input
+    // Credit, NOT receivables, and must never be counted here.
+    const sumControl = (rows, code, nature) => (rows || [])
+      .filter((r) => r.code === code || String(r.code || '').startsWith(`${code}-`))
+      .reduce((acc, r) => acc + (nature === 'dr' ? (r.debit || 0) - (r.credit || 0) : (r.credit || 0) - (r.debit || 0)), 0);
+    const bsAmount = (list, code) => (list || [])
+      .filter((a) => a.code === code || String(a.code || '').startsWith(`${code}-`))
+      .reduce((acc, a) => acc + (a.amount || 0), 0);
+
+    // The AI health endpoint is computed straight from the ledger (party ledgers
+    // rolled up); prefer it so every card agrees with the Trial Balance.
+    const ledgerHealth = healthScoreRes?.data && healthScoreRes.data.status !== 'NO_DATA' ? healthScoreRes.data : null;
+
+    let arTotal = ledgerHealth?.total_receivables ?? null;
+    if (arTotal === null) {
+      arTotal = tbData?.rows ? sumControl(tbData.rows, '1100', 'dr') : bsAmount(bsData?.assets, '1100');
     }
 
-    let liquidCash = 0;
-    if (tbData?.rows) {
-      const cashAccts = tbData.rows.filter(r => ['1001', '1002', '1003', '1000', '1010'].includes(r.code));
-      liquidCash = cashAccts.reduce((sum, r) => sum + ((r.debit || 0) - (r.credit || 0)), 0);
-    }
-    if (!liquidCash && bsData?.assets) {
-      const cashRows = bsData.assets.filter(a => ['1001', '1002', '1003', '1000', '1010'].includes(a.code) || a.name?.toLowerCase().includes('cash') || a.name?.toLowerCase().includes('bank'));
-      liquidCash = cashRows.reduce((sum, item) => sum + (item.amount || 0), 0);
+    let liquidCash = ledgerHealth?.cash_and_bank ?? null;
+    if (liquidCash === null) {
+      liquidCash = tbData?.rows
+        ? sumControl(tbData.rows, '1000', 'dr') + sumControl(tbData.rows, '1010', 'dr')
+        : bsAmount(bsData?.assets, '1000') + bsAmount(bsData?.assets, '1010');
     }
 
-    let apTotal = 0;
-    if (tbData?.rows) {
-      const apAcct = tbData.rows.find(r => r.code === '2000');
-      apTotal = apAcct ? Math.abs((apAcct.credit || 0) - (apAcct.debit || 0)) : 0;
-    }
-    if (!apTotal && bsData?.liabilities) {
-      const apRow = bsData.liabilities.find(l => l.code === '2000' || l.name?.toLowerCase().includes('accounts payable'));
-      apTotal = apRow ? apRow.amount : 0;
+    let apTotal = ledgerHealth?.total_payables ?? null;
+    if (apTotal === null) {
+      apTotal = tbData?.rows ? sumControl(tbData.rows, '2000', 'cr') : bsAmount(bsData?.liabilities, '2000');
     }
 
     const expTotal = pnlData?.total_expense ?? 0;
@@ -526,124 +530,58 @@ function FinixDashboardInner() {
       .filter(e => Math.abs(e.amount || 0) > 0.01)
       .map(e => ({ name: e.name || e.code || 'Other', value: Math.abs(e.amount) }));
 
-    // AI Insights - dynamic heuristic alerts
+    // Insights: plain statements of what the ledger shows - no predictions,
+    // benchmarks or advice that the data cannot support.
     const generatedInsights = [];
 
-    if (arTotal > 0) {
-      const arRatio = (arTotal / (revTotal || 1)) * 100;
-      if (arRatio > 35) {
-        generatedInsights.push({
-          type: 'warning',
-          category: 'Receivables & Collections',
-          title: 'High Receivable Exposure Detected',
-          text: `Outstanding receivables of ${fmtC(arTotal)} represent ${arRatio.toFixed(1)}% of total sales. AI-predicted collection lag: 45 days. Recommended: automate payment reminders.`
-        });
-      } else {
-        generatedInsights.push({
-          type: 'success',
-          category: 'Receivables & Collections',
-          title: 'Outstanding Under Control',
-          text: `Receivables of ${fmtC(arTotal)} are healthy at only ${arRatio.toFixed(1)}% of annualized revenue. Outstanding collection efficiency remains high.`
-        });
-      }
-    }
-
-    if (liquidCash > 0) {
-      if (liquidCash < apTotal) {
-        generatedInsights.push({
-          type: 'warning',
-          category: 'Working Capital',
-          title: 'Short-Term Cash Squeeze Risk',
-          text: `Liquid reserves (${fmtC(liquidCash)}) are lower than current accounts payable (${fmtC(apTotal)}). Liquid ratio is ${((liquidCash / (apTotal || 1))).toFixed(2)}. Suggest pausing non-essential cash outflow.`
-        });
-      } else {
-        generatedInsights.push({
-          type: 'success',
-          category: 'Working Capital',
-          title: 'Excellent Working Capital Health',
-          text: `Cash/Bank holdings of ${fmtC(liquidCash)} easily cover all pending vendor payables (${fmtC(apTotal)}), yielding a robust current ratio.`
-        });
-      }
-    }
-
-    const margin = (revTotal > 0) ? ((revTotal - expTotal) / revTotal) * 100 : 0;
-    if (margin > 20) {
+    if (arTotal < -0.5) {
       generatedInsights.push({
-        type: 'success',
-        category: 'Profitability',
-        title: 'Premium Net Margin Generated',
-        text: `Your current net profit margin is ${margin.toFixed(1)}%. This outperforms the general sector average of 14.5% due to optimized operating overheads.`
+        type: 'warning',
+        category: 'Data Integrity',
+        title: 'Receivables Are Negative',
+        text: `Accounts Receivable shows ${fmtC(arTotal)}. Receipts or credit notes exceed the invoices on the books - usually a credit note or payment left behind after its invoice was deleted. Check Sales > Credit Notes.`
       });
-    } else if (margin > 0) {
+    } else if (arTotal > 0 && revTotal > 0) {
+      const arRatio = (arTotal / revTotal) * 100;
       generatedInsights.push({
-        type: 'info',
-        category: 'Profitability',
-        title: 'Stable Net Operating Margin',
-        text: `Net profit margin is currently stable at ${margin.toFixed(1)}%. Expense audits reveal slight optimization space in Software and Professional fees.`
+        type: arRatio > 35 ? 'warning' : 'info',
+        category: 'Receivables & Collections',
+        title: arRatio > 35 ? 'High Receivable Exposure' : 'Receivables Position',
+        text: `Outstanding receivables are ${fmtC(arTotal)}, which is ${arRatio.toFixed(1)}% of this financial year's sales (${fmtC(revTotal)}).`
       });
     }
 
-    // Resolve Health Score, Statutory Summary, Anomalies, and Cashflow
-    const tbBalanced = !validationResult?.mismatches?.some(m => m.rule?.includes('Trial Balance'));
-    const resolvedHealth = healthScoreRes?.data || {
-      score: validationResult?.mismatches?.length ? 78 : 94,
-      grade: validationResult?.mismatches?.length ? 'B' : 'A+',
-      trial_balance_balanced: tbBalanced,
-      trial_balance_diff: 0.0,
-      working_capital: round2((liquidCash + arTotal) - apTotal),
-      current_ratio: apTotal > 0 ? round2((liquidCash + arTotal) / apTotal) : 2.5,
-      net_profit: netProfitTotal,
-      profit_margin: round2(margin),
-      total_receivables: arTotal,
-      total_payables: apTotal,
-      cash_and_bank: liquidCash,
-      breakdown: {
-        trial_balance: { score: tbBalanced ? 25 : 15, max: 25, status: tbBalanced ? 'Equilibrium verified' : 'Out of balance' },
-        liquidity: { score: (liquidCash + arTotal) >= apTotal ? 20 : 12, max: 20, status: 'Strong' },
-        profitability: { score: netProfitTotal > 0 ? 18 : 10, max: 20, status: 'Healthy' },
-        debtors_quality: { score: 14, max: 15, status: 'Low Risk' },
-        statutory_compliance: { score: 10, max: 10, status: 'Reconciled' },
-        ledger_cleanliness: { score: 9, max: 10, status: 'Audit Ready' },
-      }
-    };
+    if (liquidCash > 0 || apTotal > 0) {
+      generatedInsights.push({
+        type: liquidCash < apTotal ? 'warning' : 'info',
+        category: 'Working Capital',
+        title: liquidCash < apTotal ? 'Cash Is Below Payables' : 'Cash Covers Payables',
+        text: `Cash and bank balances are ${fmtC(liquidCash)} against ${fmtC(apTotal)} owed to vendors.`
+      });
+    }
 
-    const resolvedStatutory = statutoryRes?.data || {
-      gst: {
-        outward_taxable: round2(revTotal * 0.84),
-        total_output_liability: round2(revTotal * 0.18),
-        total_input_itc: round2(expTotal * 0.18 * 0.75),
-        net_payable: Math.max(0, round2(revTotal * 0.18 - expTotal * 0.18 * 0.75)),
-        itc_carried_forward: Math.abs(Math.min(0, round2(revTotal * 0.18 - expTotal * 0.18 * 0.75))),
-        next_filing_date: '20th of current month (GSTR-3B)',
-        filing_status: 'Ready for Monthly Filing'
-      },
-      tds: {
-        total_deducted: round2(expTotal * 0.025),
-        sections: {
-          '194C_contractor': round2(expTotal * 0.012),
-          '194J_professional': round2(expTotal * 0.009),
-          '194I_rent': round2(expTotal * 0.004),
-          '194H_commission': 0,
-        },
-        challan_due_date: '7th of following month (ITNS 281)',
-        status: 'Challan Ready'
-      }
-    };
+    const margin = (revTotal > 0) ? ((revTotal - expTotal) / revTotal) * 100 : null;
+    if (margin !== null) {
+      generatedInsights.push({
+        type: margin > 0 ? 'info' : 'warning',
+        category: 'Profitability',
+        title: margin > 0 ? 'Net Margin This Year' : 'Loss This Year',
+        text: `Net ${margin >= 0 ? 'profit' : 'loss'} margin for the financial year to date is ${margin.toFixed(1)}%.`
+      });
+    }
 
+    // Health, statutory, anomalies and cash-flow come ONLY from the ledger-based
+    // AI endpoints. When an endpoint fails the card says "unavailable" - the
+    // dashboard never substitutes estimated or invented figures.
+    const resolvedHealth = healthScoreRes?.data || null;
+    const resolvedStatutory = statutoryRes?.data || null;
     const resolvedAnomalies = anomaliesRes?.data?.items || [];
-    const resolvedCashflow = cashflowRes?.data || {
-      current_cash: round2(liquidCash),
-      runway_months: expTotal > 0 ? round2(liquidCash / (expTotal / 3 || 1)) : 12.0,
-      runway_status: liquidCash >= apTotal ? 'Comfortable' : 'Tight',
-      forecast_30d: round2(liquidCash + arTotal * 0.85 - apTotal * 0.8),
-      forecast_60d: round2(liquidCash + arTotal * 0.95 - apTotal * 1.4),
-      forecast_90d: round2(liquidCash + arTotal * 1.1 - apTotal * 2.0),
-      chart: [
-        { period: 'Today', cash: round2(liquidCash), inflow: 0, outflow: 0 },
-        { period: '+30 Days', cash: round2(liquidCash + arTotal * 0.85 - apTotal * 0.8), inflow: round2(arTotal * 0.85), outflow: round2(apTotal * 0.8) },
-        { period: '+60 Days', cash: round2(liquidCash + arTotal * 0.95 - apTotal * 1.4), inflow: round2(arTotal * 0.95), outflow: round2(apTotal * 1.4) },
-        { period: '+90 Days', cash: round2(liquidCash + arTotal * 1.1 - apTotal * 2.0), inflow: round2(arTotal * 1.1), outflow: round2(apTotal * 2.0) },
-      ]
+    const resolvedCashflow = cashflowRes?.data || null;
+    const aiAvailability = {
+      health: !!healthScoreRes?.data,
+      statutory: !!statutoryRes?.data,
+      anomalies: !!anomaliesRes?.data,
+      cashflow: !!cashflowRes?.data,
     };
 
     const lastVerifiedAt = validationResult ? new Date() : null;
@@ -664,6 +602,7 @@ function FinixDashboardInner() {
       statutorySummary: resolvedStatutory,
       anomalies: resolvedAnomalies,
       cashflowForecast: resolvedCashflow,
+      aiAvailability,
     };
 
     const ts = Date.now();
@@ -689,6 +628,7 @@ function FinixDashboardInner() {
     setStatutorySummary(data.statutorySummary);
     setAnomalies(data.anomalies || []);
     setCashflowForecast(data.cashflowForecast);
+    setAiAvailability(data.aiAvailability || { health: true, statutory: true, anomalies: true, cashflow: true });
   };
 
   const fetchMetrics = async (requestedCid, { force = false } = {}) => {
@@ -800,73 +740,105 @@ function FinixDashboardInner() {
     setValidation(anyVerified ? { mismatches: combinedMismatches } : null);
     setLastVerifiedAt(anyVerified ? new Date() : null);
 
-    // Roll up Health Score
-    const avgScore = Math.round(ok.reduce((acc, { data }) => acc + (data.healthScore?.score || 85), 0) / ok.length);
-    setHealthScore({
-      score: avgScore,
-      grade: avgScore >= 90 ? 'A+' : (avgScore >= 80 ? 'A' : 'B'),
-      trial_balance_balanced: combinedMismatches.length === 0,
-      working_capital: round2(sum('cashAndBank') + sum('receivables') - sum('payables')),
-      current_ratio: sum('payables') > 0 ? round2((sum('cashAndBank') + sum('receivables')) / sum('payables')) : 2.0,
-      net_profit: sum('netProfit'),
-      profit_margin: sum('revenue') > 0 ? round2((sum('netProfit') / sum('revenue')) * 100) : 0,
-      breakdown: {
-        trial_balance: { score: 25, max: 25, status: 'Portfolio Equilibrium' },
-        liquidity: { score: 18, max: 20, status: 'Combined Liquid Health' },
-        profitability: { score: 18, max: 20, status: 'Group Net Margins' },
-        debtors_quality: { score: 14, max: 15, status: 'Monitored' },
-        statutory_compliance: { score: 10, max: 10, status: 'Group Compliance' },
-        ledger_cleanliness: { score: 9, max: 10, status: 'Consolidated' },
-      }
-    });
+    // Roll up Health Score - only from companies whose ledger produced a score.
+    const scored = ok.filter(({ data }) => typeof data.healthScore?.score === 'number');
+    const rollupIssues = ok.flatMap(({ data, company }) => (data.healthScore?.issues || []).map((i) => ({ ...i, message: `${company.name}: ${i.message}` })));
+    if (scored.length) {
+      const avgScore = Math.round(scored.reduce((acc, { data }) => acc + data.healthScore.score, 0) / scored.length);
+      const worstBlocked = rollupIssues.some((i) => i.blocker) ? Math.min(avgScore, 79) : avgScore;
+      const grade = worstBlocked >= 90 ? 'A+' : (worstBlocked >= 80 ? 'A' : (worstBlocked >= 65 ? 'B' : 'C'));
+      const totalRevenue = sum('revenue');
+      setHealthScore({
+        score: worstBlocked,
+        grade,
+        partial: scored.length < ok.length,
+        scored_companies: scored.length,
+        total_companies: ok.length,
+        issues: rollupIssues,
+        trial_balance_balanced: scored.every(({ data }) => data.healthScore.trial_balance_balanced) && combinedMismatches.length === 0,
+        working_capital: round2(sum('cashAndBank') + sum('receivables') - sum('payables')),
+        current_ratio: sum('payables') > 0 ? round2((sum('cashAndBank') + sum('receivables')) / sum('payables')) : null,
+        net_profit: sum('netProfit'),
+        profit_margin: totalRevenue > 0 ? round2((sum('netProfit') / totalRevenue) * 100) : null,
+        breakdown: {},
+      });
+    } else {
+      setHealthScore(null);
+    }
 
-    // Roll up Statutory
-    const totOutwardTaxable = ok.reduce((s, { data }) => s + (data.statutorySummary?.gst?.outward_taxable || 0), 0);
-    const totOutputTax = ok.reduce((s, { data }) => s + (data.statutorySummary?.gst?.total_output_liability || 0), 0);
-    const totITC = ok.reduce((s, { data }) => s + (data.statutorySummary?.gst?.total_input_itc || 0), 0);
-    const totTDS = ok.reduce((s, { data }) => s + (data.statutorySummary?.tds?.total_deducted || 0), 0);
-    setStatutorySummary({
-      gst: {
-        outward_taxable: round2(totOutwardTaxable),
-        total_output_liability: round2(totOutputTax),
-        total_input_itc: round2(totITC),
-        net_payable: Math.max(0, round2(totOutputTax - totITC)),
-        itc_carried_forward: Math.abs(Math.min(0, round2(totOutputTax - totITC))),
-        next_filing_date: '20th of current month (GSTR-3B)',
-        filing_status: 'Combined Return Ready'
-      },
-      tds: {
-        total_deducted: round2(totTDS),
-        sections: {
-          '194C_contractor': round2(totTDS * 0.5),
-          '194J_professional': round2(totTDS * 0.35),
-          '194I_rent': round2(totTDS * 0.15),
-          '194H_commission': 0
+    // Roll up Statutory - straight sums of each company's ledger-derived figures.
+    const withStat = ok.filter(({ data }) => data.statutorySummary?.gst);
+    const sumStat = (path) => withStat.reduce((acc, { data }) => acc + (path(data.statutorySummary) || 0), 0);
+    if (withStat.length) {
+      const totOutputTax = sumStat((x) => x.gst.total_output_liability);
+      const totITC = sumStat((x) => x.gst.total_input_itc);
+      const sections = {};
+      withStat.forEach(({ data }) => Object.entries(data.statutorySummary.tds?.sections || {}).forEach(([k, v]) => {
+        sections[k] = round2((sections[k] || 0) + (v || 0));
+      }));
+      setStatutorySummary({
+        partial: withStat.length < ok.length,
+        gst: {
+          outward_taxable: round2(sumStat((x) => x.gst.outward_taxable)),
+          outward_cgst: round2(sumStat((x) => x.gst.outward_cgst)),
+          outward_sgst: round2(sumStat((x) => x.gst.outward_sgst)),
+          outward_igst: round2(sumStat((x) => x.gst.outward_igst)),
+          total_output_liability: round2(totOutputTax),
+          total_input_itc: round2(totITC),
+          net_payable: Math.max(0, round2(totOutputTax - totITC)),
+          itc_carried_forward: Math.max(0, round2(totITC - totOutputTax)),
+          period: withStat[0].data.statutorySummary.gst.period,
         },
-        challan_due_date: '7th of following month (ITNS 281)',
-        status: 'Challan Ready'
-      }
-    });
+        tds: {
+          total_deducted: round2(sumStat((x) => x.tds?.total_deducted)),
+          tds_payable_balance: round2(sumStat((x) => x.tds?.tds_payable_balance)),
+          sections,
+          challan_due_date: withStat[0].data.statutorySummary.tds?.challan_due_date,
+        },
+      });
+    } else {
+      setStatutorySummary(null);
+    }
 
     // Roll up anomalies
     const allAnomalies = ok.flatMap(({ data, company }) => (data.anomalies || []).map(a => ({ ...a, title: `${company.name}: ${a.title}` })));
     setAnomalies(allAnomalies);
 
-    // Roll up cashflow
-    const combinedCash = sum('cashAndBank');
-    setCashflowForecast({
-      current_cash: combinedCash,
-      runway_months: sum('expenses') > 0 ? round2(combinedCash / (sum('expenses') / 3 || 1)) : 12.0,
-      runway_status: combinedCash >= sum('payables') ? 'Comfortable' : 'Tight',
-      forecast_30d: round2(combinedCash + sum('receivables') * 0.85 - sum('payables') * 0.8),
-      forecast_60d: round2(combinedCash + sum('receivables') * 0.95 - sum('payables') * 1.4),
-      forecast_90d: round2(combinedCash + sum('receivables') * 1.1 - sum('payables') * 2.0),
-      chart: [
-        { period: 'Today', cash: combinedCash, inflow: 0, outflow: 0 },
-        { period: '+30 Days', cash: round2(combinedCash + sum('receivables') * 0.85 - sum('payables') * 0.8), inflow: round2(sum('receivables') * 0.85), outflow: round2(sum('payables') * 0.8) },
-        { period: '+60 Days', cash: round2(combinedCash + sum('receivables') * 0.95 - sum('payables') * 1.4), inflow: round2(sum('receivables') * 0.95), outflow: round2(sum('payables') * 1.4) },
-        { period: '+90 Days', cash: round2(combinedCash + sum('receivables') * 1.1 - sum('payables') * 2.0), inflow: round2(sum('receivables') * 1.1), outflow: round2(sum('payables') * 2.0) },
-      ]
+    // Roll up cashflow - summed from each company's own forecast, never re-estimated here.
+    const withCash = ok.filter(({ data }) => data.cashflowForecast);
+    if (withCash.length) {
+      const sumCash = (key) => round2(withCash.reduce((acc, { data }) => acc + (data.cashflowForecast[key] || 0), 0));
+      const burns = withCash.map(({ data }) => data.cashflowForecast.average_monthly_expense);
+      const burnKnown = burns.every((b) => typeof b === 'number');
+      const combinedCash = sumCash('current_cash');
+      const totalBurn = burnKnown ? burns.reduce((a, b) => a + b, 0) : null;
+      const runway = totalBurn && totalBurn > 0 ? round2(Math.max(combinedCash, 0) / totalBurn) : null;
+      const chartLen = withCash[0].data.cashflowForecast.chart?.length || 0;
+      setCashflowForecast({
+        partial: withCash.length < ok.length,
+        current_cash: combinedCash,
+        average_monthly_expense: totalBurn,
+        runway_months: runway,
+        runway_status: runway === null ? 'Not enough expense history' : (runway >= 6 ? 'Comfortable' : (runway >= 3 ? 'Manageable' : 'Tight')),
+        forecast_30d: sumCash('forecast_30d'),
+        forecast_60d: sumCash('forecast_60d'),
+        forecast_90d: sumCash('forecast_90d'),
+        assumptions: withCash[0].data.cashflowForecast.assumptions,
+        chart: Array.from({ length: chartLen }, (_, i) => ({
+          period: withCash[0].data.cashflowForecast.chart[i].period,
+          cash: round2(withCash.reduce((acc, { data }) => acc + (data.cashflowForecast.chart[i]?.cash || 0), 0)),
+          inflow: round2(withCash.reduce((acc, { data }) => acc + (data.cashflowForecast.chart[i]?.inflow || 0), 0)),
+          outflow: round2(withCash.reduce((acc, { data }) => acc + (data.cashflowForecast.chart[i]?.outflow || 0), 0)),
+        })),
+      });
+    } else {
+      setCashflowForecast(null);
+    }
+    setAiAvailability({
+      health: scored.length > 0,
+      statutory: withStat.length > 0,
+      anomalies: ok.some(({ data }) => data.aiAvailability?.anomalies !== false),
+      cashflow: withCash.length > 0,
     });
 
     const combinedInsights = [{
@@ -1159,7 +1131,7 @@ function FinixDashboardInner() {
         debitAccount: '',
         creditAccount: '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: toLocalISODate(new Date()),
         narration: '',
       });
       // Refresh metrics
@@ -1205,7 +1177,7 @@ function FinixDashboardInner() {
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/20 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
                   <Sparkles className="w-3 h-3" /> Enterprise Financial Suite
                 </span>
-                {healthScore && (
+                {typeof healthScore?.score === 'number' && (
                   <button
                     onClick={() => setShowHealthModal(true)}
                     className="hidden sm:inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 text-xs font-bold transition"
@@ -1428,26 +1400,46 @@ function FinixDashboardInner() {
                     Financial Health Score
                   </h3>
                   <span className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold ${healthScore?.grade === 'A+' || healthScore?.grade === 'A' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/30' : 'bg-amber-500/10 text-amber-600 border border-amber-500/30'}`}>
-                    Grade {healthScore?.grade || 'A'}
+                    Grade {healthScore?.grade ?? '—'}
                   </span>
                 </div>
 
-                <div className="flex items-baseline gap-3 my-2">
-                  <span className="text-4xl font-extrabold font-mono text-emerald-500">{healthScore?.score || 92}</span>
-                  <span className="text-sm text-slate-400">/ 100</span>
-                  <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md ml-auto">
-                    {healthScore?.trial_balance_balanced ? 'Trial Balance Balanced' : 'Check Balance'}
-                  </span>
-                </div>
-
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Based on Golden Rules of Accounting, double-entry parity, working capital coverage ({healthScore?.current_ratio || 2.1}x), and statutory tax compliance.
-                </p>
+                {typeof healthScore?.score === 'number' ? (
+                  <>
+                    <div className="flex items-baseline gap-3 my-2">
+                      <span className={`text-4xl font-extrabold font-mono ${healthScore.score >= 80 ? 'text-emerald-500' : 'text-amber-500'}`}>{healthScore.score}</span>
+                      <span className="text-sm text-slate-400">/ 100</span>
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ml-auto ${healthScore.trial_balance_balanced ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-red-600 bg-red-50 dark:bg-red-950/40'}`}>
+                        {healthScore.trial_balance_balanced ? 'Trial Balance Balanced' : 'Trial Balance Out'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      Calculated from the general ledger
+                      {typeof healthScore.current_ratio === 'number' ? ` · current ratio ${healthScore.current_ratio}x` : ''}
+                      {healthScore.partial ? ` · ${healthScore.scored_companies} of ${healthScore.total_companies} companies scored` : ''}.
+                    </p>
+                    {(healthScore.issues || []).length > 0 && (
+                      <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[11px] text-amber-700 dark:text-amber-300">
+                        <strong>{healthScore.issues.length} data issue{healthScore.issues.length === 1 ? '' : 's'}</strong>
+                        {healthScore.capped ? ' — score capped until fixed' : ''}: {healthScore.issues[0].message}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="my-4 text-xs text-slate-500 dark:text-slate-400">
+                    {healthScore?.status === 'NO_DATA'
+                      ? (healthScore.message || 'No journal entries yet, so there is nothing to score.')
+                      : (aiAvailability.health ? 'No health score is available for this selection.' : 'Health score is unavailable right now (the server did not return it).')}
+                    {!aiAvailability.health && (
+                      <button className="ml-2 underline font-semibold" onClick={() => companyId === ALL_COMPANIES_ID ? fetchAggregateMetrics(companies, { force: true }) : fetchMetrics(companyId, { force: true })}>Retry</button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="pt-4 border-t border-slate-100 dark:border-slate-700/80 mt-4 flex items-center justify-between">
                 <div className="text-[11px] text-slate-400">
-                  Working Capital: <strong className="text-slate-700 dark:text-slate-200">{fmtC(healthScore?.working_capital || ((cashAndBank + receivables) - payables))}</strong>
+                  Working Capital: <strong className="text-slate-700 dark:text-slate-200">{fmtC(typeof healthScore?.working_capital === 'number' ? healthScore.working_capital : ((cashAndBank + receivables) - payables))}</strong>
                 </div>
                 <Button
                   size="sm"
@@ -1469,10 +1461,20 @@ function FinixDashboardInner() {
                     GST Command (GSTR-1 / 3B)
                   </h3>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 border border-blue-500/20">
-                    Due: 20th of Month
+                    {statutorySummary?.gst?.period?.gstr3b_due ? `GSTR-3B due ${statutorySummary.gst.period.gstr3b_due}` : 'Due: 20th of next month'}
                   </span>
                 </div>
 
+                {!statutorySummary && (
+                  <div className="my-3 text-xs text-slate-500 dark:text-slate-400">
+                    GST figures are unavailable right now.
+                    <button className="ml-2 underline font-semibold" onClick={() => companyId === ALL_COMPANIES_ID ? fetchAggregateMetrics(companies, { force: true }) : fetchMetrics(companyId, { force: true })}>Retry</button>
+                  </div>
+                )}
+                {statutorySummary && (<>
+                <div className="text-[10px] text-slate-400 -mb-1">
+                  {statutorySummary.gst?.period?.period ? `Return period ${statutorySummary.gst.period.period} · from the ledger` : 'From the ledger'}
+                </div>
                 <div className="grid grid-cols-2 gap-3 my-2">
                   <div className={`p-2.5 rounded-xl border ${isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200/60'}`}>
                     <span className="text-[10px] uppercase font-bold text-slate-400">Output GST (Liab)</span>
@@ -1494,12 +1496,18 @@ function FinixDashboardInner() {
                     {fmtC(statutorySummary?.gst?.net_payable || 0)}
                   </span>
                 </div>
+                </>)}
               </div>
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-700/80 mt-3 flex items-center justify-between text-xs">
-                <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> GSTR-3B Reconciled
-                </span>
+                {(() => {
+                  const chk = statutorySummary?.gst?.document_check;
+                  if (!chk) return <span className="text-[11px] text-slate-400">Filing status is not tracked here</span>;
+                  const diff = Math.abs(chk.output_gst_gl_vs_documents || 0) + Math.abs(chk.input_gst_gl_vs_documents || 0);
+                  return diff < 1
+                    ? <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Ledger agrees with invoices</span>
+                    : <span className="text-[11px] text-amber-600 font-semibold flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> Ledger differs from invoices by {fmtC(diff)}</span>;
+                })()}
                 <Link to="/gst-portal-sync" className="text-blue-600 dark:text-blue-400 hover:underline text-[11px] font-semibold">
                   GST Portal Sync &rarr;
                 </Link>
@@ -1512,16 +1520,16 @@ function FinixDashboardInner() {
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="font-extrabold text-sm uppercase tracking-wider flex items-center gap-2 text-slate-700 dark:text-slate-200">
                     <ShieldCheck className="w-4 h-4 text-purple-500" />
-                    TDS Compliance (Sec 194)
+                    TDS Deducted (Ledger)
                   </h3>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 border border-purple-500/20">
-                    Challan: 7th of Month
+                    {statutorySummary?.tds?.challan_due_date ? `Challan due ${statutorySummary.tds.challan_due_date}` : 'Challan: 7th of next month'}
                   </span>
                 </div>
 
                 <div className="my-2">
                   <div className="flex items-baseline justify-between">
-                    <span className="text-xs text-slate-500">Total Deducted (Payable):</span>
+                    <span className="text-xs text-slate-500">Deducted this FY (ledger):</span>
                     <span className="text-xl font-extrabold font-mono text-purple-600 dark:text-purple-400">
                       {fmtC(statutorySummary?.tds?.total_deducted || 0)}
                     </span>
@@ -1545,8 +1553,8 @@ function FinixDashboardInner() {
               </div>
 
               <div className="pt-3 border-t border-slate-100 dark:border-slate-700/80 mt-3 flex items-center justify-between text-xs">
-                <span className="text-[11px] text-purple-600 font-semibold flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" /> Form 26Q Ready
+                <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5" /> {statutorySummary?.tds ? `TDS payable balance ${fmtC(statutorySummary.tds.tds_payable_balance || 0)}` : 'TDS figures unavailable'}
                 </span>
                 <Link to="/tds-tcs" className="text-purple-600 dark:text-purple-400 hover:underline text-[11px] font-semibold">
                   TDS Register &rarr;
@@ -1557,6 +1565,12 @@ function FinixDashboardInner() {
           </div>
 
           {/* ── Cash Flow Forecast & Runway Engine ── */}
+          {!cashflowForecast && !aiAvailability.cashflow && (
+            <div className={`p-4 rounded-3xl border text-xs ${isDark ? 'bg-slate-800/60 border-slate-700/80 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}>
+              Cash-flow forecast is unavailable right now.
+              <button className="ml-2 underline font-semibold" onClick={() => companyId === ALL_COMPANIES_ID ? fetchAggregateMetrics(companies, { force: true }) : fetchMetrics(companyId, { force: true })}>Retry</button>
+            </div>
+          )}
           {cashflowForecast && (
             <div className={`p-6 rounded-3xl shadow-sm border ${isDark ? 'bg-slate-800/60 border-slate-700/80' : 'bg-white border-slate-100'}`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
@@ -1566,14 +1580,14 @@ function FinixDashboardInner() {
                     Cash Flow Trajectory &amp; Runway Forecast
                   </h3>
                   <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Projected 30-60-90 days cash position derived from debtors aging, supplier terms &amp; scheduled payroll
+                    Projected 30-60-90 day cash position from open receivables (collection-rate assumptions applied) and payables due, starting from the ledger cash balance
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className={`px-3 py-1.5 rounded-2xl border flex items-center gap-2 ${isDark ? 'bg-slate-900/60 border-slate-700' : 'bg-emerald-50 border-emerald-100'}`}>
                     <span className="text-xs text-slate-500 dark:text-slate-400">Runway:</span>
                     <strong className="text-sm font-mono text-emerald-600 dark:text-emerald-400">
-                      {cashflowForecast.runway_months} Months ({cashflowForecast.runway_status})
+                      {typeof cashflowForecast.runway_months === 'number' ? `${cashflowForecast.runway_months} Months (${cashflowForecast.runway_status})` : cashflowForecast.runway_status}
                     </strong>
                   </div>
                   <Link to="/cash-flow">
@@ -1902,11 +1916,11 @@ function FinixDashboardInner() {
               Financial Health Diagnostics
             </DialogTitle>
             <DialogDescription className="text-xs text-slate-400">
-              Evaluated in real-time according to Indian Schedule III accounting standards &amp; statutory rules.
+              Calculated from the general ledger; the score is capped while data-integrity issues remain.
             </DialogDescription>
           </DialogHeader>
 
-          {healthScore && (
+          {typeof healthScore?.score === 'number' && (
             <div className="space-y-4 my-2">
               <div className="flex items-center justify-between p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
                 <div>
@@ -1916,10 +1930,21 @@ function FinixDashboardInner() {
                   </div>
                 </div>
                 <div className="text-right text-xs">
-                  <div className="text-slate-400">Current Ratio: <strong>{healthScore.current_ratio}x</strong></div>
-                  <div className="text-slate-400">Net Margin: <strong>{healthScore.profit_margin}%</strong></div>
+                  <div className="text-slate-400">Current Ratio: <strong>{typeof healthScore.current_ratio === 'number' ? `${healthScore.current_ratio}x` : 'n/a'}</strong></div>
+                  <div className="text-slate-400">Net Margin: <strong>{typeof healthScore.profit_margin === 'number' ? `${healthScore.profit_margin}%` : 'n/a'}</strong></div>
                 </div>
               </div>
+
+              {(healthScore.issues || []).length > 0 && (
+                <div className="space-y-1.5 text-xs">
+                  <div className="font-bold text-amber-600">Data issues{healthScore.capped ? ' (score capped until fixed)' : ''}</div>
+                  {healthScore.issues.map((issue, i) => (
+                    <div key={i} className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-800 dark:text-amber-200">
+                      {issue.message}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="space-y-2 text-xs">
                 {Object.entries(healthScore.breakdown || {}).map(([key, item]) => (

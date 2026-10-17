@@ -230,7 +230,7 @@ function JournalEntriesInner() {
   const handleRefresh = async () => {
     toast.promise(
       (async () => {
-        const { data } = await api.post('/journal-entries/resync', { company_id: companyId || undefined });
+        const { data } = await api.post('/journal-entries/resync', { company_id: companyId });
         await fetchAll();
         fetchFlagged(companyId, true);
         return data;
@@ -385,12 +385,17 @@ function JournalEntriesInner() {
 
   const handleDeleteAll = async () => {
     const activeCompany = companies.find(c => c.id === companyId);
-    const scopeName = activeCompany ? `for "${activeCompany.name}"` : "for all companies";
-    
-    if (!window.confirm(`CRITICAL WARNING: Are you sure you want to delete ALL journal entries ${scopeName}? This action is irreversible.`)) {
+    // Deleting across every company at once is not allowed - the server refuses it too.
+    if (!companyId || !activeCompany) {
+      toast.error('Select a single company first. Delete All only works on one company at a time.');
       return;
     }
-    
+    const scopeName = `for "${activeCompany.name}"`;
+
+    if (!window.confirm(`CRITICAL WARNING: Delete all MANUAL journal entries ${scopeName}? Entries created automatically from invoices, payments, bills, bank matches or AI postings are kept - they belong to those documents.`)) {
+      return;
+    }
+
     const confirmText = prompt(`Type "delete all" to confirm deleting all journal entries ${scopeName}:`);
     if (confirmText?.toLowerCase() !== 'delete all') {
       toast.error('Deletion cancelled — confirmation text did not match');
@@ -399,18 +404,18 @@ function JournalEntriesInner() {
     
     setLoading(true);
     try {
-      const { data } = await api.post('/journal-entries/delete-all', { company_id: companyId || undefined });
+      const { data } = await api.post('/journal-entries/delete-all', { company_id: companyId });
       const deleted = data.deleted_count || 0;
       const failed = data.failed_count || 0;
       
       if (deleted > 0) {
         toast.success(`Successfully deleted ${deleted} journal entries`);
       } else if (failed === 0) {
-        toast.info('No journal entries found to delete');
+        toast.info('No manual journal entries found to delete');
       }
       
       if (failed > 0) {
-        toast.error(`Could not delete ${failed} entry/entries (e.g., auto-posted or locked)`);
+        toast.error(`${failed} entr${failed === 1 ? 'y was' : 'ies were'} kept: auto-posted entries belong to their invoice/payment/bill, and entries in a locked period cannot be removed.`);
       }
       
       setPage(1);

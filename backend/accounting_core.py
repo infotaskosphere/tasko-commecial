@@ -512,72 +512,90 @@ async def list_journal_entries(
     return {"entries": entries, "total": total, "total_pages": total_pages, "page": page, "page_size": page_size}
 
 
+async def _delete_journal_entry_guarded(entry: dict, current_user: User) -> None:
+    """Hard-delete ONE manual journal entry, safely.
+
+    Order matters: (1) guard — role-independent rules (manual only, no adjustment
+    history, period open); (2) audit event carrying the full entry so the deletion
+    is reconstructable; (3) delete; (4) if the delete itself fails half-way, put
+    the entry back so the ledger is never left with a header and no lines.
+    """
+    from backend.accounting_lock import (
+        guard_deletion, audit_ledger_event, journal_audit_summary, snapshot_journal, restore_journal,
+    )
+    entry_id = entry["id"]
+    await guard_deletion(entry_id, current_user)
+    lines = await db.journal_lines.find({"entry_id": entry_id}, {"_id": 0}).to_list(1000)
+    await audit_ledger_event(
+        entry.get("company_id"), "JOURNAL_ENTRY_DELETED", current_user,
+        journal_audit_summary(entry, lines), entry_id,
+    )
+    snapshot = await snapshot_journal([entry_id])
+    try:
+        await db.journal_lines.delete_many({"entry_id": entry_id})
+        await db.journal_entries.delete_one({"id": entry_id})
+    except Exception as exc:
+        await restore_journal(snapshot)
+        logging.getLogger("accounting_core").exception("Journal delete failed for %s; restored", entry_id)
+        raise HTTPException(500, "Journal entry could not be deleted; no change was made.") from exc
+
+
 @router.post("/journal-entries/bulk-delete")
 async def bulk_delete_journal_entries(payload: dict, current_user: User = Depends(get_current_user)):
     if not _perm_post_journal(current_user):
         raise HTTPException(403, "Access denied.")
     entry_ids = payload.get("entry_ids") or []
-    if not entry_ids:
+    if not isinstance(entry_ids, list) or not entry_ids:
         raise HTTPException(400, "No entry_ids provided.")
-    from backend.accounting_lock import guard_deletion
     deleted_ids, failed = [], []
-    for entry_id in entry_ids:
+    for entry_id in dict.fromkeys(str(e) for e in entry_ids):
         try:
-            entry = await db.journal_entries.find_one({"id": entry_id})
+            entry = await db.journal_entries.find_one({"id": entry_id}, {"_id": 0})
             if not entry:
                 failed.append({"id": entry_id, "reason": "Not found"})
                 continue
-            if entry.get("source") != "manual" and current_user.role != "admin":
-                failed.append({"id": entry_id, "reason": "Only an admin can delete auto-posted entries"})
-                continue
-            await guard_deletion(entry_id, current_user)
+            await _delete_journal_entry_guarded(entry, current_user)
             deleted_ids.append(entry_id)
         except HTTPException as e:
             failed.append({"id": entry_id, "reason": e.detail})
         except Exception as e:
             failed.append({"id": entry_id, "reason": str(e)})
-
-    if deleted_ids:
-        await db.journal_lines.delete_many({"entry_id": {"$in": deleted_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": deleted_ids}})
-
     return {"deleted_count": len(deleted_ids), "failed": failed}
 
 
 @router.post("/journal-entries/delete-all")
 async def delete_all_journal_entries(payload: dict, current_user: User = Depends(get_current_user)):
+    """Delete every MANUAL journal entry of ONE company.
+
+    A company is mandatory: this endpoint used to run with no filter and wipe
+    every book at once. System-generated entries (sales, purchases, payments,
+    bank matches, AI postings) are never removed here — they belong to their
+    source documents — and entries in a locked period are skipped.
+    """
     if not _perm_post_journal(current_user):
         raise HTTPException(403, "Access denied.")
-    
-    company_id = payload.get("company_id")
-    q = {}
-    if company_id:
-        q["company_id"] = company_id
-        
-    entries = await db.journal_entries.find(q).to_list(100000)
-    if not entries:
-        return {"deleted_count": 0, "failed_count": 0}
-        
-    from backend.accounting_lock import guard_deletion
-    deleted_ids = []
-    failed_count = 0
-    
-    for entry in entries:
-        entry_id = entry["id"]
-        try:
-            if entry.get("source") != "manual" and current_user.role != "admin":
-                failed_count += 1
-                continue
-            await guard_deletion(entry_id, current_user)
-            deleted_ids.append(entry_id)
-        except Exception:
-            failed_count += 1
-            
-    if deleted_ids:
-        await db.journal_lines.delete_many({"entry_id": {"$in": deleted_ids}})
-        await db.journal_entries.delete_many({"id": {"$in": deleted_ids}})
+    company_id = str((payload or {}).get("company_id") or "").strip()
+    if not company_id:
+        raise HTTPException(400, "Select a single company before deleting journal entries; deleting across all companies is not allowed.")
 
-    return {"deleted_count": len(deleted_ids), "failed_count": failed_count}
+    system_entries = await db.journal_entries.count_documents({"company_id": company_id, "source": {"$ne": "manual"}})
+    entries = await db.journal_entries.find({"company_id": company_id, "source": "manual"}, {"_id": 0}).to_list(100000)
+    deleted = 0
+    failed = []
+    for entry in entries:
+        try:
+            await _delete_journal_entry_guarded(entry, current_user)
+            deleted += 1
+        except HTTPException as e:
+            failed.append({"id": entry["id"], "reason": e.detail})
+        except Exception as e:
+            failed.append({"id": entry["id"], "reason": str(e)})
+    return {
+        "deleted_count": deleted,
+        "failed_count": len(failed) + system_entries,
+        "skipped_system_entries": system_entries,
+        "failed": failed[:20],
+    }
 
 
 @router.post("/journal-entries/resync")
@@ -690,16 +708,7 @@ async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_c
         raise HTTPException(400, "System-generated journal entries are locked and cannot be deleted. Use the source document or an Adjustment Note Override.")
     if entry.get("has_adjustment_history"):
         raise HTTPException(400, "Journal entries with adjustment history cannot be deleted. Raise a further Adjustment Note Override instead.")
-    if entry.get("source") != "manual" and current_user.role != "admin":
-        raise HTTPException(400, "Auto-posted entries can only be reversed by an admin.")
-    # Module 4 integrity guard: entries with adjustment-note history, or
-    # entries posted by an autonomous pipeline (AI zero-touch entry, GST
-    # portal sync, etc.), can never be hard-deleted — only corrected via an
-    # Adjustment Note Override. Imported lazily to avoid a circular import.
-    from backend.accounting_lock import guard_deletion
-    await guard_deletion(entry_id, current_user)
-    await db.journal_lines.delete_many({"entry_id": entry_id})
-    await db.journal_entries.delete_one({"id": entry_id})
+    await _delete_journal_entry_guarded(entry, current_user)
     return {"success": True}
 
 
@@ -738,29 +747,56 @@ async def update_journal_entry(entry_id: str, payload: JournalEntryCreate, curre
     if total_debit <= 0:
         raise HTTPException(400, "Journal entry has no amount.")
 
-    now = datetime.now(timezone.utc).isoformat()
-    await db.journal_entries.update_one(
-        {"id": entry_id},
-        {"$set": {
-            "company_id": payload.company_id,
-            "entry_date": payload.entry_date,
-            "narration": payload.narration.strip(),
-            "total_debit": total_debit,
-            "total_credit": total_credit,
-            "updated_by": current_user.id,
-            "updated_at": now,
-        }},
+    # A manual entry may not be moved into, out of, or edited inside a locked period.
+    from backend.accounting_lock import (
+        assert_period_open, audit_ledger_event, journal_audit_summary, snapshot_journal, restore_journal,
     )
-    # Replace lines wholesale — simpler and safer than diffing.
-    await db.journal_lines.delete_many({"entry_id": entry_id})
+    await assert_period_open(entry_company_id, entry.get("entry_date"), "edit this journal entry")
+    await assert_period_open(payload.company_id, payload.entry_date, "post this journal entry")
+
+    old_lines = await db.journal_lines.find({"entry_id": entry_id}, {"_id": 0}).to_list(1000)
+    await audit_ledger_event(
+        entry_company_id, "JOURNAL_ENTRY_EDITED", current_user,
+        {"before": journal_audit_summary(entry, old_lines),
+         "after": {"entry_date": payload.entry_date, "narration": payload.narration.strip(),
+                   "total_debit": total_debit, "total_credit": total_credit,
+                   "lines": [{"account_id": l["account_id"], "debit": l.get("debit"), "credit": l.get("credit"),
+                              "memo": l.get("memo", "")} for l in lines]}},
+        entry_id,
+    )
+
+    snapshot = await snapshot_journal([entry_id])
+    now = datetime.now(timezone.utc).isoformat()
     line_docs = [{
         "id": str(uuid.uuid4()), "entry_id": entry_id, "company_id": payload.company_id,
         "entry_date": payload.entry_date, "account_id": l["account_id"],
         "account_name": l.get("account_name", ""), "debit": float(l.get("debit") or 0),
         "credit": float(l.get("credit") or 0), "memo": l.get("memo", ""), "created_at": now,
     } for l in lines]
-    if line_docs:
-        await db.journal_lines.insert_many(line_docs)
+    try:
+        await db.journal_entries.update_one(
+            {"id": entry_id},
+            {"$set": {
+                "company_id": payload.company_id,
+                "entry_date": payload.entry_date,
+                "narration": payload.narration.strip(),
+                "total_debit": total_debit,
+                "total_credit": total_credit,
+                "updated_by": current_user.id,
+                "updated_at": now,
+            }},
+        )
+        # Replace lines wholesale — simpler and safer than diffing.
+        await db.journal_lines.delete_many({"entry_id": entry_id})
+        if line_docs:
+            await db.journal_lines.insert_many(line_docs)
+    except Exception as exc:
+        # Never leave the entry half-rewritten: put the original back.
+        await db.journal_lines.delete_many({"entry_id": entry_id})
+        await db.journal_entries.delete_one({"id": entry_id})
+        await restore_journal(snapshot)
+        logging.getLogger("accounting_core").exception("Journal edit failed for %s; original restored", entry_id)
+        raise HTTPException(500, "Journal entry could not be updated; the original was kept.") from exc
     updated = await db.journal_entries.find_one({"id": entry_id}, {"_id": 0})
     return updated
 

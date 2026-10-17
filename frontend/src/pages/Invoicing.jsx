@@ -6438,20 +6438,18 @@ const fetchAll = useCallback(async () => {
     setBulkDeleteLoading(true);
     try {
       const ids = Array.from(selectedIds);
-      await api.delete('/invoices/bulk-delete', { data: ids });
+      const { data: result } = await api.delete('/invoices/bulk-delete', { data: ids });
       setSelectedIds(new Set());
       fetchAll();
-      toast.success(`Deleted ${ids.length} invoice${ids.length > 1 ? 's' : ''}`);
-    } catch {
-      // fallback: delete one by one
-      let deleted = 0, failed = 0;
-      for (const id of selectedIds) {
-        try { await api.delete(`/invoices/${id}`); deleted++; }
-        catch { failed++; }
+      const deletedCount = result?.deleted ?? 0;
+      const blocked = result?.errors || [];
+      if (deletedCount) toast.success(`Deleted ${deletedCount} invoice${deletedCount > 1 ? 's' : ''}`);
+      if (blocked.length) {
+        // Server refuses deletes that would orphan credit notes, erase payments or touch a locked period.
+        toast.error(`${blocked.length} not deleted: ${blocked[0].reason}${blocked.length > 1 ? ` (+${blocked.length - 1} more)` : ''}`, { duration: 9000 });
       }
-      setSelectedIds(new Set());
-      fetchAll();
-      toast.success(`Deleted ${deleted} invoice${deleted > 1 ? 's' : ''}${failed ? ` (${failed} failed)` : ''}`);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Bulk delete failed. Nothing was changed.');
     }
     setBulkDeleteLoading(false);
   }, [selectedIds, fetchAll]);
@@ -6497,7 +6495,10 @@ const fetchAll = useCallback(async () => {
   const handleDelete = useCallback(async (inv) => {
     if (!window.confirm(`Delete invoice ${inv.invoice_no}?`)) return;
     try { await api.delete(`/invoices/${inv.id}`); toast.success('Invoice deleted'); fetchAll(); setDetailOpen(false); }
-    catch { toast.error('Failed to delete'); }
+    catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to delete', { duration: 9000 });
+    }
   }, [fetchAll]);
 
   // Convert a Proforma Invoice into a real Tax Invoice (new invoice record,

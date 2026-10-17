@@ -4,10 +4,11 @@ MODULE 4 — System Integrity & Architecture Logic
 1. CONTROL BOUNDARIES: every system-generated journal entry (source in
    {"ai_zero_touch", "purchase", "sale", "bank"}) is locked — it can never be
    silently edited or hard-deleted through the normal accounting_core
-   endpoints once posted. `accounting_core.delete_journal_entry` already
-   restricts non-manual deletes to admins; this module goes further and, for
-   entries with any adjustment-note history, blocks deletion entirely so the
-   audit trail can't be erased.
+   endpoints once posted - for EVERY role, admins included. A system entry
+   is a projection of its source document (invoice, payment, bill, bank
+   match), so it changes only when that document changes, and never inside a
+   locked accounting period. Entries with adjustment-note history can never
+   be deleted, so the audit trail can't be erased.
 2. CORRECTIONS: staff raise an `AdjustmentNoteOverride` to fix a
    mis-categorised or mis-keyed locked entry. This *replaces the lines on the
    original entry itself* (so the ledger, trial balance, and every report
@@ -41,6 +42,153 @@ router = APIRouter(prefix="/api/accounting-integrity", tags=["Accounting Integri
 
 LOCKED_SOURCES = {"ai_zero_touch", "purchase", "sale", "bank"}
 logger = logging.getLogger(__name__)
+
+
+# ── Shared ledger-change guards ─────────────────────────────────────────────
+# Every path that removes or rewrites ledger history (journal delete/edit,
+# invoice / payment / bank-transaction delete, ledger re-sync after an edit)
+# goes through these helpers so the rules are identical everywhere:
+#   1. the accounting period must be open for the date being changed,
+#   2. the change is written to the hash-chained audit trail BEFORE it happens
+#      (fail closed: if the audit trail is unavailable the change is refused).
+
+def _coerce_date(value) -> Optional[date]:
+    """Best-effort YYYY-MM-DD parse for legacy/ISO-datetime strings (None if unusable)."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()[:10]
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+async def active_lock_through(company_id: Optional[str]) -> Optional[date]:
+    """Return the last locked day for this company's books, or None when open.
+
+    Fails closed: an unreadable or malformed lock record blocks the change
+    instead of being treated as "no lock".
+    """
+    try:
+        doc = await db.accounting_locks.find_one(
+            {"company_id": str(company_id or ""), "is_active": True}, {"_id": 0}
+        )
+    except Exception as exc:
+        logger.exception("Unable to read accounting lock for company=%s", company_id)
+        raise HTTPException(503, "Unable to verify the accounting period lock; the change was blocked.") from exc
+    if not doc or not doc.get("locked_until_date"):
+        return None
+    locked = _coerce_date(doc.get("locked_until_date"))
+    if locked is None:
+        raise HTTPException(500, "The accounting period lock is misconfigured; the change was blocked.")
+    return locked
+
+
+async def assert_period_open(company_id: Optional[str], on_date, action: str = "change this entry") -> None:
+    """Raise HTTP 400 if ``on_date`` falls inside the company's locked period."""
+    day = _coerce_date(on_date)
+    if day is None:
+        return  # legacy row with no usable date: nothing to compare against
+    locked = await active_lock_through(company_id)
+    if locked is not None and day <= locked:
+        raise HTTPException(
+            400,
+            f"Cannot {action}: the accounting period is locked through {locked.isoformat()} "
+            f"and this record is dated {day.isoformat()}.",
+        )
+
+
+async def audit_ledger_event(company_id: Optional[str], event_type: str, user, payload: dict,
+                             document_id: Optional[str] = None) -> None:
+    """Append a hash-chained audit event. Fail closed (HTTP 503) if it cannot be written."""
+    from backend.accounting_ai.accounting_controls import _append_audit
+    try:
+        await _append_audit(
+            str(company_id or ""), event_type, getattr(user, "id", None) or "system", payload, document_id
+        )
+    except Exception as exc:
+        logger.exception("Accounting audit write failed for %s", event_type)
+        raise HTTPException(503, "The accounting audit trail is unavailable; the change was blocked.") from exc
+
+
+async def snapshot_journal(entry_ids: List[str]) -> dict:
+    """Capture entries + lines so a failed rewrite can be restored exactly."""
+    entries = await db.journal_entries.find({"id": {"$in": list(entry_ids)}}, {"_id": 0}).to_list(len(entry_ids) or 1)
+    lines = await db.journal_lines.find({"entry_id": {"$in": list(entry_ids)}}, {"_id": 0}).to_list(10000)
+    return {"entries": entries, "lines": lines}
+
+
+async def restore_journal(snapshot: dict) -> None:
+    """Re-insert a snapshot taken by :func:`snapshot_journal` (idempotent)."""
+    for entry in snapshot.get("entries", []):
+        if not await db.journal_entries.find_one({"id": entry["id"]}, {"_id": 0, "id": 1}):
+            await db.journal_entries.insert_one(dict(entry))
+    have = {l["id"] for l in await db.journal_lines.find(
+        {"entry_id": {"$in": [e["id"] for e in snapshot.get("entries", [])]}}, {"_id": 0, "id": 1}).to_list(10000)}
+    missing = [dict(l) for l in snapshot.get("lines", []) if l["id"] not in have]
+    if missing:
+        await db.journal_lines.insert_many(missing)
+
+
+async def record_posting_failure(company_id: Optional[str], source: str, source_id: Optional[str], error_type: str,
+                                 message: str, entry_date: Optional[str] = None, narration: str = "",
+                                 lines: Optional[List[dict]] = None, created_by: str = "system") -> None:
+    """Persist a ledger sync/posting problem so it shows up in Accounting Integrity
+    (approve/reject workflow) instead of vanishing into a log line. Never raises."""
+    doc = {
+        "id": str(uuid.uuid4()),
+        "company_id": str(company_id or ""),
+        "entry_date": str(entry_date or ""),
+        "source": str(source or ""),
+        "source_id": str(source_id) if source_id is not None else None,
+        "narration": str(narration or ""),
+        "lines": lines or [],
+        "error_type": error_type,
+        "error": message,
+        "status": "POSTING_FAILED",
+        "created_by": str(created_by or "system"),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        await db.accounting_posting_failures.update_one(
+            {"company_id": doc["company_id"], "source": doc["source"], "source_id": doc["source_id"]},
+            {"$set": doc},
+            upsert=True,
+        )
+    except Exception:
+        logger.exception("Unable to persist posting failure: %s", doc)
+
+
+async def resolve_posting_failures(company_id: Optional[str], source: str, source_id: Optional[str]) -> None:
+    """Mark earlier POSTING_FAILED records for this document as superseded once it syncs cleanly."""
+    try:
+        await db.accounting_posting_failures.update_many(
+            {"company_id": str(company_id or ""), "source": str(source or ""),
+             "source_id": str(source_id) if source_id is not None else None, "status": "POSTING_FAILED"},
+            {"$set": {"status": "SUPERSEDED", "resolved_at": datetime.now(timezone.utc).isoformat()}},
+        )
+    except Exception:
+        logger.exception("Unable to resolve posting failures for %s:%s", source, source_id)
+
+
+def journal_audit_summary(entry: dict, lines: List[dict]) -> dict:
+    """Compact, complete description of an entry for the audit trail."""
+    return {
+        "entry_id": entry.get("id"),
+        "entry_date": entry.get("entry_date"),
+        "narration": entry.get("narration"),
+        "source": entry.get("source"),
+        "source_id": entry.get("source_id"),
+        "total_debit": entry.get("total_debit"),
+        "total_credit": entry.get("total_credit"),
+        "lines": [
+            {"account_id": l.get("account_id"), "account_name": l.get("account_name"),
+             "debit": l.get("debit"), "credit": l.get("credit"), "memo": l.get("memo")}
+            for l in lines
+        ],
+    }
 
 
 def _perm_post(user: User) -> bool:
@@ -191,11 +339,18 @@ async def list_locked_entries(company_id: str = Query(""), current_user: User = 
 
 
 async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
-    """Call this before any hard-delete of a journal entry (in addition to
-    accounting_core's own admin-only check) — raises if deletion would erase
-    audit-trail history. Admins can bypass this check to fix incorrect entries."""
-    if user and getattr(user, "role", None) == "admin":
-        return
+    """Call this before any hard-delete of a journal entry — raises if deletion
+    would erase ledger history.
+
+    The rules apply to EVERY role, admins included (they used to be exempt, which
+    let an admin silently erase locked or AI-posted history through the bulk
+    endpoints even though the single-entry endpoint refused the same request):
+
+    * entries with adjustment-note history are part of the permanent audit trail;
+    * system-generated entries (anything whose source is not "manual") belong to
+      a source document — fix the document or raise an Adjustment Note instead;
+    * an entry dated inside a locked accounting period can never be removed.
+    """
     entry = await db.journal_entries.find_one({"id": entry_id}, {"_id": 0})
     if not entry:
         return
@@ -205,12 +360,13 @@ async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
             "This entry has adjustment-note history and is part of the permanent audit trail — "
             "it cannot be deleted. Raise a further Adjustment Note Override instead.",
         )
-    if entry.get("source") in LOCKED_SOURCES:
+    if entry.get("source") != "manual":
         raise HTTPException(
             400,
             f"This entry was system-generated (source='{entry.get('source')}') and is locked. "
-            "Use an Adjustment Note Override to correct it rather than deleting it.",
+            "Correct the source document or use an Adjustment Note Override instead of deleting it.",
         )
+    await assert_period_open(entry.get("company_id"), entry.get("entry_date"), "delete this journal entry")
 
 
 async def reverse_journal_entry(entry_id: str, reason: str, reversed_by: str) -> dict:
