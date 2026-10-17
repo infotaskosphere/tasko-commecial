@@ -77,6 +77,10 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
       if (!Number.isInteger(Number(maxUsers)) || Number(maxUsers) < 1) return toast.error("Enter a valid maximum user count.");
       if (!Number.isInteger(Number(months)) || Number(months) < 1) return toast.error("Select a valid license duration.");
       if (!invoiceCompanyId) return toast.error("Choose the invoice issuer company before approving.");
+      const modulesWithoutFeatures = approvedModules.filter((moduleId) => !(selectedFeatures[moduleId] || []).length);
+      if (modulesWithoutFeatures.length) {
+        return toast.error("Select at least one page/feature for each approved module, or remove the module.");
+      }
       if (!window.confirm("Approve this application and create its commercial customer, isolated database, license and invoice?")) return;
     }
     if (kind === "reject" && !window.confirm("Reject this onboarding application?")) return;
