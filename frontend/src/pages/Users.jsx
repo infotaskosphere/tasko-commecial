@@ -388,7 +388,7 @@ const SectionHeader = ({ icon: Icon, title, count, color }) => (
 // MAIN PERMISSION MODULE HIERARCHY (Modules tab)
 // ────────────────────────────────────────────────────────────────────────────
 // Mirrors backend/models.py::MODULE_HIERARCHY. Seven main permission modules —
-// Taskosphere, Finix, AIWeave, CompliGenie, Records, LeadSense, People Matrix —
+// Taskosphere, Finix, AIWeave, CompliGenie, ClientSync (records), LeadSense, People Matrix —
 // each own one master "module access" flag plus the individual page-level
 // flags nested beneath it. A page toggle only takes effect while its
 // module's master switch is on; turning the module off cascades and clears
@@ -462,7 +462,7 @@ const MODULE_TREE = [
     ],
   },
   {
-    key: 'records', flag: 'can_access_records', label: 'Records', icon: FileText, accent: '#B45309',
+    key: 'records', flag: 'can_access_records', label: 'ClientSync', icon: FileText, accent: '#B45309',
     desc: 'DSC Register, Document Register, Clients (with approval workflow) and Password Vault.',
     pages: [
       { permKey: 'can_view_all_dsc',   label: 'DSC Register',      desc: 'View all Digital Signature Certificates',       icon: Fingerprint },
