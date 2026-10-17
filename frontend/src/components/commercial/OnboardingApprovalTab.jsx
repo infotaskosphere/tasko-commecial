@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Building2, Search, RefreshCw, CheckCircle2, XCircle, Eye, Loader2, KeyRound } from "lucide-react";
+import { ClipboardCheck, Building2, Search, RefreshCw, CheckCircle2, XCircle, Eye, Loader2, KeyRound, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { getOnboardingApplications, reviewOnboardingApplication } from "@/lib/commercialConsoleApi";
 
@@ -22,6 +22,7 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState("pending");
+  const [statusOpen, setStatusOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const [notes, setNotes] = useState("");
@@ -35,6 +36,8 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
   const [issued, setIssued] = useState(null);
 
   const catalog = useMemo(() => (Array.isArray(modules) ? modules : []).filter((m) => m.id !== "admin" && m.active !== false), [modules]);
+  const selectedStatusLabel = STATUSES.find((item) => item.value === status)?.label || "Pending";
+
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true); else setRefreshing(true);
     try {
@@ -119,11 +122,21 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
         </div></div>
         <button onClick={() => load(true)} disabled={refreshing} className="inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-60"><RefreshCw size={14} className={refreshing ? "animate-spin" : ""}/> Refresh</button>
       </div>
-      <div className="mt-5 flex flex-col gap-3 md:flex-row">
-        <div className="relative flex-1"><Search size={15} className="absolute left-3 top-2.5 text-slate-400"/>
+      <div className="mt-5 flex flex-col gap-3 md:flex-row md:items-center">
+        <div className="relative z-10 flex-1"><Search size={15} className="absolute left-3 top-2.5 text-slate-400"/>
           <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search application ID, company, email or PAN" className={field + " pl-9"}/>
         </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className={field}>{STATUSES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+        <div className="relative z-20 w-full md:w-[220px]">
+          <button type="button" onClick={() => setStatusOpen((open) => !open)} className={field + " flex items-center justify-between gap-3 text-left"} aria-haspopup="listbox" aria-expanded={statusOpen}>
+            <span className="truncate">{selectedStatusLabel}</span><ChevronDown size={16} className={"shrink-0 transition-transform " + (statusOpen ? "rotate-180" : "")}/>
+          </button>
+          {statusOpen && <>
+            <button type="button" aria-label="Close status menu" className="fixed inset-0 z-0 cursor-default" onClick={() => setStatusOpen(false)} />
+            <div role="listbox" className="absolute right-0 top-[calc(100%+6px)] z-50 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-slate-900/5">
+              {STATUSES.map((option) => <button key={option.value} type="button" role="option" aria-selected={status === option.value} onClick={() => { setStatus(option.value); setStatusOpen(false); }} className={"flex w-full items-center rounded-lg px-3 py-2.5 text-left text-sm font-medium transition " + (status === option.value ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-50")}>{option.label}</button>)}
+            </div>
+          </>}
+        </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">{STATUSES.filter((s) => s.value !== "all").map((s) => <button key={s.value} onClick={() => setStatus(s.value)} className={"rounded-xl border p-3 text-left " + (status === s.value ? "border-blue-500 bg-blue-50" : "border-slate-200")}><div className="text-xs text-slate-500">{s.label}</div><div className="mt-1 text-xl font-bold text-slate-900">{items.filter((i) => i.status === s.value).length}</div></button>)}</div>
     </div>
