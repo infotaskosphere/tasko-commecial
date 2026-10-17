@@ -2895,9 +2895,47 @@ def _decorate_purchase(doc: dict, company_names: Optional[Dict[str, str]] = None
     return doc
 
 
-async def _company_name_map() -> Dict[str, str]:
-    rows = await db.companies.find({}, {"_id": 0, "id": 1, "name": 1}).to_list(500)
-    return {r["id"]: r.get("name", "") for r in rows if r.get("id")}
+_MASTER_COMPANY_KEYS = ("id", "name", "gstin", "pan", "city", "state", "state_code", "has_gst")
+
+
+async def _master_company_rows(user: User) -> List[dict]:
+    """
+    The company master EXACTLY as this user sees it in Admin → Master Data.
+
+    It delegates to GET /companies/list so every deployment's own scoping rules apply — in the
+    commercial build that means: the platform owner sees their operational companies only, a
+    licensee sees the legal companies of their own licensed tenant, anyone else sees companies they
+    created. Reading db.companies directly would bypass those rules (and, behind the tenant-aware
+    database wrapper, can silently hide older records).
+    """
+    try:
+        from backend.quotations import list_companies as _list_companies
+    except Exception:                                   # standalone / test environments
+        _list_companies = None
+    if _list_companies is not None:
+        rows = await _list_companies(user)
+    else:
+        rows = await db.companies.find({}, {"_id": 0}).sort("name", 1).to_list(1000)
+    return [dict(r) for r in (rows or []) if isinstance(r, dict)]
+
+
+async def _master_companies(user: User) -> List[dict]:
+    """Selectable master companies (need an id and a name), without the heavy logo / QR fields."""
+    out = []
+    for c in await _master_company_rows(user):
+        if c.get("id") and str(c.get("name") or "").strip():
+            out.append({k: c.get(k) for k in _MASTER_COMPANY_KEYS})
+    return out
+
+
+async def _find_master_company(user: User, company_id: str) -> Optional[dict]:
+    if not company_id:
+        return None
+    return next((c for c in await _master_companies(user) if c["id"] == company_id), None)
+
+
+async def _company_name_map(user: User) -> Dict[str, str]:
+    return {c["id"]: str(c.get("name") or "").strip() for c in await _master_companies(user)}
 
 
 async def _purchase_totals(q: dict) -> dict:
@@ -2960,7 +2998,7 @@ async def list_purchase_invoices(
         ledger=ledger, source=source, tally=tally, review=review, gst_type=gst_type)
     total = await db.purchase_invoices.count_documents(q)
     items = await _find_purchases_sorted(q, sort_by, sort_dir, (page - 1) * page_size, page_size)
-    names = await _company_name_map()
+    names = await _company_name_map(current_user)
     items = [_decorate_purchase(i, names) for i in items]
     return {"purchase_invoices": items, "total": total, "page": page, "page_size": page_size,
             "totals": await _purchase_totals(q), "sort_by": sort_by, "sort_dir": sort_dir}
@@ -2998,20 +3036,18 @@ async def purchase_invoice_masters(current_user: User = Depends(get_current_user
     """
     Everything the Purchase page's company / client dropdowns need, in ONE light call.
 
-    Companies are read straight from the Master Data collection (Admin → Master Data →
-    Company Profiles → db.companies) — organisation-wide, never filtered by who created
-    them. A user who is bound to one company only gets that company, matching what they
-    are allowed to see in the register. Logos / QR images are NOT sent (the full
-    /companies/list payload carries them and is far heavier than a dropdown needs).
+    Companies come from the same source and with the same scoping as Admin → Master Data →
+    Company Profiles (see _master_company_rows), so the Purchase dropdowns always match what
+    Master Data shows that user. Logos / QR images are NOT sent (the full /companies/list payload
+    carries them and is far heavier than a dropdown needs).
     """
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    proj = {"_id": 0, "id": 1, "name": 1, "gstin": 1, "pan": 1, "city": 1, "state": 1, "state_code": 1, "has_gst": 1}
-    raw = await db.companies.find({}, proj).sort("name", 1).to_list(1000)
+    raw = await _master_company_rows(current_user)
     bound = getattr(current_user, "company_id", None) if getattr(current_user, "role", None) != "admin" else None
     companies, without_id, without_name = [], 0, 0
     for c in raw:
-        if not (c.get("name") or "").strip():
+        if not str(c.get("name") or "").strip():
             without_name += 1
             continue
         if not c.get("id"):
@@ -3020,7 +3056,7 @@ async def purchase_invoice_masters(current_user: User = Depends(get_current_user
         if bound and c["id"] != bound:
             continue
         companies.append({
-            "id": c["id"], "name": c["name"].strip(), "gstin": (c.get("gstin") or "").strip().upper(),
+            "id": c["id"], "name": str(c["name"]).strip(), "gstin": (c.get("gstin") or "").strip().upper(),
             "pan": c.get("pan") or "", "city": c.get("city") or "", "state": c.get("state") or "",
             "has_gst": c.get("has_gst"),
         })
@@ -3109,9 +3145,8 @@ _PURCHASE_EXTRACT_KEYS = (
 async def _purchase_parties(current_user: User) -> List[dict]:
     """Everyone who can be the BUYER on a bill: master Company Profiles first, then the user's clients."""
     parties: List[dict] = []
-    for c in await db.companies.find({}, {"_id": 0, "id": 1, "name": 1, "gstin": 1}).to_list(500):
-        if c.get("name"):
-            parties.append({"id": c.get("id"), "name": c["name"], "gstin": (c.get("gstin") or "").strip().upper(), "kind": "company"})
+    for c in await _master_companies(current_user):
+        parties.append({"id": c.get("id"), "name": c["name"], "gstin": (c.get("gstin") or "").strip().upper(), "kind": "company"})
     access = _client_access_query_for_purchase(current_user)
     for c in await db.clients.find(access, {"_id": 0, "id": 1, "company_name": 1, "gstin": 1, "client_gstin": 1}).to_list(5000):
         g = (c.get("gstin") or c.get("client_gstin") or "").strip().upper()
@@ -3384,7 +3419,7 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
     company_id = (p.get("company_id") or "").strip()
     company_doc = None
     if company_id:
-        company_doc = await db.companies.find_one({"id": company_id}, {"_id": 0, "id": 1, "name": 1})
+        company_doc = await _find_master_company(user, company_id)
         if not company_doc:
             raise HTTPException(400, detail={"code": "bad_company", "message": "That company is not in Master Data. Pick one from the list."})
     elif require_company:
@@ -3625,7 +3660,7 @@ async def export_purchase_invoices(body: PurchaseExportRequest, current_user: Us
     docs = await _find_purchases_sorted(q, body.sort_by, "desc" if body.sort_dir == "desc" else "asc", 0, 5000)
     if not docs:
         raise HTTPException(404, "No purchase bills match this selection.")
-    names = await _company_name_map()
+    names = await _company_name_map(current_user)
     docs = [_decorate_purchase(d, names) for d in docs]
     is_tally = body.format in ("tally_xml", "tally_masters")
 
@@ -3711,7 +3746,7 @@ async def upload_gstr2b_purchases(
     """
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
-    if not await db.companies.find_one({"id": company_id}, {"_id": 0, "id": 1}):
+    if not await _find_master_company(current_user, company_id):
         raise HTTPException(400, "That company is not in Master Data. Pick one from the list.")
     filename = file.filename or "gstr2b.xlsx"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -3871,7 +3906,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
     if amount_touched and "total_gst" not in update_data:
         update_data["total_gst"] = merged["total_gst"]          # re-derived from CGST/SGST/IGST/Cess
     if "company_id" in changes and changes["company_id"] != existing.get("company_id"):
-        comp = await db.companies.find_one({"id": changes["company_id"]}, {"_id": 0, "name": 1}) if changes["company_id"] else None
+        comp = await _find_master_company(current_user, changes["company_id"]) if changes["company_id"] else None
         if changes["company_id"] and not comp:
             raise HTTPException(400, detail={"code": "bad_company", "message": "That company is not in Master Data. Pick one from the list."})
         update_data["company_name"] = (comp or {}).get("name", "")
@@ -3921,7 +3956,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
     await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": update_data})
     await sync_purchase_journal_entry(invoice_id)
     updated = await db.purchase_invoices.find_one({"id": invoice_id}, {"_id": 0})
-    return _decorate_purchase(updated, await _company_name_map())
+    return _decorate_purchase(updated, await _company_name_map(current_user))
 
 
 @router.delete("/purchase-invoices/{invoice_id}")
