@@ -11,6 +11,7 @@ import "./general-settings-commercial.css";
 import "./message-automation-commercial.css";
 import "./master-data-ui.css";
 import "./commercial-final-overrides.css";
+import "./commercial-console-layout-fixes.css";
 import "./roles-page-visibility-fix.css";
 // Explicit extensions for Vite
 import App from "./App.jsx";
