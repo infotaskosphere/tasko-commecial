@@ -56,9 +56,12 @@ body.biz-master-console #root button[title="Refresh"] svg {
   margin: 0 !important;
 }
 
-/* If the refresh button is inside the master-console header action group,
-   keep that group left-aligned rather than using space-between positioning. */
+/* The immediate action-group wrapper is what previously kept Refresh on the
+   far side of the header. Reset its auto/space-between alignment so Refresh
+   starts the group and the other actions follow it normally. */
 body.biz-master-console #root div:has(> button[aria-label="Refresh"]),
 body.biz-master-console #root div:has(> button[title="Refresh"]) {
   align-items: center !important;
+  justify-content: flex-start !important;
+  margin-left: 0 !important;
 }
