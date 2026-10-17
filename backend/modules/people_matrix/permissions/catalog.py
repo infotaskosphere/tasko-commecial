@@ -61,10 +61,10 @@ MODULE_HIERARCHY = {
     },
     "records": {
         "flag": "can_access_records",
-        "label": "Records",
-        "description": "Records Dashboard, DSC Register, Document Register, Clients, Password Vault, Client Approvals, WhatsApp Hub and Automation Approvals.",
+        "label": "ClientSync",
+        "description": "ClientSync Dashboard, DSC Register, Document Register, Clients, Password Vault, Client Approvals, WhatsApp Hub and Automation Approvals.",
         "pages": [
-            {"flag": "can_view_records_dashboard", "label": "Records Dashboard", "actions": ["view"]},
+            {"flag": "can_view_records_dashboard", "label": "ClientSync Dashboard", "actions": ["view"]},
             {"flag": "can_view_all_dsc", "label": "DSC Register", "actions": ["view", "export"]},
             {"flag": "can_view_documents", "label": "Document Register", "actions": ["view", "export"]},
             {"flag": "can_view_clients_page", "label": "Clients", "actions": ["view", "create", "edit", "delete", "export"]},
