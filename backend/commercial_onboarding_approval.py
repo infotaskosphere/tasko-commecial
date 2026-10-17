@@ -289,83 +289,99 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
     if not max_users:
         raise HTTPException(status_code=422, detail="A valid user limit is required")
 
-    # Conditional state transition prevents concurrent approval of the same application.
-    claim = await db.commercial_onboarding.update_one(
+    claim = await db.commercial_onboarding_applications.update_one(
         {"application_id": application_id, "status": {"$in": ["pending", "under_review"]}},
         {"$set": {
             "status": "under_review", "updated_at": now,
-            "reviewed_by": getattr(user, "id", None), "review_notes": body.review_notes,
-            "approved_modules": modules, "approved_license_type": body.license_type or current.get("license_type") or "standard",
+            "reviewed_by": str(getattr(user, "id", "")), "review_notes": body.review_notes,
+            "approved_modules": approved_modules, "approved_license_type": body.license_type,
             "approved_max_users": max_users, "provisioning": {"status": "in_progress"},
         }},
     )
     if getattr(claim, "modified_count", 1) == 0:
-        raise HTTPException(status_code=409, detail="Application was changed by another reviewer")
-
-    tenant_id = "tenant_" + uuid.uuid4().hex
-    organization_id = "org_" + uuid.uuid4().hex
-    license_id = "lic_" + uuid.uuid4().hex
-    license_key = secrets.token_urlsafe(32)
-    features = {key: False for key in FeatureManager.DEFAULT_FEATURES.keys()}
-    for module in modules:
-        features[MODULE_KEYS[module]] = True
+        raise HTTPException(status_code=409, detail="Application changed by another reviewer")
 
     try:
-        tenant = await TenantManager.create_tenant(
-            tenant_id, current.get("trade_name") or current["legal_name"], body.schema_type,
-            {"onboarding_application_id": application_id, "legal_name": current["legal_name"], "contact_email": current["email"], "approved_modules": modules},
-        )
-        await db.tenants.update_one({"id": tenant_id}, {"$set": {
-            "status": "pending_activation", "onboarding_application_id": application_id, "updated_at": _now(),
-        }})
-        await OrganizationManager.create_organization(
-            organization_id, current.get("trade_name") or current["legal_name"], tenant_id, "business",
-        )
-        await db.organizations.update_one({"id": organization_id}, {"$set": {
-            "status": "pending_activation", "onboarding_application_id": application_id,
-        }})
-        expires_at = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() + body.license_days * 86400, tz=timezone.utc).isoformat()
-        license_doc = {
-            "id": license_id, "tenant_id": tenant_id, "organization_id": organization_id,
-            "onboarding_application_id": application_id, "license_key": license_key,
-            "license_type": body.license_type or current.get("license_type") or "standard",
-            "max_users": max_users, "modules": modules, "status": "pending_activation",
-            "assigned_at": _now(), "expires_at": expires_at, "updated_at": _now(),
+        # The commercial generator provisions the existing commercial customer,
+        # isolated tenant database, license, admin placeholder and invoice.
+        from backend.commercial_onboarding_extensions import generate_custom_license
+        selected_features = body.selected_features or {}
+        catalog_rows = await db.commercial_license_module_catalog.find(
+            {"active": {"$ne": False}, "id": {"$in": approved_modules}},
+            {"_id": 0, "id": 1, "features": 1},
+        ).to_list(100)
+        catalog_by_id = {str(item.get("id")): item for item in catalog_rows}
+        for module_id in approved_modules:
+            if module_id in selected_features:
+                continue
+            features = catalog_by_id.get(module_id, {}).get("features") or []
+            selected_features[module_id] = [
+                str(feature.get("id") or feature.get("flag") or "").strip()
+                for feature in features
+                if feature.get("id") or feature.get("flag")
+            ]
+        payload = {
+            "company_name": current.get("trade_name") or current["legal_name"],
+            "admin_name": current.get("contact_name") or current.get("legal_name"),
+            "contact_name": current.get("contact_name"),
+            "email": current.get("email"),
+            "phone": current.get("mobile"),
+            "gstin": current.get("gstin") or "",
+            "address": current.get("address") or "",
+            "gst_address": current.get("address") or "",
+            "city": current.get("city") or "",
+            "state": current.get("state") or "",
+            "pincode": current.get("pin") or "",
+            "validity_months": body.validity_months,
+            "amount_charged": body.amount_charged,
+            "currency": body.currency,
+            "invoice_company_id": invoice_company_id,
+            "max_users": max_users,
+            "max_installations": 1,
+            "selected_modules": approved_modules,
+            "selected_features": selected_features,
+            "notes": body.review_notes or current.get("notes") or "",
         }
-        await db.licenses.insert_one(license_doc)
-        await db.feature_flags.update_one({"tenant_id": tenant_id}, {"$set": {
-            "tenant_id": tenant_id, "features": features, "created_at": _now(), "updated_at": _now(),
-            "onboarding_application_id": application_id,
-        }}, upsert=True)
-        await db.commercial_onboarding.update_one({"application_id": application_id}, {"$set": {
-            "tenant_id": tenant_id, "organization_id": organization_id, "license_id": license_id,
-            "provisioning": {
-                "status": "completed", "completed_at": _now(),
-                "tenant_id": tenant_id, "organization_id": organization_id, "license_id": license_id,
-            },
-            "status": "approved",
-            "updated_at": _now(),
-        }})
-        await db.audit_platform.insert_one({
+        result = await generate_custom_license(payload, user)
+        license_doc = result.get("license") or {}
+        customer = result.get("customer") or license_doc.get("customer") or {}
+        invoice = result.get("invoice") or license_doc.get("invoice") or {}
+        done_at = _utcnow()
+        await db.commercial_onboarding_applications.update_one(
+            {"application_id": application_id},
+            {"$set": {
+                "status": "approved", "updated_at": done_at, "reviewed_at": done_at,
+                "reviewed_by": str(getattr(user, "id", "")), "review_notes": body.review_notes,
+                "provisioning": {"status": "completed", "completed_at": done_at},
+                "customer_id": customer.get("id") or license_doc.get("customer_id"),
+                "license_id": license_doc.get("id"), "license_key": license_doc.get("license_key"),
+                "invoice_id": invoice.get("id") or license_doc.get("invoice_id"),
+                "approved_modules": approved_modules,
+            }},
+        )
+        await db.commercial_onboarding_audit.insert_one({
             "id": str(uuid.uuid4()), "action": "commercial_onboarding_approved",
-            "status": "SUCCESS", "actor_user_id": getattr(user, "id", None),
-            "application_id": application_id, "tenant_id": tenant_id, "license_id": license_id,
-            "details": "Approved application; tenant and license remain pending activation.",
-            "created_at": _now(),
+            "application_id": application_id, "actor_id": str(getattr(user, "id", "")),
+            "customer_id": customer.get("id") or license_doc.get("customer_id"),
+            "license_id": license_doc.get("id"), "created_at": done_at, "notes": body.review_notes,
         })
+        return {
+            "success": True, "application_id": application_id, "status": "approved",
+            "customer_id": customer.get("id") or license_doc.get("customer_id"),
+            "license_id": license_doc.get("id"), "license_key": license_doc.get("license_key"),
+            "invoice_id": invoice.get("id") or license_doc.get("invoice_id"),
+            "message": "Approved through the commercial console's customer, isolated database, license and invoice workflow.",
+        }
+    except HTTPException as exc:
+        await db.commercial_onboarding_applications.update_one(
+            {"application_id": application_id},
+            {"$set": {"provisioning": {"status": "failed", "error": str(exc.detail)[:1000]}, "updated_at": _utcnow()}},
+        )
+        raise
     except Exception as exc:
-        logger.exception("Provisioning failed for application %s", application_id)
-        await db.commercial_onboarding.update_one({"application_id": application_id}, {"$set": {
-            "provisioning": {"status": "failed", "error": str(exc)[:1000]}, "updated_at": _now(),
-        }})
-        # Provisioning may have partially created records. Keep the application in
-        # under_review and block approval retries until an operator reconciles them.
-        raise HTTPException(status_code=500, detail="Provisioning failed or was partial. The application remains under review; reconcile tenant/license records before retrying.")
-
-    return {
-        "success": True, "application_id": application_id, "status": "approved",
-        "provisioning_status": "completed", "tenant_id": tenant_id,
-        "organization_id": organization_id, "license_id": license_id,
-        "license_key": license_key, "license_status": "pending_activation",
-        "message": "Approved. A tenant and license were provisioned in pending-activation status; no user account was created.",
-    }
+        logger.exception("Commercial onboarding approval failed for %s", application_id)
+        await db.commercial_onboarding_applications.update_one(
+            {"application_id": application_id},
+            {"$set": {"provisioning": {"status": "failed", "error": str(exc)[:1000]}, "updated_at": _utcnow()}},
+        )
+        raise HTTPException(status_code=500, detail="Approval provisioning failed; inspect commercial customer/license records before retrying.") from exc
