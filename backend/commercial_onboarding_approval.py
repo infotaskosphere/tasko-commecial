@@ -14,13 +14,15 @@ from backend.dependencies import db, get_current_user
 from backend.platform_owner import is_platform_owner
 
 logger = logging.getLogger("commercial_onboarding")
-router = APIRouter(prefix="/api/commercial-console/onboarding", tags=["commercial-onboarding-approval"])
+router = APIRouter(prefix="/onboarding", tags=["commercial-onboarding-approval"])
 
 MODULE_KEYS = {
     "taskosphere": "taskosphere", "tasks": "taskosphere", "task_management": "taskosphere",
     "finix": "finix", "accounting": "finix", "invoicing": "finix",
-    "compliance": "compliance", "roc": "compliance", "trademark": "compliance", "gst": "compliance", "income_tax": "compliance",
-    "aiweave": "aiweave", "records": "records", "crm": "proposals", "leads": "proposals", "proposals": "proposals",
+    "compliance": "compliance", "complygenie": "compliance", "roc": "compliance",
+    "trademark": "compliance", "gst": "compliance", "gst_tax": "compliance", "income_tax": "compliance",
+    "aiweave": "aiweave", "records": "records", "crm": "proposals", "crm_leads": "proposals",
+    "leads": "proposals", "leadsense": "proposals", "proposals": "proposals",
     "payroll": "people_matrix", "hr": "people_matrix", "people_matrix": "people_matrix",
 }
 ALLOWED_STATUSES = {"pending", "under_review", "approved", "rejected"}
@@ -45,7 +47,7 @@ def _clean(doc: Optional[dict]) -> Optional[dict]:
 
 
 class OnboardingSubmission(BaseModel):
-    source: str = Field(default="web_form", max_length=40)
+    source: str = Field(default="google_form", max_length=40)
     legal_name: str = Field(min_length=2, max_length=200)
     trade_name: Optional[str] = Field(default=None, max_length=200)
     constitution: str = Field(min_length=2, max_length=80)
@@ -104,9 +106,14 @@ class OnboardingSubmission(BaseModel):
     @field_validator("modules")
     @classmethod
     def validate_modules(cls, values: List[str]) -> List[str]:
-        clean = list(dict.fromkeys(v.strip().lower().replace(" ", "_") for v in values if v and v.strip()))
-        if not clean or any(v not in MODULE_KEYS for v in clean):
-            raise ValueError("Select only supported modules")
+        clean = []
+        for raw in values or []:
+            value = str(raw or "").strip().lower().replace("-", "_")
+            value = MODULE_KEYS.get(value, MODULE_KEYS.get(value.replace(" ", "_"), ""))
+            if value and value not in clean:
+                clean.append(value)
+        if not clean:
+            raise ValueError("Select one or more supported commercial modules")
         return clean
 
     @field_validator("declaration")
@@ -120,11 +127,14 @@ class OnboardingSubmission(BaseModel):
 class ReviewDecision(BaseModel):
     action: str = Field(pattern="^(approve|reject|under_review)$")
     review_notes: Optional[str] = Field(default=None, max_length=3000)
-    license_type: Optional[str] = Field(default=None, max_length=60)
+    license_type: str = Field(default="custom-modules", max_length=60)
     max_users: Optional[int] = Field(default=None, ge=1, le=100000)
-    modules: Optional[List[str]] = Field(default=None, min_length=1, max_length=30)
-    schema_type: str = Field(default="isolated", pattern="^(isolated|shared)$")
-    license_days: int = Field(default=365, ge=1, le=3650)
+    approved_modules: Optional[List[str]] = Field(default=None, min_length=1, max_length=30)
+    validity_months: int = Field(default=12, ge=1, le=120)
+    amount_charged: Optional[float] = Field(default=None, ge=0)
+    currency: str = Field(default="INR", min_length=3, max_length=5)
+    invoice_company_id: Optional[str] = Field(default=None, max_length=100)
+    selected_features: Optional[Dict[str, List[str]]] = None
 
 
 def _validate_webhook_secret(supplied_secret: Optional[str]) -> None:
@@ -136,7 +146,7 @@ def _validate_webhook_secret(supplied_secret: Optional[str]) -> None:
         raise HTTPException(status_code=403, detail="Invalid onboarding integration secret")
 
 
-async def _store_submission(body: OnboardingSubmission) -> dict:
+async def _persist_application(body: OnboardingSubmission) -> dict:
     """Shared persistence path for app-native and Google Form submissions."""
     if not body.declaration:
         raise HTTPException(status_code=422, detail="Declaration is required")
@@ -148,7 +158,7 @@ async def _store_submission(body: OnboardingSubmission) -> dict:
     }
     if body.gstin:
         duplicate_q["$or"].append({"gstin": body.gstin})
-    previous = _clean(await db.commercial_onboarding.find_one(duplicate_q))
+    previous = _clean(await db.commercial_onboarding_applications.find_one(duplicate_q))
     if previous:
         raise HTTPException(status_code=409, detail={
             "message": "An application already exists for this email, PAN or GSTIN.",
@@ -166,7 +176,7 @@ async def _store_submission(body: OnboardingSubmission) -> dict:
         "reviewed_at": None, "reviewed_by": None, "review_notes": None,
         "provisioning": {"status": "not_started"}, "tenant_id": None, "license_id": None,
     })
-    await db.commercial_onboarding.insert_one(doc)
+    await db.commercial_onboarding_applications.insert_one(doc)
     logger.info("New commercial onboarding application %s from %s", application_id, body.source)
     return {
         "success": True, "application_id": application_id, "status": "pending",
@@ -182,7 +192,7 @@ async def create_google_form_submission(
     """Protected endpoint for the installable Google Forms Apps Script trigger."""
     _validate_webhook_secret(request.headers.get("X-Onenexa-Onboarding-Secret"))
     body.source = "google_form"
-    return await _store_submission(body)
+    return await _persist_application(body)
 
 
 @router.post("/submissions", status_code=201)
@@ -217,14 +227,14 @@ async def list_submissions(
             query = {"$and": [query, {"$or": search_terms}]}
         else:
             query["$or"] = search_terms
-    docs = await db.commercial_onboarding.find(query).sort("created_at", -1).to_list(1000)
+    docs = await db.commercial_onboarding_applications.find(query).sort("created_at", -1).to_list(1000)
     return {"items": [_clean(d) for d in docs], "total": len(docs)}
 
 
 @router.get("/submissions/{application_id}")
 async def get_submission(application_id: str, user=Depends(get_current_user)):
     _require_platform_admin(user)
-    doc = _clean(await db.commercial_onboarding.find_one({"application_id": application_id}))
+    doc = _clean(await db.commercial_onboarding_applications.find_one({"application_id": application_id}))
     if not doc:
         raise HTTPException(status_code=404, detail="Application not found")
     return doc
@@ -250,7 +260,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
 
     now = _now()
     if body.action == "under_review":
-        result = await db.commercial_onboarding.update_one(
+        result = await db.commercial_onboarding_applications.update_one(
             {"application_id": application_id, "status": {"$in": ["pending", "under_review"]}},
             {"$set": {"status": "under_review", "updated_at": now, "reviewed_by": getattr(user, "id", None), "review_notes": body.review_notes}},
         )
@@ -269,7 +279,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         )
         if getattr(result, "modified_count", 1) == 0:
             raise HTTPException(status_code=409, detail="Application was changed by another reviewer or provisioning has already started")
-        await db.audit_platform.insert_one({
+        await db.commercial_onboarding_audit.insert_one({
             "id": str(uuid.uuid4()), "action": "commercial_onboarding_rejected",
             "status": "SUCCESS", "actor_user_id": getattr(user, "id", None),
             "application_id": application_id, "created_at": _now(),
@@ -277,20 +287,30 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         })
         return {"success": True, "application_id": application_id, "status": "rejected"}
 
-    modules = body.modules or current.get("modules") or []
-    modules = list(dict.fromkeys(v.strip().lower().replace(" ", "_") for v in modules if v and v.strip()))
-    if not modules or any(v not in MODULE_KEYS for v in modules):
-        raise HTTPException(status_code=422, detail="Choose one or more supported modules")
+    modules = body.approved_modules or current.get("modules") or []
+    normalised_modules = []
+    for raw in modules:
+        value = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+        value = MODULE_KEYS.get(value, "")
+        if value and value not in normalised_modules:
+            normalised_modules.append(value)
+    modules = normalised_modules
+    if not modules:
+        raise HTTPException(status_code=422, detail="Choose one or more supported commercial modules")
     max_users = body.max_users or current.get("user_count")
     if not max_users:
         raise HTTPException(status_code=422, detail="A valid user limit is required")
+
+    invoice_company_id = str(body.invoice_company_id or "").strip()
+    if not invoice_company_id:
+        raise HTTPException(status_code=422, detail="Select the invoice issuer company before approving")
 
     claim = await db.commercial_onboarding_applications.update_one(
         {"application_id": application_id, "status": {"$in": ["pending", "under_review"]}},
         {"$set": {
             "status": "under_review", "updated_at": now,
             "reviewed_by": str(getattr(user, "id", "")), "review_notes": body.review_notes,
-            "approved_modules": approved_modules, "approved_license_type": body.license_type,
+            "approved_modules": modules, "approved_license_type": body.license_type,
             "approved_max_users": max_users, "provisioning": {"status": "in_progress"},
         }},
     )
@@ -307,7 +327,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
             {"_id": 0, "id": 1, "features": 1},
         ).to_list(100)
         catalog_by_id = {str(item.get("id")): item for item in catalog_rows}
-        for module_id in approved_modules:
+        for module_id in modules:
             if module_id in selected_features:
                 continue
             features = catalog_by_id.get(module_id, {}).get("features") or []
@@ -334,7 +354,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
             "invoice_company_id": invoice_company_id,
             "max_users": max_users,
             "max_installations": 1,
-            "selected_modules": approved_modules,
+            "selected_modules": modules,
             "selected_features": selected_features,
             "notes": body.review_notes or current.get("notes") or "",
         }
@@ -342,7 +362,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         license_doc = result.get("license") or {}
         customer = result.get("customer") or license_doc.get("customer") or {}
         invoice = result.get("invoice") or license_doc.get("invoice") or {}
-        done_at = _utcnow()
+        done_at = _now()
         await db.commercial_onboarding_applications.update_one(
             {"application_id": application_id},
             {"$set": {
@@ -352,7 +372,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
                 "customer_id": customer.get("id") or license_doc.get("customer_id"),
                 "license_id": license_doc.get("id"), "license_key": license_doc.get("license_key"),
                 "invoice_id": invoice.get("id") or license_doc.get("invoice_id"),
-                "approved_modules": approved_modules,
+                "approved_modules": modules,
             }},
         )
         await db.commercial_onboarding_audit.insert_one({
@@ -371,7 +391,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
     except HTTPException as exc:
         await db.commercial_onboarding_applications.update_one(
             {"application_id": application_id},
-            {"$set": {"provisioning": {"status": "failed", "error": str(exc.detail)[:1000]}, "updated_at": _utcnow()}},
+            {"$set": {"provisioning": {"status": "failed", "error": str(exc.detail)[:1000]}, "updated_at": _now()}},
         )
         raise
     except Exception as exc:
