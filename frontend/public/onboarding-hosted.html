@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OneNexa – Commercial Licensee Onboarding</title>
+  <style>
+    :root{
+      --primary:#673ab7;
+      --primary-dark:#512da8;
+      --bg:#f0ebf8;
+      --card:#fff;
+      --text:#202124;
+      --muted:#5f6368;
+      --border:#dadce0;
+      --danger:#b3261e;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:Arial,Helvetica,sans-serif;
+      line-height:1.45;
+    }
+    .top{
+      height:10px;
+      background:var(--primary);
+    }
+    .wrap{
+      max-width:760px;
+      margin:28px auto 60px;
+      padding:0 14px;
+    }
+    .card{
+      background:var(--card);
+      border:1px solid #e0e0e0;
+      border-radius:8px;
+      box-shadow:0 1px 2px rgba(60,64,67,.15);
+      padding:28px 34px;
+      margin-bottom:14px;
+    }
+    .hero{
+      border-top:10px solid var(--primary);
+      padding-top:22px;
+    }
+    h1{font-size:30px;font-weight:400;margin:0 0 12px}
+    h2{font-size:20px;font-weight:500;margin:0 0 20px}
+    p{margin:8px 0;color:var(--muted)}
+    .required{color:var(--danger)}
+    label{
+      display:block;
+      font-size:14px;
+      font-weight:500;
+      margin:22px 0 8px;
+    }
+    input,textarea,select{
+      width:100%;
+      border:0;
+      border-bottom:1px solid #9aa0a6;
+      padding:12px 4px;
+      outline:none;
+      background:transparent;
+      font-size:15px;
+    }
+    input:focus,textarea:focus,select:focus{
+      border-bottom:2px solid var(--primary);
+    }
+    textarea{min-height:80px;resize:vertical}
+    .choice{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin:12px 0;
+      font-weight:400;
+    }
+    .choice input{
+      width:auto;
+      margin:0;
+    }
+    .actions{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      margin-top:18px;
+    }
+    button{
+      border:0;
+      border-radius:4px;
+      padding:12px 22px;
+      background:var(--primary);
+      color:white;
+      font-weight:600;
+      cursor:pointer;
+    }
+    button:hover{background:var(--primary-dark)}
+    button.secondary{
+      background:transparent;
+      color:var(--primary);
+      border:1px solid var(--border);
+    }
+    .progress{
+      height:5px;
+      background:#ddd;
+      border-radius:10px;
+      overflow:hidden;
+      margin-bottom:18px;
+    }
+    .bar{
+      height:100%;
+      width:0;
+      background:var(--primary);
+      transition:.2s;
+    }
+    .page{display:none}
+    .page.active{display:block}
+    .error{
+      display:none;
+      color:var(--danger);
+      background:#fce8e6;
+      padding:10px 12px;
+      border-radius:4px;
+      margin-top:14px;
+    }
+    .success{
+      display:none;
+      text-align:center;
+    }
+    .success h2{color:#137333}
+    .app-id{
+      display:inline-block;
+      margin-top:10px;
+      padding:8px 12px;
+      border-radius:4px;
+      background:#f1f3f4;
+      font-weight:700;
+    }
+    .footer{
+      text-align:center;
+      color:#777;
+      font-size:12px;
+      margin-top:18px;
+    }
+    @media(max-width:600px){
+      .card{padding:22px 18px}
+      h1{font-size:24px}
+    }
+  </style>
+</head>
+<body>
+<div class="top"></div>
+<div class="wrap">
+
+  <div class="card hero">
+    <h1>OneNexa – Commercial Licensee Onboarding</h1>
+    <p>Please complete this application for commercial licensing, tenant setup, module activation and implementation planning.</p>
+    <p><span class="required">*</span> Required field</p>
+  </div>
+
+  <div class="progress"><div id="bar" class="bar"></div></div>
+
+  <form id="form">
+    <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true"><input name="hp" tabindex="-1" autocomplete="off"></div>
+    <div class="card page active" data-page="1">
+      <h2>1. Applicant & Legal Entity Details</h2>
+
+      <label>Legal / Registered Name <span class="required">*</span></label>
+      <input name="legalName" required>
+
+      <label>Trade / Brand Name</label>
+      <input name="tradeName">
+
+      <label>Constitution / Entity Type <span class="required">*</span></label>
+      <select name="constitution" required>
+        <option value="">Select</option>
+        <option>Private Limited Company</option>
+        <option>Public Limited Company</option>
+        <option>LLP</option>
+        <option>Partnership Firm</option>
+        <option>Proprietorship</option>
+        <option>Trust / Society</option>
+        <option>Individual / Professional</option>
+        <option>Other</option>
+      </select>
+
+      <label>PAN <span class="required">*</span></label>
+      <input name="pan" required maxlength="10" pattern="[A-Za-z]{5}[0-9]{4}[A-Za-z]" title="10-character PAN, e.g. ABCDE1234F" style="text-transform:uppercase">
+
+      <label>GSTIN</label>
+      <input name="gstin" maxlength="15" pattern="[0-9]{2}[A-Za-z]{5}[0-9]{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z]" title="15-character GSTIN, or leave blank" style="text-transform:uppercase">
+
+      <label>CIN / LLPIN / Registration No.</label>
+      <input name="registrationNo">
+
+      <label>Registered Office Address <span class="required">*</span></label>
+      <textarea name="address" required></textarea>
+
+      <label>City <span class="required">*</span></label>
+      <input name="city" required>
+
+      <label>State <span class="required">*</span></label>
+      <input name="state" required>
+
+      <label>PIN Code <span class="required">*</span></label>
+      <input name="pin" required>
+
+      <label>Website</label>
+      <input name="website" type="url">
+    </div>
+
+    <div class="card page" data-page="2">
+      <h2>2. Primary Contact</h2>
+
+      <label>Contact Person Name <span class="required">*</span></label>
+      <input name="contactName" required>
+
+      <label>Designation <span class="required">*</span></label>
+      <input name="designation" required>
+
+      <label>Official Email <span class="required">*</span></label>
+      <input name="email" type="email" required>
+
+      <label>Mobile Number <span class="required">*</span></label>
+      <input name="mobile" required>
+
+      <label>Alternate Contact / Email</label>
+      <input name="alternateContact">
+    </div>
+
+    <div class="card page" data-page="3">
+      <h2>3. Business Profile</h2>
+
+      <label>Primary Business Type <span class="required">*</span></label>
+      <select name="businessType" required>
+        <option value="">Select</option>
+        <option>CA / CS / CMA / Professional Firm</option>
+        <option>Corporate / SME</option>
+        <option>Accounting / Bookkeeping Firm</option>
+        <option>Compliance / Legal Firm</option>
+        <option>Trademark / IP Practice</option>
+        <option>Enterprise / Group</option>
+        <option>Reseller / Partner</option>
+        <option>Other</option>
+      </select>
+
+      <label>Brief description of your business and intended use of OneNexa <span class="required">*</span></label>
+      <textarea name="businessDescription" required></textarea>
+
+      <label>Approximate number of clients / entities to be managed</label>
+      <input name="clientCount">
+    </div>
+
+    <div class="card page" data-page="4">
+      <h2>4. Commercial License Requirements</h2>
+
+      <label>Modules Requested <span class="required">*</span></label>
+      <div id="modules">
+        <div class="choice"><input type="checkbox" name="modules" value="Task Management">Task Management</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Compliance Calendar">Compliance Calendar</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Client / Company Management">Client / Company Management</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Document Management">Document Management</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Trademark / IP">Trademark / IP</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Attendance & Productivity">Attendance & Productivity</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Accounting / Finix">Accounting / Finix</div>
+        <div class="choice"><input type="checkbox" name="modules" value="GST / Tax">GST / Tax</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Payroll">Payroll</div>
+        <div class="choice"><input type="checkbox" name="modules" value="CRM / Leads">CRM / Leads</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Message Automation">Message Automation</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Dashboard & MIS">Dashboard & MIS</div>
+        <div class="choice"><input type="checkbox" name="modules" value="Other">Other</div>
+      </div>
+
+      <label>License Model <span class="required">*</span></label>
+      <select name="licenseType" required>
+        <option value="">Select</option>
+        <option>Single Company / Licensee</option>
+        <option>Multi-Company / Group</option>
+        <option>White Label</option>
+        <option>Reseller / Partner</option>
+        <option>Enterprise</option>
+      </select>
+
+      <label>Expected number of users <span class="required">*</span></label>
+      <input name="userCount" type="number" min="1" step="1" inputmode="numeric" required>
+
+      <label>Expected number of companies / entities <span class="required">*</span></label>
+      <select name="entityCount" required>
+        <option value="">Select</option>
+        <option>1</option><option>2–10</option><option>11–50</option>
+        <option>51–100</option><option>101–500</option><option>500+</option>
+      </select>
+
+      <label>Additional modules / commercial requirements</label>
+      <textarea name="commercialNotes"></textarea>
+    </div>
+
+    <div class="card page" data-page="5">
+      <h2>5. Deployment & Data</h2>
+
+      <label>Preferred Deployment <span class="required">*</span></label>
+      <select name="deployment" required>
+        <option value="">Select</option>
+        <option>Cloud Hosted</option>
+        <option>Private Cloud / AWS</option>
+        <option>On-Premise / Local Server</option>
+        <option>Hybrid</option>
+        <option>Not Decided</option>
+      </select>
+
+      <label>Data Migration Required?</label>
+      <select name="migration">
+        <option>Yes</option><option>No</option><option>To be discussed</option>
+      </select>
+
+      <label>If migration is required, describe current software/database and approximate data volume</label>
+      <textarea name="migrationDetails"></textarea>
+
+      <label>Need separate / isolated licensee data environment?</label>
+      <select name="isolation">
+        <option>Yes – Dedicated / Isolated</option>
+        <option>No – Standard</option>
+        <option>Please advise</option>
+      </select>
+    </div>
+
+    <div class="card page" data-page="6">
+      <h2>6. Branding & Integrations</h2>
+
+      <label>Custom Branding Required?</label>
+      <select name="branding">
+        <option>Yes</option><option>No</option><option>To be discussed</option>
+      </select>
+
+      <label>Preferred Product / White-Label Name</label>
+      <input name="whiteLabelName">
+
+      <label>Custom Domain</label>
+      <input name="customDomain">
+
+      <label>Required Integrations</label>
+      <div class="choice"><input type="checkbox" name="integrations" value="Google Workspace / Drive">Google Workspace / Drive</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="Email / SMTP">Email / SMTP</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="WhatsApp">WhatsApp</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="Accounting / Tally">Accounting / Tally</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="GST / Tax Systems">GST / Tax Systems</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="Cloud Storage">Cloud Storage</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="API / Custom Integration">API / Custom Integration</div>
+      <div class="choice"><input type="checkbox" name="integrations" value="None">None</div>
+    </div>
+
+    <div class="card page" data-page="7">
+      <h2>7. Implementation</h2>
+
+      <label>Target implementation / go-live date</label>
+      <input name="goLiveDate" type="date">
+
+      <label>Implementation, training, support or special requirements</label>
+      <textarea name="implementationNotes"></textarea>
+
+      <label>Additional notes</label>
+      <textarea name="notes"></textarea>
+    </div>
+
+    <div class="card page" data-page="8">
+      <h2>8. Declaration</h2>
+      <div class="choice">
+        <input type="checkbox" id="declaration" name="declaration" value="Confirmed" required>
+        <label for="declaration" style="margin:0;font-weight:400">
+          I confirm that the information provided in this application is accurate and may be used for commercial onboarding, verification, licensing and implementation purposes.
+          <span class="required">*</span>
+        </label>
+      </div>
+      <div id="error" class="error"></div>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="secondary" id="back" onclick="previousPage()">Back</button>
+      <button type="button" id="next" onclick="nextPage()">Next</button>
+      <button type="submit" id="submit" style="display:none">Submit</button>
+    </div>
+  </form>
+
+  <div class="card success" id="success">
+    <h2>Application submitted</h2>
+    <p>Your OneNexa commercial licensee onboarding application has been received.</p>
+    <div class="app-id" id="appId"></div>
+    <p>Keep this application ID for future communication.</p>
+  </div>
+
+  <div class="footer">OneNexa Commercial Licensee Onboarding</div>
+</div>
+
+<script>
+  // Leave empty when this file is used inside Apps Script (Index.html).
+  // When you host this page on your own website, paste your Apps Script web-app /exec URL here.
+  const REMOTE_URL = 'PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE';
+
+  let page = 1;
+  const totalPages = 8;
+
+  function pages() {
+    return Array.from(document.querySelectorAll('.page'));
+  }
+
+  function showPage(n) {
+    page = n;
+    pages().forEach((el, i) => el.classList.toggle('active', i === n - 1));
+    document.getElementById('back').style.visibility = n === 1 ? 'hidden' : 'visible';
+    document.getElementById('next').style.display = n === totalPages ? 'none' : 'inline-block';
+    document.getElementById('submit').style.display = n === totalPages ? 'inline-block' : 'none';
+    document.getElementById('bar').style.width = ((n - 1) / (totalPages - 1) * 100) + '%';
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+
+  function validateCurrentPage() {
+    const current = document.querySelector('.page.active');
+    const fields = current.querySelectorAll('input[required], select[required], textarea[required]');
+    for (const field of fields) {
+      if (!field.checkValidity()) {
+        field.reportValidity();
+        return false;
+      }
+    }
+
+    if (page === 4) {
+      const modules = document.querySelectorAll('input[name="modules"]:checked');
+      if (!modules.length) {
+        showError('Please select at least one module.');
+        return false;
+      }
+    }
+
+    if (page === 8 && !document.getElementById('declaration').checked) {
+      showError('Please confirm the declaration.');
+      return false;
+    }
+
+    return true;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function nextPage() {
+    document.getElementById('error').style.display = 'none';
+    if (!validateCurrentPage()) return;
+    showPage(Math.min(totalPages, page + 1));
+  }
+
+  function previousPage() {
+    showPage(Math.max(1, page - 1));
+  }
+
+  function values(name) {
+    return Array.from(document.querySelectorAll('input[name="' + name + '"]:checked')).map(x => x.value);
+  }
+
+  function formData() {
+    const f = document.getElementById('form');
+    return {
+      legalName: f.legalName.value,
+      tradeName: f.tradeName.value,
+      constitution: f.constitution.value,
+      pan: f.pan.value,
+      gstin: f.gstin.value,
+      registrationNo: f.registrationNo.value,
+      address: f.address.value,
+      city: f.city.value,
+      state: f.state.value,
+      pin: f.pin.value,
+      website: f.website.value,
+      contactName: f.contactName.value,
+      designation: f.designation.value,
+      email: f.email.value,
+      mobile: f.mobile.value,
+      alternateContact: f.alternateContact.value,
+      businessType: f.businessType.value,
+      businessDescription: f.businessDescription.value,
+      clientCount: f.clientCount.value,
+      modules: values('modules'),
+      licenseType: f.licenseType.value,
+      userCount: f.userCount.value,
+      entityCount: f.entityCount.value,
+      commercialNotes: f.commercialNotes.value,
+      deployment: f.deployment.value,
+      migration: f.migration.value,
+      migrationDetails: f.migrationDetails.value,
+      isolation: f.isolation.value,
+      branding: f.branding.value,
+      whiteLabelName: f.whiteLabelName.value,
+      customDomain: f.customDomain.value,
+      integrations: values('integrations'),
+      goLiveDate: f.goLiveDate.value,
+      implementationNotes: f.implementationNotes.value,
+      notes: f.notes.value,
+      hp: f.hp ? f.hp.value : '',
+      declaration: f.declaration.checked ? 'Confirmed' : ''
+    };
+  }
+
+  document.getElementById('form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    document.getElementById('error').style.display = 'none';
+
+    if (!validateCurrentPage()) return;
+
+    const submit = document.getElementById('submit');
+    submit.disabled = true;
+    submit.textContent = 'Submitting…';
+
+    function onResult(result) {
+      if (!result || result.success === false) {
+        submit.disabled = false;
+        submit.textContent = 'Submit';
+        showError((result && result.message) || 'Unable to submit. Please try again.');
+        return;
+      }
+      document.getElementById('form').style.display = 'none';
+      document.querySelector('.progress').style.display = 'none';
+      document.getElementById('success').style.display = 'block';
+      document.getElementById('appId').textContent = 'Application ID: ' + result.applicationId;
+      window.scrollTo({top:0, behavior:'smooth'});
+    }
+    function onFail(err) {
+      submit.disabled = false;
+      submit.textContent = 'Submit';
+      showError(err && err.message ? err.message : 'Unable to submit. Please try again.');
+    }
+
+    if (REMOTE_URL) {
+      // Hosted outside Apps Script: plain POST (text/plain avoids a CORS pre-flight).
+      fetch(REMOTE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(formData())
+      })
+        .then(function (r) { return r.json(); })
+        .then(onResult)
+        .catch(function () { onFail({ message: 'Could not reach the server. Please check your connection and try again.' }); });
+    } else {
+      google.script.run
+        .withSuccessHandler(onResult)
+        .withFailureHandler(onFail)
+        .submitOnboarding(formData());
+    }
+  });
+
+  showPage(1);
+</script>
+</body>
+</html>
