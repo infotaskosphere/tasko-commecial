@@ -54,7 +54,7 @@ export default function ClientApprovals() {
     <div>
       <HubBanner
         icon={UserPlus}
-        eyebrow="Records"
+        eyebrow="ClientSync"
         title="Client Approvals"
         subtitle={canApprove
           ? 'Clients added by your team are held here until you approve them into the master list.'
