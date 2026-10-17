@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -275,16 +275,28 @@ function JournalEntriesInner() {
     }
   };
 
+  const deletingIds = useRef(new Set());
+
   const deleteEntry = async (id) => {
+    if (deletingIds.current.has(id)) return;            // ignore a second click while the first is in flight
     if (!window.confirm('Delete this journal entry? This cannot be undone.')) return;
+    deletingIds.current.add(id);
     try {
       await api.delete(`/journal-entries/${id}`);
       toast.success('Journal entry deleted');
-      await fetchAll();
-      fetchFlagged();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to delete');
+      if (err.response?.status === 404) {
+        // Already gone (stale row or double click): the goal is met, just refresh the list.
+        toast.info('This entry was already deleted.');
+      } else {
+        toast.error(err.response?.data?.detail || 'Failed to delete');
+        deletingIds.current.delete(id);
+        return;
+      }
     }
+    deletingIds.current.delete(id);
+    await fetchAll();
+    fetchFlagged();
   };
 
   const openEdit = (entry) => {
