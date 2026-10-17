@@ -11,21 +11,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from backend.dependencies import db, get_current_user
-from backend.platform.tenant_manager import TenantManager
-from backend.platform.feature_manager import FeatureManager
-from backend.platform.organization_manager import OrganizationManager
+from backend.platform_owner import is_platform_owner
 
 logger = logging.getLogger("commercial_onboarding")
-router = APIRouter(prefix="/commercial-onboarding", tags=["commercial-onboarding"])
+router = APIRouter(prefix="/api/commercial-console/onboarding", tags=["commercial-onboarding-approval"])
 
 MODULE_KEYS = {
-    "task_management": "task_management", "taskosphere": "task_management",
-    "compliance": "roc", "roc": "roc", "trademark": "trademark",
-    "finix": "accounting", "accounting": "accounting", "gst": "gst",
-    "income_tax": "income_tax", "payroll": "payroll", "hr": "hr",
-    "crm": "crm", "inventory": "inventory",
-    "document_management": "document_management", "workflow": "workflow",
-    "analytics": "analytics",
+    "taskosphere": "taskosphere", "tasks": "taskosphere", "task_management": "taskosphere",
+    "finix": "finix", "accounting": "finix", "invoicing": "finix",
+    "compliance": "compliance", "roc": "compliance", "trademark": "compliance", "gst": "compliance", "income_tax": "compliance",
+    "aiweave": "aiweave", "records": "records", "crm": "proposals", "leads": "proposals", "proposals": "proposals",
+    "payroll": "people_matrix", "hr": "people_matrix", "people_matrix": "people_matrix",
 }
 ALLOWED_STATUSES = {"pending", "under_review", "approved", "rejected"}
 
@@ -35,9 +31,9 @@ def _now() -> str:
 
 
 def _require_platform_admin(user: Any) -> None:
-    # Platform-owner capabilities are not accepted from applicant-supplied flags.
-    if str(getattr(user, "role", "")).lower() != "admin":
-        raise HTTPException(status_code=403, detail="Platform-owner admin access required")
+    role = str(getattr(user, "role", "") or "").strip().lower()
+    if not user or not (is_platform_owner(user) or role in {"platform_owner", "superadmin", "saas_admin"}):
+        raise HTTPException(status_code=403, detail="Platform-owner access is required")
 
 
 def _clean(doc: Optional[dict]) -> Optional[dict]:
