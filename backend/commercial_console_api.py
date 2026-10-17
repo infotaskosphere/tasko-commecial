@@ -439,7 +439,7 @@ async def list_plans(user: User = Depends(require_commercial_admin)):
                 "id": "enterprise",
                 "name": "Enterprise Complete",
                 "code": "PLAN-ENTERPRISE",
-                "description": "Unlimited full suite with LeadSense, Records, People Matrix & Website Studio",
+                "description": "Unlimited full suite with LeadSense, ClientSync, People Matrix & Website Studio",
                 "modules": ["taskosphere", "finix", "aiweave", "compliance", "records", "proposals", "people_matrix"],
                 "max_users": 100,
                 "max_storage_gb": 100,
