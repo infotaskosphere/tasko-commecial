@@ -148,7 +148,7 @@ export default function OverviewTab({ stats, analytics, health, onNavigate, onOp
               { id: "finix", name: "Finix Accounting", desc: "Ledgers, invoices, vouchers, GST sync" },
               { id: "aiweave", name: "AIWeave", desc: "Universal Omni route, reader, multi-model" },
               { id: "compliance", name: "CompliGenie", desc: "GST reconciliation, ROC, trademark, salary" },
-              { id: "records", name: "Records", desc: "Client vault, DSC register, secure docs" },
+              { id: "records", name: "ClientSync", desc: "Client vault, DSC register, secure docs" },
               { id: "proposals", name: "LeadSense", desc: "CRM leads, quotations, discussions" },
               { id: "people_matrix", name: "People Matrix", desc: "Payroll, HR, staff directory, leaves" },
               { id: "website_studio", name: "Website Studio", desc: "Visual no-code site builder & branding" }
