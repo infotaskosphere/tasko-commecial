@@ -895,7 +895,7 @@ async def check_duplicate_endpoint(
 @router.get("/admin/monthly-plan")
 async def admin_monthly_plan(
     month: str = Query(...),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
 ):
     date_filter = _build_date_filter(month, None, None)
     db_query    = {}

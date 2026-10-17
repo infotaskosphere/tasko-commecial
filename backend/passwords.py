@@ -499,7 +499,7 @@ async def list_sheet_links(current_user: User = Depends(check_module_permission(
 @router.post("/sheet-links", status_code=201)
 async def add_sheet_link(
     data: GoogleSheetLink,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
 ):
     sheet_id = _extract_sheet_id(data.sheet_url)
     if not sheet_id:
@@ -524,7 +524,7 @@ async def add_sheet_link(
 async def update_sheet_link(
     link_id: str,
     data: GoogleSheetLinkUpdate,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
 ):
     existing = await db.password_sheet_links.find_one({"id": link_id}, {"_id": 0})
     if not existing:
@@ -549,7 +549,7 @@ async def update_sheet_link(
 @router.delete("/sheet-links/{link_id}")
 async def delete_sheet_link(
     link_id: str,
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
 ):
     existing = await db.password_sheet_links.find_one({"id": link_id}, {"_id": 0})
     if not existing:
@@ -821,7 +821,7 @@ async def bulk_import_passwords(
 async def get_access_logs(
     entry_id: Optional[str] = Query(None),
     limit: int = Query(200, le=500),
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
 ):
     query: dict = {}
     if entry_id:
@@ -856,7 +856,7 @@ async def get_password_stats_user(current_user: User = Depends(check_module_perm
     return {"total": total, "by_portal_type": by_type}
 
 @router.get("/admin/stats")
-async def get_password_stats(current_user: User = Depends(require_admin)):
+async def get_password_stats(current_user: User = Depends(require_admin())):
     total = await db.passwords.count_documents({})
     by_dept = {}
     by_type = {}

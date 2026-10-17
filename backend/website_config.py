@@ -3,7 +3,24 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends
 
-from backend.dependencies import db, require_admin
+from fastapi import HTTPException
+
+from backend.dependencies import db, get_current_user
+from backend.platform_owner import is_platform_owner
+
+
+def require_platform_owner():
+    """The public website is ONE site shared by the whole platform.
+
+    Editing it used to need only the generic ``admin`` role, which every
+    licensee administrator has, so any customer could rewrite the platform's
+    public website. Only the Platform Owner may.
+    """
+    async def checker(current_user=Depends(get_current_user)):
+        if not is_platform_owner(current_user):
+            raise HTTPException(status_code=403, detail="Platform Owner access is required.")
+        return current_user
+    return checker
 
 
 router = APIRouter(prefix="/website-config", tags=["commercial-website"])
@@ -152,13 +169,13 @@ async def get_public_website_config():
 
 
 @router.get("/admin")
-async def get_admin_website_config(current_user=Depends(require_admin())):
+async def get_admin_website_config(current_user=Depends(require_platform_owner())):
     doc = await db.commercial_website_config.find_one({"id": "default"}, {"_id": 0})
     return _public_config(doc)
 
 
 @router.put("")
-async def save_website_config(payload: Dict[str, Any], current_user=Depends(require_admin())):
+async def save_website_config(payload: Dict[str, Any], current_user=Depends(require_platform_owner())):
     config = _public_config(payload)
     config["id"] = "default"
     from datetime import datetime, timezone
@@ -173,7 +190,7 @@ async def save_website_config(payload: Dict[str, Any], current_user=Depends(requ
 
 
 @router.post("/reset")
-async def reset_website_config(current_user=Depends(require_admin())):
+async def reset_website_config(current_user=Depends(require_platform_owner())):
     from datetime import datetime, timezone
     config = copy.deepcopy(DEFAULT_WEBSITE_CONFIG)
     config["id"] = "default"

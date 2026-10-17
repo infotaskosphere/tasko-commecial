@@ -28,6 +28,7 @@ def _today() -> str:
 @router.post("/report")
 async def push_activity_report(
     payload: dict,
+    current_user=Depends(get_current_user),
     db=Depends(get_db),
 ):
     """
@@ -48,11 +49,18 @@ async def push_activity_report(
       "topWebsites": [{"domain": "google.com", "seconds": 3000, "human": "50m"}]
     }
     """
-    user_id = payload.get("user_id")
+    # This route used to accept any user_id with no login, so anyone could
+    # overwrite any staff member's activity report. The agent already sends the
+    # staff member's own bearer token; the report is stored for that user only.
+    own_id = str(getattr(current_user, "id", "") or "")
+    user_id = payload.get("user_id") or own_id
     report_date = payload.get("date", _today())
 
     if not user_id:
         raise HTTPException(status_code=400, detail="user_id is required")
+    if str(user_id) != own_id:
+        raise HTTPException(status_code=403, detail="You can only push your own activity report.")
+    payload = {**payload, "user_id": own_id}
 
     # Upsert: one document per user per date
     await db.computer_activity.update_one(

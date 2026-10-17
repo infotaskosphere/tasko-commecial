@@ -1803,7 +1803,7 @@ async def delete_tm(tm_id: str, user: User = Depends(get_current_user)):
 
 
 @router.post("/sync/{application_number}")
-async def sync_trademark(application_number: str):
+async def sync_trademark(application_number: str, user: User = Depends(get_current_user)):
     data = await scrape_trademark(application_number)
     return data
 
@@ -1817,17 +1817,17 @@ async def trademark_health():
 
 
 @router.post("/watchlist")
-async def create_watchlist(payload: dict):
+async def create_watchlist(payload: dict, user: User = Depends(get_current_user)):
     return {"status": "ok", "message": "Watchlist feature coming soon"}
 
 
 @router.get("/watchlist")
-async def get_watchlists():
+async def get_watchlists(user: User = Depends(get_current_user)):
     return []
 
 
 @router.get("/search")
-async def search_trademark_get(query: str):
+async def search_trademark_get(query: str, user: User = Depends(get_current_user)):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(_pool, _qc_fetch_by_app_number, query)
     return result

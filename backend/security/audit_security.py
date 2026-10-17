@@ -33,5 +33,7 @@ class AuditSecurity:
         return event_id
 
     @staticmethod
-    async def get_recent_security_events(limit: int = 50) -> List[Dict[str, Any]]:
-        return await db.security_events.find({}).sort("created_at", -1).limit(limit).to_list(limit)
+    async def get_recent_security_events(limit: int = 50, company_id: str | None = None) -> List[Dict[str, Any]]:
+        """Recent events; ``company_id`` limits them to one company (None = whole platform)."""
+        scope = {"company_id": company_id} if company_id is not None else {}
+        return await db.security_events.find(scope, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)

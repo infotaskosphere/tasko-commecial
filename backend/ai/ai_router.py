@@ -8,7 +8,8 @@ from typing import Callable, Any, Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from backend.dependencies import db
+from backend.dependencies import db, get_current_user
+from backend.platform_owner import is_platform_owner
 from backend.ai.fingerprint import generate_document_fingerprint
 from backend.ai.ai_memory import save_ai_memory, find_memory_by_fingerprint, update_ai_memory
 
@@ -645,16 +646,35 @@ class WorkflowTriggerRequest(BaseModel):
     input_data: Dict[str, Any]
 
 
+def _own_company(current_user: Any, requested: Optional[str] = None) -> str:
+    """The company these workflow/AI endpoints operate on.
+
+    These routes used to take ``company_id`` straight from the request with no
+    login, so anyone could read or write any company's workflow data. The
+    company now always comes from the authenticated user; a different one in
+    the request is refused (the Platform Owner may name any company).
+    """
+    own = str(getattr(current_user, "company_id", "") or "").strip()
+    requested = str(requested or "").strip()
+    if is_platform_owner(current_user):
+        return requested or own
+    if requested and requested != own:
+        raise HTTPException(status_code=403, detail="company_id does not match your company.")
+    if not own:
+        raise HTTPException(status_code=403, detail="Your account is not linked to a company.")
+    return own
+
+
 @router.post("/workflow/create-custom")
-async def ai_create_custom_workflow(body: CustomWorkflowCreateRequest):
+async def ai_create_custom_workflow(body: CustomWorkflowCreateRequest, current_user=Depends(get_current_user)):
     """Allows automatic/AI creation of custom company workflows."""
     from backend.workflow.workflow_builder import WorkflowBuilder
     result = await WorkflowBuilder.save_custom_workflow_definition(
-        company_id=body.company_id,
+        company_id=_own_company(current_user, body.company_id),
         name=body.name,
         category=body.category,
         steps=body.steps,
-        user_id=body.user_id,
+        user_id=current_user.id,
         custom_rules=body.custom_rules
     )
     if not result:
@@ -663,15 +683,15 @@ async def ai_create_custom_workflow(body: CustomWorkflowCreateRequest):
 
 
 @router.post("/workflow/trigger")
-async def ai_trigger_workflow(body: WorkflowTriggerRequest):
+async def ai_trigger_workflow(body: WorkflowTriggerRequest, current_user=Depends(get_current_user)):
     """Triggers an automated, configuration-driven business workflow instance."""
     from backend.workflow.workflow_engine import WorkflowEngine
     inst_id = await WorkflowEngine.start_workflow(
-        company_id=body.company_id,
+        company_id=_own_company(current_user, body.company_id),
         definition_id=body.definition_id,
         entity_id=body.entity_id,
         entity_type=body.entity_type,
-        user_id=body.user_id,
+        user_id=current_user.id,
         input_data=body.input_data
     )
     if not inst_id:
@@ -680,24 +700,24 @@ async def ai_trigger_workflow(body: WorkflowTriggerRequest):
 
 
 @router.get("/workflow/dashboard")
-async def ai_get_workflow_dashboard(company_id: str, force_refresh: Optional[bool] = False):
+async def ai_get_workflow_dashboard(company_id: Optional[str] = None, force_refresh: Optional[bool] = False, current_user=Depends(get_current_user)):
     """Retrieves consolidated real-time dashboard analytics."""
     from backend.workflow.dashboard_engine import DashboardEngine
-    return await DashboardEngine.get_dashboard_summary(company_id=company_id, force_refresh=force_refresh)
+    return await DashboardEngine.get_dashboard_summary(company_id=_own_company(current_user, company_id), force_refresh=force_refresh)
 
 
 @router.get("/workflow/analytics")
-async def ai_get_workflow_analytics(company_id: str):
+async def ai_get_workflow_analytics(company_id: Optional[str] = None, current_user=Depends(get_current_user)):
     """Generates business intelligence metrics and trends."""
     from backend.workflow.analytics_engine import AnalyticsEngine
-    return await AnalyticsEngine.generate_comprehensive_bi_analytics(company_id=company_id)
+    return await AnalyticsEngine.generate_comprehensive_bi_analytics(company_id=_own_company(current_user, company_id))
 
 
 @router.get("/workflow/kpis")
-async def ai_get_workflow_kpis(company_id: str):
+async def ai_get_workflow_kpis(company_id: Optional[str] = None, current_user=Depends(get_current_user)):
     """Calculates and returns a history of recorded business KPI snapshots."""
     from backend.workflow.kpi_engine import KPIEngine
-    return await KPIEngine.list_kpi_trend(company_id=company_id)
+    return await KPIEngine.list_kpi_trend(company_id=_own_company(current_user, company_id))
 
 
 # ── Phase 12 AI-Driven Copilot Bridge Endpoint ─────────────────────────────────
@@ -709,17 +729,14 @@ class CopilotQueryRequest(BaseModel):
 
 
 @router.post("/copilot/query")
-async def ai_copilot_query_bridge(body: CopilotQueryRequest):
-    """Bridge endpoint to dispatch natural language query to the enterprise Copilot."""
+async def ai_copilot_query_bridge(body: CopilotQueryRequest, current_user=Depends(get_current_user)):
+    """Bridge endpoint to dispatch natural language query to the enterprise Copilot.
+
+    Runs as the caller. It used to run unauthenticated as a synthetic admin on
+    the shared "default_comp" company.
+    """
     from backend.copilot.copilot_engine import CopilotEngine
-    class FallbackUser:
-        id = "system"
-        company_id = "default_comp"
-        tenant_id = "default_tenant"
-        role = "admin"
-        permissions = {"can_view_reports": True}
-        
-    user = FallbackUser()
+    user = current_user
     try:
         return await CopilotEngine.process_copilot_request(
             user=user,

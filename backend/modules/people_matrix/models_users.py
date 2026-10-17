@@ -444,6 +444,16 @@ class UserPermissions(BaseModel):
     # can_view_trademark_sphere → access the Trademark Sphere page
     #   Admin always has access regardless of this flag.
     can_view_trademark_sphere: bool = False
+    # ── Finix / Records pages sold as separate license checkboxes ─────────────
+    # These page flags are part of the commercial catalog but were missing from
+    # this model. The model ignores unknown keys, so a licensee administrator
+    # could tick them for a user and the grant was silently dropped on every
+    # request: those pages could never be used by anyone but the admin.
+    can_view_zero_touch_entries: bool = False
+    can_view_extended_accounts_reports: bool = False
+    can_view_gst_portal_sync: bool = False
+    can_view_accounting_integrity: bool = False
+    can_view_automation_approvals: bool = False
     # ── MIS Report ───────────────────────────────────────────────────────────
     # can_view_mis_report → access the MIS Report page (Financial Dashboard,
     #   Receivables/Payables/Revenue/Expense/Profitability MIS) for clients

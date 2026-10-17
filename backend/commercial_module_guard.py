@@ -154,6 +154,21 @@ MODULE_PREFIXES = {
         "/reports/finix-dashboard",
         "/v2/exports/ledger",
         "/finix",
+        # Finix APIs that previously had no module owner, so any licensee could
+        # call them whether or not Finix was purchased.
+        "/zte",
+        "/gst-portal",
+        "/credit-notes",
+        "/debit-notes",
+        "/unprepared-incomes",
+        "/purchases",
+        "/purchase-payments",
+        "/party-ledgers",
+        "/ledger",
+        "/control-accounts",
+        "/bank-transactions",
+        "/audit-trail",
+        "/learning",
     ),
     "compliance": (
         "/compliance-dashboard",
@@ -163,6 +178,19 @@ MODULE_PREFIXES = {
         "/mis-report",
         "/salary-slips",
         "/roc-sphere",
+        # Trademark Sphere / MIS APIs that previously had no module owner.
+        "/trademark-qc",
+        "/mis",
+        "/stats",
+        "/list",
+        "/deadlines",
+        "/searches",
+        "/trademark-users",
+        "/branding-preference",
+        "/constants",
+        "/class-finder",
+        "/search-ipindia",
+        "/fetch-preview",
     ),
     "records": (
         "/records-dashboard",
@@ -229,14 +257,14 @@ FEATURE_PREFIXES = {
     },
     "finix": {
         "can_view_finix_dashboard": ("/finix-dashboard",),
-        "can_view_sale": ("/invoicing", "/sales", "/invoices"),
-        "can_view_purchase": ("/purchase", "/purchase-invoices"),
+        "can_view_sale": ("/invoicing", "/sales", "/invoices", "/credit-notes", "/unprepared-incomes"),
+        "can_view_purchase": ("/purchase", "/purchase-invoices", "/purchases", "/purchase-payments"),
         "can_view_bank": ("/bank-accounts", "/bank-reconciliation"),
         "can_view_chart_of_accounts": ("/chart-of-accounts",),
         "can_manage_chart_of_accounts": ("/chart-of-accounts/manage",),
         "can_view_journal_entries": ("/journal-entries",),
         "can_post_journal_entries": ("/journal-entries/post",),
-        "can_view_zero_touch_entries": ("/zero-touch-entry",),
+        "can_view_zero_touch_entries": ("/zero-touch-entry", "/zte"),
         "can_view_accounting_reports": ("/accounting-reports",),
         "can_view_extended_accounts_reports": (
             "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report",
@@ -247,8 +275,17 @@ FEATURE_PREFIXES = {
             "/reports/cash-flow", "/reports/outstanding", "/reports/financial-ratios",
             "/reports/comparative", "/reports/yearly",
         ),
-        "can_view_gst_portal_sync": ("/gst-portal-sync",),
-        "can_view_accounting_integrity": ("/accounting-integrity",),
+        "can_view_gst_portal_sync": ("/gst-portal-sync", "/gst-portal"),
+        "can_view_accounting_integrity": ("/accounting-integrity", "/control-accounts"),
+        # Shared-data routes used by more than one Finix page. They are not
+        # license checkboxes (see ANY_OF_FEATURES): access needs ANY of the
+        # listed pages, so a licensee that bought one page keeps the data that
+        # page needs, and a licensee without Finix gets nothing.
+        "finix_debit_note_data": ("/debit-notes",),
+        "finix_bank_data": ("/bank-transactions",),
+        "finix_audit_trail_data": ("/audit-trail",),
+        "finix_ledger_data": ("/party-ledgers", "/ledger"),
+        "finix_learning_data": ("/learning",),
         # Report-data endpoints are shared by Finix Dashboard and Accounting Reports.
         # _permission_flag allows either explicitly selected page to read the data;
         # the frontend still controls which page is visible in navigation.
@@ -284,9 +321,15 @@ FEATURE_PREFIXES = {
         "can_view_compliance": ("/compliance",),
         "can_manage_compliance": ("/compliance/manage",),
         "can_view_gst_reconciliation": ("/gst-reconciliation", "/gst-sphere"),
-        "can_view_trademark_sphere": ("/trademark-sphere",),
+        "can_view_trademark_sphere": ("/trademark-sphere", "/trademark-qc"),
         "can_view_roc_sphere": ("/roc-sphere",),
         "can_view_mis_report": ("/mis-report",),
+        "compliance_mis_data": ("/mis",),
+        "compliance_trademark_data": (
+            "/stats", "/list", "/deadlines", "/searches", "/trademark-users",
+            "/branding-preference", "/constants", "/class-finder",
+            "/search-ipindia", "/fetch-preview",
+        ),
         "can_manage_mis_report": ("/mis-report/manage",),
         "can_view_salary_slips": ("/salary-slips",),
         "can_manage_salary_slips": ("/salary-slips/manage",),
@@ -334,6 +377,33 @@ FEATURE_PREFIXES = {
         # Legacy flag retained only for old records while Users is a core admin page.
         "can_view_people_matrix": (),
     },
+}
+
+
+# Pseudo-flags for shared-data routes. A pseudo-flag is NOT a page a licensee can
+# tick; it stands for "any of these real pages". Each real page is still checked
+# exactly as usual (license ceiling, the user's own grant, Permission Matrix).
+ANY_OF_FEATURES = {
+    ("finix", "finix_debit_note_data"): ("can_view_sale", "can_view_purchase"),
+    ("finix", "finix_bank_data"): (
+        "can_view_bank", "can_view_extended_accounts_reports", "can_view_accounting_reports",
+    ),
+    ("finix", "finix_audit_trail_data"): (
+        "can_view_accounting_audit_trail", "can_view_extended_accounts_reports",
+        "can_view_accounting_reports",
+    ),
+    ("finix", "finix_ledger_data"): (
+        "can_view_accounting_reports", "can_view_extended_accounts_reports",
+        "can_view_finix_dashboard", "can_view_sale", "can_view_purchase",
+    ),
+    ("finix", "finix_learning_data"): (
+        "can_view_zero_touch_entries", "can_view_accounting_reports",
+        "can_view_finix_dashboard", "can_view_purchase",
+    ),
+    ("compliance", "compliance_mis_data"): ("can_view_mis_report", "can_view_compliance_dashboard"),
+    ("compliance", "compliance_trademark_data"): (
+        "can_view_trademark_sphere", "can_view_compliance_dashboard", "can_view_compliance",
+    ),
 }
 
 
@@ -1012,7 +1082,7 @@ async def get_current_user_with_commercial_guard(
     # permission-gated below. Platform Owners have already returned above.
     if (
         str(request.method or "GET").upper() == "POST"
-        and normalized_request_path == "/activity/log"
+        and normalized_request_path in ("/activity/log", "/activity/report")
     ):
         has_enabled_workspace = any(
             _licensed_module(module_id, commercial)
@@ -1135,6 +1205,24 @@ async def get_current_user_with_commercial_guard(
                 f"This company license does not include the {feature_module} module.",
                 commercial,
             )
+
+        any_of_pages = ANY_OF_FEATURES.get((feature_module, feature_flag))
+        if any_of_pages is not None and not core_admin_shared:
+            granted = any(
+                _permission_flag(user, page, commercial, feature_module)
+                and not _matrix_denied_action(
+                    user, feature_module, page, request.method, request.url.path
+                )
+                for page in any_of_pages
+            )
+            if not granted:
+                raise _deny(
+                    request,
+                    user,
+                    f"This company license does not include any page that uses this {feature_module} data.",
+                    commercial,
+                )
+            return user
 
         explicit_ai_feature_grant = None
 

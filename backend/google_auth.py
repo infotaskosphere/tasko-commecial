@@ -124,7 +124,7 @@ async def drive_connection_status(current_user: User = Depends(get_current_user)
 
 # ── 4. Disconnect ─────────────────────────────────────────────────────────────
 @router.post("/auth/google/disconnect")
-async def disconnect_drive(current_user: User = Depends(require_admin)):
+async def disconnect_drive(current_user: User = Depends(require_admin())):
     await db[SETTINGS_COLLECTION].update_one(
         {"_id": DRIVE_DOC_ID},
         {"$set": {"refresh_token": None, "access_token": None, "connected": False}},
@@ -135,7 +135,7 @@ async def disconnect_drive(current_user: User = Depends(require_admin)):
 
 # ── 5. Reconnect ──────────────────────────────────────────────────────────────
 @router.get("/auth/google/reconnect")
-async def reconnect_drive(current_user: User = Depends(require_admin)):
+async def reconnect_drive(current_user: User = Depends(require_admin())):
     if not CLIENT_ID or not CLIENT_SECRET:
         raise HTTPException(500, "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET not set")
     await db[SETTINGS_COLLECTION].update_one(
@@ -151,7 +151,7 @@ async def reconnect_drive(current_user: User = Depends(require_admin)):
 # ── 6. List files ─────────────────────────────────────────────────────────────
 @router.get("/auth/google/files")
 async def list_drive_files(
-    current_user: User = Depends(require_admin),
+    current_user: User = Depends(require_admin()),
     page_size: int = Query(50, ge=1, le=100),
     q: Optional[str] = Query(None),
     page_token: Optional[str] = Query(None),
@@ -183,7 +183,7 @@ class ShareRequest(BaseModel):
     file_id: str
 
 @router.post("/auth/google/share")
-async def create_share_link(body: ShareRequest, current_user: User = Depends(require_admin)):
+async def create_share_link(body: ShareRequest, current_user: User = Depends(require_admin())):
     creds = await _get_drive_credentials()
     if not creds:
         raise HTTPException(401, "Google Drive not connected")

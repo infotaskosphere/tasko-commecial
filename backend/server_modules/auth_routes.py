@@ -1060,7 +1060,11 @@ async def security_scan(current_user: User = Depends(require_admin())):
     access, password resets). Foundation for the super-admin security
     dashboard — extend with more event types as new checks are added.
     """
-    return await SecurityMonitor.run_security_scan()
+    # A tenant admin sees only its own company's events; the whole platform's
+    # events are for the Platform Owner.
+    from backend.platform_owner import is_platform_owner
+    scope = None if is_platform_owner(current_user) else str(getattr(current_user, "company_id", "") or "__none__")
+    return await SecurityMonitor.run_security_scan(company_id=scope)
 
 
 @api_router.get("/security/events")
@@ -1069,7 +1073,9 @@ async def security_events(
     current_user: User = Depends(require_admin()),
 ):
     """Admin-only: recent security events (login failures, resets, etc.)."""
-    return await AuditSecurity.get_recent_security_events(limit=limit)
+    from backend.platform_owner import is_platform_owner
+    scope = None if is_platform_owner(current_user) else str(getattr(current_user, "company_id", "") or "__none__")
+    return await AuditSecurity.get_recent_security_events(limit=limit, company_id=scope)
 
 
 # ── Forgot Email ID / Username Recovery ───────────────────────────────────────

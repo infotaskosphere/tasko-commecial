@@ -6,10 +6,15 @@ logger = logging.getLogger("security_monitor")
 
 class SecurityMonitor:
     @staticmethod
-    async def run_security_scan() -> Dict[str, Any]:
-        """Scans security logs for high severity events in the last 24 hours."""
-        critical_count = await db.security_events.count_documents({"severity": "critical"})
-        warning_count = await db.security_events.count_documents({"severity": "warning"})
+    async def run_security_scan(company_id: str | None = None) -> Dict[str, Any]:
+        """Scans security logs for high severity events.
+
+        ``company_id`` limits the scan to one company's events; None scans the
+        whole platform and is only for the Platform Owner.
+        """
+        scope = {"company_id": company_id} if company_id is not None else {}
+        critical_count = await db.security_events.count_documents({**scope, "severity": "critical"})
+        warning_count = await db.security_events.count_documents({**scope, "severity": "warning"})
         
         # Determine status
         status = "HEALTHY"

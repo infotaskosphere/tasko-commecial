@@ -13,6 +13,11 @@ SOURCE = r'''# Early legacy compatibility mount for quotation-owned /api/quotati
 if 'quotation_router' in globals():
     app.include_router(quotation_router, prefix='/api', include_in_schema=False)
 
+# WhatsApp bridge callbacks carry no user login, so they are authenticated with
+# the shared bridge secret (see whatsapp_bridge_webhook_guard).
+from backend.whatsapp_bridge_webhook_guard import install as _install_wa_bridge_webhook_guard
+_install_wa_bridge_webhook_guard(app)
+
 # ====================== CORS CONFIG ======================
 # Supports:
 # - Taskosphere production domains
