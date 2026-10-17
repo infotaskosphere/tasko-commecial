@@ -1,0 +1,64 @@
+/* Commercial Console: final table/header alignment corrections. */
+
+/* Keep registry status values atomic. In both Customer Organizations and
+   Onboarding Approval the status column is the second-to-last column. */
+body.biz-master-console #root table tbody td:nth-last-child(2),
+body.biz-master-console #root table tbody td:nth-last-child(2) > *,
+body.biz-master-console #root table tbody td:nth-last-child(2) span {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  overflow-wrap: normal !important;
+}
+
+body.biz-master-console #root table tbody td:nth-last-child(2) {
+  min-width: 96px !important;
+  width: 96px !important;
+}
+
+/* Keep the status badge itself inline; do not let a narrow table cell split
+   short values such as "active" into two lines. */
+body.biz-master-console #root table tbody td:nth-last-child(2) span,
+body.biz-master-console #root table tbody td:nth-last-child(2) .badge,
+body.biz-master-console #root table tbody td:nth-last-child(2) [class*="badge"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+  flex: 0 0 auto !important;
+}
+
+/* Action column stays compact instead of consuming the remaining table width. */
+body.biz-master-console #root table tbody td:last-child {
+  width: 116px !important;
+  min-width: 116px !important;
+  white-space: nowrap !important;
+}
+
+body.biz-master-console #root table tbody td:last-child button {
+  white-space: nowrap !important;
+  flex: 0 0 auto !important;
+}
+
+/* Refresh belongs at the start of the master-console action group. The
+   remaining actions (Website Studio / Issue License) stay grouped after it. */
+body.biz-master-console #root button[aria-label="Refresh"],
+body.biz-master-console #root button[title="Refresh"] {
+  flex: 0 0 auto !important;
+  align-self: center !important;
+  justify-self: start !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+body.biz-master-console #root button[aria-label="Refresh"] svg,
+body.biz-master-console #root button[title="Refresh"] svg {
+  display: block !important;
+  flex: 0 0 auto !important;
+  margin: 0 !important;
+}
+
+/* If the refresh button is inside the master-console header action group,
+   keep that group left-aligned rather than using space-between positioning. */
+body.biz-master-console #root div:has(> button[aria-label="Refresh"]),
+body.biz-master-console #root div:has(> button[title="Refresh"]) {
+  align-items: center !important;
+}
