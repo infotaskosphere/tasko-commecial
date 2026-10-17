@@ -14,7 +14,7 @@ const MODULE_BRANDING = {
   proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
   aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
-  records: { label: 'Records', landingPath: '/records-dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Records Vault' },
+  records: { label: 'ClientSync', landingPath: '/records-dashboard', lightLogo: '/clientsync-logo-light.png', darkLogo: '/clientsync-logo-dark.png', collapsedLogo: '/clientsync-icon-light.png', collapsedLogoDark: '/clientsync-icon-dark.png', alt: 'ClientSync' },
   // Utility sections have text wordmarks rather than the Taskosphere product logo.
   admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true, alt: 'Admin' },
   settings: { label: 'Setting', landingPath: '/settings/general', wordmark: true, alt: 'Setting' },
@@ -84,7 +84,7 @@ const renameNavigation = () => {
   setTabLabel('#nav-tab-accounts', 'Finix');
   setTabLabel('#nav-tab-aiweave', 'AIWeave');
   setTabLabel('#nav-tab-compliance', 'CompliGenie');
-  setTabLabel('#nav-tab-records', 'Records');
+  setTabLabel('#nav-tab-records', 'ClientSync');
   setTabLabel('#nav-tab-proposals', 'LeadSense');
   setTabLabel('#nav-tab-people-matrix', 'People Matrix');
 };
@@ -125,7 +125,7 @@ const syncModuleBranding = () => {
 
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  let logoSrc = collapsed ? branding.collapsedLogo : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
+  let logoSrc = collapsed ? ((isDarkMode() && branding.collapsedLogoDark) || branding.collapsedLogo) : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
   if (failedLogos.has(logoSrc) && INLINE_FALLBACK_LOGOS[moduleId]) logoSrc = INLINE_FALLBACK_LOGOS[moduleId];
 
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
@@ -185,6 +185,12 @@ const syncModuleBranding = () => {
     renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard');
     renameSidebarDivider('Client Proposals', 'LeadSense');
     document.title = 'LeadSense Dashboard · Task-O-Sphere';
+  }
+
+  if (moduleId === 'records') {
+    renameSidebarText('Records Dashboard', 'ClientSync Dashboard');
+    renameSidebarDivider('Records', 'ClientSync');
+    document.title = 'ClientSync · Task-O-Sphere';
   }
 
   if (moduleId === 'compliance') {
