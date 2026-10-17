@@ -25,13 +25,13 @@ def calculate_field_confidences(
     quality_score = float(ocr_metadata.get("quality_score", 0.80))
     engine_used = ocr_metadata.get("engine_used", "unknown")
     
-    # Heuristic baseline confidence
+    # Heuristic baseline confidence. A model can never be more sure of a field than it says it is.
     if template_matched:
         base_field_conf = 0.98
     elif engine_used == "native_pdf_reader":
         base_field_conf = 0.95
     elif engine_used == "gemini_vision":
-        base_field_conf = 0.88
+        base_field_conf = min(0.88, max(0.0, ocr_confidence))
     else:
         base_field_conf = 0.80 * (0.5 + 0.5 * quality_score)
 

@@ -11,6 +11,27 @@ DEFAULT_THRESHOLDS = {
     "approval_required_amount": 50000.0 # amounts above this require approval even if confident
 }
 
+def _company_thresholds(profile: Dict[str, Any], current: Dict[str, float]) -> Dict[str, float]:
+    """A company's own thresholds, accepted only when they are sane: confidences are 0-1 and auto-post must be
+    stricter than review; the approval limit cannot be negative. Anything else keeps the safe defaults."""
+    out = dict(current)
+
+    def num(key: str):
+        try:
+            return float(profile[key]) if key in profile and profile[key] not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    auto, review, limit = num("auto_post_min_confidence"), num("review_min_confidence"), num("approval_required_amount")
+    if review is not None and 0.0 <= review <= 1.0:
+        out["review_min_confidence"] = review
+    if auto is not None and 0.0 < auto <= 1.0 and auto >= out["review_min_confidence"]:
+        out["auto_post_min_confidence"] = auto
+    if limit is not None and limit >= 0:
+        out["approval_required_amount"] = limit
+    return out
+
+
 async def make_routing_decision(
     overall_confidence: float,
     validation_report: Dict[str, Any],
@@ -34,14 +55,12 @@ async def make_routing_decision(
     thresholds = DEFAULT_THRESHOLDS.copy()
     if company_id:
         try:
-            company_profile = await db.companies.find_one({"_id": company_id})
+            # Companies are keyed by `id` (a uuid string), not Mongo's `_id` - looking up `_id` never found
+            # one, so a company's own thresholds were silently ignored. `_id` is kept only as a legacy fallback.
+            company_profile = (await db.companies.find_one({"id": company_id}, {"_id": 0})
+                               or await db.companies.find_one({"_id": company_id}, {"_id": 0}))
             if company_profile:
-                if "auto_post_min_confidence" in company_profile:
-                    thresholds["auto_post_min_confidence"] = float(company_profile["auto_post_min_confidence"])
-                if "review_min_confidence" in company_profile:
-                    thresholds["review_min_confidence"] = float(company_profile["review_min_confidence"])
-                if "approval_required_amount" in company_profile:
-                    thresholds["approval_required_amount"] = float(company_profile["approval_required_amount"])
+                thresholds.update(_company_thresholds(company_profile, thresholds))
         except Exception as e:
             logger.error(f"Error reading custom company thresholds: {e}")
 

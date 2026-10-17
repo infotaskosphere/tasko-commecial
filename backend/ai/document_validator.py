@@ -9,9 +9,30 @@ from backend.ai.business_rule_validator import validate_business_rules
 from backend.ai.anomaly_detector import detect_anomalies
 from backend.ai.confidence_calculator import calculate_overall_confidence
 from backend.ai.decision_engine import make_routing_decision
+from backend.dependencies import db
 from backend.ai.validation_storage import store_validation_report, store_confidence_history, store_anomaly_records
 
 logger = logging.getLogger("document_validator")
+
+MIN_REVIEWED_FOR_HISTORY = 20
+
+
+async def company_review_accuracy(company_id: Optional[str]) -> float:
+    """How often people accepted this company's zero-touch documents when they reviewed them (0-1).
+    Measured from the last 200 reviewed documents; with fewer than 20 it is 'unknown' (0.5), not a flattering guess."""
+    if not company_id:
+        return 0.5
+    try:
+        rows = await db.zte_processed_documents.find(
+            {"company_id": company_id, "reviewed_by": {"$ne": None}, "status": {"$in": ["posted", "rejected"]}},
+            {"_id": 0, "status": 1}).sort("created_at", -1).to_list(200)
+    except Exception as ex:
+        logger.warning("review accuracy unavailable: %s", ex)
+        return 0.5
+    if len(rows) < MIN_REVIEWED_FOR_HISTORY:
+        return 0.5
+    return round(sum(1 for r in rows if r.get("status") == "posted") / len(rows), 2)
+
 
 async def run_document_validation_pipeline(
     extracted_data: Dict[str, Any],
@@ -20,7 +41,8 @@ async def run_document_validation_pipeline(
     document_id: str,
     vendor_profile: Optional[Dict[str, Any]] = None,
     template_matched: bool = False,
-    company_id: Optional[str] = None
+    company_id: Optional[str] = None,
+    vendor_match_score: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Coordinates and executes the entire Phase 6 validation workflow:
@@ -35,11 +57,17 @@ async def run_document_validation_pipeline(
     start_time = time.time()
     logger.info(f"AI Validation Pipeline: Initiated for document {document_id}")
 
-    # 1. Vendor Match Score assignment
-    vendor_match_score = 0.0
+    # 1. Vendor match score: only from evidence. The caller passes the real lookup score; the profile's own
+    # trust score (if it has one) can only lower it. A profile with no score at all is "unknown" (0.0), not 0.90.
+    scores = []
     if vendor_profile:
-        # If there's an exact/fuzzy match confidence score attached, use it. Otherwise, default to 0.90 for matched
-        vendor_match_score = float(vendor_profile.get("confidence_score" or "match_score", 0.90))
+        for raw in (vendor_match_score, vendor_profile.get("confidence_score"), vendor_profile.get("match_score")):
+            try:
+                if raw is not None:
+                    scores.append(max(0.0, min(1.0, float(raw))))
+            except (TypeError, ValueError):
+                continue
+    vendor_match_score = min(scores) if scores else 0.0
 
     # 2. Field-level Pattern Validation
     field_validation_res = await validate_extracted_fields(extracted_data, ocr_metadata, company_id)
@@ -62,7 +90,7 @@ async def run_document_validation_pipeline(
         vendor_match_score=vendor_match_score,
         template_matched=template_matched,
         business_rules_passed=business_rules_res.get("is_valid", True),
-        historical_accuracy=0.95 if template_matched else 0.88
+        historical_accuracy=await company_review_accuracy(company_id)
     )
 
     # 6. Anomaly Detection

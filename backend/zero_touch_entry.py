@@ -119,6 +119,15 @@ Rules:
 """
 
 
+def _reported_confidence(value) -> Optional[float]:
+    """The model's own 0-1 confidence, or None if it gave none / something unusable (never a made-up default)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if 0.0 <= v <= 1.0 else None
+
+
 def _strip_json_fence(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text)
@@ -452,10 +461,12 @@ async def process_document(
     company_id: Optional[str] = None,   # None/"" = auto-detect (deterministic, then AI); a value = explicit override
 ) -> dict:
     """Extracts + company-matches + drafts the ledger entry end-to-end with
-    zero manual data entry, but NEVER posts. Every document lands as either
-    `pending_approval` (ready for a human to review and click Approve) or
-    `needs_review` (extraction/company-match needs a human to fix something
-    first). Posting only happens via the explicit /approve endpoint."""
+    zero manual data entry. A document lands as `pending_approval` (a human
+    reviews and clicks Approve), `needs_review` (something must be fixed first),
+    `rejected`, or - only when the decision engine returns AUTO_POST - `posted`.
+    AUTO_POST needs a high composite confidence built from MEASURED signals only
+    (the model's own stated confidence, the real vendor-match score, this
+    company's review history); a missing signal counts as unknown, never as high."""
     img_b64, mime = _file_to_image_b64(contents, filename)
     extracted = await _vision_extract_json(img_b64, mime)
 
@@ -504,19 +515,26 @@ async def process_document(
                 if preview["fx"] else float(extracted.get("total_invoice_value") or 0)
             
             # ─── INTEGRATION WITH PHASE 6 AI DECISION ENGINE ───
+            # Only what was actually measured goes in. The model's own confidence is used if it gave a
+            # valid one; if it gave none we say "unknown" (0.5) instead of inventing a high number, and
+            # there is no measured image-quality score here, so the quality score is the same honest value.
+            reported = _reported_confidence(extracted.get("confidence"))
+            known = reported if reported is not None else 0.5
             ocr_metadata = {
-                "confidence": extracted.get("confidence", 0.85),
-                "quality_score": 0.90,
+                "confidence": known,
+                "confidence_reported": reported is not None,
+                "quality_score": known,
                 "engine_used": "gemini_vision",
                 "pages_processed": 1
             }
             
             vendor_profile = None
+            vendor_match_score = 0.0
             try:
                 vendor_name = extracted.get("vendor_or_customer_name") or ""
                 vendor_gstin = extracted.get("tax_registration_number") or ""
                 if vendor_name:
-                    vendor_profile, _, _ = await find_best_vendor_match(vendor_name, vendor_gstin)
+                    vendor_profile, vendor_match_score, _ = await find_best_vendor_match(vendor_name, vendor_gstin)
             except Exception as e:
                 _zte_logger.error(f"Error querying vendor in ZTE decision: {e}")
 
@@ -528,7 +546,8 @@ async def process_document(
                 document_id=record_id,
                 vendor_profile=vendor_profile,
                 template_matched=False,
-                company_id=resolved_company_id
+                company_id=resolved_company_id,
+                vendor_match_score=float(vendor_match_score or 0.0) if vendor_profile else 0.0,
             )
             
             record["validation_report"] = validation_report
@@ -536,7 +555,12 @@ async def process_document(
             
             if decision == "AUTO_POST":
                 try:
-                    entry = await post_ledger_preview(resolved_company_id, preview, current_user.id, source_id=record_id)
+                    # Save the record FIRST, so the posting sees this document's own extracted data and the
+                    # journal entry can point back to it (it used to fall back to an "Unknown Party" purchase).
+                    await db.zte_processed_documents.insert_one(dict(record))
+                    record["_saved"] = True
+                    entry = await post_ledger_preview(resolved_company_id, preview, current_user.id, source_id=record_id,
+                                                      extracted=extracted)
                     record["status"] = "posted"
                     record["journal_entry_id"] = entry["id"]
                     _zte_logger.info(f"Zero-Touch: Document {record_id} AUTO_POST completed successfully.")
@@ -563,7 +587,10 @@ async def process_document(
             record["status"] = "needs_review"
             record["posting_error"] = str(e)
 
-    await db.zte_processed_documents.insert_one(dict(record))
+    if record.pop("_saved", False):
+        await db.zte_processed_documents.replace_one({"id": record_id}, dict(record))
+    else:
+        await db.zte_processed_documents.insert_one(dict(record))
     record.pop("_id", None)
     return record
 
@@ -706,14 +733,15 @@ async def build_ledger_preview(company_id: str, extracted: dict) -> dict:
     return {"lines": lines, "narration": narration, "entry_date": inv_date, "fx": fx_meta}
 
 
-async def post_ledger_preview(company_id: str, preview: dict, created_by: str, source_id: str) -> dict:
+async def post_ledger_preview(company_id: str, preview: dict, created_by: str, source_id: str,
+                              extracted: Optional[dict] = None) -> dict:
     """Posts a previously-built, human-approved preview to the ledger. This
     is the ONLY function in this module that actually writes to
     journal_entries/journal_lines — called exclusively from the /approve
     endpoint, never automatically."""
     from backend.accounting_ai.accounting_engine import AccountingEngine
-    doc = await db.zte_processed_documents.find_one({"id": source_id})
-    extracted = doc.get("extracted") if doc else {
+    doc = None if extracted else await db.zte_processed_documents.find_one({"id": source_id}, {"_id": 0})
+    extracted = extracted or (doc.get("extracted") if doc else None) or {
         "document_type": "PURCHASE",
         "vendor_or_customer_name": "Unknown Party",
         "tax_registration_number": "",

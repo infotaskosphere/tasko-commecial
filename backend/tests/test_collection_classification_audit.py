@@ -70,6 +70,10 @@ GLOBAL_OR_SYSTEM_COLLECTIONS = {
     "whatsapp_sse_tokens",
     "license_activations",
     "licenses",
+    # Onboarding applications exist BEFORE any tenant does: a prospect applies, the platform owner reviews and
+    # approves, and only then is a tenant provisioned. They are platform control-plane data, not tenant records.
+    "commercial_onboarding_applications",
+    "commercial_onboarding_audit",
     # Global identity control-plane collections, not tenant business data.
     "identity_email_links",
     "identity_migrations",

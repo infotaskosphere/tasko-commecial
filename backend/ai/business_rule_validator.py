@@ -112,12 +112,14 @@ async def validate_business_rules(
         details["gst_rate_check"] = {"status": "ok", "rate": 0.0}
 
     # 6. TDS applicability warning rules (for Indian Income Tax compliance)
-    # 194C Contractor threshold is 30,000 for single bill or 100,000 cumulative
-    if total_val >= 30000.0:
+    # Advisory only (the TDS engine decides at posting). The lowest single-payment trigger is 194C's 30,000 (it
+    # applies when a payment EXCEEDS it); 194J is 50,000 a year and rent is 50,000 a month, so which section
+    # applies depends on what was bought - the vendor's saved section is used when there is one.
+    if total_val > 30000.0:
         tds_section = "194C"
         if vendor_profile:
             tds_section = vendor_profile.get("preferred_tds_section") or "194C"
-        msg = f"Invoice total ({total_val}) exceeds single bill TDS applicability limit (INR 30,000). Please verify TDS Section {tds_section} compliance."
+        msg = f"Invoice total ({total_val}) is above INR 30,000, where TDS can apply depending on the nature of the payment. Please verify TDS Section {tds_section} compliance."
         warnings.append(msg)
         details["tds_applicability"] = {"status": "warning", "message": msg, "suggested_section": tds_section}
 
