@@ -24,7 +24,7 @@ import { useBackupManager } from '@/contexts/BackupContext';
 
 const MODULE_LABELS = {
   taskosphere: 'Taskosphere',
-  records: 'Records',
+  records: 'ClientSync',
   proposals: 'Client Proposals',
   finix: 'Finix / Accounts',
   people_matrix: 'People Matrix',
