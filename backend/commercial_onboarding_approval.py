@@ -244,7 +244,7 @@ async def get_submission(application_id: str, user=Depends(get_current_user)):
 async def review_submission(application_id: str, body: ReviewDecision, user=Depends(get_current_user)):
     """Admin-only review. Explicit approval provisions an inactive tenant + license."""
     _require_platform_admin(user)
-    current = await db.commercial_onboarding.find_one({"application_id": application_id})
+    current = await db.commercial_onboarding_applications.find_one({"application_id": application_id})
     if not current:
         raise HTTPException(status_code=404, detail="Application not found")
     status_now = current.get("status", "pending")
@@ -269,7 +269,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         return {"success": True, "application_id": application_id, "status": "under_review"}
 
     if body.action == "reject":
-        result = await db.commercial_onboarding.update_one(
+        result = await db.commercial_onboarding_applications.update_one(
             {
                 "application_id": application_id,
                 "status": {"$in": ["pending", "under_review"]},
@@ -323,7 +323,7 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         from backend.commercial_onboarding_extensions import generate_custom_license
         selected_features = body.selected_features or {}
         catalog_rows = await db.commercial_license_module_catalog.find(
-            {"active": {"$ne": False}, "id": {"$in": approved_modules}},
+            {"active": {"$ne": False}, "id": {"$in": modules}},
             {"_id": 0, "id": 1, "features": 1},
         ).to_list(100)
         catalog_by_id = {str(item.get("id")): item for item in catalog_rows}
@@ -398,6 +398,6 @@ async def review_submission(application_id: str, body: ReviewDecision, user=Depe
         logger.exception("Commercial onboarding approval failed for %s", application_id)
         await db.commercial_onboarding_applications.update_one(
             {"application_id": application_id},
-            {"$set": {"provisioning": {"status": "failed", "error": str(exc)[:1000]}, "updated_at": _utcnow()}},
+            {"$set": {"provisioning": {"status": "failed", "error": str(exc)[:1000]}, "updated_at": _now()}},
         )
         raise HTTPException(status_code=500, detail="Approval provisioning failed; inspect commercial customer/license records before retrying.") from exc
