@@ -17,6 +17,7 @@ logger = logging.getLogger("commercial_onboarding")
 router = APIRouter(prefix="/onboarding", tags=["commercial-onboarding-approval"])
 
 MODULE_KEYS = {
+    # Canonical commercial module IDs come from backend.commercial_onboarding_extensions.
     "taskosphere": "taskosphere", "tasks": "taskosphere", "task_management": "taskosphere",
     "finix": "finix", "accounting": "finix", "invoicing": "finix",
     "compliance": "compliance", "complygenie": "compliance", "roc": "compliance",
