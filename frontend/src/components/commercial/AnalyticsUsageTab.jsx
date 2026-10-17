@@ -79,7 +79,7 @@ export default function AnalyticsUsageTab({ analytics = {} }) {
             { label: "Taskosphere Tasks & Activity", pct: 38, color: "bg-blue-600" },
             { label: "Finix Ledgers & GST Sync", pct: 26, color: "bg-emerald-600" },
             { label: "AIWeave Reader & Omni Executions", pct: 20, color: "bg-purple-600" },
-            { label: "Records Vault & DSC Registry", pct: 10, color: "bg-amber-600" },
+            { label: "ClientSync Vault & DSC Registry", pct: 10, color: "bg-amber-600" },
             { label: "LeadSense & Compliance", pct: 6, color: "bg-slate-600" }
           ].map((item, idx) => (
             <div key={idx}>
