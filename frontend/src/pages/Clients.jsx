@@ -6478,6 +6478,7 @@ export default function Clients() {
 
       {/* PAGE HEADER */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 shadow-sm" style={{ background: 'linear-gradient(135deg, #0D3B66 0%, #1F6FB2 60%, #2a85cc 100%)' }}>
+        <style>{`#root #clients-header-actions button { border-radius: 0 !important; }`}</style>
         <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, #fff 0%, transparent 70%)' }} />
         <div className="relative flex flex-col sm:flex-row justify-between items-start sm:items-center gap-5 px-7 py-6">
           <div className="flex items-center gap-4">
@@ -6487,7 +6488,7 @@ export default function Clients() {
               <p className="text-sm text-blue-200 mt-0.5">Central hub for all client relationships · <kbd className="px-1.5 py-0.5 rounded text-[10px] bg-white/20 font-mono">Ctrl+K</kbd> search · <kbd className="px-1.5 py-0.5 rounded text-[10px] bg-white/20 font-mono">N</kbd> new</p>
             </div>
           </div>
-          <div className="flex flex-nowrap items-center gap-2">
+          <div id="clients-header-actions" className="flex flex-nowrap items-center gap-2">
             <Button variant="outline" onClick={downloadTemplate} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 !rounded-none gap-2 backdrop-blur-sm whitespace-nowrap" style={{ borderRadius: 0 }}><FileText className="h-4 w-4" /> CSV Template</Button>
             {canEditClients && <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={importLoading} className="h-9 px-4 text-sm bg-white/10 border-white/25 text-white hover:bg-white/20 !rounded-none backdrop-blur-sm whitespace-nowrap" style={{ borderRadius: 0 }}>{importLoading ? 'Importing…' : 'Import Excel / CSV'}</Button>}
 
