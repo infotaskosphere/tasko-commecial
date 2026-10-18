@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user
 from backend.models import User
 
@@ -375,6 +376,7 @@ async def download_purchase_file(purchase_id: str, current_user: User = Depends(
 
 @router.delete("/purchases/{purchase_id}")
 async def delete_purchase(purchase_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_purchase", "delete")
     result = await db.purchases.delete_one({"id": purchase_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Purchase invoice not found")
