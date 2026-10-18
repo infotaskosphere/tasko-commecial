@@ -35,6 +35,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
 from backend.dependencies import db, get_current_user, check_module_permission
+from backend.finix_action_permissions import require_finix_action
 from backend.models import User
 
 # Google Drive is centralized in backend.google_drive_service.
@@ -2383,6 +2384,7 @@ async def remove_backup(
     Delete ALL invoices, clients and products that were imported from *source*.
     Requires DELETE permission on the invoicing module.
     """
+    require_finix_action(current_user, "can_view_sale", "delete")
     if not source:
         raise HTTPException(status_code=400, detail="source query param is required")
 
@@ -2498,8 +2500,8 @@ async def list_products(search: Optional[str] = None, current_user: User = Depen
 
 
 @router.put("/products/{pid}")
-async def update_product(pid: str, data: ProductCreate, current_user: User = Depends(check_module_permission("invoicing", "create"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+async def update_product(pid: str, data: ProductCreate, current_user: User = Depends(check_module_permission("invoicing", "edit"))):
+    require_finix_action(current_user, "can_view_sale", "edit")
     ex = await db.products.find_one({"id": pid})
     if not ex: raise HTTPException(404, "Product not found")
     if current_user.role != "admin" and ex.get("created_by") != current_user.id:
@@ -2510,7 +2512,7 @@ async def update_product(pid: str, data: ProductCreate, current_user: User = Dep
 
 @router.delete("/products/{pid}")
 async def delete_product(pid: str, current_user: User = Depends(check_module_permission("invoicing", "delete"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+    require_finix_action(current_user, "can_view_sale", "delete")
     await db.products.delete_one({"id": pid})
     return {"message": "Product deleted"}
 
@@ -4238,6 +4240,7 @@ _PURCHASE_EDITABLE = (
 
 @router.put("/purchase-invoices/{invoice_id}")
 async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_purchase", "edit")
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
@@ -4333,6 +4336,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
 
 @router.delete("/purchase-invoices/{invoice_id}")
 async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_purchase", "delete")
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
@@ -4386,6 +4390,7 @@ async def update_purchase_invoice_status(
       payment_mode  — 'cash' | 'bank' (default 'bank').
       reference_no, notes
     """
+    require_finix_action(current_user, "can_view_purchase", "edit")
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
 
@@ -4478,6 +4483,7 @@ async def list_purchase_payments(purchase_invoice_id: Optional[str] = None, curr
 
 @router.delete("/purchase-payments/{payment_id}")
 async def delete_purchase_payment(payment_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_purchase", "delete")
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     payment = await db.purchase_payments.find_one({"id": payment_id})
@@ -4951,7 +4957,7 @@ async def check_drive_status(current_user: User = Depends(check_module_permissio
 async def update_invoice_status(
     inv_id: str,
     payload: dict,
-    current_user: User = Depends(check_module_permission("invoicing", "create")),
+    current_user: User = Depends(check_module_permission("invoicing", "edit")),
 ):
     """
     Update only the status of an invoice — used by the list page dropdown.
@@ -4975,6 +4981,7 @@ async def update_invoice_status(
     When status is set to 'cancelled', amount_due is zeroed out so cancelled
     invoices don't inflate the outstanding balance.
     """
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
 
@@ -5298,8 +5305,8 @@ async def get_invoice(inv_id: str, current_user: User = Depends(check_module_per
 
 
 @router.put("/invoices/{inv_id}")
-async def update_invoice(inv_id: str, data: dict, background_tasks: BackgroundTasks = None, current_user: User = Depends(check_module_permission("invoicing", "create"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+async def update_invoice(inv_id: str, data: dict, background_tasks: BackgroundTasks = None, current_user: User = Depends(check_module_permission("invoicing", "edit"))):
+    require_finix_action(current_user, "can_view_sale", "edit")
     ex = await db.invoices.find_one({"id": inv_id})
     if not ex: raise HTTPException(404, "Invoice not found")
 
@@ -5474,7 +5481,7 @@ async def update_invoice(inv_id: str, data: dict, background_tasks: BackgroundTa
 
 @router.delete("/invoices/bulk-delete")
 async def bulk_delete_invoices(ids: List[str], current_user: User = Depends(check_module_permission("invoicing", "delete"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+    require_finix_action(current_user, "can_view_sale", "delete")
     if not ids: raise HTTPException(400, "No IDs provided")
     deleted, errors = 0, []
     allowed_company_ids = await _invoice_delete_visible_company_ids(current_user)
@@ -5510,7 +5517,7 @@ async def bulk_delete_invoices(ids: List[str], current_user: User = Depends(chec
 
 @router.delete("/invoices/{inv_id}")
 async def delete_invoice(inv_id: str, current_user: User = Depends(check_module_permission("invoicing", "delete"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+    require_finix_action(current_user, "can_view_sale", "delete")
     outcome = await _delete_invoice_guarded(inv_id, current_user)
     # A deleted Credit/Debit Note changes its parent's Outstanding.
     if outcome.get("parent_id"):
@@ -5982,7 +5989,7 @@ async def list_payments(invoice_id: Optional[str] = None, current_user: User = D
 
 @router.delete("/payments/{pid}")
 async def delete_payment(pid: str, current_user: User = Depends(check_module_permission("invoicing", "delete"))):
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+    require_finix_action(current_user, "can_view_sale", "delete")
     payment = await db.payments.find_one({"id": pid})
     if not payment: raise HTTPException(404, "Payment not found")
     invoice_id = payment.get("invoice_id")
@@ -7341,6 +7348,7 @@ async def create_unprepared_income(payload: UnpreparedIncomeCreate, current_user
 
 @router.put("/unprepared-incomes/{income_id}")
 async def update_unprepared_income(income_id: str, payload: UnpreparedIncomeCreate, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.unprepared_incomes.find_one({"id": income_id})
@@ -7365,6 +7373,7 @@ async def update_unprepared_income(income_id: str, payload: UnpreparedIncomeCrea
 
 @router.delete("/unprepared-incomes/{income_id}")
 async def delete_unprepared_income(income_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_sale", "delete")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.unprepared_incomes.find_one({"id": income_id})
