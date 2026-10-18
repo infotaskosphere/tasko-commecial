@@ -41,6 +41,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
+from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user
 from backend.modules.finix_ai.banking.models_banking import BankAccountCreate, ManualMatchInput, UnmatchInput, AIAutoMatchInput, IgnoreInput, BankRulePayload, ManualReconcilePayload, BackfillSuspenseInput, _mask_account_number, auto_match_similar_transactions, _log_recon_audit
 
@@ -239,6 +240,7 @@ async def list_bank_accounts(company_id: Optional[str] = Query(None), current_us
 
 @router.put("/bank-accounts/{bank_account_id}")
 async def update_bank_account(bank_account_id: str, payload: BankAccountCreate, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
     existing = await db.bank_accounts.find_one({"id": bank_account_id})
@@ -280,6 +282,7 @@ async def update_bank_account(bank_account_id: str, payload: BankAccountCreate, 
 
 @router.delete("/bank-accounts/{bank_account_id}")
 async def delete_bank_account(bank_account_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_bank", "delete")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
     await db.bank_transactions.delete_many({"bank_account_id": bank_account_id})
@@ -1385,6 +1388,7 @@ async def get_bank_account_intelligence(bank_account_id: str, current_user: User
 
 @router.post("/bank-transactions/ai-auto-match")
 async def run_ai_auto_match(payload: Optional[AIAutoMatchInput] = None, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_bank", "edit")
     bank_acc_id = payload.bank_account_id if payload else None
     
     query = {"matched_type": {"$in": [None, ""]}}
@@ -1531,8 +1535,7 @@ async def run_ai_auto_match(payload: Optional[AIAutoMatchInput] = None, current_
 
 @router.post("/bank-transactions/{txn_id}/match")
 async def manual_match_transaction(txn_id: str, payload: ManualMatchInput, current_user: User = Depends(get_current_user)):
-    if not _perm_match_bank(current_user):
-        raise HTTPException(403, "Access denied. Matching bank transactions requires Match permission — request access from your admin.")
+    require_finix_action(current_user, "can_view_bank", "edit")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
@@ -1610,6 +1613,7 @@ async def edit_match_transaction(txn_id: str, payload: ManualMatchInput, current
     """Atomically replaces an existing match: reverses the previous
     reconciliation's ledger/status effects, then applies the new one. Refuses
     to 're-edit' onto the exact same record (duplicate reconciliation)."""
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_match_bank(current_user):
         raise HTTPException(403, "Access denied. Editing a match requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
@@ -1680,6 +1684,7 @@ async def edit_match_transaction(txn_id: str, payload: ManualMatchInput, current
 
 @router.post("/bank-transactions/{txn_id}/unmatch")
 async def unmatch_transaction(txn_id: str, payload: UnmatchInput = UnmatchInput(), current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_match_bank(current_user):
         raise HTTPException(403, "Access denied. Unmatching requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
@@ -1706,6 +1711,7 @@ async def ignore_transaction(txn_id: str, payload: IgnoreInput = IgnoreInput(), 
     the Unmatched queue. Persisted — unlike a client-side-only flag, it
     survives a page reload. Does not touch matched_type/matched_id, so an
     ignored transaction can still be matched later if that changes."""
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_match_bank(current_user):
         raise HTTPException(403, "Access denied. Ignoring a transaction requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
@@ -1718,6 +1724,7 @@ async def ignore_transaction(txn_id: str, payload: IgnoreInput = IgnoreInput(), 
 @router.post("/bank-transactions/{txn_id}/reject-suggestion")
 async def reject_suggestion(txn_id: str, current_user: User = Depends(get_current_user)):
     """Rejects/dismisses a suggested match on an unmatched bank transaction."""
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_match_bank(current_user):
         raise HTTPException(403, "Access denied. Rejecting a suggestion requires Match permission.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
@@ -1729,6 +1736,7 @@ async def reject_suggestion(txn_id: str, current_user: User = Depends(get_curren
 
 @router.delete("/bank-transactions/{txn_id}")
 async def delete_transaction(txn_id: str, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_bank", "delete")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
@@ -1758,6 +1766,7 @@ async def process_statement_intelligence(
     Autonomous Statement processing pipeline (Phase 8).
     Extracts, classifies, matches, posts journals and calculates statistics.
     """
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
     
@@ -1843,6 +1852,7 @@ async def delete_routing_rule(rule_id: str, current_user: User = Depends(get_cur
     """
     Deactivates a custom matching rule.
     """
+    require_finix_action(current_user, "can_view_bank", "delete")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
     
@@ -1876,6 +1886,7 @@ async def manual_reconcile_transaction_api(
     so there is exactly one journal entry per receipt and the invoice's
     amount_paid/amount_due/status stay in sync with it.
     """
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied.")
 
@@ -1990,6 +2001,7 @@ async def backfill_unmatched_to_suspense(
     Trial Balance / Balance Sheet / the Bank & Cash dashboard card start
     agreeing with the real statement again. Safe to re-run — only rows
     still unmatched are touched."""
+    require_finix_action(current_user, "can_view_bank", "edit")
     if not _perm_view_bank(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
 
