@@ -38,6 +38,8 @@ import { Input }    from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch }   from '@/components/ui/switch';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { lookupPincode } from '@/lib/pincode';
 import { mirrorBankToSettings, bankFromCompany } from '@/lib/bankSync';
 import {
@@ -303,6 +305,8 @@ const TABS = [
 // COMPONENT
 // ════════════════════════════════════════════════════════════════════════════
 export default function InvoiceSettings({ open, onClose, companies = [], isDark }) {
+  const { user } = useAuth();
+  const canEditInvoiceSettings = canPerformFinixAction(user, 'can_view_sale', 'edit');
   const [cid,   setCid]   = useState('');
   const [form,  setForm]  = useState({ ...DEFAULT_INV_SETTINGS });
   const [tab,   setTab]   = useState('numbering');
@@ -367,6 +371,7 @@ export default function InvoiceSettings({ open, onClose, companies = [], isDark 
   const set = useCallback((k, v) => setForm(p => ({ ...p, [k]: v })), []);
 
   const handleSave = useCallback(async () => {
+    if (!canEditInvoiceSettings) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!cid) { toast.error('Select a company first'); return; }
     const updatedForm = { ...form, lock_invoice_bank: true };
     setForm(updatedForm);
@@ -393,15 +398,16 @@ export default function InvoiceSettings({ open, onClose, companies = [], isDark 
     setSaved(true);
     toast.success(`Saved — ${companies.find(c => c.id === cid)?.name}`);
     setTimeout(() => setSaved(false), 2500);
-  }, [cid, form, companies]);
+  }, [cid, form, companies, canEditInvoiceSettings]);
 
   const handleReset = useCallback(() => {
+    if (!canEditInvoiceSettings) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Reset all settings for this company to defaults?')) return;
     const fresh = { ...DEFAULT_INV_SETTINGS };
     setForm(fresh);
     if (cid) saveInvSettings(cid, fresh);
     toast.success('Reset to defaults');
-  }, [cid]);
+  }, [cid, canEditInvoiceSettings]);
 
   const copyNum = (val) => {
     navigator.clipboard.writeText(val).then(() => {
@@ -470,14 +476,14 @@ export default function InvoiceSettings({ open, onClose, companies = [], isDark 
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" onClick={handleReset}
+              {canEditInvoiceSettings && <Button size="sm" onClick={handleReset}
                 className="h-8 px-3 text-xs rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 gap-1.5">
                 <RotateCcw className="h-3 w-3" /> Reset
-              </Button>
-              <Button size="sm" onClick={handleSave}
+              </Button>}
+              {canEditInvoiceSettings && <Button size="sm" onClick={handleSave}
                 className={`h-8 px-4 text-xs rounded-xl font-semibold gap-1.5 transition-all ${saved ? 'bg-emerald-500 text-white' : 'bg-white text-slate-800 hover:bg-blue-50'}`}>
                 {saved ? <><Check className="h-3.5 w-3.5" />Saved!</> : <><Save className="h-3.5 w-3.5" />Save</>}
-              </Button>
+              </Button>}
               <button onClick={onClose}
                 className="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all">
                 <X className="h-4 w-4 text-white" />
@@ -1231,11 +1237,11 @@ export default function InvoiceSettings({ open, onClose, companies = [], isDark 
                     className={`h-8 px-4 text-xs rounded-xl ${D ? 'text-slate-400' : 'text-slate-500'}`}>
                     Close
                   </Button>
-                  <Button onClick={handleSave}
+                  {canEditInvoiceSettings && <Button onClick={handleSave}
                     className={`h-8 px-5 text-xs rounded-xl font-semibold gap-1.5 transition-all ${saved ? 'bg-emerald-500 text-white' : 'text-white'}`}
                     style={saved ? {} : { background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' }}>
                     {saved ? <><Check className="h-3.5 w-3.5" />Saved!</> : <><Save className="h-3.5 w-3.5" />Save Settings</>}
-                  </Button>
+                  </Button>}
                 </div>
               </div>
 
