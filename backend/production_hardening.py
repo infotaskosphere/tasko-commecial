@@ -23,9 +23,34 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from backend import dependencies as _dependencies
 from backend import commercial_module_guard as _guard
 from backend.platform_owner import is_platform_owner
-from backend.tenant_runtime import TENANT_COLLECTIONS, in_platform_owner_context
+from backend.tenant_runtime import (
+    TENANT_COLLECTIONS,
+    in_platform_owner_context,
+    tenant_company_ids,
+)
 
 _hardening_logger = logging.getLogger("production_hardening")
+
+
+def _authorized_company_ids(authenticated_company_id: str) -> frozenset[str]:
+    """Return this request's server-resolved legal-company allow-list.
+
+    Authentication resolves legal companies from the central registry and
+    stores the verified IDs in request-local tenant context. Honor those IDs
+    in addition to the canonical login company; never trust client-supplied IDs.
+    """
+    ids = {str(authenticated_company_id or "").strip()}
+    ids.update(
+        str(value or "").strip()
+        for value in tenant_company_ids()
+        if str(value or "").strip()
+    )
+    return frozenset(value for value in ids if value)
+
+
+def _is_authorized_company_id(requested_company_id: Any, allowed_company_ids) -> bool:
+    value = str(requested_company_id or "").strip()
+    return bool(value and value in allowed_company_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -205,31 +230,32 @@ async def get_current_user_hardened(
     request.state.company_id = company_id
     request.state.commercial_customer_id = getattr(user, "commercial_customer_id", None)
 
-    # Never trust a frontend-supplied company_id that disagrees with the
-    # authenticated operational company. Check query parameters first.
+    # A licensee may select any legal company verified as belonging to that
+    # same licensee. This is not an arbitrary company_id bypass: the allow-list
+    # is populated by authentication from Master Data, never from request data.
+    allowed_company_ids = _authorized_company_ids(company_id)
+    request.state.allowed_company_ids = tuple(sorted(allowed_company_ids))
+
     for key, value in request.query_params.multi_items():
         if key == "company_id" or key.endswith("_company_id"):
-            if value and str(value).strip() != company_id:
-                # Say WHICH ids disagree (both belong to the caller / their own
-                # request, so nothing about another tenant is disclosed). A bare
-                # "Cross-company access is not permitted" made a stale company
-                # picked by the browser indistinguishable from a real attack.
+            requested = str(value or "").strip()
+            if requested and not _is_authorized_company_id(requested, allowed_company_ids):
                 _hardening_logger.warning(
-                    "403 cross-company %s %s | user=%s authenticated_company_id=%s requested_%s=%s",
+                    "403 cross-company %s %s | user=%s authenticated_company_id=%s requested_%s=%s allowed_count=%d",
                     request.method, request.url.path, getattr(user, "email", None),
-                    company_id, key, value,
+                    company_id, key, requested, len(allowed_company_ids),
                 )
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "Cross-company access is not permitted: the selected company "
-                        f"({str(value).strip()}) is not your licensed company ({company_id}). "
-                        "Sign out, sign in again and select your own company."
+                        "The selected company is not in your licensed workspace's "
+                        "authorized Master Data company list. Select one of your own "
+                        "companies from the company selector."
                     ),
                 )
 
-    # Check JSON request bodies as well. Starlette caches request.json(), so the
-    # downstream FastAPI/Pydantic body parser can still consume the same body.
+    # Apply the same allow-list to JSON bodies. Starlette caches request.json(),
+    # so the downstream FastAPI/Pydantic parser can still consume the body.
     content_type = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
     if content_type == "application/json":
         try:
@@ -237,8 +263,14 @@ async def get_current_user_hardened(
         except Exception:
             payload = None
         for requested in _find_company_ids(payload):
-            if requested and requested != company_id:
-                raise HTTPException(status_code=403, detail="Cross-company access is not permitted")
+            if requested and not _is_authorized_company_id(requested, allowed_company_ids):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "The selected company is not in your licensed workspace's "
+                        "authorized Master Data company list."
+                    ),
+                )
 
     return user
 

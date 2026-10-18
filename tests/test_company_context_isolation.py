@@ -562,3 +562,42 @@ def test_configured_owner_workspace_recovers_when_creator_id_differs_from_sessio
             tr.reset_authenticated_company(company_token)
 
     asyncio.run(scenario())
+
+
+
+def test_production_guard_allows_verified_licensee_companies_only():
+    from backend import production_hardening
+    from backend import tenant_runtime as tr
+
+    token = tr.set_tenant_company_ids([
+        "cus-3d9d5bc4f59749ab8f0802727fa69014",
+        "2b36ca27-e282-488c-971b-81aa57d26022",
+    ])
+    try:
+        allowed = production_hardening._authorized_company_ids(
+            "cus-3d9d5bc4f59749ab8f0802727fa69014"
+        )
+        assert production_hardening._is_authorized_company_id(
+            "2b36ca27-e282-488c-971b-81aa57d26022", allowed
+        )
+        assert production_hardening._is_authorized_company_id(
+            "cus-3d9d5bc4f59749ab8f0802727fa69014", allowed
+        )
+        assert not production_hardening._is_authorized_company_id(
+            "someone-else-company", allowed
+        )
+    finally:
+        tr.reset_tenant_company_ids(token)
+
+
+def test_production_guard_fails_closed_without_tenant_allow_list():
+    from backend import production_hardening
+    from backend import tenant_runtime as tr
+
+    token = tr.set_tenant_company_ids([])
+    try:
+        allowed = production_hardening._authorized_company_ids("cus-only")
+        assert production_hardening._is_authorized_company_id("cus-only", allowed)
+        assert not production_hardening._is_authorized_company_id("other-company", allowed)
+    finally:
+        tr.reset_tenant_company_ids(token)
