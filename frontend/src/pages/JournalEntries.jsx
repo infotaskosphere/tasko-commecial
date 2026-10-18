@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import { NotebookPen, Plus, RefreshCw, Trash2, X, CheckSquare, Square, XCircle, Building2, ChevronLeft, ChevronRight, Pencil, AlertTriangle, ShieldCheck, FileDown, FileSpreadsheet, FileText } from 'lucide-react';
@@ -30,6 +31,8 @@ function emptyLine(defaultType = 'Dr') { return { account_id: '', account_name: 
 function JournalEntriesInner() {
   const isDark = useDark();
   const { user, hasPermission } = useAuth();
+  const canEditJournal = canPerformFinixAction(user, 'can_view_journal_entries', 'edit');
+  const canDeleteJournal = canPerformFinixAction(user, 'can_view_journal_entries', 'delete');
   const explicitPermissions = user?.permissions && typeof user.permissions === 'object'
     ? user.permissions
     : {};
@@ -278,6 +281,7 @@ function JournalEntriesInner() {
   const deletingIds = useRef(new Set());
 
   const deleteEntry = async (id) => {
+    if (!canDeleteJournal) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (deletingIds.current.has(id)) return;            // ignore a second click while the first is in flight
     if (!window.confirm('Delete this journal entry? This cannot be undone.')) return;
     deletingIds.current.add(id);
@@ -300,6 +304,7 @@ function JournalEntriesInner() {
   };
 
   const openEdit = (entry) => {
+    if (!canEditJournal) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (entry.source && entry.source !== 'manual') {
       toast.error('Auto-posted entries must be corrected at the source document (invoice, bill, or payment).');
       return;
@@ -375,6 +380,7 @@ function JournalEntriesInner() {
   const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
 
   const bulkDelete = async () => {
+    if (!canDeleteJournal) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     const ids = Array.from(selectedIds);
     if (ids.length === 0) { toast.error('Select at least one entry first'); return; }
     if (!window.confirm(`Delete ${ids.length} journal ${ids.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`)) return;
@@ -396,6 +402,7 @@ function JournalEntriesInner() {
   };
 
   const handleDeleteAll = async () => {
+    if (!canDeleteJournal) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     const activeCompany = companies.find(c => c.id === companyId);
     // Deleting across every company at once is not allowed - the server refuses it too.
     if (!companyId || !activeCompany) {
@@ -795,16 +802,17 @@ function JournalEntriesInner() {
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <p className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{fmtC(e.total_debit)}</p>
-                    {!selectMode && (
+                    {canEditJournal && !selectMode && (
                       <button
                         onClick={() => openEdit(e)}
                         title={isManual ? 'Edit entry' : 'Auto-posted — must be corrected at the source document'}
                         className={isManual ? 'text-slate-300 hover:text-blue-500' : 'text-slate-300 hover:text-slate-400'}
+                        disabled={!isManual}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
                     )}
-                    {!selectMode && (
+                    {canDeleteJournal && !selectMode && (
                       <button onClick={() => deleteEntry(e.id)} title="Delete entry" className="text-slate-300 hover:text-rose-500"><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
