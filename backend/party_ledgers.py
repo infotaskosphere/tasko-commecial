@@ -22,6 +22,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import db, get_current_user
+from backend.finix_action_permissions import require_finix_action
 from backend.modules.finix_ai.accounting.models_party_ledgers import RenameRequest
 
 from backend.models import User
@@ -198,8 +199,7 @@ async def get_party_ledger(party_type: str, party_id: str, current_user: User = 
 async def rename_party_ledger_route(
     party_type: str, party_id: str, payload: dict, current_user: User = Depends(get_current_user)
 ):
-    if current_user.role != "admin":
-        raise HTTPException(403, "Only an admin can rename a ledger.")
+    require_finix_action(current_user, "can_view_accounting_reports", "edit")
     party = await db.party_ledgers.find_one({"id": party_id, "party_type": party_type})
     if not party:
         raise HTTPException(404, "Ledger not found.")
