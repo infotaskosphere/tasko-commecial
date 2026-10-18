@@ -1828,9 +1828,7 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     raw = _tenant_raw_db()
     owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
 
-    # Resolve the commercial customer by authenticated customer/license ID,
-    # and support older logins through the exact assigned company only when
-    # that record is not the Platform Owner workspace.
+    # Resolve customer scope from the authenticated license when available.
     if license_id:
         linked_license = await raw.commercial_licenses.find_one(
             {"id": license_id},
@@ -1842,6 +1840,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
                 return {"id": "__no_tenant_scope__"}
             customer_id = customer_id or linked_customer_id
 
+    # Legacy user records may lack commercial_customer_id/license_id. Recover
+    # only from their assigned, non-owner company and verify that marker
+    # against the commercial customer/license registry.
     if not customer_id and company_id:
         company_identity = await raw.companies.find_one(
             {"id": company_id},
@@ -1861,22 +1862,23 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
                     {"id": candidate_license},
                     {"_id": 0, "id": 1, "customer_id": 1},
                 )
-                candidate_from_license = _norm_id((linked_license or {}).get("customer_id"))
-                if candidate_from_license:
-                    customer_id = candidate_from_license
+                linked_customer_id = _norm_id((linked_license or {}).get("customer_id"))
+                if linked_customer_id:
+                    customer_id = linked_customer_id
                     license_id = candidate_license
             if not customer_id and candidate_customer:
-                customer_row = await raw.commercial_license_customers.find_one(
-                    {"id": candidate_customer}, {"_id": 0, "id": 1}
+                linked_customer = await raw.commercial_license_customers.find_one(
+                    {"id": candidate_customer},
+                    {"_id": 0, "id": 1},
                 )
-                if customer_row:
+                if linked_customer:
                     customer_id = candidate_customer
 
     if not customer_id:
         return {"id": "__no_tenant_scope__"}
 
     if not license_id:
-        license_doc = await raw.commercial_licenses.find_one(
+        linked_license = await raw.commercial_licenses.find_one(
             {
                 "customer_id": customer_id,
                 "status": {"$in": ["active", "trial"]},
@@ -1884,9 +1886,10 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             {"_id": 0, "id": 1, "customer_id": 1},
             sort=[("issued_at", -1)],
         )
-        license_id = _norm_id((license_doc or {}).get("id"))
+        license_id = _norm_id((linked_license or {}).get("id"))
 
-    # Staff/manager users remain constrained to their assigned company.
+    # Staff/manager access is limited to their assigned company, verified
+    # against the same customer/license. Do not use this branch for admins.
     if not is_admin:
         if not company_id:
             return {"id": "__no_tenant_scope__"}
@@ -1908,25 +1911,20 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             return {"id": "__no_tenant_scope__"}
         return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
-    # Company Profiles are legal entities owned by the commercial customer.
-    # Do not restrict listing to the login's operating company ID.
-    customer_filter = {
+    # Admin Company Profiles are all legal entities attached to this customer.
+    # Keep license ID as a fallback for older rows without customer markers.
+    return {
         "$and": [
             {
                 "$or": [
                     {"commercial_customer_id": customer_id},
                     {"id": customer_id},
-                    *(
-                        [{"license_id": license_id}]
-                        if license_id
-                        else []
-                    ),
+                    *([{"license_id": license_id}] if license_id else []),
                 ]
             },
             owner_workspace_filter,
         ]
     }
-    return customer_filter
 
 
 async def _heal_tenant_company_markers(current_user: User, companies: List[Dict[str, Any]]) -> None:
