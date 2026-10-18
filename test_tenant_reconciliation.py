@@ -14,6 +14,36 @@ if __name__ == "__main__":
     unittest.main()
 
 
+def test_tenant_upsert_preserves_company_id_without_conflicting_update_paths():
+    from backend.tenant_runtime import (
+        _scope_query, _scope_update, set_authenticated_company, reset_authenticated_company,
+    )
+    from fastapi import HTTPException
+
+    token = set_authenticated_company("company-a")
+    try:
+        query = _scope_query({"id": "audit:company-a"})
+        update = _scope_update(
+            {"$setOnInsert": {"id": "audit:company-a", "company_id": "company-a", "locked": False}},
+            query,
+        )
+        assert query["company_id"] == "company-a"
+        assert update["$setOnInsert"]["company_id"] == "company-a"
+        assert "company_id" not in update.get("$set", {})
+
+        normal_update = _scope_update({"$set": {"locked": True}}, query)
+        assert normal_update["$set"]["company_id"] == "company-a"
+
+        try:
+            _scope_update({"$setOnInsert": {"company_id": "company-b"}}, query)
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("Cross-company upsert should be rejected")
+    finally:
+        reset_authenticated_company(token)
+
+
 def test_company_owned_finix_audit_history_collections_are_tenant_scoped():
     from backend.tenant_runtime import TENANT_COLLECTIONS
 
