@@ -1,256 +1,459 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Activity, ArrowUp, Bot, ChevronDown, ChevronLeft, ChevronRight, Copy,
-  FileText, History, Menu, MessageSquare, Paperclip, Plus, Settings, Sparkles,
-  Square, Trash2, Upload, X
-} from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, Menu, PanelRight, Plus } from "lucide-react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import {
-  listProviders, listAccounts, getModels, getRoutingConfig, updateRoutingConfig,
-  getExecutionHistory, executeTask, executeOmni, getStats, listConversations,
-  createConversation, getConversation, deleteConversation
+  listProviders, listAccounts, getModels, getRoutingConfig, getExecutionHistory, executeTask, streamOmni,
+  getStats, listConversations, createConversation, getConversation, deleteConversation,
 } from "@/lib/aiweaveApi";
-import { PROVIDERS, CAPABILITIES, ROUTING_STRATEGIES, COST_POLICIES } from "@/lib/aiweaveConstants";
+import { pname } from "@/components/aiweave/shared";
+import {
+  SYSTEM_INSTRUCTION, buildContext, describeFailure, fromStored, normaliseTrail, titleFrom,
+} from "@/components/aiweave/chatModel";
+import MessageView from "@/components/aiweave/MessageView";
+import Composer from "@/components/aiweave/Composer";
+import EmptyState from "@/components/aiweave/EmptyState";
+import ModelPicker from "@/components/aiweave/ModelPicker";
+import HistoryRail from "@/components/aiweave/HistoryRail";
+import Inspector from "@/components/aiweave/Inspector";
+import SettingsDrawer from "@/components/aiweave/SettingsDrawer";
+import WeaveMark from "@/components/aiweave/WeaveMark";
+import "@/components/aiweave/aiweave.css";
 
-const ACCEPTED = ".pdf,.xlsx,.xls,.xlsm,.csv,.jpg,.jpeg,.png,.webp,.gif";
-const MAX_DOCS = 25;
-
-const pname = (id) => PROVIDERS.find((p) => p.id === id)?.shortName || PROVIDERS.find((p) => p.id === id)?.name || id || "AI";
-const fmt = (v) => { try { return v ? new Date(v).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : ""; } catch { return ""; } };
-
-function Bubble({children, tone=""}) {
-  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ${tone}`}>{children}</span>;
-}
-function Text({value}) {
-  return <div className="whitespace-pre-wrap break-words text-[15px] leading-7">{String(value || "")}</div>;
-}
+const MAX_ATTACHMENTS = 10;
+const nid = (p) => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const convId = (c) => c?.id || c?.conversation_id || null;
 
 export default function AIDocumentReader() {
-  const [sidebar,setSidebar]=useState(true), [inspector,setInspector]=useState(true);
-  const [settings,setSettings]=useState(false), [tab,setTab]=useState("providers");
-  const [modelMenu,setModelMenu]=useState(false), [search,setSearch]=useState("");
-  const [prompt,setPrompt]=useState(""), [running,setRunning]=useState(false), [status,setStatus]=useState("");
-  const [messages,setMessages]=useState([]), [conversations,setConversations]=useState([]), [active,setActive]=useState(null);
-  const [providers,setProviders]=useState([]), [accounts,setAccounts]=useState([]), [models,setModels]=useState([]);
-  const [routing,setRouting]=useState(null), [executions,setExecutions]=useState([]), [stats,setStats]=useState(null);
-  const [provider,setProvider]=useState("auto"), [selectedModel,setSelectedModel]=useState("auto"), [capability,setCapability]=useState("chat");
-  const [files,setFiles]=useState([]);
-  const [modelSearch,setModelSearch]=useState(""), [auditSearch,setAuditSearch]=useState("");
-  const [docFiles,setDocFiles]=useState([]), [docQuestion,setDocQuestion]=useState(""), [docAnswer,setDocAnswer]=useState(""), [docBusy,setDocBusy]=useState(false);
-  const fileRef=useRef(null), docRef=useRef(null), endRef=useRef(null);
+  // layout
+  const [rail, setRail] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [settings, setSettings] = useState(false);
+  const [tab, setTab] = useState("providers");
+  const [search, setSearch] = useState("");
 
-  const refresh=async()=>{try{
-    const [p,a,m,r,e,s,c]=await Promise.all([listProviders(),listAccounts(),getModels(),getRoutingConfig(),getExecutionHistory(),getStats(),listConversations()]);
-    setProviders(p||[]);setAccounts(a||[]);setModels(m||[]);setRouting(r||null);setExecutions(e||[]);setStats(s||null);setConversations(c||[]);
-  }catch(e){console.warn("AIWeave refresh failed",e);}};
-  useEffect(()=>{refresh();},[]);
-  useEffect(()=>{endRef.current?.scrollIntoView({behavior:"smooth"});},[messages,running]);
+  // conversation
+  const [messages, setMessages] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [active, setActive] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [prompt, setPrompt] = useState("");
+  const [files, setFiles] = useState([]);
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const activeModel=selectedModel==="auto"?null:models.find(x=>x.id===selectedModel);
-  const connected=useMemo(()=>providers.filter(x=>x.connectedCount>0),[providers]);
-  const visibleModels=useMemo(()=>models.filter(x=>!modelSearch||`${x.name} ${x.id} ${x.provider}`.toLowerCase().includes(modelSearch.toLowerCase())),[models,modelSearch]);
-  const visibleExec=useMemo(()=>executions.filter(x=>!auditSearch||`${x.prompt} ${x.providerName} ${x.accountName} ${x.model}`.toLowerCase().includes(auditSearch.toLowerCase())),[executions,auditSearch]);
+  // routing choices
+  const [provider, setProvider] = useState("auto");
+  const [selectedModel, setSelectedModel] = useState("auto");
+  const [mode, setMode] = useState("chat");
 
-  const newChat=()=>{setActive(null);setMessages([]);setPrompt("");setFiles([]);setStatus("");};
-  const openChat=async(id)=>{try{const c=await getConversation(id);setActive(c);setMessages(c.messages||[]);setStatus("");}catch(e){toast.error(e?.response?.data?.detail||"Could not open conversation");}};
-  const removeChat=async(id,title,e)=>{e?.stopPropagation();if(!id)return;if(!window.confirm(`Delete "${title||"this conversation"}"? This cannot be undone.`))return;try{await deleteConversation(id);if((active?.id||active?.conversation_id)===id)newChat();await refresh();toast.success("Conversation deleted.");}catch(e){toast.error(e?.response?.data?.detail||e?.message||"Could not delete conversation.");}};
+  // platform data (read-only for customers)
+  const [providers, setProviders] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [models, setModels] = useState([]);
+  const [routing, setRouting] = useState(null);
+  const [executions, setExecutions] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+  const [modelSearch, setModelSearch] = useState("");
+  const [auditSearch, setAuditSearch] = useState("");
 
-  const send=async()=>{
-    const text=prompt.trim();if(!text||running)return;
-    const attachedFiles=[...files];
-    const userMsg={id:`u-${Date.now()}`,role:"user",content:text,created_at:new Date().toISOString()};
-    setMessages(x=>[...x,userMsg]);setPrompt("");setRunning(true);
-    try{
-      let conv=active;
-      if(!conv){conv=await createConversation({title:text.slice(0,80)});setActive(conv);}
-      let documentContext="";
-      if(attachedFiles.length){
-        setStatus(`Reading ${attachedFiles.length} uploaded document${attachedFiles.length===1?"":"s"}...`);
-        const form=new FormData();
-        attachedFiles.forEach(file=>form.append("files",file));
-        const response=await api.post("/ai/workspace/analyze-documents",form,{headers:{"Content-Type":"multipart/form-data"},timeout:600000});
-        const data=response?.data||{};
-        const results=Array.isArray(data.results)?data.results:[];
-        const errors=Array.isArray(data.errors)?data.errors:[];
-        if(!results.length){
-          const detail=errors.map(x=>x?.filename?`${x.filename}: ${x.error||"document processing failed"}`:x?.error).filter(Boolean).join(" | ");
-          throw new Error(detail||"The uploaded document could not be read.");
-        }
-        documentContext=results.map(x=>{
-          const analysis=String(x?.analysis||"").trim();
-          return `DOCUMENT: ${x?.filename||"Uploaded document"}\\nDOCUMENT TYPE: ${x?.document_type||"Unknown"}\\nEXTRACTED ANALYSIS:\\n${analysis.slice(0,14000)}`;
-        }).join("\\n\\n--- DOCUMENT BOUNDARY ---\\n\\n").slice(0,60000);
-        if(errors.length)toast.warning(`${errors.length} document${errors.length===1?"":"s"} could not be processed.`);
-      }
-      setStatus(selectedModel==="auto"?"AIWeave Omni is selecting the best available model...":`Using ${activeModel?.name||selectedModel}...`);
-      let result;
+  // document workspace (settings drawer)
+  const [docFiles, setDocFiles] = useState([]);
+  const [docQuestion, setDocQuestion] = useState("");
+  const [docAnswer, setDocAnswer] = useState("");
+  const [docBusy, setDocBusy] = useState(false);
+  const docRef = useRef(null);
+
+  // streaming plumbing
+  const scroller = useRef(null);
+  const inputRef = useRef(null);
+  const pinned = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+  const abortRef = useRef(null);
+  const frame = useRef(0);
+  const live = useRef({ id: null, content: "", reasoning: "" });
+  const docContext = useRef("");
+
+  const connected = useMemo(() => providers.filter((p) => p.connectedCount > 0), [providers]);
+  const visibleModels = useMemo(
+    () => models.filter((x) => !modelSearch || `${x.name} ${x.id} ${x.provider}`.toLowerCase().includes(modelSearch.toLowerCase())),
+    [models, modelSearch]
+  );
+  const visibleExec = useMemo(
+    () => executions.filter((x) => !auditSearch || `${x.prompt} ${x.providerName} ${x.accountName} ${x.model}`.toLowerCase().includes(auditSearch.toLowerCase())),
+    [executions, auditSearch]
+  );
+
+  const refreshActivity = useCallback(async () => {
+    try {
+      const [e, s, c] = await Promise.all([getExecutionHistory(), getStats(), listConversations()]);
+      setExecutions(e || []); setStats(s || null); setConversations(c || []);
+    } catch (err) { console.warn("AIWeave activity refresh failed", err); }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
       try {
-        result = await executeOmni({
-          prompt: text,
-          messages: [...messages, userMsg].slice(-30).map(x => ({ role: x.role, content: x.content })),
-          conversation_id: conv.id || conv.conversation_id,
-          task_type: capability,
-          required_capability: attachedFiles.length ? "document_analysis" : capability,
-          provider: provider,
-          model: selectedModel,
-          document_context: documentContext,
-          files: attachedFiles.map(x => ({ name: x.name, type: x.type, size: x.size }))
-        });
-      } catch (omniErr) {
-        // Fallback to legacy executeTask if needed
-        result = await executeTask({
-          prompt: text,
-          messages: [...messages, userMsg].slice(-30).map(x => ({ role: x.role, content: x.content })),
-          conversationId: conv.id || conv.conversation_id,
-          taskType: capability,
-          requiredCapability: attachedFiles.length ? "document_analysis" : capability,
-          preferredProvider: provider,
-          preferredModel: selectedModel,
-          documentContext,
-          files: attachedFiles.map(x => ({ name: x.name, type: x.type, size: x.size }))
-        });
-      }
-      const assistant = {
-        id: `a-${Date.now()}`,
-        role: "assistant",
-        content: result.content || result.output || "The model completed without returning text.",
-        created_at: new Date().toISOString(),
-        providerName: result.providerName || result.provider_name,
-        modelName: result.modelName || result.model_name || result.model,
-        accountName: result.accountName || result.account_name,
-        fallbackTrail: result.fallbackTrail || result.fallback_trail || [],
-        tokens: result.tokens || (result.usage ? result.usage.total_tokens : 0),
-        latencyMs: result.latencyMs || result.latency_ms
-      };
-      setMessages(x => [...x, assistant]);
-      setStatus(assistant.fallbackTrail.length ? `AIWeave Omni completed with automatic fallback (${assistant.fallbackTrail.length} event${assistant.fallbackTrail.length === 1 ? "" : "s"}).` : `Completed with ${assistant.providerName || "AIWeave Omni"}.`);
-      setFiles([]);
-      await refresh();
-    } catch (e) {
-const d=e?.response?.data?.detail||e?.message||"AIWeave could not complete this request.";setMessages(x=>[...x,{id:`e-${Date.now()}`,role:"error",content:d}]);setStatus("AIWeave could not complete this request.");toast.error(d);}
-    finally{setRunning(false);}
+        const [p, a, m, r, e, s, c] = await Promise.all([listProviders(), listAccounts(), getModels(), getRoutingConfig(), getExecutionHistory(), getStats(), listConversations()]);
+        setProviders(p || []); setAccounts(a || []); setModels(m || []); setRouting(r || null);
+        setExecutions(e || []); setStats(s || null); setConversations(c || []);
+      } catch (err) { console.warn("AIWeave load failed", err); }
+      setLoaded(true);
+    })();
+    return () => { abortRef.current?.abort(); if (frame.current) cancelAnimationFrame(frame.current); };
+  }, []);
+
+  // keep the newest text in view unless the reader scrolled up to read
+  useEffect(() => {
+    const el = scroller.current;
+    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+  const onScroll = () => {
+    const el = scroller.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+    pinned.current = atBottom;
+    setShowJump(!atBottom);
   };
-  const keyDown=(e)=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}};
-  const attach=(list)=>setFiles(x=>[...x,...Array.from(list||[])].slice(0,10));
+  const jump = () => { const el = scroller.current; if (el) { pinned.current = true; el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }); } };
 
-  const connect=async(e)=>{e.preventDefault();setConnecting(true);try{
-    await connectAccount({providerId:connectProvider,name:connectName||`${pname(connectProvider)} Account`,identity:identity||"configured",credentialSecret:secret,baseUrl:baseUrl||undefined,priority:1,weight:100,capabilities:["chat","reasoning","coding","debugging","vision","document_analysis","tool_calling","long_context","structured_output"]});
-    setConnectOpen(false);setSecret("");toast.success("AI account connected.");await refresh();
-  }catch(e){toast.error(e?.response?.data?.detail||e?.message||"Could not connect account.");}finally{setConnecting(false);}};
+  const patch = useCallback((id, change) => {
+    setMessages((list) => list.map((m) => (m.id === id ? { ...m, ...(typeof change === "function" ? change(m) : change) } : m)));
+  }, []);
 
-  const saveRouting=async(patch)=>{try{setRouting(await updateRoutingConfig(patch));toast.success("Routing policy updated.");}catch(e){toast.error(e?.response?.data?.detail||"Could not update routing.");}};
-  const test=async(a)=>{try{const x=await testAccount(a.id);toast.success(x.message||"Provider verified.");await refresh();}catch(e){toast.error(e?.response?.data?.detail||"Provider test failed.");}};
-  const toggle=async(a)=>{try{await toggleAccount(a.id);await refresh();}catch(e){toast.error(e?.response?.data?.detail||"Could not update account.");}};
-  const remove=async(a)=>{if(!confirm(`Remove ${a.name}?`))return;try{await deleteAccount(a.id);await refresh();toast.success("Account removed.");}catch(e){toast.error(e?.response?.data?.detail||"Could not remove account.");}};
+  const scheduleFlush = () => {
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const { id, content, reasoning } = live.current;
+      patch(id, { content, reasoning });
+    });
+  };
+  const flushNow = () => {
+    if (frame.current) { cancelAnimationFrame(frame.current); frame.current = 0; }
+    const { id, content, reasoning } = live.current;
+    if (id) patch(id, { content, reasoning });
+  };
 
-  const analyzeDocs=async()=>{if(!docFiles.length||docBusy)return;setDocBusy(true);try{
-    const f=new FormData();docFiles.forEach(x=>f.append("files",x));
-    const {data}=await api.post("/ai/workspace/analyze-documents",f,{headers:{"Content-Type":"multipart/form-data"},timeout:600000});
-    setDocAnswer((data?.results||[]).map(x=>`### ${x.filename}${x.analysis||"Analysis completed."}`).join("")||"No analysis returned.");toast.success("Document analysis completed.");
-  }catch(e){setDocAnswer(e?.response?.data?.detail||"Server-side document analysis is unavailable.");toast.error("Document analysis failed.");}finally{setDocBusy(false);}};
-  const askDocs=async()=>{if(!docQuestion.trim())return;setDocBusy(true);try{const {data}=await api.post("/ai/workspace/query",{question:docQuestion.trim()},{timeout:180000});setDocAnswer(data?.answer||"No answer returned.");}catch(e){setDocAnswer(e?.response?.data?.detail||"AIWeave could not query document memory.");}finally{setDocBusy(false);}};
+  const newChat = () => {
+    if (running) return;
+    setActive(null); setMessages([]); setPrompt(""); setFiles([]); setStatus(""); setSelectedId(null);
+    docContext.current = ""; setRail(false);
+    inputRef.current?.focus();
+  };
 
-  return <div className="flex h-[calc(100vh-64px)] min-h-[650px] w-full min-w-0 flex-col overflow-hidden bg-white text-slate-900">
-      <section className="relative shrink-0 overflow-hidden bg-gradient-to-r from-[#0D3B66] via-[#1267A8] to-[#1F6FB2] text-white">
-        <div className="absolute inset-0 opacity-20" aria-hidden="true">
-          <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full border-[28px] border-cyan-200/30"></div>
-          <div className="absolute right-24 top-10 h-24 w-24 rounded-full border border-cyan-100/20"></div>
-          <div className="absolute right-8 bottom-5 h-20 w-20 rounded-full bg-cyan-200/10 blur-2xl"></div>
-        </div>
-        <div className="relative flex min-h-[132px] items-center justify-between gap-4 px-5 py-6 sm:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            <button className="rounded-lg p-2 text-white/80 hover:bg-white/10 md:hidden" onClick={()=>setSidebar(true)} aria-label="Open AIWeave history"><Menu size={19}/></button>
-            <button className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 md:block" onClick={()=>setSidebar(x=>!x)} aria-label="Toggle AIWeave history">{sidebar?<ChevronLeft size={18}/>:<ChevronRight size={18}/>}</button>
-            <div>
-              <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100">AIWEAVE</div>
-              <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">AIWeave</h1>
-              <p className="mt-1 text-xs text-blue-100 sm:text-sm">Your multi-model AI workspace. Ask anything, get results.</p>
-            </div>
+  const openChat = async (id) => {
+    if (running) return;
+    try {
+      const c = await getConversation(id);
+      setActive(c); setMessages((c.messages || []).map(fromStored)); setStatus(""); setSelectedId(null);
+      docContext.current = ""; pinned.current = true; setRail(false);
+    } catch (e) { toast.error(e?.response?.data?.detail || "Could not open that conversation."); }
+  };
+
+  const removeChat = async (id, title, e) => {
+    e?.stopPropagation();
+    if (!id || !window.confirm(`Delete "${title || "this conversation"}"? This cannot be undone.`)) return;
+    try {
+      await deleteConversation(id);
+      if (convId(active) === id) newChat();
+      await refreshActivity();
+      toast.success("Conversation deleted.");
+    } catch (err) { toast.error(err?.response?.data?.detail || "Could not delete that conversation."); }
+  };
+
+  const attach = (list) => {
+    const incoming = Array.from(list || []);
+    if (!incoming.length) return;
+    setFiles((x) => {
+      if (x.length + incoming.length > MAX_ATTACHMENTS) toast.warning(`You can attach up to ${MAX_ATTACHMENTS} documents per message.`);
+      return [...x, ...incoming].slice(0, MAX_ATTACHMENTS);
+    });
+  };
+
+  const readDocuments = async (attached) => {
+    setStatus(`Reading ${attached.length} document${attached.length === 1 ? "" : "s"}…`);
+    const form = new FormData();
+    attached.forEach((f) => form.append("files", f));
+    const response = await api.post("/ai/workspace/analyze-documents", form, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
+    const data = response?.data || {};
+    const results = Array.isArray(data.results) ? data.results : [];
+    const errors = Array.isArray(data.errors) ? data.errors : [];
+    if (!results.length) {
+      const detail = errors.map((x) => (x?.filename ? `${x.filename}: ${x.error || "could not be processed"}` : x?.error)).filter(Boolean).join(" | ");
+      throw new Error(detail || "The uploaded documents could not be read.");
+    }
+    if (errors.length) toast.warning(`${errors.length} document${errors.length === 1 ? "" : "s"} could not be processed.`);
+    const text = results
+      .map((x) => `DOCUMENT: ${x?.filename || "Uploaded document"}\nDOCUMENT TYPE: ${x?.document_type || "Unknown"}\nEXTRACTED ANALYSIS:\n${String(x?.analysis || "").trim().slice(0, 14000)}`)
+      .join("\n\n--- DOCUMENT BOUNDARY ---\n\n");
+    // later questions in this chat keep the same evidence
+    docContext.current = [docContext.current, text].filter(Boolean).join("\n\n--- DOCUMENT BOUNDARY ---\n\n").slice(-60000);
+  };
+
+  /** Runs one turn. `base` is the conversation up to and including the user's message. */
+  const runTurn = async (text, attached, base) => {
+    const assistantId = nid("a");
+    live.current = { id: assistantId, content: "", reasoning: "" };
+    const placeholder = { id: assistantId, role: "assistant", content: "", reasoning: "", status: "pending", meta: {}, created_at: new Date().toISOString() };
+    setMessages([...base, placeholder]);
+    setSelectedId(null); pinned.current = true; setRunning(true);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const acc = { trail: [], meta: {}, done: false, error: null, started: false };
+
+    let conv = active;
+    try {
+      if (!conv) {
+        conv = await createConversation({ title: titleFrom(text) });
+        setActive(conv);
+      }
+      if (attached.length) {
+        await readDocuments(attached);
+        setFiles([]);
+      }
+
+      setStatus(selectedModel === "auto" ? "Choosing the best available model…" : `Using ${selectedModel}…`);
+      const payload = {
+        prompt: text,
+        messages: buildContext(base),
+        conversation_id: convId(conv),
+        task_type: mode,
+        required_capability: docContext.current ? "document_analysis" : mode,
+        provider,
+        model: selectedModel,
+        document_context: docContext.current || undefined,
+        files: attached.map((f) => ({ name: f.name, type: f.type, size: f.size })),
+        user_preferences: { system_instruction: SYSTEM_INSTRUCTION },
+      };
+
+      await streamOmni(payload, {
+        signal: controller.signal,
+        onChunk: (c) => {
+          switch (c.event) {
+            case "start":
+              acc.started = true;
+              acc.meta = { ...acc.meta, provider: c.provider, providerName: pname(c.provider), modelName: c.model };
+              patch(assistantId, (m) => ({ status: "streaming", meta: { ...m.meta, ...acc.meta, fallbackTrail: acc.trail } }));
+              setStatus(`${pname(c.provider)} is answering…`);
+              break;
+            case "chunk":
+              live.current.content += c.delta || "";
+              scheduleFlush();
+              break;
+            case "reasoning":
+              live.current.reasoning += c.reasoning_delta || "";
+              scheduleFlush();
+              break;
+            case "fallback":
+              acc.trail = [...acc.trail, { provider: c.metadata?.from_provider, model: c.metadata?.from_model, status: "FAILED", reason: c.metadata?.reason }];
+              patch(assistantId, (m) => ({ meta: { ...m.meta, fallbackTrail: acc.trail }, note: "That model was busy. Trying another…" }));
+              setStatus("That model was busy. Trying another…");
+              break;
+            case "done": {
+              acc.done = true;
+              const md = c.metadata || {};
+              acc.meta = {
+                ...acc.meta,
+                provider: c.provider || acc.meta.provider,
+                providerName: pname(c.provider || acc.meta.provider),
+                modelName: md.model_name || c.model || acc.meta.modelName,
+                accountName: md.account_name,
+                latencyMs: md.latency_ms,
+                tokens: c.usage?.total_tokens || null,
+                executionId: md.execution_id,
+                fallbackTrail: normaliseTrail(md.fallback_trail?.length ? md.fallback_trail : acc.trail),
+              };
+              break;
+            }
+            case "error":
+              acc.error = c.error?.message || "The answer was interrupted.";
+              break;
+            default: break;
+          }
+        },
+      });
+
+      flushNow();
+      if (acc.error && !live.current.content) throw Object.assign(new Error(acc.error), { status: 503 });
+      if (!acc.done && !acc.error && !live.current.content) throw new Error("The model returned no answer. Try again.");
+      patch(assistantId, {
+        status: acc.done ? "done" : "error",
+        error: acc.done ? undefined : `${acc.error || "The answer was interrupted."} The text above is incomplete and was not saved.`,
+        meta: acc.meta,
+        note: undefined,
+      });
+      if (acc.done) {
+        setSelectedId(assistantId);
+        setStatus(acc.trail.length ? `Answered after switching ${acc.trail.length} time${acc.trail.length === 1 ? "" : "s"}.` : `Answered by ${acc.meta.providerName}.`);
+      } else {
+        setStatus("The answer was interrupted.");
+      }
+      setFiles([]);
+    } catch (err) {
+      flushNow();
+      if (err?.name === "AbortError") {
+        patch(assistantId, { status: "stopped", note: undefined });
+        setStatus("Stopped.");
+      } else if ((err?.status === 404 || err?.status === 501) && !acc.started) {
+        // the streaming route is missing on an older server: use the classic one-shot route
+        try {
+          const r = await executeTask({
+            prompt: text, messages: buildContext(base), conversationId: convId(conv), taskType: mode,
+            requiredCapability: docContext.current ? "document_analysis" : mode, preferredProvider: provider,
+            preferredModel: selectedModel, documentContext: docContext.current,
+          });
+          patch(assistantId, {
+            content: r.output || "", status: "done", note: undefined,
+            meta: { providerName: r.providerName, modelName: r.modelName || r.model, accountName: r.accountName, fallbackTrail: normaliseTrail(r.fallbackTrail), tokens: r.tokens, latencyMs: r.latencyMs },
+          });
+          setSelectedId(assistantId); setFiles([]);
+        } catch (legacy) {
+          const message = describeFailure(legacy);
+          patch(assistantId, { status: "error", error: message, note: undefined }); setStatus(message);
+        }
+      } else {
+        const message = describeFailure(err);
+        patch(assistantId, { status: "error", error: message, note: undefined });
+        setStatus(message);
+        if (err?.status === 429) toast.warning(message);
+      }
+    } finally {
+      abortRef.current = null;
+      setRunning(false);
+      refreshActivity();
+    }
+  };
+
+  const send = (override) => {
+    const text = String(override ?? prompt).trim();
+    if (!text || running) return;
+    const attached = override ? [] : [...files];
+    const user = { id: nid("u"), role: "user", content: text, status: "done", created_at: new Date().toISOString(), attachments: attached.map((f) => ({ name: f.name })) };
+    setPrompt("");
+    runTurn(text, attached, [...messages, user]);
+  };
+
+  const regenerate = () => {
+    if (running) return;
+    let at = messages.length - 1;
+    while (at >= 0 && messages[at].role !== "user") at--;
+    if (at < 0) return;
+    runTurn(messages[at].content, [], messages.slice(0, at + 1));
+  };
+
+  const stop = () => abortRef.current?.abort();
+
+  const pickStarter = (s) => {
+    setPrompt(s.text); setMode(s.mode);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const analyzeDocs = async () => {
+    if (!docFiles.length || docBusy) return;
+    setDocBusy(true);
+    try {
+      const f = new FormData(); docFiles.forEach((x) => f.append("files", x));
+      const { data } = await api.post("/ai/workspace/analyze-documents", f, { headers: { "Content-Type": "multipart/form-data" }, timeout: 600000 });
+      setDocAnswer((data?.results || []).map((x) => `### ${x.filename}\n${x.analysis || "Analysis completed."}`).join("\n\n") || "No analysis returned.");
+      toast.success("Document analysis completed.");
+    } catch (e) { setDocAnswer(e?.response?.data?.detail || "Server-side document analysis is unavailable."); toast.error("Document analysis failed."); }
+    finally { setDocBusy(false); }
+  };
+  const askDocs = async () => {
+    if (!docQuestion.trim()) return;
+    setDocBusy(true);
+    try {
+      const { data } = await api.post("/ai/workspace/query", { question: docQuestion.trim() }, { timeout: 180000 });
+      setDocAnswer(data?.answer || "No answer returned.");
+    } catch (e) { setDocAnswer(e?.response?.data?.detail || "AIWeave could not query document memory."); }
+    finally { setDocBusy(false); }
+  };
+
+  const lastIndex = messages.length - 1;
+  const selected = messages.find((m) => m.id === selectedId) || [...messages].reverse().find((m) => m.role === "assistant" && m.status === "done") || null;
+  const activeId = convId(active);
+
+  return (
+    <div className="aw-root relative flex h-[calc(100vh-64px)] min-h-[560px] w-full min-w-0 overflow-hidden">
+      {/* history: a fixed column on wide screens, a sheet on narrow ones */}
+      <aside className="hidden w-[272px] shrink-0 tablet-md:block">
+        <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => setSettings(true)} stats={stats} providerCount={connected.length} />
+      </aside>
+      {rail && (
+        <div className="fixed inset-0 z-40 flex tablet-md:hidden">
+          <div className="w-[min(20rem,86vw)]">
+            <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => { setRail(false); setSettings(true); }} onClose={() => setRail(false)} stats={stats} providerCount={connected.length} />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button onClick={newChat} className="hidden items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white hover:bg-white/15 sm:flex"><Plus size={14}/>New Chat</button>
-            <button onClick={()=>{setSettings(true);setTab("audit");}} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="Execution history"><History size={17}/></button>
-            <button onClick={()=>setSettings(true)} className="hidden rounded-lg p-2 text-white/80 hover:bg-white/10 sm:block" aria-label="AIWeave settings"><Settings size={17}/></button>
+          <button type="button" className="flex-1 bg-black/40" aria-label="Close history" onClick={() => setRail(false)} />
+        </div>
+      )}
+
+      <main className="flex min-w-0 flex-1 flex-col">
+        <header className="aw-line flex h-14 shrink-0 items-center justify-between gap-3 border-b px-3 tablet:px-5">
+          <div className="flex min-w-0 items-center gap-2">
+            <button type="button" onClick={() => setRail(true)} aria-label="Open chat history" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 tablet-md:hidden dark:hover:bg-white/10"><Menu size={18} /></button>
+            <WeaveMark size={20} className="shrink-0 text-[var(--aw-thread)]" />
+            <h1 className="truncate text-base font-semibold">{active?.title && messages.length ? active.title : "AIWeave"}</h1>
           </div>
-        </div>
-      </section>
+          <div className="flex items-center gap-2">
+            <ModelPicker connected={connected} models={models} provider={provider} model={selectedModel} onChange={(p, m) => { setProvider(p); setSelectedModel(m); }} />
+            <button type="button" onClick={newChat} disabled={running} aria-label="New chat" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 disabled:opacity-40 tablet-md:hidden dark:hover:bg-white/10"><Plus size={18} /></button>
+            <button type="button" onClick={() => setInspectorOpen((v) => !v)} aria-label="Toggle answer details" aria-pressed={inspectorOpen} className="hidden h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 xl:flex dark:hover:bg-white/10"><PanelRight size={18} /></button>
+          </div>
+        </header>
 
-      <div className="mt-4 flex min-h-0 flex-1 min-w-0">        {sidebar&&<aside className="hidden w-[270px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fafc] md:flex">
-      <div className="px-3 pt-3 pb-2">
-        <div className="relative rounded-xl border border-slate-200 bg-white shadow-sm transition focus-within:border-[#1F6FB2] focus-within:ring-2 focus-within:ring-[#1F6FB2]/10">
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search chats..." className="w-full rounded-xl border-0 bg-transparent px-3 py-2.5 text-xs outline-none"/>
-        </div>
-      </div>
-      <div className="flex items-center justify-between border-t border-slate-200 px-3 pb-2 pt-3">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Chat history</span>
-        {search&&<button onClick={()=>setSearch("")} className="text-[10px] text-slate-400 hover:text-slate-700">Clear</button>}
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-        {conversations.filter(x=>!search||String(x.title||"").toLowerCase().includes(search.toLowerCase())).map(x=>{
-          const id=x.id||x.conversation_id;
-          const selected=(active?.id||active?.conversation_id)===id;
-          return <div key={id} className={`group mb-1 flex items-center gap-1 rounded-lg transition ${selected?"bg-white shadow-sm":"hover:bg-white/80"}`}>
-            <button onClick={()=>openChat(id)} className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm">
-              <MessageSquare size={15} className={`shrink-0 ${selected?"text-[#1F6FB2]":"text-slate-400"}`}/>
-              <span className="min-w-0 flex-1 truncate">{x.title||"New conversation"}</span>
-            </button>
-            <button onClick={e=>removeChat(id,x.title,e)} title="Delete conversation" aria-label={`Delete ${x.title||"conversation"}`} className="mr-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-red-50 hover:text-red-600 group-hover:flex">
-              <Trash2 size={14}/>
-            </button>
-          </div>;
-        })}
-        {!conversations.filter(x=>!search||String(x.title||"").toLowerCase().includes(search.toLowerCase())).length&&<div className="px-3 py-10 text-center text-xs text-slate-400">{search?"No chats match your search.":"No conversations yet."}</div>}
-      </div>
-      <div className="border-t p-3">
-        <div className="rounded-xl bg-white p-3 shadow-sm text-xs">
-          <b className="mb-2 block">AI Provider Status</b>
-          <div className="flex justify-between"><span>Healthy accounts</span><b>{stats?.healthyAccounts||0}</b></div>
-          <div className="flex justify-between"><span>Connected providers</span><b>{connected.length}</b></div>
-          <div className="flex justify-between"><span>Auto fallback</span><b className="text-emerald-600">ON</b></div>
-        </div>
-        <button onClick={()=>setSettings(true)} className="mt-2 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-600 hover:bg-white"><Settings size={15}/>Settings</button>
-      </div>
-    </aside>}
-
-    <main className="flex min-w-0 flex-1 flex-col">
-      <div className="flex min-h-0 flex-1">
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 flex-col px-3 sm:px-6">
-            <div className="flex items-center justify-end py-4">
-              <div className="relative"><button onClick={()=>setModelMenu(x=>!x)} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-[#0D3B66] shadow-sm"><Sparkles size={14}/>{selectedModel==="auto"?"AIWeave Auto":activeModel?.name||selectedModel}<ChevronDown size={13}/></button>
-                {modelMenu&&<div className="absolute right-0 z-40 mt-2 max-h-[60vh] w-80 overflow-y-auto rounded-2xl border bg-white p-2 shadow-xl">
-                  <button onClick={()=>{setSelectedModel("auto");setProvider("auto");setModelMenu(false);}} className="w-full rounded-xl p-3 text-left hover:bg-slate-50"><b>Auto</b><div className="text-[11px] text-slate-500">Best available model + automatic fallback</div></button>
-                  {connected.map(p=><button key={p.id} onClick={()=>{setProvider(p.id);setSelectedModel("auto");setModelMenu(false);}} className="flex w-full justify-between rounded-xl p-3 text-left hover:bg-slate-50"><span>{p.name}</span><Bubble tone="bg-slate-100 text-slate-600">{p.connectedCount} account{p.connectedCount===1?"":"s"}</Bubble></button>)}
-                  {provider!=="auto"&&models.filter(x=>x.provider===provider).map(m=><button key={m.id} onClick={()=>{setSelectedModel(m.id);setModelMenu(false);}} className="block w-full rounded-xl px-3 py-2 text-left text-xs hover:bg-slate-50">{m.name}</button>)}
-                </div>}
+        <div className="relative min-h-0 flex-1">
+          <div ref={scroller} onScroll={onScroll} className="aw-scroll h-full overflow-y-auto px-3 tablet:px-6">
+            {messages.length === 0 ? (
+              <EmptyState ready={!loaded || connected.length > 0} providerCount={connected.length} onPick={pickStarter} />
+            ) : (
+              <div className="mx-auto w-full max-w-3xl space-y-8 py-8">
+                {messages.map((m, i) => (
+                  <MessageView
+                    key={m.id}
+                    m={m}
+                    isLast={i === lastIndex}
+                    busy={running}
+                    selected={m.id === selected?.id}
+                    onSelect={() => setSelectedId(m.id)}
+                    onRegenerate={regenerate}
+                  />
+                ))}
               </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto pb-5">
-              {!messages.length?<div className="flex min-h-[50vh] flex-col items-center justify-center px-4 text-center">
-                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0D3B66] text-white shadow-md"><MessageSquare size={28}/></div>
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">How can I help you today?</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">Ask anything. AIWeave will use the best available model, preserve context, and continue automatically when a model or account reaches a limit.</p>
-              </div>
-              :messages.map(m=><div key={m.id} className={`mb-7 flex ${m.role==="user"?"justify-end":"justify-start"}`}><div className={`${m.role==="user"?"max-w-[82%] rounded-2xl bg-[#0D3B66] px-4 py-3 text-white":"w-full max-w-[94%]"} min-w-0`}>{m.role==="assistant"&&<div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500"><Bot size={15}/> {m.providerName||"AIWeave"}{m.modelName&&<span className="font-normal text-slate-400">· {m.modelName}</span>}</div>}{m.role==="error"?<div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{m.content}</div>:<Text value={m.content}/>} {m.role==="assistant"&&<div className="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-400">{m.fallbackTrail?.length?<Bubble tone="bg-amber-50 text-amber-700">Auto fallback ×{m.fallbackTrail.length}</Bubble>:null}{m.tokens?<span>{m.tokens.toLocaleString()} tokens</span>:null}{m.latencyMs?<span>{(m.latencyMs/1000).toFixed(1)}s</span>:null}<button onClick={()=>navigator.clipboard?.writeText(m.content)}><Copy size={13}/></button></div>}</div></div>)}
-              {running&&<div className="mb-6 flex items-center gap-3 text-sm text-slate-500"><span className="flex gap-1"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400"/></span>{status}</div>}<div ref={endRef}/>
-            </div>
-            <div className="pb-4 pt-2">{files.length>0&&<div className="mb-2 flex flex-wrap gap-2">{files.map((f,i)=><Bubble key={i} tone="bg-slate-100 text-slate-600"><FileText size={12} className="mr-1"/>{f.name}<button className="ml-1" onClick={()=>setFiles(x=>x.filter((_,n)=>n!==i))}><X size={11}/></button></Bubble>)}</div>}
-              <div className="rounded-2xl border border-slate-300 bg-white p-2.5 shadow-sm transition focus-within:border-[#1F6FB2] focus-within:ring-2 focus-within:ring-[#1F6FB2]/10"><textarea value={prompt} onChange={e=>setPrompt(e.target.value)} onKeyDown={keyDown} disabled={running} rows={2} className="max-h-48 min-h-[64px] w-full resize-none border-0 bg-transparent px-3 py-2 text-sm outline-none" placeholder="Ask AIWeave anything..."/><div className="flex flex-nowrap items-center justify-between gap-1.5 px-1 pb-1"><div className="flex min-w-0 items-center gap-1 overflow-hidden"><input ref={fileRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={e=>attach(e.target.files)}/><button onClick={()=>fileRef.current?.click()} className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50"><Paperclip size={14}/>Attach</button><button onClick={()=>fileRef.current?.click()} className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-medium text-slate-600 hover:bg-slate-50"><Upload size={14}/>Upload</button><select value={capability} onChange={e=>setCapability(e.target.value)} className="w-[118px] shrink-0 rounded-lg bg-slate-50 px-1.5 py-1.5 text-[10px] sm:w-[132px]">{CAPABILITIES.filter(x=>["chat","reasoning","coding","debugging","document_analysis","vision","structured_output"].includes(x.id)).map(x=><option key={x.id} value={x.id}>{x.label}</option>)}</select></div><div className="flex shrink-0 items-center gap-1.5"><span className="hidden text-[10px] text-slate-400 xl:block">Enter · Shift+Enter</span><button onClick={send} disabled={!prompt.trim()||running} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#0D3B66] text-white shadow-sm disabled:opacity-40">{running?<Square size={14}/>:<ArrowUp size={16}/>}</button></div></div></div><div className="mt-2 flex justify-between px-2 text-[10px] text-slate-400"><span>{status||"AIWeave can automatically switch models when a provider becomes unavailable."}</span><span className="hidden sm:block">Enter to send · Shift+Enter for new line</span></div>
-            </div>
+            )}
           </div>
-        </section>
-        {inspector&&<aside className="hidden w-[270px] shrink-0 border-l border-slate-200 bg-[#fbfcfe] xl:block"><div className="border-b px-4 py-4"><b className="text-sm">AIWeave</b><div className="text-[11px] text-slate-400">Execution inspector</div></div><div className="space-y-3 p-4"><div className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-[11px] text-slate-400">Current model</div><b className="text-sm">{activeModel?.name||"Auto"}</b><div className="text-xs text-slate-500">{provider==="auto"?"Best available provider":pname(provider)}</div></div><div className="grid grid-cols-2 gap-2">{[["Healthy",stats?.healthyAccounts||0],["Accounts",stats?.totalAccounts||0],["Executions",stats?.totalExecutionsCount||0],["Fallbacks",stats?.fallbackExecutions||0]].map(x=><div key={x[0]} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm"><div className="text-[10px] text-slate-400">{x[0]}</div><b>{x[1]}</b></div>)}</div><div className="rounded-xl border border-slate-200 bg-white p-3 text-xs"><b>Routing</b><div className="mt-2 flex justify-between"><span>Strategy</span><b>{routing?.strategy||"PRIORITY"}</b></div><div className="flex justify-between"><span>Attempts</span><b>{routing?.maxTotalAttempts||5}</b></div><div className="flex justify-between"><span>Fallback</span><b>{routing?.retryOnRateLimit?"ON":"OFF"}</b></div></div><button onClick={()=>setInspector(false)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-[#0D3B66] hover:bg-slate-50">View detailed logs</button></div></aside>}
-      </div>
-    </main>      </div>
+          {showJump && running && (
+            <button type="button" onClick={jump} className="aw-surface absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-md">
+              <ArrowDown size={13} />Jump to latest
+            </button>
+          )}
+        </div>
 
-    {settings&&<div className="fixed inset-0 z-50 flex bg-slate-900/30"><div className="ml-auto flex h-full w-full max-w-5xl flex-col bg-white shadow-2xl"><div className="flex items-center justify-between border-b px-5 py-4"><div><b>AIWeave Settings</b><div className="text-xs text-slate-500">Platform-managed providers, models, routing, audit and documents</div></div><button onClick={()=>setSettings(false)}><X/></button></div><div className="flex min-h-0 flex-1"><nav className="hidden w-48 shrink-0 border-r bg-slate-50 p-3 sm:block">{[["providers","Providers"],["accounts","Accounts"],["models","Models"],["routing","Routing"],["audit","Audit"],["documents","Documents"]].map(x=><button key={x[0]} onClick={()=>setTab(x[0])} className={`mb-1 w-full rounded-lg px-3 py-2 text-left text-sm ${tab===x[0]?"bg-white font-semibold shadow-sm":""}`}>{x[1]}</button>)}</nav><div className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6">
-      {tab==="providers"&&<div><div className="mb-4"><h2 className="text-lg font-semibold">AI Providers</h2><p className="mt-1 text-xs text-slate-500">AI providers are configured centrally by the software operator. Customer users only sign in with their Taskosphere account; they never enter provider API keys here.</p></div><div className="mb-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs text-blue-800"><b>Platform-managed AI infrastructure</b><div className="mt-1">OpenAI, Gemini, Claude, Grok and other enabled providers are supplied from the backend environment and can be used automatically according to the platform routing policy.</div></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{PROVIDERS.map(p=>{const x=providers.find(y=>y.id===p.id);return <div key={p.id} className="rounded-xl border p-4"><div className="flex justify-between"><b className="text-sm">{p.name}</b><span className={x?.healthyCount?"text-emerald-600":"text-slate-300"}>●</span></div><div className="mt-1 text-[11px] text-slate-500">{x?.connectedCount||0} available · {x?.healthyCount||0} healthy</div><div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">Managed by platform administrator</div></div>})}</div></div>}
-      {tab==="accounts"&&<div><h2 className="mb-2 text-lg font-semibold">Platform AI Accounts</h2><p className="mb-4 text-xs text-slate-500">These are read-only provider statuses for the current customer. Credentials are stored and managed only on the backend.</p><div className="space-y-2">{accounts.map(a=><div key={a.id} className="rounded-xl border p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><b className="text-sm">{a.name}</b><div className="text-xs text-slate-500">{pname(a.provider)} · {a.maskedIdentity||"server-managed credential"}</div></div><Bubble tone={a.health==="HEALTHY"?"bg-emerald-50 text-emerald-700":"bg-amber-50 text-amber-700"}>{a.health||"UNKNOWN"}</Bubble></div></div>)}{!accounts.length&&<div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No platform AI providers are currently enabled.</div>}</div></div>}
-      {tab==="models"&&<div><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">Model Registry</h2><input value={modelSearch} onChange={e=>setModelSearch(e.target.value)} placeholder="Search models" className="rounded-lg border px-3 py-2 text-xs"/></div><div className="space-y-2">{visibleModels.map(m=><div key={m.provider+m.id} className="flex flex-wrap justify-between gap-2 rounded-xl border p-3"><div><b className="text-sm">{m.name}</b><div className="text-xs text-slate-500">{pname(m.provider)} · {m.availability||"catalog"}</div></div><div className="flex flex-wrap gap-1">{(m.capabilities||[]).slice(0,6).map(c=><Bubble key={c} tone="bg-slate-100 text-slate-500">{c}</Bubble>)}</div></div>)}</div></div>}
-      {tab==="routing"&&<div><h2 className="mb-2 text-lg font-semibold">AIWeave Routing</h2><p className="mb-4 text-xs text-slate-500">Routing is controlled by the platform administrator. Customer users cannot change provider credentials or routing policies.</p><div className="grid gap-4 md:grid-cols-2"><div className="rounded-xl border p-4"><span className="text-xs text-slate-500">Strategy</span><b className="mt-1 block text-sm">{routing?.strategy||"PRIORITY"}</b></div><div className="rounded-xl border p-4"><span className="text-xs text-slate-500">Cost policy</span><b className="mt-1 block text-sm">{routing?.costPolicy||"FREE_FIRST"}</b></div><div className="rounded-xl border p-4"><span className="text-xs text-slate-500">Maximum attempts</span><b className="mt-1 block text-sm">{routing?.maxTotalAttempts||5}</b></div><div className="rounded-xl border p-4"><span className="text-xs text-slate-500">Automatic fallback</span><b className="mt-1 block text-sm">{routing?.retryOnRateLimit?"Enabled":"Disabled"}</b></div></div></div>}
-      {tab==="audit"&&<div><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">Execution History</h2><input value={auditSearch} onChange={e=>setAuditSearch(e.target.value)} placeholder="Search" className="rounded-lg border px-3 py-2 text-xs"/></div><div className="space-y-2">{visibleExec.map(e=><div key={e.execution_id||e.id} className="rounded-xl border p-4"><div className="flex justify-between"><div><b className="text-sm">{e.modelName||e.model}</b><div className="text-xs text-slate-500">{e.providerName} · {e.accountName}</div></div><Bubble tone="bg-emerald-50 text-emerald-700">{e.status}</Bubble></div><p className="mt-2 text-xs text-slate-500">{e.prompt}</p>{e.fallbackTrail?.length?<p className="mt-1 text-[11px] text-amber-700">Fallbacks: {e.fallbackTrail.map(x=>x.provider).join(" → ")}</p>:null}<p className="mt-1 text-[10px] text-slate-400">{fmt(e.timestamp)}</p></div>)}</div></div>}
-      {tab==="documents"&&<div><h2 className="mb-4 text-lg font-semibold">Document Workspace</h2><input ref={docRef} type="file" multiple accept={ACCEPTED} className="hidden" onChange={e=>setDocFiles(Array.from(e.target.files||[]).slice(0,MAX_DOCS))}/><button onClick={()=>docRef.current?.click()} className="w-full rounded-2xl border border-dashed p-8 text-center hover:bg-slate-50"><Upload className="mx-auto mb-2 text-slate-400"/><b className="text-sm">Upload documents</b><div className="text-xs text-slate-500">PDF, Excel, CSV and images</div></button>{docFiles.length>0&&<div className="mt-3">{docFiles.map((f,i)=><div key={i} className="flex justify-between bg-slate-50 p-2 text-xs">{f.name}<button onClick={()=>setDocFiles(x=>x.filter((_,n)=>n!==i))}><X size={14}/></button></div>)}<button disabled={docBusy} onClick={analyzeDocs} className="mt-2 rounded-lg bg-[#0D3B66] px-3 py-2 text-xs text-white">{docBusy?"Analysing...":"Analyse documents"}</button></div>}<div className="mt-6 rounded-xl border p-4"><b className="text-sm">Ask document memory</b><textarea value={docQuestion} onChange={e=>setDocQuestion(e.target.value)} rows={3} className="mt-2 w-full rounded-lg border p-2 text-sm"/><button onClick={askDocs} disabled={docBusy} className="mt-2 rounded-lg border px-3 py-2 text-xs">Ask AIWeave</button>{docAnswer&&<div className="mt-4 whitespace-pre-wrap rounded-lg bg-slate-50 p-4 text-sm">{docAnswer}</div>}</div></div>}
-    </div></div></div></div>}
-  </div>;
+        <div className="shrink-0 px-3 pb-3 pt-2 tablet:px-6">
+          <div className="mx-auto w-full max-w-3xl">
+            <Composer
+              value={prompt} onChange={setPrompt} onSend={() => send()} onStop={stop} running={running}
+              files={files} onFiles={attach} onRemoveFile={(i) => setFiles((x) => x.filter((_, n) => n !== i))}
+              mode={mode} onMode={setMode} status={status} inputRef={inputRef}
+            />
+            <p className="mt-2 px-1 text-center text-xs aw-muted">AI can make mistakes. Check figures, dates and section numbers before you rely on them.</p>
+          </div>
+        </div>
+      </main>
+
+      {inspectorOpen && <aside className="hidden w-[288px] shrink-0 xl:block"><Inspector message={selected} stats={stats} /></aside>}
+
+      <SettingsDrawer
+        settings={settings} setSettings={setSettings} tab={tab} setTab={setTab}
+        providers={providers} accounts={accounts} models={models} routing={routing} provider={provider}
+        modelSearch={modelSearch} setModelSearch={setModelSearch} auditSearch={auditSearch} setAuditSearch={setAuditSearch}
+        visibleModels={visibleModels} visibleExec={visibleExec}
+        docFiles={docFiles} setDocFiles={setDocFiles} docQuestion={docQuestion} setDocQuestion={setDocQuestion}
+        docAnswer={docAnswer} docBusy={docBusy} docRef={docRef} analyzeDocs={analyzeDocs} askDocs={askDocs}
+      />
+    </div>
+  );
 }

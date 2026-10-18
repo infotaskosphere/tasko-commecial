@@ -6,7 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -26,26 +26,56 @@ class UserPreferences(BaseModel):
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
     stop: Optional[List[str]] = None
-    system_instruction: Optional[str] = None
+    system_instruction: Optional[str] = Field(default=None, max_length=20000)
+
+MAX_MESSAGES = 100
+MAX_MESSAGE_CHARS = 100_000
+MAX_TOTAL_CHARS = 400_000
+ALLOWED_ROLES = {"system", "user", "assistant", "tool"}
+
 
 class OmniRequest(BaseModel):
-    messages: List[Union[ChatMessage, Dict[str, Any]]] = Field(default_factory=list)
-    prompt: Optional[str] = None
-    model: str = Field(default="auto")
-    provider: str = Field(default="auto")
-    routing_mode: str = Field(default="balanced", description="auto | fast | balanced | quality | low_cost | reasoning | coding | long_context | vision | custom")
+    messages: List[Union[ChatMessage, Dict[str, Any]]] = Field(default_factory=list, max_length=MAX_MESSAGES)
+    prompt: Optional[str] = Field(default=None, max_length=MAX_MESSAGE_CHARS)
+    model: str = Field(default="auto", max_length=160)
+    provider: str = Field(default="auto", max_length=60)
+    routing_mode: str = Field(default="balanced", max_length=40, description="auto | fast | balanced | quality | low_cost | reasoning | coding | long_context | vision | custom")
     stream: bool = Field(default=False)
-    task_type: str = Field(default="chat", description="chat | reasoning | coding | debugging | vision | document_analysis | structured_output")
-    required_capability: Optional[str] = None
+    task_type: str = Field(default="chat", max_length=40, description="chat | reasoning | coding | debugging | vision | document_analysis | structured_output")
+    required_capability: Optional[str] = Field(default=None, max_length=40)
     user_preferences: UserPreferences = Field(default_factory=UserPreferences)
-    conversation_id: Optional[str] = None
-    document_context: Optional[str] = None
-    files: List[Dict[str, Any]] = Field(default_factory=list)
-    tools: Optional[List[Dict[str, Any]]] = None
+    conversation_id: Optional[str] = Field(default=None, max_length=80)
+    document_context: Optional[str] = Field(default=None, max_length=200_000)
+    files: List[Dict[str, Any]] = Field(default_factory=list, max_length=20)
+    tools: Optional[List[Dict[str, Any]]] = Field(default=None, max_length=64)
     response_format: Optional[Dict[str, Any]] = None  # e.g. {"type": "json_object"}
-    idempotency_key: Optional[str] = None
-    request_id: Optional[str] = None
+    idempotency_key: Optional[str] = Field(default=None, max_length=120)
+    request_id: Optional[str] = Field(default=None, max_length=120)
     mock_simulate_exhaustion: bool = False
+
+    @field_validator("messages")
+    @classmethod
+    def _bounded_messages(cls, v):
+        for m in v:
+            content = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+            role = m.get("role", "user") if isinstance(m, dict) else getattr(m, "role", "user")
+            if role not in ALLOWED_ROLES:
+                raise ValueError(f"Unsupported message role: {role!r}")
+            if isinstance(content, str) and len(content) > MAX_MESSAGE_CHARS:
+                raise ValueError("A message is longer than the 100,000 character limit.")
+        return v
+
+    @model_validator(mode="after")
+    def _bounded_total(self):
+        total = len(self.prompt or "") + len(self.document_context or "")
+        for m in self.messages:
+            c = m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")
+            total += len(c) if isinstance(c, str) else 0
+        if total > MAX_TOTAL_CHARS:
+            raise ValueError("The request is too large. Shorten the conversation or the attached documents.")
+        if not (self.prompt or "").strip() and not self.messages:
+            raise ValueError("Send a prompt or at least one message.")
+        return self
 
 class TokenUsage(BaseModel):
     input_tokens: int = 0

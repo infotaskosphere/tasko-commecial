@@ -17,6 +17,19 @@ from backend.ai.omni.accounts import ACCOUNT_HEALTH_MANAGER
 
 logger = logging.getLogger("aiweave.fallback_engine")
 
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate (about four characters per token) for providers that
+    do not report usage while streaming."""
+    return max(0, (len(text or "") + 3) // 4)
+
+
+def estimate_input_tokens(req: OmniRequest) -> int:
+    parts: List[str] = [req.prompt or "", req.document_context or "", req.user_preferences.system_instruction or ""]
+    for m in req.messages or []:
+        parts.append(str(m.get("content", "") if isinstance(m, dict) else getattr(m, "content", "")))
+    return estimate_tokens("\n".join(parts))
+
 class FallbackEngine:
     MAX_TOTAL_ATTEMPTS = 12
 
@@ -193,6 +206,9 @@ class FallbackEngine:
             attempt_start = time.perf_counter()
             received_chunks = False
             total_text = ""
+            total_reasoning = ""
+            finish_reason = "stop"
+            usage_reported: Optional[TokenUsage] = None
 
             try:
                 adapter.validate_request(req, model_cap.id)
@@ -200,11 +216,64 @@ class FallbackEngine:
                     received_chunks = True
                     if chunk.delta:
                         total_text += chunk.delta
+                    if chunk.reasoning_delta:
+                        total_reasoning += chunk.reasoning_delta
+                    if chunk.event == "finish":
+                        finish_reason = chunk.finish_reason or finish_reason
+                        if chunk.usage:
+                            usage_reported = chunk.usage
                     yield chunk
 
-                # Successful stream completion
+                # Successful stream completion: account for it exactly like a
+                # non-streaming run, so streamed answers show up in executions,
+                # statistics and the saved conversation.
                 latency = int((time.perf_counter() - attempt_start) * 1000)
-                await self.touch_account_fn(account, True, latency=latency, inp=0, out=len(total_text.split()))
+                if usage_reported and (usage_reported.input_tokens or usage_reported.output_tokens):
+                    usage = usage_reported
+                else:
+                    inp = estimate_input_tokens(req)
+                    out = estimate_tokens(total_text)
+                    usage = TokenUsage(input_tokens=inp, output_tokens=out, total_tokens=inp + out, provider_reported=False)
+                await self.touch_account_fn(
+                    account, True, latency=latency,
+                    inp=usage.input_tokens, out=usage.output_tokens
+                )
+                response = OmniResponse(
+                    content=total_text,
+                    reasoning_content=total_reasoning or None,
+                    model=model_cap.id,
+                    model_name=model_cap.name,
+                    provider=pid,
+                    account_id=account.get("id"),
+                    account_name=account.get("name"),
+                    finish_reason=finish_reason,
+                    usage=usage,
+                    fallback_trail=trail,
+                    latency_ms=latency,
+                )
+                execution_id = None
+                if self.record_execution_fn:
+                    try:
+                        execution_id = await self.record_execution_fn(
+                            response, req, account, model_cap, trail, user, scope_info
+                        )
+                    except Exception:
+                        logger.exception("AIWeave could not record a completed stream")
+                yield OmniStreamChunk(
+                    id=f"done-{uuid.uuid4().hex[:12]}",
+                    event="done",
+                    model=model_cap.id,
+                    provider=pid,
+                    finish_reason=finish_reason,
+                    usage=usage,
+                    metadata={
+                        "execution_id": execution_id,
+                        "model_name": model_cap.name,
+                        "account_name": account.get("name"),
+                        "latency_ms": latency,
+                        "fallback_trail": [t.model_dump() for t in trail],
+                    },
+                )
                 return
 
             except Exception as ex:

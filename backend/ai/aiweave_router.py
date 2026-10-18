@@ -208,10 +208,12 @@ def scope(user):
 def admin(user):
     role=str(getattr(user,"role","") or "").lower()
     if role in {"admin","super_admin","platform_admin","platform_owner","owner"}:return True
+    # can_manage_settings defaults to True for every user, so it says nothing about being an administrator.
+    if str(getattr(user,"identity_type","") or "").lower() in {"licensee_admin","platform_owner"}:return True
     p=getattr(user,"permissions",None)
     if hasattr(p,"model_dump"):p=p.model_dump()
-    return isinstance(p,dict) and bool(p.get("can_manage_users") or p.get("can_manage_settings") or p.get("is_admin"))
-def require_admin(user):
+    return isinstance(p,dict) and bool(p.get("can_manage_users") or p.get("is_admin"))
+def require_admin(user=Depends(get_current_user)):
     if not admin(user):raise HTTPException(403,"Administrator permission is required for this AIWeave operation.")
     return user
 def fernet():
@@ -523,8 +525,8 @@ class Execute(BaseModel):
     preferredProvider:str="auto"
     preferredModel:str="auto"
     conversationId:Optional[str]=None
-    messages:List[Dict[str,Any]]=Field(default_factory=list)
-    files:List[Dict[str,Any]]=Field(default_factory=list)
+    messages:List[Dict[str,Any]]=Field(default_factory=list,max_length=100)
+    files:List[Dict[str,Any]]=Field(default_factory=list,max_length=20)
     documentContext:str=Field(default="",max_length=60000)
     mockSimulateExhaustion:bool=False
 
@@ -535,6 +537,39 @@ class ConversationMessage(BaseModel):
     role:str=Field(default="user",max_length=30)
     content:str=Field(min_length=1,max_length=100000)
     attachments:List[Dict[str,Any]]=Field(default_factory=list)
+
+MAX_STORED_MESSAGES=500
+MAX_STORED_HISTORY=200
+
+def conv_query(user,s,conversation_id=None):
+    """A conversation belongs to the person who started it. Colleagues in the same
+    company cannot read or write it; administrators additionally see conversations
+    created before ownership was recorded."""
+    uid=str(getattr(user,"id","") or "")
+    owners=[{"user_id":uid}]
+    if admin(user):owners.append({"user_id":{"$exists":False}})
+    q={**s,"$or":owners}
+    if conversation_id:q["conversation_id"]=conversation_id
+    return q
+
+def exec_query(user,s):
+    """Run history holds prompts and answers, so people see their own; administrators see the company's."""
+    if admin(user):return dict(s)
+    return {**s,"user_id":str(getattr(user,"id","") or "")}
+
+def mock_allowed(user,flag):
+    """Simulated provider failure penalises a real account, so only administrators may request it."""
+    return bool(flag) and admin(user)
+
+def limit_key(user,s):
+    return f"{s['scope_id']}:{getattr(user,'id','')}"
+
+def take_slot(user,s):
+    key=limit_key(user,s)
+    try:USAGE_LIMITER.acquire(key)
+    except UsageLimitError as e:
+        raise HTTPException(429,e.message,headers={"Retry-After":str(e.retry_after)})
+    return key
 
 async def create_aiweave_indexes():
     try:
@@ -552,32 +587,32 @@ async def create_aiweave_indexes():
 @router.post("/conversations")
 async def create_conversation(payload:ConversationCreate,user=Depends(get_current_user)):
     s=scope(user);cid=f"conv-{uuid.uuid4().hex[:16]}";title=(payload.title or "New conversation").strip()[:160] or "New conversation";ts=now()
-    doc={**s,"conversation_id":cid,"id":cid,"title":title,"messages":[],"model_history":[],"provider_history":[],"execution_history":[],"attachments":[],"workspace_references":[],"fallback_history":[],"token_usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0},"status":"ACTIVE","pinned":False,"created_at":ts,"updated_at":ts}
+    doc={**s,"user_id":str(getattr(user,"id","") or ""),"conversation_id":cid,"id":cid,"title":title,"messages":[],"model_history":[],"provider_history":[],"execution_history":[],"attachments":[],"workspace_references":[],"fallback_history":[],"token_usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0},"status":"ACTIVE","pinned":False,"created_at":ts,"updated_at":ts}
     await db.aiweave_conversations.insert_one(doc);doc.pop("_id",None);return doc
 
 @router.get("/conversations")
 async def list_conversations(user=Depends(get_current_user)):
     s=scope(user)
-    return await db.aiweave_conversations.find(s,{"_id":0}).sort([("pinned",-1),("updated_at",-1)]).limit(200).to_list(200)
+    return await db.aiweave_conversations.find(conv_query(user,s),{"_id":0,"messages":0}).sort([("pinned",-1),("updated_at",-1)]).limit(200).to_list(200)
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id:str,user=Depends(get_current_user)):
-    s=scope(user);doc=await db.aiweave_conversations.find_one({**s,"conversation_id":conversation_id},{"_id":0})
+    s=scope(user);doc=await db.aiweave_conversations.find_one(conv_query(user,s,conversation_id),{"_id":0})
     if not doc: raise HTTPException(404,"AIWeave conversation not found.")
     return doc
 
 @router.delete("/conversations/{conversation_id}")
 async def delete_conversation(conversation_id:str,user=Depends(get_current_user)):
-    s=scope(user);result=await db.aiweave_conversations.delete_one({**s,"conversation_id":conversation_id})
+    s=scope(user);result=await db.aiweave_conversations.delete_one(conv_query(user,s,conversation_id))
     if result.deleted_count==0: raise HTTPException(404,"AIWeave conversation not found.")
     return {"success":True,"conversationId":conversation_id}
 
 @router.post("/conversations/{conversation_id}/messages")
 async def add_conversation_message(conversation_id:str,payload:ConversationMessage,user=Depends(get_current_user)):
-    s=scope(user);doc=await db.aiweave_conversations.find_one({**s,"conversation_id":conversation_id})
+    s=scope(user);doc=await db.aiweave_conversations.find_one(conv_query(user,s,conversation_id))
     if not doc: raise HTTPException(404,"AIWeave conversation not found.")
     msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":payload.role,"content":payload.content,"attachments":payload.attachments or [],"created_at":now()}
-    await db.aiweave_conversations.update_one({**s,"conversation_id":conversation_id},{"$push":{"messages":msg},"$set":{"updated_at":msg["created_at"]}})
+    await db.aiweave_conversations.update_one(conv_query(user,s,conversation_id),{"$push":{"messages":{"$each":[msg],"$slice":-MAX_STORED_MESSAGES}},"$set":{"updated_at":msg["created_at"]}})
     return msg
 
 @router.get("/providers")
@@ -682,10 +717,17 @@ async def set_routing(payload:RoutingUpdate,user=Depends(require_admin)):
 
 @router.get("/executions")
 async def executions(user=Depends(get_current_user)):
-    s=scope(user);return await db.aiweave_executions.find(s,{"_id":0}).sort("timestamp",-1).limit(200).to_list(200)
+    s=scope(user);return await db.aiweave_executions.find(exec_query(user,s),{"_id":0,"output":0}).sort("timestamp",-1).limit(200).to_list(200)
 
 @router.post("/execute")
 async def execute(payload:Execute,user=Depends(get_current_user)):
+    s=scope(user)
+    if not mock_allowed(user,payload.mockSimulateExhaustion):payload.mockSimulateExhaustion=False
+    key=take_slot(user,s)
+    try:return await _execute_impl(payload,user)
+    finally:USAGE_LIMITER.release(key)
+
+async def _execute_impl(payload:Execute,user):
     await ensure_env_accounts(user)
     if payload.requiredCapability not in CAPABILITIES: raise HTTPException(400,"Unsupported capability.")
     s=scope(user);cfg=await routing(user)
@@ -770,12 +812,12 @@ async def execute(payload:Execute,user=Depends(get_current_user)):
     record={"id":eid,"execution_id":eid,"timestamp":now(),"user":str(getattr(user,"full_name",None) or getattr(user,"email",None) or getattr(user,"id","Current User")),"user_id":str(getattr(user,"id","")),"tenant_id":s["scope_id"],"company_id":s["company_id"],"conversation_id":payload.conversationId,"task_type":payload.taskType,"capability":payload.requiredCapability,"prompt":payload.prompt[:500],"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"accountId":chosen["id"],"accountName":chosen.get("name"),"costTier":str(chosen.get("cost_tier") or "UNKNOWN").upper(),"model":chosen_model["id"],"modelName":chosen_model.get("name"),"status":"SUCCESS","latencyMs":int((time.perf_counter()-started)*1000),"tokens":inp+out,"usage":{"input_tokens":inp,"output_tokens":out,"provider_reported":bool(inp or out)},"cost":None,"strategy":cfg.get("strategy"),"costPolicy":cost_policy,"fallbackTrail":trail,"selectionReason":"Automatic fallback was used." if trail else "Primary eligible authorized account selected.","attempt_number":attempts,"provider_attempts":provider_attempts,"provider_request_id":result.get("provider_request_id"),"output":result.get("output","")}
     await db.aiweave_executions.insert_one({**s,**record})
     if payload.conversationId:
-        conv=await db.aiweave_conversations.find_one({**s,"conversation_id":payload.conversationId})
+        conv=await db.aiweave_conversations.find_one(conv_query(user,s,payload.conversationId))
         if conv:
             ts=now()
             user_msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":"user","content":payload.prompt,"created_at":ts,"attachments":payload.files or []}
             assistant_msg={"id":f"msg-{uuid.uuid4().hex[:12]}","role":"assistant","content":result.get("output",""),"created_at":ts,"provider":chosen["provider"],"providerName":PROVIDER_MAP[chosen["provider"]]["name"],"model":chosen_model["id"],"modelName":chosen_model.get("name"),"accountName":chosen.get("name"),"fallbackTrail":trail,"tokens":inp+out,"latencyMs":record["latencyMs"]}
-            await db.aiweave_conversations.update_one({**s,"conversation_id":payload.conversationId},{"$push":{"messages":{"$each":[user_msg,assistant_msg]},"model_history":chosen_model["id"],"provider_history":chosen["provider"],"execution_history":eid,"fallback_history":{"$each":trail}},"$inc":{"token_usage.input_tokens":inp,"token_usage.output_tokens":out,"token_usage.total_tokens":inp+out},"$set":{"updated_at":ts,"status":"ACTIVE"}})
+            await db.aiweave_conversations.update_one(conv_query(user,s,payload.conversationId),{"$push":{"messages":{"$each":[user_msg,assistant_msg],"$slice":-MAX_STORED_MESSAGES},"model_history":{"$each":[chosen_model["id"]],"$slice":-MAX_STORED_HISTORY},"provider_history":{"$each":[chosen["provider"]],"$slice":-MAX_STORED_HISTORY},"execution_history":{"$each":[eid],"$slice":-MAX_STORED_HISTORY},"fallback_history":{"$each":trail,"$slice":-MAX_STORED_HISTORY}},"$inc":{"token_usage.input_tokens":inp,"token_usage.output_tokens":out,"token_usage.total_tokens":inp+out},"$set":{"updated_at":ts,"status":"ACTIVE"}})
     return {k:v for k,v in record.items() if k not in {"tenant_id","company_id"}}
 
 @router.get("/stats")
@@ -805,6 +847,7 @@ from fastapi.responses import StreamingResponse
 from backend.ai.omni.models import OmniRequest, OmniResponse, OmniStreamChunk
 from backend.ai.omni.engine import FallbackEngine
 from backend.ai.omni.adapters.base import ProviderError
+from backend.ai.omni.limits import USAGE_LIMITER, UsageLimitError
 
 async def _omni_record_execution(
     response: OmniResponse,
@@ -859,7 +902,7 @@ async def _omni_record_execution(
     await db.aiweave_executions.insert_one({**scope_info, **record})
 
     if req.conversation_id:
-        conv = await db.aiweave_conversations.find_one({**scope_info, "conversation_id": req.conversation_id})
+        conv = await db.aiweave_conversations.find_one(conv_query(user, scope_info, req.conversation_id))
         if conv:
             ts = now()
             user_msg = {
@@ -884,19 +927,20 @@ async def _omni_record_execution(
                 "latencyMs": response.latency_ms
             }
             await db.aiweave_conversations.update_one(
-                {**scope_info, "conversation_id": req.conversation_id},
+                conv_query(user, scope_info, req.conversation_id),
                 {
                     "$push": {
-                        "messages": {"$each": [user_msg, assistant_msg]},
-                        "model_history": response.model,
-                        "provider_history": response.provider,
-                        "execution_history": eid,
-                        "fallback_history": {"$each": trail_dicts}
+                        "messages": {"$each": [user_msg, assistant_msg], "$slice": -MAX_STORED_MESSAGES},
+                        "model_history": {"$each": [response.model], "$slice": -MAX_STORED_HISTORY},
+                        "provider_history": {"$each": [response.provider], "$slice": -MAX_STORED_HISTORY},
+                        "execution_history": {"$each": [eid], "$slice": -MAX_STORED_HISTORY},
+                        "fallback_history": {"$each": trail_dicts, "$slice": -MAX_STORED_HISTORY}
                     },
                     "$inc": {"token_usage.input_tokens": inp, "token_usage.output_tokens": out, "token_usage.total_tokens": inp + out},
                     "$set": {"updated_at": ts, "status": "ACTIVE"}
                 }
             )
+    return eid
 
 _omni_engine = FallbackEngine(
     decrypt_fn=dec,
@@ -910,28 +954,47 @@ async def omni_route(payload: OmniRequest, user=Depends(get_current_user)):
     Universal AIWeave Omni Route.
     One normalized endpoint handling any provider, model="auto", automatic fallback, and streaming.
     """
-    await ensure_env_accounts(user)
     s = scope(user)
-    cfg = await routing(user)
-    accounts = await db.aiweave_provider_accounts.find(account_query(user), {"_id": 0}).to_list(500)
-    discovered = await db.aiweave_provider_models.find(s, {"_id": 0}).to_list(1000)
+    if not mock_allowed(user, payload.mock_simulate_exhaustion):
+        payload.mock_simulate_exhaustion = False
+    key = take_slot(user, s)
+    try:
+        await ensure_env_accounts(user)
+        cfg = await routing(user)
+        accounts = await db.aiweave_provider_accounts.find(account_query(user), {"_id": 0}).to_list(500)
+        discovered = await db.aiweave_provider_models.find(s, {"_id": 0}).to_list(1000)
+    except BaseException:
+        USAGE_LIMITER.release(key)
+        raise
 
     if payload.stream:
         async def event_generator():
-            async for chunk in _omni_engine.stream_request(payload, accounts, discovered, cfg, user=user, scope_info=s):
-                yield f"data: {chunk.model_dump_json()}\n\n"
+            try:
+                async for chunk in _omni_engine.stream_request(payload, accounts, discovered, cfg, user=user, scope_info=s):
+                    yield f"data: {chunk.model_dump_json()}\n\n"
+            except Exception as ex:
+                logger.exception("AIWeave stream failure: %s", ex)
+                err = OmniStreamChunk(id=f"err-{uuid.uuid4().hex[:12]}", event="error",
+                                      error={"code": "STREAM_FAILED", "message": "The AI response stream failed."})
+                yield f"data: {err.model_dump_json()}\n\n"
+            finally:
+                USAGE_LIMITER.release(key)
             yield "data: [DONE]\n\n"
 
-        return StreamingResponse(event_generator(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+        )
 
     try:
-        response = await _omni_engine.execute_request(
+        return await _omni_engine.execute_request(
             payload, accounts, discovered, cfg, user=user, scope_info=s
         )
-        return response
     except ProviderError as pe:
         raise HTTPException(status_code=pe.status_code, detail=f"[{pe.kind}] {pe.message}")
     except Exception as ex:
         logger.exception("AIWeave Omni Route execution failure: %s", str(ex))
-        raise HTTPException(status_code=500, detail=f"AIWeave Omni Route failed: {str(ex)}")
-
+        raise HTTPException(status_code=500, detail="AIWeave could not complete this request.")
+    finally:
+        USAGE_LIMITER.release(key)
