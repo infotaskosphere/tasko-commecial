@@ -30,9 +30,11 @@ export async function runVerifyAndFix(companyId = '', { force = false } = {}) {
   if (!force && cached && Date.now() - cached.ts < CACHE_TTL_MS) {
     return cached.data;
   }
-  const { data } = await api.get('/reports/validation-engine', {
-    params: companyId ? { company_id: companyId } : {},
-  });
+  // "Re-verify" must really re-run the check: tell the server to skip its saved answer and keep the
+  // browser's read cache out of it too.
+  const params = companyId ? { company_id: companyId } : {};
+  if (force) params.fresh = true;
+  const { data } = await api.get('/reports/validation-engine', { params, ...(force ? { cache: false } : {}) });
   _cache.set(key, { data, ts: Date.now() });
   return data;
 }

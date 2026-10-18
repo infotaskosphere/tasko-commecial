@@ -17,12 +17,14 @@ import re
 import uuid
 import asyncio
 import logging
+import time
 from datetime import datetime, date, timezone
-from typing import Optional, List
+from typing import Dict, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from backend import report_cache
 from backend.dependencies import db, get_current_user
 from backend.modules.finix_ai.accounting.models_accounting import AccountCreate, JournalLine, JournalEntryCreate
 
@@ -357,8 +359,24 @@ async def _validate_best_effort(company_id: str):
         logging.getLogger("accounting_core").exception("validation engine failed")
 
 
+_VALIDATION_MIN_INTERVAL = 300.0
+_validation_last_started: Dict[str, float] = {}
+
+
+def _schedule_validation(company_id: str) -> None:
+    """Run the background consistency check at most once per interval per book.
+
+    Every Trial Balance and Balance Sheet load used to start a full validation of its own, so
+    opening the dashboard started two of them next to the validation the page asks for itself."""
+    now = time.monotonic()
+    if now - _validation_last_started.get(company_id, -_VALIDATION_MIN_INTERVAL) < _VALIDATION_MIN_INTERVAL:
+        return
+    _validation_last_started[company_id] = now
+    asyncio.create_task(_validate_best_effort(company_id))
+
+
 @router.get("/reports/validation-engine")
-async def validation_engine_report(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
+async def validation_engine_report(company_id: str = Query(""), fresh: bool = Query(False), current_user: User = Depends(get_current_user)):
     """On-demand reconciliation health check across Trial Balance, Party/
     Customer Ledger, and GST report totals vs. the Invoice module's own
     Revenue/Collections/Outstanding figures. Auto-heals by rerunning the
@@ -368,7 +386,11 @@ async def validation_engine_report(company_id: str = Query(""), current_user: Us
     from backend.accounting_ai.reconciliation_validator import run_validation_engine, run_validation_engine_all_books
     try:
         if company_id:
-            return await run_validation_engine(company_id, auto_fix=True)
+            # Re-use the last answer while nothing in the books has changed; "Re-verify" asks for fresh=true.
+            return await report_cache.cached(
+                "validation_engine", (company_id,),
+                lambda: run_validation_engine(company_id, auto_fix=True), fresh=fresh,
+            )
         return {"books": await run_validation_engine_all_books()}
     except HTTPException:
         # Tenant-isolation / permission errors (403, 404, ...) must reach the
@@ -926,6 +948,10 @@ async def trial_balance(
 ):
     if not _perm_reports(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    return await report_cache.cached("trial_balance", (company_id, as_of, date_from, date_to), lambda: _trial_balance_impl(company_id, as_of, date_from, date_to))
+
+
+async def _trial_balance_impl(company_id: str, as_of: Optional[str], date_from: Optional[str], date_to: Optional[str]):
 
     all_companies = not company_id
     # Auto-reconcile and sync sales invoices, purchase bills, and payments to
@@ -938,7 +964,7 @@ async def trial_balance(
         # Fire-and-forget: check Revenue=Collections+Outstanding, TB
         # balance, AR=Outstanding, etc. and self-heal via re-sync without
         # adding validator latency to this report's response time.
-        asyncio.create_task(_validate_best_effort(company_id))
+        _schedule_validation(company_id)
 
     acct_q = {} if all_companies else {"company_id": company_id}
     accounts = await db.chart_of_accounts.find(acct_q, {"_id": 0}).sort("code", 1).to_list(20000)
@@ -1062,6 +1088,10 @@ async def profit_and_loss(
 ):
     if not _perm_reports(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    return await report_cache.cached("profit_and_loss", (company_id, date_from, date_to), lambda: _profit_and_loss_impl(company_id, date_from, date_to))
+
+
+async def _profit_and_loss_impl(company_id: str, date_from: Optional[str], date_to: Optional[str]):
 
     all_companies = not company_id
     # Auto-reconcile and sync sales invoices, purchase bills, and payments to
@@ -1086,19 +1116,26 @@ async def profit_and_loss(
             q["entry_date"]["$gte"] = date_from
         if date_to:
             q["entry_date"]["$lte"] = date_to
-    lines = await db.journal_lines.find(q, {"_id": 0}).to_list(200000)
+    # Totals per account are summed by the database: the report used to pull every journal line
+    # of the period into Python just to add them up, once per month on the dashboard trend.
+    sums = await db.journal_lines.aggregate([
+        {"$match": q},
+        {"$group": {"_id": "$account_id", "debit": {"$sum": "$debit"}, "credit": {"$sum": "$credit"}}},
+    ]).to_list(None)
     income_rows, expense_rows = {}, {}
-    for l in lines:
-        a = acct_by_id[l["account_id"]]
+    for t in sums:
+        a = acct_by_id.get(t["_id"])
+        if not a:
+            continue
         bucket = income_rows if a["type"] == "income" else expense_rows
         # Roll up by code (not account_id) when aggregating across companies,
         # since the same account code is a different id in each book.
         key = a["code"] if all_companies else a["id"]
         row = bucket.setdefault(key, {"code": a["code"], "name": a["name"], "amount": 0.0})
         if a["type"] == "income":
-            row["amount"] += l["credit"] - l["debit"]
+            row["amount"] += (t.get("credit") or 0.0) - (t.get("debit") or 0.0)
         else:
-            row["amount"] += l["debit"] - l["credit"]
+            row["amount"] += (t.get("debit") or 0.0) - (t.get("credit") or 0.0)
     income_rows = sorted(income_rows.values(), key=lambda r: r["code"])
     expense_rows = sorted(expense_rows.values(), key=lambda r: r["code"])
     total_income = round(sum(r["amount"] for r in income_rows), 2)
@@ -1110,11 +1147,63 @@ async def profit_and_loss(
     }
 
 
+# ── Monthly income / expense trend (one query for the whole period) ──────────
+@router.get("/reports/monthly-trend")
+async def monthly_trend(
+    company_id: str = Query(...), date_from: str = Query(...), date_to: str = Query(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Income and expense for every month in [date_from, date_to].
+
+    The dashboard chart used to ask for one Profit & Loss report per month (up to twelve), each one
+    scanning the ledger. This answers the same question with a single grouped query. Months with no
+    postings are simply absent; the caller fills them with zero."""
+    if not _perm_reports(current_user):
+        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    if not company_id.strip():
+        raise HTTPException(400, "company_id is required.")
+    return await report_cache.cached("monthly_trend", (company_id, date_from, date_to),
+                                     lambda: _monthly_trend_impl(company_id, date_from, date_to))
+
+
+async def _monthly_trend_impl(company_id: str, date_from: str, date_to: str):
+    accounts = await db.chart_of_accounts.find(
+        {"company_id": company_id, "type": {"$in": ["income", "expense"]}}, {"_id": 0, "id": 1, "type": 1}
+    ).to_list(20000)
+    kind = {a["id"]: a["type"] for a in accounts}
+    if not kind:
+        return {"months": []}
+    groups = await db.journal_lines.aggregate([
+        {"$match": {"company_id": company_id, "account_id": {"$in": list(kind)},
+                    "entry_date": {"$gte": date_from, "$lte": date_to}}},
+        {"$group": {"_id": {"m": {"$substr": ["$entry_date", 0, 7]}, "a": "$account_id"},
+                    "debit": {"$sum": "$debit"}, "credit": {"$sum": "$credit"}}},
+    ]).to_list(None)
+    months: Dict[str, Dict[str, float]] = {}
+    for g in groups:
+        month, acct = g["_id"]["m"], g["_id"]["a"]
+        row = months.setdefault(month, {"income": 0.0, "expense": 0.0})
+        d, c = g.get("debit") or 0.0, g.get("credit") or 0.0
+        if kind.get(acct) == "income":
+            row["income"] += c - d
+        else:
+            row["expense"] += d - c
+    out = []
+    for month in sorted(months):
+        inc, exp = round(months[month]["income"], 2), round(months[month]["expense"], 2)
+        out.append({"month": month, "total_income": inc, "total_expense": exp, "net_profit": round(inc - exp, 2)})
+    return {"months": out}
+
+
 # ── Balance Sheet ─────────────────────────────────────────────────────────
 @router.get("/reports/balance-sheet")
 async def balance_sheet(company_id: str = Query(""), as_of: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     if not _perm_reports(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    return await report_cache.cached("balance_sheet", (company_id, as_of), lambda: _balance_sheet_impl(company_id, as_of))
+
+
+async def _balance_sheet_impl(company_id: str, as_of: Optional[str]):
 
     all_companies = not company_id
     # Auto-reconcile and sync sales invoices, purchase bills, and payments to
@@ -1124,7 +1213,7 @@ async def balance_sheet(company_id: str = Query(""), as_of: Optional[str] = Quer
         await _reconcile_all_books(await _all_book_ids())
     else:
         await _reconcile_one_book(company_id)
-        asyncio.create_task(_validate_best_effort(company_id))
+        _schedule_validation(company_id)
 
     as_of = as_of or date.today().isoformat()
     acct_q = {"type": {"$in": ["asset", "liability", "equity"]}}

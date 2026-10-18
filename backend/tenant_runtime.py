@@ -577,6 +577,9 @@ def _scope_replacement(replacement: Any, query: Any = None) -> Any:
     return result
 
 
+from backend import report_cache as _report_cache  # noqa: E402
+
+
 class TenantAwareCollection:
     def __init__(self, collection: Any, name: str):
         self._collection = collection
@@ -611,12 +614,16 @@ class TenantAwareCollection:
     async def insert_one(self, document, *args, **kwargs):
         if self._enabled(): document = _scope_replacement(document)
         elif self._company_registry_enabled(): document = _scope_company_registry_insert(document)
-        return await self._collection.insert_one(document, *args, **kwargs)
+        result = await self._collection.insert_one(document, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def insert_many(self, documents, *args, **kwargs):
         if self._enabled(): documents = [_scope_replacement(document) for document in documents]
         elif self._company_registry_enabled(): documents = [_scope_company_registry_insert(document) for document in documents]
-        return await self._collection.insert_many(documents, *args, **kwargs)
+        result = await self._collection.insert_many(documents, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def update_one(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
@@ -624,7 +631,9 @@ class TenantAwareCollection:
             query = _scope_query(query)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
-        return await self._collection.update_one(query, update, *args, **kwargs)
+        result = await self._collection.update_one(query, update, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def update_many(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
@@ -632,7 +641,9 @@ class TenantAwareCollection:
             query = _scope_query(query)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
-        return await self._collection.update_many(query, update, *args, **kwargs)
+        result = await self._collection.update_many(query, update, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def replace_one(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
@@ -642,7 +653,9 @@ class TenantAwareCollection:
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
-        return await self._collection.replace_one(query, replacement, *args, **kwargs)
+        result = await self._collection.replace_one(query, replacement, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def find_one_and_update(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
@@ -650,7 +663,9 @@ class TenantAwareCollection:
             query = _scope_query(query)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
-        return await self._collection.find_one_and_update(query, update, *args, **kwargs)
+        result = await self._collection.find_one_and_update(query, update, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def find_one_and_replace(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
@@ -660,22 +675,30 @@ class TenantAwareCollection:
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
-        return await self._collection.find_one_and_replace(query, replacement, *args, **kwargs)
+        result = await self._collection.find_one_and_replace(query, replacement, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def find_one_and_delete(self, query, *args, **kwargs):
         if self._enabled(): query = _scope_query(query)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
-        return await self._collection.find_one_and_delete(query, *args, **kwargs)
+        result = await self._collection.find_one_and_delete(query, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def delete_one(self, query, *args, **kwargs):
         if self._enabled(): query = _scope_query(query)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
-        return await self._collection.delete_one(query, *args, **kwargs)
+        result = await self._collection.delete_one(query, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     async def delete_many(self, query, *args, **kwargs):
         if self._enabled(): query = _scope_query(query)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
-        return await self._collection.delete_many(query, *args, **kwargs)
+        result = await self._collection.delete_many(query, *args, **kwargs)
+        _report_cache.bump(self._name)
+        return result
 
     def aggregate(self, pipeline, *args, **kwargs):
         if self._enabled():

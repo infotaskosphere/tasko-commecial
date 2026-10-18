@@ -60,3 +60,28 @@ async def agent_anomalies(company_id: str = "", current_user: User = Depends(get
 async def agent_cashflow_forecast(company_id: str = "", current_user: User = Depends(get_current_user)):
     from backend.accounting_ai.finix_agent_complete import agent_cashflow_forecast as impl
     return await impl(company_id, current_user)
+
+@router.get("/ledger-diagnostics")
+async def agent_ledger_diagnostics(company_id: str = "", current_user: User = Depends(get_current_user)):
+    from backend.accounting_ai.finix_agent_complete import agent_ledger_diagnostics as impl
+    return await impl(company_id, current_user)
+
+@router.post("/resync")
+async def agent_resync(company_id: str = "", current_user: User = Depends(get_current_user)):
+    from backend.accounting_ai.finix_agent_complete import agent_resync as impl
+    return await impl(company_id, current_user)
+
+@router.get("/learning/accuracy")
+async def learning_accuracy(company_id: str = "", days: int = 90, current_user: User = Depends(get_current_user)):
+    from backend.accounting_ai.finix_agent_complete import learning_accuracy as impl
+    return await impl(company_id, days, current_user)
+
+@router.get("/learning/vendors")
+async def learning_vendors(company_id: str = "", current_user: User = Depends(get_current_user)):
+    from backend.accounting_ai.finix_agent_complete import learning_vendors as impl
+    return await impl(company_id, current_user)
+
+@router.post("/learning/reset-vendor")
+async def learning_reset_vendor(payload: dict, current_user: User = Depends(get_current_user)):
+    from backend.accounting_ai.finix_agent_complete import ResetVendorRequest, learning_reset_vendor as impl
+    return await impl(ResetVendorRequest(**payload), current_user)

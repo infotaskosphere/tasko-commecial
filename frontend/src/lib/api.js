@@ -1,6 +1,7 @@
 import axios from "axios";
 import { useState, useEffect } from "react";
 import { isPlatformOwner } from "./commercialPermissionMatrix";
+import { createReadCache } from "./readCache";
 
 // ─────────────────────────────────────────────────────────────
 // API BASE URL
@@ -301,6 +302,22 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+// Shared read cache: reports and AI summaries that were already loaded come back instantly instead of
+// being recomputed. Writes empty it; see readCache.js. `{ cache: false }` on a request bypasses it.
+export const READ_CACHE_CLEARED_EVENT = "read-cache-cleared";
+const readCache = createReadCache({
+  baseAdapter: (config) => axios.getAdapter(axios.defaults.adapter)(config),
+  getToken: () => { try { return getToken(); } catch { return ""; } },
+  onClear: () => {
+    try { window.dispatchEvent(new CustomEvent(READ_CACHE_CLEARED_EVENT)); } catch {}
+  },
+});
+api.defaults.adapter = readCache.adapter;
+export const clearReadCache = () => readCache.clear();
+try {
+  window.addEventListener("company-scoped-caches-purged", () => readCache.clear());
+} catch {}
 
 // Restore the bearer header immediately when the bundle starts. This covers
 // the first protected request during session restoration as well as requests

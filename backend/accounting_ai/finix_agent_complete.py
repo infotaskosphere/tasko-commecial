@@ -15,6 +15,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from backend import report_cache
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import get_learning_context, record_learning
@@ -283,7 +284,8 @@ async def agent_health_score(company_id: str = "", current_user: User = Depends(
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     from backend.accounting_ai import finix_metrics
-    return await finix_metrics.health_score(_company(current_user, company_id))
+    cid = _company(current_user, company_id)
+    return await report_cache.cached("finix_health_score", (cid,), lambda: finix_metrics.health_score(cid))
 
 
 @router.get("/statutory-summary")
@@ -291,7 +293,8 @@ async def agent_statutory_summary(company_id: str = "", current_user: User = Dep
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     from backend.accounting_ai import finix_metrics
-    return await finix_metrics.statutory_summary(_company(current_user, company_id))
+    cid = _company(current_user, company_id)
+    return await report_cache.cached("finix_statutory_summary", (cid,), lambda: finix_metrics.statutory_summary(cid))
 
 
 @router.get("/anomalies")
@@ -299,7 +302,8 @@ async def agent_anomalies(company_id: str = "", current_user: User = Depends(get
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     from backend.accounting_ai import finix_metrics
-    return await finix_metrics.anomalies(_company(current_user, company_id))
+    cid = _company(current_user, company_id)
+    return await report_cache.cached("finix_anomalies", (cid,), lambda: finix_metrics.anomalies(cid))
 
 
 @router.get("/cashflow-forecast")
@@ -307,7 +311,8 @@ async def agent_cashflow_forecast(company_id: str = "", current_user: User = Dep
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
     from backend.accounting_ai import finix_metrics
-    return await finix_metrics.cashflow_forecast(_company(current_user, company_id))
+    cid = _company(current_user, company_id)
+    return await report_cache.cached("finix_cashflow_forecast", (cid,), lambda: finix_metrics.cashflow_forecast(cid))
 
 
 @router.get("/ledger-diagnostics")

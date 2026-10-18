@@ -64,6 +64,17 @@ def _can_manage(user: User) -> bool:
     return user.role == "admin" or bool(_perms(user).get("can_manage_chart_of_accounts"))
 
 
+def _cid(user: User, company_id: str = "") -> str:
+    """The book being worked on: the one named, else the signed-in user's own company.
+
+    An empty company_id used to reach the database as a blank filter, which tenant users get
+    silently filled in but the Platform Owner is (rightly) refused, so every GST page call failed for them."""
+    cid = (company_id or "").strip() or str(getattr(user, "company_id", "") or "").strip()
+    if not cid:
+        raise HTTPException(400, "Select a company/book before using GST Portal Sync.")
+    return cid
+
+
 def _current_period(on_date: Optional[str] = None) -> str:
     """GST return period as MM-YYYY for the given (or today's) date."""
     d = date.fromisoformat(on_date) if on_date else date.today()
@@ -82,6 +93,7 @@ async def register_gstin(body: GSTRegistration, current_user: User = Depends(get
     if not _can_manage(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
     gstin = body.gstin.strip().upper()
+    body.company_id = _cid(current_user, body.company_id)
     now = datetime.now(timezone.utc).isoformat()
     existing = await db.gst_portal_registrations.find_one({"company_id": body.company_id, "gstin": gstin})
     if existing:
@@ -101,6 +113,7 @@ async def register_gstin(body: GSTRegistration, current_user: User = Depends(get
 async def list_registrations(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
+    company_id = _cid(current_user, company_id)
     return await db.gst_portal_registrations.find({"company_id": company_id}, {"_id": 0}).to_list(500)
 
 
@@ -215,6 +228,7 @@ async def sync_now(
     if not _can_manage(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
     gstin = gstin.strip().upper()
+    company_id = _cid(current_user, company_id)
     period = _current_period()
     portal = await _fetch_portal_balances(gstin, period, company_id=company_id)
 
@@ -254,6 +268,7 @@ async def sync_now(
 async def list_snapshots(company_id: str = Query(""), gstin: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
+    company_id = _cid(current_user, company_id)
     q: dict = {"company_id": company_id}
     if gstin:
         q["gstin"] = gstin.strip().upper()
@@ -264,6 +279,7 @@ async def list_snapshots(company_id: str = Query(""), gstin: Optional[str] = Que
 async def list_audit_risk(company_id: str = Query(""), gstin: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
+    company_id = _cid(current_user, company_id)
     q: dict = {"company_id": company_id}
     if gstin:
         q["gstin"] = gstin.strip().upper()
@@ -274,6 +290,7 @@ async def list_audit_risk(company_id: str = Query(""), gstin: Optional[str] = Qu
 async def dashboard_metrics(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
     if not _can_view(current_user):
         raise HTTPException(403, "Access denied.")
+    company_id = _cid(current_user, company_id)
 
     latest_snapshot = await db.gst_portal_snapshots.find(
         {"company_id": company_id}, {"_id": 0}

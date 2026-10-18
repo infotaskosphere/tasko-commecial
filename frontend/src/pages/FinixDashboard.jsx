@@ -16,7 +16,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, BarChart, Bar
 } from 'recharts';
-import api from '@/lib/api';
+import api, { READ_CACHE_CLEARED_EVENT } from '@/lib/api';
 import { createJournalEntry } from '@/lib/journalEntriesApi';
 import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from '@/hooks/useDark';
@@ -83,6 +83,17 @@ if (typeof window !== 'undefined') {
     _companiesCache_finix.ts = 0;
     _companiesCache_finix.owner = null;
     _metricsCache_finix.clear();
+  });
+}
+
+// A change made in this browser (a posted invoice, a voucher...) empties the shared read cache; the
+// dashboard's own copies of the figures must go with it.
+if (typeof window !== 'undefined') {
+  window.addEventListener(READ_CACHE_CLEARED_EVENT, () => {
+    _metricsCache_finix.clear();
+    try {
+      Object.keys(sessionStorage).forEach((k) => { if (k.startsWith(SS_METRICS_PREFIX)) sessionStorage.removeItem(k); });
+    } catch { /* ignore */ }
   });
 }
 
@@ -404,7 +415,7 @@ function FinixDashboardInner() {
     }
   };
 
-  const buildMonthlyTrend = async (cid) => {
+  const buildMonthlyTrend = async (cid, force = false) => {
     const now = new Date();
     const fyStartYear = financialYearStartYear(now);
     const months = [];
@@ -413,6 +424,29 @@ function FinixDashboardInner() {
       months.push(new Date(cursor));
       cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
+    const labelOf = (m) => m.toLocaleString('en-US', { month: 'short' });
+    const keyOf = (m) => `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`;
+
+    // One grouped query for the whole year. Older servers do not have it, so any failure other than
+    // "access denied" falls back to asking for each month's Profit & Loss separately.
+    try {
+      const res = await api.get('/reports/monthly-trend', {
+        params: { company_id: cid, date_from: toLocalISODate(months[0]), date_to: toLocalISODate(now) },
+        ...(force ? { cache: false } : {}),
+      });
+      if (Array.isArray(res?.data?.months)) {
+        const byMonth = new Map(res.data.months.map((row) => [row.month, row]));
+        return months.map((m) => {
+          const row = byMonth.get(keyOf(m)) || {};
+          const rev = round2(row.total_income || 0);
+          const exp = round2(row.total_expense || 0);
+          return { name: labelOf(m), Revenue: rev, Expenses: exp, Profit: round2(rev - exp) };
+        });
+      }
+    } catch (err) {
+      if (err?.response?.status === 403) return [];
+    }
+
     const results = await Promise.allSettled(months.map((m) => {
       const start = new Date(m.getFullYear(), m.getMonth(), 1);
       const lastDay = new Date(m.getFullYear(), m.getMonth() + 1, 0);
@@ -420,7 +454,7 @@ function FinixDashboardInner() {
       const df = toLocalISODate(start);
       const dt = toLocalISODate(end);
       return api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df, date_to: dt } })
-        .then((r) => ({ label: m.toLocaleString('en-US', { month: 'short' }), data: r.data }));
+        .then((r) => ({ label: labelOf(m), data: r.data }));
     }));
     return results
       .filter((r) => r.status === 'fulfilled')
@@ -432,7 +466,7 @@ function FinixDashboardInner() {
       });
   };
 
-  const computeMetricsForCompany = async (requestedCompanyId, { force = false, onValidationSettled } = {}) => {
+  const computeMetricsForCompany = async (requestedCompanyId, { force = false, onValidationSettled, onValidationStart } = {}) => {
     // Resolve once from the current authorized list; every report/AI query in
     // this function uses the same verified company ID.
     const cid = resolveAuthorizedCompanyId(requestedCompanyId);
@@ -453,28 +487,30 @@ function FinixDashboardInner() {
     // Jan–Mar belongs to the financial year that began the previous April.
     const { from: df, to: dt } = currentFinancialYearRange(new Date());
 
-    const [batchSettled, trend, validationResult, healthScoreRes, statutoryRes, anomaliesRes, cashflowRes] = await Promise.all([
+    // The ledger check is the slowest request by far. It starts now, alongside everything else, but the
+    // figures are shown as soon as they arrive; the check fills in "verified" when it finishes.
+    const bypass = force ? { cache: false } : {}; // a manual refresh must not be answered from the read cache
+    onValidationStart?.();
+    const validationPromise = (async () => {
+      try {
+        return { result: await runVerifyAndFix(cid, { force }), error: null };
+      } catch (error) {
+        console.error(error);
+        return { result: null, error };
+      }
+    })();
+
+    const [batchSettled, trend, healthScoreRes, statutoryRes, anomaliesRes, cashflowRes] = await Promise.all([
       Promise.allSettled([
-        api.get('/reports/trial-balance', { params: { company_id: cid, date_from: df, date_to: dt } }),
-        api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df, date_to: dt } }),
-        api.get('/reports/balance-sheet', { params: { company_id: cid, as_of: toLocalISODate(new Date()) } }),
+        api.get('/reports/trial-balance', { params: { company_id: cid, date_from: df, date_to: dt }, ...bypass }),
+        api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df, date_to: dt }, ...bypass }),
+        api.get('/reports/balance-sheet', { params: { company_id: cid, as_of: toLocalISODate(new Date()) }, ...bypass }),
       ]),
-      buildMonthlyTrend(cid),
-      (async () => {
-        try {
-          const v = await runVerifyAndFix(cid, { force });
-          onValidationSettled?.(v, null);
-          return v;
-        } catch (err) {
-          console.error(err);
-          onValidationSettled?.(null, err);
-          return null;
-        }
-      })(),
-      api.get('/finix/ai/health-score', { params: { company_id: cid } }).catch(() => null),
-      api.get('/finix/ai/statutory-summary', { params: { company_id: cid } }).catch(() => null),
-      api.get('/finix/ai/anomalies', { params: { company_id: cid } }).catch(() => null),
-      api.get('/finix/ai/cashflow-forecast', { params: { company_id: cid } }).catch(() => null),
+      buildMonthlyTrend(cid, force),
+      api.get('/finix/ai/health-score', { params: { company_id: cid }, ...bypass }).catch(() => null),
+      api.get('/finix/ai/statutory-summary', { params: { company_id: cid }, ...bypass }).catch(() => null),
+      api.get('/finix/ai/anomalies', { params: { company_id: cid }, ...bypass }).catch(() => null),
+      api.get('/finix/ai/cashflow-forecast', { params: { company_id: cid }, ...bypass }).catch(() => null),
     ]);
 
     const [tbRes, pnlRes, bsRes] = batchSettled;
@@ -588,7 +624,7 @@ function FinixDashboardInner() {
       cashflow: !!cashflowRes?.data,
     };
 
-    const lastVerifiedAt = validationResult ? new Date() : null;
+    const lastVerifiedAt = null;
     const data = {
       company_id: cid,
       revenue: revTotal,
@@ -600,7 +636,7 @@ function FinixDashboardInner() {
       chartData: chartDataResolved,
       expenseBreakdown: realBreakdown,
       insights: generatedInsights,
-      validation: validationResult,
+      validation: null,
       lastVerifiedAt,
       healthScore: resolvedHealth,
       statutorySummary: resolvedStatutory,
@@ -611,7 +647,21 @@ function FinixDashboardInner() {
 
     const ts = Date.now();
     _metricsCache_finix.set(cid, { ts, data });
-    ssWrite(SS_METRICS_PREFIX + cid, { ts, data: { ...data, lastVerifiedAt: lastVerifiedAt ? lastVerifiedAt.toISOString() : null } });
+    ssWrite(SS_METRICS_PREFIX + cid, { ts, data: { ...data, lastVerifiedAt: null } });
+
+    validationPromise.then(({ result, error }) => {
+      if (result) {
+        // Updated in place: the same object is in the cache and may be on its way to the screen.
+        const verifiedAt = new Date();
+        data.validation = result;
+        data.lastVerifiedAt = verifiedAt;
+        const entry = _metricsCache_finix.get(cid);
+        if (entry && entry.ts === ts) {
+          ssWrite(SS_METRICS_PREFIX + cid, { ts, data: { ...data, lastVerifiedAt: verifiedAt.toISOString() } });
+        }
+      }
+      onValidationSettled?.(result, error);
+    });
 
     return data;
   };
@@ -745,15 +795,30 @@ function FinixDashboardInner() {
         setLoading(false);
         setVerifying(false);
         loadAccountsForVoucher(cid);
+        if (!cached.validation) {
+          // Saved before the ledger check finished: run it in the background and fill it in.
+          setVerifying(true);
+          runVerifyAndFix(cid).then((v) => {
+            if (requestId !== fetchIdRef.current) return;
+            cached.validation = v;
+            cached.lastVerifiedAt = new Date();
+            setValidation(v);
+            setLastVerifiedAt(cached.lastVerifiedAt);
+          }).catch((err) => console.error(err)).finally(() => {
+            if (requestId === fetchIdRef.current) setVerifying(false);
+          });
+        }
         return;
       }
     }
 
     setLoading(true);
     setVerifying(true);
+    let validationPending = false;
     try {
       const data = await computeMetricsForCompany(cid, {
         force,
+        onValidationStart: () => { validationPending = true; },
         onValidationSettled: (v) => {
           if (requestId !== fetchIdRef.current) return;
           setValidation(v);
@@ -767,11 +832,12 @@ function FinixDashboardInner() {
       loadAccountsForVoucher(cid);
     } catch (err) {
       console.error(err);
+      validationPending = false;
       toast.error('Failed to parse financial metrics');
     } finally {
       if (requestId === fetchIdRef.current) {
         setLoading(false);
-        setVerifying(false);
+        if (!validationPending) setVerifying(false);
       }
     }
   };
@@ -969,9 +1035,24 @@ function FinixDashboardInner() {
     }
 
     setLoading(true);
+    let pendingChecks = 0;
+    const reapplyWhenChecked = () => {
+      pendingChecks -= 1;
+      if (pendingChecks > 0 || requestId !== fetchIdRef.current) return;
+      // Every company's ledger check has finished: refresh the combined integrity result.
+      const ok = companyList
+        .map((company) => ({ company, data: _metricsCache_finix.get(company.id)?.data }))
+        .filter((e) => e.data);
+      if (ok.length) applyAggregateMetrics(ok, companyList);
+      setVerifying(false);
+    };
     try {
       const settled = await Promise.allSettled(
-        companyList.map((c) => computeMetricsForCompany(c.id, { force }))
+        companyList.map((c) => computeMetricsForCompany(c.id, {
+          force,
+          onValidationStart: () => { pendingChecks += 1; },
+          onValidationSettled: reapplyWhenChecked,
+        }))
       );
       if (requestId !== fetchIdRef.current) return;
 
@@ -987,7 +1068,7 @@ function FinixDashboardInner() {
     } finally {
       if (requestId === fetchIdRef.current) {
         setLoading(false);
-        setVerifying(false);
+        if (pendingChecks <= 0) setVerifying(false);
       }
     }
   };
