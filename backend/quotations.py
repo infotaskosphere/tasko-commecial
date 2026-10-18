@@ -1988,9 +1988,12 @@ async def _tenant_visible_companies(current_user: User, projection: Optional[Dic
     # Company master is stored centrally. Use the raw registry so that
     # tenant-aware company_id filtering does not hide other legal companies
     # belonging to the same commercial licensee.
-    rows = await _tenant_raw_db().companies.find(
-        scope, projection or {"_id": 0}
-    ).sort("name", 1).to_list(500)
+    if is_platform_owner(current_user):
+        rows = await _platform_owner_operational_companies(current_user)
+    else:
+        rows = await _tenant_raw_db().companies.find(
+            scope, projection or {"_id": 0}
+        ).sort("name", 1).to_list(500)
     if not projection:
         await _heal_tenant_company_markers(current_user, rows)
     return rows
