@@ -29,7 +29,6 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field, ConfigDict
 
-from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user, build_client_query
 from backend.modules.finix_ai.reconciliation.models_gst import ReconciliationSession, SessionSaveBody, GSTR3BBody, ITCReversalBody, VendorCommunicationBody, GSTINBatchBody, TradeNameBody, TradeNamesBatchBody, SessionUpdateBody, AIInsightBody
 
@@ -1342,9 +1341,10 @@ async def get_session(session_id:str, current_user: User=Depends(get_current_use
 
 @router.delete("/history/{session_id}")
 async def delete_session(session_id:str, current_user: User=Depends(get_current_user)):
-    require_finix_action(current_user, "can_view_gst_portal_sync", "delete")
-    doc = await db.gst_reconciliation_sessions.find_one({"id":session_id},{"_id":0,"id":1})
+    doc = await db.gst_reconciliation_sessions.find_one({"id":session_id},{"_id":0,"created_by":1})
     if not doc: raise HTTPException(404,"Session not found")
+    if current_user.role!="admin" and doc.get("created_by")!=current_user.id:
+        raise HTTPException(403,"Not authorised to delete this session")
     await db.gst_reconciliation_sessions.delete_one({"id":session_id})
 
     await _log_audit("delete_session",current_user,{"session_id":session_id})
@@ -1365,7 +1365,6 @@ async def get_trade_names(current_user: User = Depends(get_current_user)):
 @router.post("/trade-names")
 async def save_trade_name(body: TradeNameBody, current_user: User = Depends(get_current_user)):
     """Upsert a single GSTIN→name mapping. Shared: all users will see this update."""
-    require_finix_action(current_user, "can_view_gst_portal_sync", "edit")
     gstin = body.gstin.strip().upper()
     name  = body.name.strip()
     if not gstin or not name:
@@ -1383,7 +1382,6 @@ async def save_trade_name(body: TradeNameBody, current_user: User = Depends(get_
 @router.post("/trade-names/batch")
 async def save_trade_names_batch(body: TradeNamesBatchBody, current_user: User = Depends(get_current_user)):
     """Bulk-upsert GSTIN→name mappings (up to 500 entries). Used on first load to sync localStorage → backend."""
-    require_finix_action(current_user, "can_view_gst_portal_sync", "edit")
     import pymongo as _pymongo
     entries = [
         (k.strip().upper(), v.strip())
@@ -1415,7 +1413,6 @@ async def update_session(session_id: str, body: SessionUpdateBody,
     Allowed fields: period, client_id, client_name, client_gstin, company,
                     portal_filename, books_filename.
     The full_result (invoice data) is never mutated here."""
-    require_finix_action(current_user, "can_view_gst_portal_sync", "edit")
     doc = await db.gst_reconciliation_sessions.find_one(
         {"id": session_id}, {"_id": 0, "created_by": 1}
     )
