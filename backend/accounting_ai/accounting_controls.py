@@ -1,7 +1,7 @@
 """Shared deterministic accounting controls for Finix."""
 from __future__ import annotations
 import hashlib, json, uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Iterable, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -77,16 +77,58 @@ def _authorized_company(requested_company_id:str,user:User)->str:
 def _canonical(value:Any)->str: return json.dumps(value,sort_keys=True,separators=(",",":"),default=str)
 def _event_hash(previous_hash:str,event:dict)->str: return hashlib.sha256(f"{previous_hash}|{_canonical(event)}".encode()).hexdigest()
 
+def _audit_lock_claim_filter(lock_id: str, company_id: str, stale_before: str) -> dict:
+    """Match an unlocked audit lock or reclaim one whose owning worker died.
+
+    The timestamp lease is intentionally company-scoped. A lock held by another
+    company can never be reclaimed by this request.
+    """
+    return {
+        "id": lock_id,
+        "company_id": company_id,
+        "$or": [
+            {"locked": False},
+            {"locked": {"$exists": False}},
+            {"locked_at": {"$lt": stale_before}},
+            {"locked_at": {"$exists": False}},
+        ],
+    }
+
+
 async def _append_audit(company_id:str,event_type:str,actor_id:Optional[str],payload:dict,document_id:Optional[str]=None)->dict:
-    company=str(company_id or "")
-    now=datetime.now(timezone.utc).isoformat(); lock_id=f"audit:{company}"; token=str(uuid.uuid4())
-    await db.accounting_audit_locks.update_one({"id":lock_id},{"$setOnInsert":{"id":lock_id,"company_id":company,"locked":False}},upsert=True)
+    company=str(company_id or "").strip()
+    if not company:
+        raise ValueError("A company ID is required for the accounting audit trail.")
+    now_dt=datetime.now(timezone.utc)
+    now=now_dt.isoformat()
+    stale_before=(now_dt-timedelta(seconds=60)).isoformat()
+    lock_id=f"audit:{company}"
+    token=str(uuid.uuid4())
+    lock_collection=db.accounting_audit_locks
+
+    # Include company_id in the query so the lock is tenant-scoped even on
+    # legacy databases. $setOnInsert initializes new rows only; it must not
+    # overwrite a live lock that another request already owns.
+    await lock_collection.update_one(
+        {"id":lock_id,"company_id":company},
+        {"$setOnInsert":{"id":lock_id,"company_id":company,"locked":False}},
+        upsert=True,
+    )
     acquired=False
-    for _ in range(40):
-        result=await db.accounting_audit_locks.find_one_and_update({"id":lock_id,"locked":False},{"$set":{"locked":True,"token":token,"locked_at":now}},return_document=ReturnDocument.AFTER)
-        if result and result.get("token")==token: acquired=True; break
-        import asyncio; await asyncio.sleep(0.025)
-    if not acquired: raise RuntimeError("Unable to acquire accounting audit lock; audit event blocked.")
+    claim_filter=_audit_lock_claim_filter(lock_id,company,stale_before)
+    for _ in range(80):
+        result=await lock_collection.find_one_and_update(
+            claim_filter,
+            {"$set":{"company_id":company,"locked":True,"token":token,"locked_at":now}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if result and result.get("token")==token:
+            acquired=True
+            break
+        import asyncio
+        await asyncio.sleep(0.025)
+    if not acquired:
+        raise RuntimeError("Unable to acquire accounting audit lock; audit event blocked.")
     try:
         tail=await db.accounting_audit.find_one({"company_id":company},{"_id":0},sort=[("sequence",-1)])
         sequence=int(tail.get("sequence",0))+1 if tail else 1
