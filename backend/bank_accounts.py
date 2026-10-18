@@ -47,6 +47,19 @@ from backend.modules.finix_ai.banking.models_banking import BankAccountCreate, M
 
 from backend.models import User
 from backend.accounting_core import get_default_account_id, try_auto_post
+from backend.platform_owner import is_platform_owner
+from backend.tenant_runtime import (
+    platform_owner_company_ids,
+    reset_bank_master_scope,
+    reset_platform_owner,
+    reset_platform_owner_company_ids,
+    reset_tenant_company_ids,
+    set_bank_master_scope,
+    set_platform_owner,
+    set_platform_owner_company_ids,
+    set_tenant_company_ids,
+    tenant_company_ids,
+)
 
 router = APIRouter(tags=["Bank Accounts"])
 
@@ -103,6 +116,66 @@ def _perm_match_bank(user: User) -> bool:
         return True
     perms = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
     return bool(perms.get("can_match_bank"))
+
+
+async def _bank_master_company_scope(current_user: User = Depends(get_current_user)):
+    """Resolve the Bank Accounts scope from the authenticated Master Data list.
+
+    Bank-account IDs are used to navigate to transactions across legal companies
+    belonging to the same login. Resolve the list on the server and restore the
+    request-local context afterward; client-supplied company IDs never grant
+    themselves access.
+    """
+    owner = is_platform_owner(current_user)
+    owner_context_token = set_platform_owner(owner)
+    bank_scope_token = set_bank_master_scope(True)
+    tenant_ids_token = None
+    owner_ids_token = None
+
+    try:
+        visible_ids = set()
+        list_loaded = False
+        try:
+            from backend.quotations import list_companies as list_visible_companies
+            rows = await list_visible_companies(current_user)
+            visible_ids = {
+                str(row.get("id") or "").strip()
+                for row in (rows or [])
+                if isinstance(row, dict) and str(row.get("id") or "").strip()
+            }
+            list_loaded = True
+        except HTTPException:
+            raise
+        except Exception:
+            # Keep existing single-company access if Master Data is temporarily
+            # unavailable; do not derive additional IDs from request input.
+            visible_ids = set()
+
+        if owner:
+            # Only owner-operational companies returned from Master Data are
+            # admitted. If the list call failed, retain the existing auth list.
+            scoped_ids = visible_ids if list_loaded else set(platform_owner_company_ids())
+            owner_ids_token = set_platform_owner_company_ids(scoped_ids)
+        else:
+            # The request may select any legal company returned by this user's
+            # Master Data, but no company from another customer or the owner.
+            scoped_ids = visible_ids if list_loaded else set(tenant_company_ids())
+            tenant_ids_token = set_tenant_company_ids(scoped_ids)
+
+        yield
+    finally:
+        if tenant_ids_token is not None:
+            reset_tenant_company_ids(tenant_ids_token)
+        if owner_ids_token is not None:
+            reset_platform_owner_company_ids(owner_ids_token)
+        reset_bank_master_scope(bank_scope_token)
+        reset_platform_owner(owner_context_token)
+
+
+# This scope applies only to Bank Accounts routes. Tenant runtime uses it to
+# default banking queries to the verified company allow-list; invoicing, tasks,
+# clients and other operational modules retain their original company scope.
+router.dependencies.append(Depends(_bank_master_company_scope))
 
 
 # ── Models ────────────────────────────────────────────────────────────────

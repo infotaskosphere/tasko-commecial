@@ -64,6 +64,31 @@ def test_company_in_request_scope(licensee_scope):
     assert not tr.company_in_request_scope(U(), "someone-else")
 
 
+def test_bank_master_scope_defaults_to_all_verified_legal_companies(licensee_scope):
+    token = tr.set_bank_master_scope(True)
+    try:
+        expected = {"company_id": {"$in": ["co-advisory", "co-ventures", "cus-main"]}}
+        assert tr._scope_query({}, "bank_accounts") == expected
+        assert tr._scope_query({"id": "bank-1"}, "bank_transactions") == {
+            "id": "bank-1",
+            "company_id": {"$in": ["co-advisory", "co-ventures", "cus-main"]},
+        }
+        with pytest.raises(HTTPException) as exc:
+            tr._scope_query({"company_id": "someone-else"}, "bank_accounts")
+        assert exc.value.status_code == 403
+    finally:
+        tr.reset_bank_master_scope(token)
+
+
+def test_bank_master_scope_does_not_widen_other_operational_modules(licensee_scope):
+    token = tr.set_bank_master_scope(True)
+    try:
+        assert tr._scope_query({}, "invoices") == {"company_id": "cus-main"}
+        assert tr._scope_query({}, "purchase_invoices") == {"company_id": "cus-main"}
+    finally:
+        tr.reset_bank_master_scope(token)
+
+
 def test_single_company_licensee_unchanged():
     company = tr.set_authenticated_company("solo")
     try:

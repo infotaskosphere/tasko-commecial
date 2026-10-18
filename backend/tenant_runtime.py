@@ -91,6 +91,31 @@ COMPANY_REGISTRY_COLLECTION = "companies"
 # all of the licensee's companies instead of only the login company.
 SHARED_TENANT_MASTER_COLLECTIONS = frozenset({"clients", "users"})
 
+# During a Bank Accounts request, the server resolves every company from the
+# authenticated user's visible Master Data list. This lets bank accounts and
+# their transactions be selected by bank-account ID across those legal
+# companies without widening any non-banking endpoint's default company scope.
+BANKING_MULTI_COMPANY_COLLECTIONS = frozenset({
+    "bank_accounts", "bank_transactions", "bank_rules", "bank_reconciliation",
+    "bank_reconciliation_matches", "bank_reconciliation_audit", "bank_statistics",
+    "bank_transaction_history", "bank_learning", "bank_learned_mappings",
+    "bank_statement_templates", "cashflow_history",
+})
+_bank_master_scope: ContextVar[bool] = ContextVar("taskosphere_bank_master_scope", default=False)
+
+
+def set_bank_master_scope(value: bool = True):
+    return _bank_master_scope.set(bool(value))
+
+
+def reset_bank_master_scope(token) -> None:
+    _bank_master_scope.reset(token)
+
+
+def in_bank_master_scope() -> bool:
+    return _bank_master_scope.get()
+
+
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
 _current_platform_owner: ContextVar[bool] = ContextVar("taskosphere_platform_owner", default=False)
 # A Platform Owner may operate multiple companies created/owned in Master Data.
@@ -434,6 +459,11 @@ def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, An
         if requested is not None:
             base[COMPANY_FIELD] = _normalize_owner_company_filter(requested)
         if requested is None:
+            if _bank_master_scope.get() and collection_name in BANKING_MULTI_COMPANY_COLLECTIONS:
+                bank_company_ids = platform_owner_company_ids()
+                if bank_company_ids:
+                    base[COMPANY_FIELD] = {"$in": sorted(bank_company_ids)}
+                    return base
             owner_default = _owner_default_company_id()
             if owner_default and _owner_company_value_allowed(owner_default):
                 base[COMPANY_FIELD] = owner_default
@@ -458,7 +488,13 @@ def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, An
             base[COMPANY_FIELD] = requested.strip()
         return base
     allowed = _tenant_allowed_ids()
-    if collection_name in SHARED_TENANT_MASTER_COLLECTIONS and len(allowed) > 1:
+    if (
+        _bank_master_scope.get()
+        and collection_name in BANKING_MULTI_COMPANY_COLLECTIONS
+        and len(allowed) > 1
+    ):
+        base[COMPANY_FIELD] = {"$in": sorted(allowed)}
+    elif collection_name in SHARED_TENANT_MASTER_COLLECTIONS and len(allowed) > 1:
         base[COMPANY_FIELD] = {"$in": sorted(allowed)}
     else:
         base[COMPANY_FIELD] = company_id
