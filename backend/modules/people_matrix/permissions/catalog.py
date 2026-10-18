@@ -32,7 +32,7 @@ MODULE_HIERARCHY = {
             {"flag": "can_view_bank", "label": "Bank Accounts", "actions": ["view", "create", "edit", "delete", "export"]},
             {"flag": "can_view_journal_entries", "label": "Journal Entries", "actions": ["view", "create", "edit", "delete", "export", "print"]},
             {"flag": "can_view_zero_touch_entries", "label": "Zero Touch Entries", "actions": ["view", "create", "edit", "delete"]},
-            {"flag": "can_view_accounting_reports", "label": "Accounting Reports", "actions": ["view", "export", "print"]},
+            {"flag": "can_view_accounting_reports", "label": "Accounting Reports", "actions": ["view", "edit", "export", "print"]},
             {"flag": "can_view_extended_accounts_reports", "label": "Extended Accounts Reports", "actions": ["view", "export", "print"]},
             {"flag": "can_view_gst_portal_sync", "label": "Live GST Portal Sync", "actions": ["view", "edit", "delete", "export"]},
             {"flag": "can_view_accounting_integrity", "label": "Accounting Integrity", "actions": ["view", "edit", "approve"]},
