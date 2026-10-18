@@ -86,6 +86,11 @@ TENANT_COLLECTIONS = {
 
 COMPANY_REGISTRY_COLLECTION = "companies"
 
+# Master data shared by every legal company of one licensee (the Clients master
+# and the user directory). Without an explicit company filter these default to
+# all of the licensee's companies instead of only the login company.
+SHARED_TENANT_MASTER_COLLECTIONS = frozenset({"clients", "users"})
+
 _current_company: ContextVar[str | None] = ContextVar("taskosphere_company_id", default=None)
 _current_platform_owner: ContextVar[bool] = ContextVar("taskosphere_platform_owner", default=False)
 # A Platform Owner may operate multiple companies created/owned in Master Data.
@@ -98,6 +103,14 @@ _current_platform_owner_company_ids: ContextVar[frozenset[str]] = ContextVar(
 # company. They are constructed from authenticated DB state, never request data.
 _current_platform_owner_company_aliases: ContextVar[dict[str, str]] = ContextVar(
     "taskosphere_platform_owner_company_aliases", default={}
+)
+# A licensee may own several legal companies in Master Data (all registered
+# under its own commercial customer/license). Like the Platform Owner list above,
+# this allow-list is filled during authentication from the central registry and
+# never from request data. Requests default to the authenticated company and
+# may explicitly select another company only when it is in this list.
+_current_tenant_company_ids: ContextVar[frozenset[str]] = ContextVar(
+    "taskosphere_tenant_company_ids", default=frozenset()
 )
 _system_context: ContextVar[bool] = ContextVar("taskosphere_system_context", default=False)
 # Set only after the authenticated customer has been resolved from the central registry.
@@ -153,6 +166,43 @@ def reset_platform_owner_company_ids(token) -> None:
 
 def platform_owner_company_ids() -> frozenset[str]:
     return _current_platform_owner_company_ids.get()
+
+
+def set_tenant_company_ids(company_ids: Any):
+    """Set the server-resolved legal companies of the authenticated licensee."""
+    values = frozenset(
+        str(value).strip()
+        for value in (company_ids or [])
+        if value is not None and str(value).strip()
+    )
+    return _current_tenant_company_ids.set(values)
+
+
+def reset_tenant_company_ids(token) -> None:
+    _current_tenant_company_ids.reset(token)
+
+
+def tenant_company_ids() -> frozenset[str]:
+    return _current_tenant_company_ids.get()
+
+
+def _tenant_allowed_ids() -> frozenset[str]:
+    current = str(authenticated_company_id() or "").strip()
+    allowed = set(_current_tenant_company_ids.get())
+    if current:
+        allowed.add(current)
+    return frozenset(allowed)
+
+
+def _tenant_filter_allowed(value: Any) -> bool:
+    """A licensee company filter: one allowed id, or ``{"$in": [allowed ids]}``."""
+    allowed = _tenant_allowed_ids()
+    if isinstance(value, dict):
+        if set(value) != {"$in"} or not isinstance(value.get("$in"), (list, tuple, set)):
+            return False
+        members = [str(v).strip() for v in value["$in"]]
+        return bool(members) and all(m in allowed for m in members)
+    return str(value).strip() in allowed
 
 
 def set_platform_owner_company_aliases(aliases: Any):
@@ -358,7 +408,7 @@ def _blank_company_filter(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
-def _scope_query(query: Any) -> dict[str, Any]:
+def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, Any]:
     company_id = authenticated_company_id()
     base = dict(query or {}) if isinstance(query, dict) else {}
     if in_platform_owner_context():
@@ -399,9 +449,19 @@ def _scope_query(query: Any) -> dict[str, Any]:
     if COMPANY_FIELD in base and _blank_company_filter(base.get(COMPANY_FIELD)):
         base.pop(COMPANY_FIELD, None)
     requested = base.get(COMPANY_FIELD)
-    if requested is not None and str(requested) != company_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-    base[COMPANY_FIELD] = company_id
+    if requested is not None:
+        # A licensee may select any of its own legal companies (Master Data);
+        # anything else is another tenant.
+        if not _tenant_filter_allowed(requested):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+        if isinstance(requested, str):
+            base[COMPANY_FIELD] = requested.strip()
+        return base
+    allowed = _tenant_allowed_ids()
+    if collection_name in SHARED_TENANT_MASTER_COLLECTIONS and len(allowed) > 1:
+        base[COMPANY_FIELD] = {"$in": sorted(allowed)}
+    else:
+        base[COMPANY_FIELD] = company_id
     return base
 
 
@@ -434,9 +494,11 @@ def _scope_company_registry_query(query: Any) -> dict[str, Any]:
     base = dict(query or {})
     requested = base.get(COMPANY_ID_FIELD)
     if requested is not None:
-        if isinstance(requested, dict) or str(requested) != company_id:
+        if not _tenant_filter_allowed(requested):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-    base[COMPANY_ID_FIELD] = company_id
+        return base
+    allowed = _tenant_allowed_ids()
+    base[COMPANY_ID_FIELD] = company_id if len(allowed) <= 1 else {"$in": sorted(allowed)}
     return base
 
 
@@ -528,10 +590,20 @@ def _scope_update(update: Any, query: Any = None) -> Any:
     unset_values = dict(result.get("$unset") or {})
     if COMPANY_FIELD in unset_values:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="company_id cannot be removed")
-    if COMPANY_FIELD in set_values and str(set_values[COMPANY_FIELD]) != company_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-    if COMPANY_FIELD in set_on_insert_values and str(set_on_insert_values[COMPANY_FIELD]) != company_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+    # The query is already scoped to the authenticated company or to another of
+    # this licensee's own companies. Records stay in that company.
+    query_company = query.get(COMPANY_FIELD) if isinstance(query, dict) else None
+    target_company = query_company.strip() if isinstance(query_company, str) and query_company.strip() else company_id
+    for values in (set_values, set_on_insert_values):
+        if COMPANY_FIELD in values:
+            requested_value = str(values[COMPANY_FIELD]).strip()
+            if not _tenant_filter_allowed(requested_value):
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+            if isinstance(query_company, str) and requested_value != target_company:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="An operational record cannot be moved between companies by changing company_id",
+                )
 
     # MongoDB rejects the same update path appearing under both $set and
     # $setOnInsert. If the caller already stamps company_id on insert, preserve
@@ -540,8 +612,13 @@ def _scope_update(update: Any, query: Any = None) -> Any:
     if COMPANY_FIELD in set_values and COMPANY_FIELD in set_on_insert_values:
         set_on_insert_values.pop(COMPANY_FIELD, None)
 
-    if COMPANY_FIELD not in set_on_insert_values:
-        set_values[COMPANY_FIELD] = company_id
+    if (
+        COMPANY_FIELD not in set_on_insert_values
+        and COMPANY_FIELD not in set_values
+        and not isinstance(query_company, dict)
+    ):
+        # Multi-company ({"$in": ...}) updates keep each record's own company.
+        set_values[COMPANY_FIELD] = target_company
 
     if set_values:
         result["$set"] = set_values
@@ -599,9 +676,19 @@ def _scope_replacement(replacement: Any, query: Any = None) -> Any:
         return result
     if COMPANY_FIELD in result and _blank_company_filter(result.get(COMPANY_FIELD)):
         result.pop(COMPANY_FIELD, None)
-    if result.get(COMPANY_FIELD) is not None and str(result[COMPANY_FIELD]) != company_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-    result[COMPANY_FIELD] = company_id
+    requested = result.get(COMPANY_FIELD)
+    query_company = query.get(COMPANY_FIELD) if isinstance(query, dict) else None
+    if requested is not None:
+        if not _tenant_filter_allowed(requested):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+        if isinstance(query_company, str) and str(requested).strip() != query_company.strip():
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="An operational record cannot be moved between companies by changing company_id",
+            )
+        result[COMPANY_FIELD] = str(requested).strip()
+        return result
+    result[COMPANY_FIELD] = query_company.strip() if isinstance(query_company, str) and query_company.strip() else company_id
     return result
 
 
@@ -620,22 +707,22 @@ class TenantAwareCollection:
         return self._name == COMPANY_REGISTRY_COLLECTION and authenticated_company_id() is not None and not in_system_context()
 
     def find(self, query=None, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return self._collection.find(query, *args, **kwargs)
 
     async def find_one(self, query=None, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.find_one(query, *args, **kwargs)
 
     async def count_documents(self, query=None, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.count_documents(query, *args, **kwargs)
 
     async def distinct(self, key, query=None, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         return await self._collection.distinct(key, query, *args, **kwargs)
 
@@ -656,7 +743,7 @@ class TenantAwareCollection:
     async def update_one(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
-            query = _scope_query(query)
+            query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         result = await self._collection.update_one(query, update, *args, **kwargs)
@@ -666,7 +753,7 @@ class TenantAwareCollection:
     async def update_many(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
-            query = _scope_query(query)
+            query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         result = await self._collection.update_many(query, update, *args, **kwargs)
@@ -676,7 +763,7 @@ class TenantAwareCollection:
     async def replace_one(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
-            query = _scope_query(query)
+            query = _scope_query(query, self._name)
             replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
@@ -688,7 +775,7 @@ class TenantAwareCollection:
     async def find_one_and_update(self, query, update, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
-            query = _scope_query(query)
+            query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
         result = await self._collection.find_one_and_update(query, update, *args, **kwargs)
@@ -698,7 +785,7 @@ class TenantAwareCollection:
     async def find_one_and_replace(self, query, replacement, *args, **kwargs):
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
-            query = _scope_query(query)
+            query = _scope_query(query, self._name)
             replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
@@ -708,21 +795,21 @@ class TenantAwareCollection:
         return result
 
     async def find_one_and_delete(self, query, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         result = await self._collection.find_one_and_delete(query, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
 
     async def delete_one(self, query, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         result = await self._collection.delete_one(query, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
 
     async def delete_many(self, query, *args, **kwargs):
-        if self._enabled(): query = _scope_query(query)
+        if self._enabled(): query = _scope_query(query, self._name)
         elif self._company_registry_enabled(): query = _scope_company_registry_query(query)
         result = await self._collection.delete_many(query, *args, **kwargs)
         _report_cache.bump(self._name)
@@ -742,11 +829,24 @@ class TenantAwareCollection:
                     if owner_default:
                         pipeline.insert(0, {"$match": {COMPANY_FIELD: owner_default}})
                 return self._collection.aggregate(pipeline, *args, **kwargs)
-            pipeline.insert(0, {"$match": {COMPANY_FIELD: authenticated_company_id()}})
+            # Follow the company the pipeline asks for when it is one of this
+            # licensee's companies; otherwise the login company (or, for shared
+            # master data, all of the licensee's companies).
+            first = pipeline[0] if pipeline and isinstance(pipeline[0], dict) else {}
+            first_match = first.get("$match") if isinstance(first.get("$match"), dict) else {}
+            requested = first_match.get(COMPANY_FIELD)
+            if requested is not None and not _blank_company_filter(requested):
+                if not _tenant_filter_allowed(requested):
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+                pipeline.insert(0, {"$match": {COMPANY_FIELD: requested}})
+            else:
+                default_scope = _scope_query({}, self._name).get(COMPANY_FIELD, authenticated_company_id())
+                pipeline.insert(0, {"$match": {COMPANY_FIELD: default_scope}})
         elif self._company_registry_enabled():
             pipeline = list(pipeline or [])
             if not in_platform_owner_context():
-                pipeline.insert(0, {"$match": {COMPANY_ID_FIELD: authenticated_company_id()}})
+                allowed = _tenant_allowed_ids()
+                pipeline.insert(0, {"$match": {COMPANY_ID_FIELD: authenticated_company_id() if len(allowed) <= 1 else {"$in": sorted(allowed)}}})
         return self._collection.aggregate(pipeline, *args, **kwargs)
 
     async def bulk_write(self, requests, *args, **kwargs):
@@ -794,3 +894,19 @@ class TenantAwareDatabase:
 
     def __getattr__(self, name):
         return self[name]
+
+
+def company_in_request_scope(user: Any, company_id: Any) -> bool:
+    """Whether ``company_id`` is one of the companies this request may operate.
+
+    True for the user's own company, any legal company of the authenticated
+    licensee (Master Data), or any Platform Owner operational company.
+    """
+    value = str(company_id or "").strip()
+    if not value:
+        return False
+    if value == str(getattr(user, COMPANY_FIELD, "") or "").strip():
+        return True
+    if value in _tenant_allowed_ids():
+        return True
+    return in_platform_owner_context() and value in platform_owner_company_ids()

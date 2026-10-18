@@ -448,14 +448,17 @@ async def _scope_users_query_by_company(current_user: User, base_query: Optional
             scope_clauses.append({"commercial_customer_id": customer_id})
         if license_id and license_id != "platform-owner-license":
             scope_clauses.append({"license_id": license_id})
-        if company_id:
-            # Legacy fallback is allowed only for records that have not yet
-            # been stamped with another commercial customer/license.
+        # Legacy fallback: users not yet stamped with a customer/license that
+        # belong to ANY of this licensee's legal companies (as Master Data lists
+        # them), not only the login company.
+        from backend.tenant_runtime import tenant_company_ids as _tenant_company_ids
+        legacy_company_ids = sorted({company_id, *_tenant_company_ids()} - {""})
+        if legacy_company_ids:
             scope_clauses.append({
                 "$and": [
                     {"commercial_customer_id": {"$in": [None, ""]}},
                     {"license_id": {"$in": [None, ""]}},
-                    {"company_id": company_id},
+                    {"company_id": {"$in": legacy_company_ids}},
                 ]
             })
 
