@@ -22,6 +22,8 @@ import {
 import api from '@/lib/api';
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import {
   lookupGSTIN,
   bulkVerifyGSTINs,
@@ -78,6 +80,9 @@ function MetricCard({ label, value, icon: Icon, color, isDark, sub }) {
 
 function GSTPortalSyncInner() {
   const isDark = useDark();
+  const { user } = useAuth();
+  const canEditGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'edit');
+  const canDeleteGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'delete');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -175,6 +180,7 @@ function GSTPortalSyncInner() {
   };
 
   const handleUpdate = async (g) => {
+    if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setBusy(g);
     try {
       const { data } = await api.post(`/gst-portal/gstins/${encodeURIComponent(g)}/refresh`, null, { params: { company_id: activeCompanyId() } });
@@ -188,6 +194,7 @@ function GSTPortalSyncInner() {
   };
 
   const handleUpdateAll = async () => {
+    if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setBusy('all');
     try {
       const { data } = await api.post('/gst-portal/gstins/refresh-all', null, { params: { company_id: activeCompanyId() }, timeout: 180000 });
@@ -202,6 +209,7 @@ function GSTPortalSyncInner() {
   };
 
   const handleRemove = async (g) => {
+    if (!canDeleteGST) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Remove ${g} from this company's GSTINs? Its stored status and sync history stay on record.`)) return;
     setBusy(g);
     try {
@@ -322,6 +330,7 @@ function GSTPortalSyncInner() {
   const handleSaveConfig = async () => {
     setSavingConfig(true);
     try {
+      if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
       await api.post('/gst/config', configData);
       toast.success('GST API settings updated successfully');
       setConfigOpen(false);
@@ -519,7 +528,7 @@ function GSTPortalSyncInner() {
                                     <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleSyncNow(e.gstin)} disabled={!!busy || rowBusy}>
                                       <Database className="h-3.5 w-3.5" />Sync books
                                     </Button>
-                                    {e.saved && (
+                                    {canDeleteGST && e.saved && (
                                       <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600" onClick={() => handleRemove(e.gstin)} disabled={!!busy} aria-label={`Remove ${e.gstin}`}>
                                         <Trash2 className="h-4 w-4" />
                                       </Button>
@@ -1029,13 +1038,13 @@ function GSTPortalSyncInner() {
               <Button variant="ghost" onClick={() => setConfigOpen(false)} className="text-xs">
                 Cancel
               </Button>
-              <Button
+              {canEditGST && <Button
                 onClick={handleSaveConfig}
                 disabled={savingConfig}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs"
               >
                 {savingConfig ? 'Saving…' : 'Save Settings'}
-              </Button>
+              </Button>}
             </div>
           </DialogContent>
         </Dialog>
