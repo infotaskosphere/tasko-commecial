@@ -26,21 +26,37 @@ def has_finix_action_permission(user: Any, page_flag: str, action: str) -> bool:
     if normalized_action not in {"edit", "delete"}:
         return False
 
-    if role_key(user) == "admin":
-        return True
+    # The software owner is not a licensee and retains platform-owner control.
+    # Licensee admins, however, remain capped by the Platform Owner's licensed
+    # module/page selection even though they have full actions inside that page.
+    try:
+        from backend.platform_owner import is_platform_owner
+        if is_platform_owner(user):
+            return True
+    except Exception:
+        pass
 
     permissions = permissions_dict(user)
-    if permissions.get("can_access_finix") is not True:
+    is_admin = role_key(user) == "admin"
+    if not is_admin and permissions.get("can_access_finix") is not True:
         return False
 
     # Reuse canonical page/licensing governance. Import locally to avoid
-    # creating a module import cycle during route registration.
+    # creating a module import cycle during route registration. This is also
+    # required for licensee admins so admin status cannot bypass the license cap.
     try:
-        from backend.governance_core import has_page_access
-        if not has_page_access(user, "finix", page_flag):
+        from backend.governance_core import has_page_access, _admin_bypass
+        if not _admin_bypass(user) and not has_page_access(user, "finix", page_flag):
             return False
     except Exception:
+        # Internal admins do not carry commercial page flags; only their
+        # established internal admin status or platform-owner identity bypasses.
+        if is_admin and not getattr(user, "company_id", None):
+            return True
         return False
+
+    if is_admin:
+        return True
 
     matrix = permissions.get("governance_matrix")
     if not isinstance(matrix, dict):
