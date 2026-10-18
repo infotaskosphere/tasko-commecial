@@ -103,8 +103,8 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
   const questions = Array.isArray(result?.needs_clarification) ? result.needs_clarification : [];
 
   return (
-    <section id="finix-ai-accounting" className={`rounded-3xl border shadow-sm overflow-hidden ${isDark ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200'}`}>
-      <div className="px-5 py-4 md:px-6 md:py-5 border-b border-slate-200/70 dark:border-slate-700">
+    <section id="finix-ai-accounting" className="mb-6 min-w-0 overflow-visible">
+      <div className="px-3 py-2 md:px-4 md:py-3">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-emerald-600 font-extrabold text-xs uppercase tracking-wider">
@@ -161,7 +161,7 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
         </div>
       </div>
 
-      <div className="p-5 md:p-6">
+      <div className="px-3 pb-3 md:px-4 md:pb-4">
         <div className="flex flex-wrap gap-2">
           {QUICK_PROMPTS.map((item) => {
             const Icon = item.icon;
