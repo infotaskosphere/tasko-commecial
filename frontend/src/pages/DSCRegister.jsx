@@ -2068,14 +2068,14 @@ export default function DSCRegister() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={handlePrint}
-              className="h-9 px-4 gap-2 rounded-xl text-sm bg-white/15 border-0 text-white hover:bg-white/25 backdrop-blur-sm shadow-sm">
+              className="h-9 px-4 gap-2 rounded-none text-sm bg-white/15 border-0 text-white hover:bg-white/25 backdrop-blur-sm shadow-sm">
               <Printer className="h-4 w-4" />Print
             </Button>
             {/* ── WhatsApp Automation Button ── */}
             <Button
               variant="outline"
               onClick={() => setWhatsappAutoOpen(true)}
-              className="h-9 px-4 gap-2 rounded-xl text-sm backdrop-blur-sm font-semibold transition-all shadow-sm"
+              className="h-9 px-4 gap-2 rounded-none text-sm backdrop-blur-sm font-semibold transition-all shadow-sm"
               style={{
                 backgroundColor: autoEnabled ? 'rgba(16,185,129,0.25)' : 'rgba(255,255,255,0.12)',
                 border: 'none',
@@ -2092,7 +2092,7 @@ export default function DSCRegister() {
                 variant="outline"
                 onClick={usbPermission === 'granted' ? () => { setUsbDismissed(false); handleGrantUsbAccess(); } : handleGrantUsbAccess}
                 disabled={usbGranting}
-                className="h-9 px-4 gap-2 rounded-xl text-sm backdrop-blur-sm font-semibold transition-all shadow-sm"
+                className="h-9 px-4 gap-2 rounded-none text-sm backdrop-blur-sm font-semibold transition-all shadow-sm"
                 style={{
                   backgroundColor: usbPermission === 'granted' ? 'rgba(16,185,129,0.25)' : 'rgba(99,102,241,0.25)',
                   border: 'none',
@@ -2111,7 +2111,7 @@ export default function DSCRegister() {
               variant="outline"
               onClick={handleDetectDscDuplicates}
               disabled={detectingDups || dscList.length === 0}
-              className="h-9 px-4 gap-2 rounded-xl text-sm backdrop-blur-sm font-semibold transition-all disabled:opacity-40 shadow-sm"
+              className="h-9 px-4 gap-2 rounded-none text-sm backdrop-blur-sm font-semibold transition-all disabled:opacity-40 shadow-sm"
               style={{ backgroundColor: 'rgba(139,92,246,0.30)', border: 'none', color: '#ede9fe' }}
             >
               {detectingDups
@@ -2128,7 +2128,7 @@ export default function DSCRegister() {
                 setUsbDismissed(false);
                 setUsbPromptOpen(true);
               }}
-              className="bg-white text-indigo-700 hover:bg-blue-50 font-semibold rounded-xl px-5 shadow-lg transition-all hover:scale-105 active:scale-95 border-0"
+              className="bg-white text-indigo-700 hover:bg-blue-50 font-semibold rounded-none px-5 shadow-lg transition-all hover:scale-105 active:scale-95 border-0"
               data-testid="add-dsc-btn"
             >
               <Plus className="mr-2 h-4 w-4" />Add DSC
