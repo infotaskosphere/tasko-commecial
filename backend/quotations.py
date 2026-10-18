@@ -1908,51 +1908,25 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             return {"id": "__no_tenant_scope__"}
         return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
-    # A licensee admin can own multiple legal company profiles. Query by the
-    # explicit customer marker or the matching license, while supporting older
-    # records created by the same tenant user that are not yet fully stamped.
-    clauses: List[Dict[str, Any]] = [
-        {"commercial_customer_id": customer_id},
-        {"id": customer_id},
-    ]
-    if license_id:
-        clauses.append({
-            "$and": [
-                {"license_id": license_id},
-                {"commercial_customer_id": {"$in": [None, "", customer_id]}},
-            ]
-        })
-
-    creator_ids = {uid} if uid else set()
-    tenant_users = await raw.users.find(
-        {
-            "$or": [
-                {"commercial_customer_id": customer_id},
-                {"license_id": license_id} if license_id else {"id": "__no_matching_user__"},
-            ]
-        },
-        {"_id": 0, "id": 1},
-    ).to_list(5000)
-    creator_ids.update(
-        _norm_id(row.get("id"))
-        for row in tenant_users
-        if _norm_id(row.get("id"))
-    )
-    if creator_ids:
-        clauses.append({
-            "$and": [
-                {"created_by": {"$in": sorted(creator_ids)}},
-                {"commercial_customer_id": {"$in": [None, "", customer_id]}},
-                owner_workspace_filter,
-            ]
-        })
-
-    return {
+    # Company Profiles are legal entities owned by the commercial customer.
+    # Do not restrict listing to the login's operating company ID.
+    customer_filter = {
         "$and": [
-            {"$or": clauses},
+            {
+                "$or": [
+                    {"commercial_customer_id": customer_id},
+                    {"id": customer_id},
+                    *(
+                        [{"license_id": license_id}]
+                        if license_id
+                        else []
+                    ),
+                ]
+            },
             owner_workspace_filter,
         ]
     }
+    return customer_filter
 
 
 async def _heal_tenant_company_markers(current_user: User, companies: List[Dict[str, Any]]) -> None:
