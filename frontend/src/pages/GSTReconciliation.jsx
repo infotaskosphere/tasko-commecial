@@ -8,6 +8,8 @@ import { saveAs } from 'file-saver';
 let XLSX, jsPDF, autoTable;
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import {
   Upload, CheckCircle2, AlertTriangle, Download, Search, ArrowLeft, RefreshCw, ArrowLeftRight, Info, X, Globe, BookOpen, FileText, FileSpreadsheet, Building2, Hash, MapPin, Phone, Mail, Calendar, ChevronRight, ScanSearch, Filter, Tag, ArrowUpDown, ChevronsUpDown, History, Clock, Trash2, ChevronDown, User, Loader2, FolderOpen, Edit3, MessageSquare, Sparkles, Layers, Plus, BarChart3, TrendingUp, ShieldCheck, Save, CalendarClock
 } from 'lucide-react';
@@ -3186,6 +3188,8 @@ const DropZone = ({ label, icon:Icon, colors, file, onFile, onClear, hint }) => 
    • Saving a name propagates to ALL rows with the same GSTIN.
 ═══════════════════════════════════════════════════════════════════════════ */
 const TradeNameCell = React.memo(({ gstin, manualTradeNames, onSave }) => {
+  const { user } = useAuth();
+  const canEditGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'edit');
   const current  = manualTradeNames?.[gstin] || '';
   const [open,   setOpen]   = useState(false);
   const [draft,  setDraft]  = useState(current);
@@ -3196,6 +3200,7 @@ const TradeNameCell = React.memo(({ gstin, manualTradeNames, onSave }) => {
   // stopPropagation prevents the row-level onClick (invoice detail modal) from firing.
   const handleOpen = async (e) => {
     e?.stopPropagation();
+    if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setDraft(current);
     setOpen(true);
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -3212,6 +3217,7 @@ const TradeNameCell = React.memo(({ gstin, manualTradeNames, onSave }) => {
 
   const handleSave = (e) => {
     e?.stopPropagation();
+    if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); setOpen(false); return; }
     const trimmed = draft.trim();
     if (trimmed) onSave(gstin, trimmed);
     setOpen(false);
@@ -4770,6 +4776,8 @@ const ClientSelector = ({ clients, selectedId, onSelect }) => {
 const EMPTY_CO = { name:'', gstin:'', pan:'', address:'', phone:'', email:'', fy:'' };
 
 const EditSessionModal = ({ session, clients, onSave, onClose }) => {
+  const { user } = useAuth();
+  const canEditGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'edit');
   const [saving,  setSaving]  = useState(false);
   const [period,  setPeriod]  = useState(session.period || '');
   const [portalFn, setPortalFn] = useState(session.portal_filename || '');
@@ -4802,6 +4810,7 @@ const EditSessionModal = ({ session, clients, onSave, onClose }) => {
   };
 
   const handleSave = async () => {
+    if (!canEditGST) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setSaving(true);
     try {
       const r = await api.patch(`/gst-reconciliation/history/${session.id}`, {
@@ -4958,12 +4967,12 @@ const EditSessionModal = ({ session, clients, onSave, onClose }) => {
             className="px-4 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
             Cancel
           </button>
-          <button onClick={handleSave} disabled={saving}
+          {canEditGST && <button onClick={handleSave} disabled={saving}
             className="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white transition-colors shadow-sm">
             {saving
               ? <><Loader2 className="h-3.5 w-3.5 animate-spin"/> Saving…</>
               : <><CheckCircle2 className="h-3.5 w-3.5"/> Save Changes</>}
-          </button>
+          </button>}
         </div>
       </motion.div>
     </motion.div>
@@ -4974,6 +4983,9 @@ const EditSessionModal = ({ session, clients, onSave, onClose }) => {
    HISTORY VIEW — past reconciliation sessions
 ═══════════════════════════════════════════════════════════════════════════ */
 const HistoryView = ({ onOpenSession, clients = [] }) => {
+  const { user } = useAuth();
+  const canEditGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'edit');
+  const canDeleteGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'delete');
   const [sessions,  setSessions]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [deleting,  setDeleting]  = useState(null);
@@ -5022,6 +5034,7 @@ const HistoryView = ({ onOpenSession, clients = [] }) => {
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (id) => {
+    if (!canDeleteGST) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Delete this reconciliation history entry?')) return;
     setDeleting(id);
     try {
@@ -5131,23 +5144,23 @@ const HistoryView = ({ onOpenSession, clients = [] }) => {
                     <span className="hidden sm:inline">New Session</span>
                   </button>
                   {/* Edit */}
-                  <button
+                  {canEditGST && <button
                     onClick={e => { e.stopPropagation(); setEditing({ session: s }); }}
                     title="Edit company details, period, client link"
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-300 text-xs font-semibold border border-amber-200 dark:border-amber-800 transition-colors"
                   >
                     <Edit3 className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Edit</span>
-                  </button>
+                  </button>}
                   {/* Delete */}
-                  <button
+                  {canDeleteGST && <button
                     onClick={e => { e.stopPropagation(); handleDelete(s.id); }}
                     disabled={deleting === s.id}
                     title="Delete this session"
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-500 dark:text-rose-400 text-xs font-semibold border border-rose-200 dark:border-rose-800 transition-colors"
                   >
                     {deleting === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                  </button>
+                  </button>}
                   <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform flex-shrink-0 ${isExp ? 'rotate-180' : ''}`} />
                 </div>
               </div>
@@ -5687,6 +5700,9 @@ const SideBySideCompare = ({ portalOnly, booksOnly, onConfirmMatch, onClose }) =
    CLIENT DETAIL VIEW — month-wise session history for one client
 ═══════════════════════════════════════════════════════════════════════════ */
 const ClientDetailView = ({ clientKey, clientName, clientGstin, onOpenSession, onNewSession, onBack, clients }) => {
+  const { user } = useAuth();
+  const canEditGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'edit');
+  const canDeleteGST = canPerformFinixAction(user, 'can_view_gst_portal_sync', 'delete');
   const [sessions,  setSessions]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [opening,   setOpening]   = useState(null);
@@ -5723,6 +5739,7 @@ const ClientDetailView = ({ clientKey, clientName, clientGstin, onOpenSession, o
   };
 
   const handleDelete = async (id) => {
+    if (!canDeleteGST) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Delete this reconciliation session?')) return;
     setDeleting(id);
     try {
@@ -5837,19 +5854,19 @@ const ClientDetailView = ({ clientKey, clientName, clientGstin, onOpenSession, o
                     Open
                   </button>
                   {/* Edit — amber icon only */}
-                  <button
+                  {canEditGST && <button
                     onClick={() => setEditing({ session: s })}
                     title="Edit details"
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-300 text-xs font-semibold border border-amber-200 dark:border-amber-800 transition-colors">
                     <Edit3 className="h-3.5 w-3.5"/>
-                  </button>
+                  </button>}
                   {/* Delete — rose icon only */}
-                  <button
+                  {canDeleteGST && <button
                     onClick={() => handleDelete(s.id)} disabled={deleting === s.id}
                     title="Delete this session"
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-500 dark:text-rose-400 text-xs font-semibold border border-rose-200 dark:border-rose-800 transition-colors">
                     {deleting === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <Trash2 className="h-3.5 w-3.5"/>}
-                  </button>
+                  </button>}
                 </div>
               </motion.div>
             );
