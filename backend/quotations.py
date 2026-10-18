@@ -1890,13 +1890,23 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     if not is_admin:
         if not company_id:
             return {"id": "__no_tenant_scope__"}
-        return {
-            "$and": [
-                {"id": company_id},
-                {"commercial_customer_id": customer_id},
-                owner_workspace_filter,
-            ]
-        }
+        company = await raw.companies.find_one(
+            {"id": company_id},
+            {
+                "_id": 0,
+                "id": 1,
+                "commercial_customer_id": 1,
+                "license_id": 1,
+                "is_platform_owner_workspace": 1,
+            },
+        )
+        if not company or company.get("is_platform_owner_workspace") is True:
+            return {"id": "__no_tenant_scope__"}
+        row_customer_id = _norm_id(company.get("commercial_customer_id"))
+        row_license_id = _norm_id(company.get("license_id"))
+        if row_customer_id != customer_id and (not license_id or row_license_id != license_id):
+            return {"id": "__no_tenant_scope__"}
+        return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
     # A licensee admin can own multiple legal company profiles. Query by the
     # explicit customer marker or the matching license, while supporting older
