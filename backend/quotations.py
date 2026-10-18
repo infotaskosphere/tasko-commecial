@@ -1970,6 +1970,10 @@ async def _heal_tenant_company_markers(current_user: User, companies: List[Dict[
 
 async def _tenant_visible_companies(current_user: User, projection: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
     scope = await _tenant_company_scope(current_user)
+    # Company records are in the central master registry. Bypass the
+    # tenant-aware companies wrapper here because it intentionally constrains
+    # registry reads to the authenticated operating company ID; this page must
+    # list all legal company profiles owned by the same verified licensee.
     rows = await _tenant_raw_db().companies.find(
         scope, projection or {"_id": 0}
     ).sort("name", 1).to_list(500)
