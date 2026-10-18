@@ -1826,7 +1826,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     is_admin = role in {"admin", "licensee_admin", "tenant_admin"}
     raw = _tenant_raw_db()
 
-    # Resolve customer ownership only from the authenticated identity/license.
+    # Keep the authenticated customer as the primary tenant identity. When a
+    # legacy login lacks that marker, only recover it from the active license
+    # linked to the user or the commercial company ID itself.
     if not customer_id and license_id:
         linked_license = await raw.commercial_licenses.find_one(
             {"id": license_id},
@@ -1835,20 +1837,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         if linked_license and str(linked_license.get("customer_id") or "").strip():
             customer_id = _norm_id(linked_license.get("customer_id"))
 
-    if customer_id and not license_id:
-        license_doc = await raw.commercial_licenses.find_one(
-            {
-                "customer_id": customer_id,
-                "status": {"$in": ["active", "trial"]},
-            },
-            {"_id": 0, "id": 1, "customer_id": 1},
-            sort=[("issued_at", -1)],
-        )
-        license_id = _norm_id((license_doc or {}).get("id"))
-
-    # Prefer an authenticated user's explicit commercial_customer_id/license_id,
-    # but recover the customer from the user's company only when that company
-    # isn't the Platform Owner workspace.
+    # The generated tenant company historically uses the commercial customer
+    # ID as its record ID. Resolve that exact canonical row only when there is
+    # no explicit customer/license identity available.
     if not customer_id and company_id:
         company_identity = await raw.companies.find_one(
             {"id": company_id},
@@ -1861,19 +1852,23 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             },
         )
         if company_identity and company_identity.get("is_platform_owner_workspace") is not True:
-            customer_id = _norm_id(company_identity.get("commercial_customer_id"))
+            candidate_customer = _norm_id(company_identity.get("commercial_customer_id"))
+            candidate_license = _norm_id(company_identity.get("license_id"))
+            if candidate_customer:
+                customer_id = candidate_customer
             if not license_id:
-                license_id = _norm_id(company_identity.get("license_id"))
-            if customer_id and not license_id:
-                license_doc = await raw.commercial_licenses.find_one(
-                    {
-                        "customer_id": customer_id,
-                        "status": {"$in": ["active", "trial"]},
-                    },
-                    {"_id": 0, "id": 1, "customer_id": 1},
-                    sort=[("issued_at", -1)],
-                )
-                license_id = _norm_id((license_doc or {}).get("id"))
+                license_id = candidate_license
+
+    if customer_id and not license_id:
+        license_doc = await raw.commercial_licenses.find_one(
+            {
+                "customer_id": customer_id,
+                "status": {"$in": ["active", "trial"]},
+            },
+            {"_id": 0, "id": 1, "customer_id": 1},
+            sort=[("issued_at", -1)],
+        )
+        license_id = _norm_id((license_doc or {}).get("id"))
 
     owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
     if not customer_id:
