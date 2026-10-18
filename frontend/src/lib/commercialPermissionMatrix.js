@@ -398,3 +398,26 @@ export function canAccessPath(user, pathname) {
   return hasEffectivePermission(user, flag);
 }
 export function firstAccessiblePath(user, preferredModule = null) { if (!user) return "/login"; if (isPlatformOwner(user)) return "/dashboard"; const ordered = preferredModule ? [preferredModule, ...Object.keys(MODULES).filter((id) => id !== preferredModule)] : Object.keys(MODULES); for (const moduleId of ordered) { if (!hasModuleAccess(user, moduleId)) continue; const page = PAGE_MATRIX.find(([id, flag, path]) => id === moduleId && hasEffectivePermission(user, flag)); if (page) return page[2]; } return "/login"; }
+
+
+/**
+ * Finix mutation policy shared by Finix pages.
+ * Platform Owner and tenant admins have full edit/delete rights inside the
+ * company/database scope enforced by the backend. Other users need an explicit
+ * action in Permission Matrix; page visibility alone is not an edit/delete grant.
+ */
+export function canPerformFinixAction(user, pageFlag, action) {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  if (!user || !pageFlag || !["edit", "delete"].includes(normalizedAction)) return false;
+  if (isPlatformOwner(user)) return true;
+  if (isAdminRole(user)) {
+    // A licensee admin remains capped by the Platform Owner's selected pages.
+    return !isCommercialTenant(user) || hasPageLicense(user, pageFlag, "finix");
+  }
+  if (!hasEffectivePermission(user, pageFlag)) return false;
+  const matrix = user.permissions?.governance_matrix;
+  if (!matrix || typeof matrix !== "object" || Array.isArray(matrix)) return false;
+  const grants = matrix[`finix.${pageFlag}`];
+  if (!Array.isArray(grants)) return false;
+  return grants.some((grant) => String(grant || "").trim().toLowerCase() === normalizedAction);
+}
