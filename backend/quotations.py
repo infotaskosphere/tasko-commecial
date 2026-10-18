@@ -2099,9 +2099,7 @@ async def create_company(
     if not doc["name"]:
         raise HTTPException(400, "Company name is required")
     if _is_tenant_user(current_user):
-        # Use the request's verified commercial identity first. The user model
-        # may have no persisted customer ID on older sessions, so resolve it
-        # through the authenticated customer context/license before insertion.
+        # Resolve company ownership from the active commercial request context.
         from backend.commercial_tenant_scope import authenticated_customer_id
 
         tenant_customer_id = (
