@@ -15,6 +15,8 @@ import SearchableSelect from '@/components/ui/SearchableSelect.jsx';
 import api from '@/lib/api';
 import { clientOptions, companyOptions, fetchPurchaseMasters, normalizeClients } from '@/lib/companies';
 import { useDark } from '@/hooks/useDark';
+import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
 import InvoiceForm from '@/components/purchase/InvoiceForm.jsx';
 import InvoicePreviewDialog from '@/components/purchase/InvoicePreviewDialog.jsx';
@@ -83,6 +85,9 @@ function MastersNotice({ state, count, onRetry, compact = false }) {
 
 function Purchase() {
   const isDark = useDark();
+  const { user } = useAuth();
+  const canEditPurchase = canPerformFinixAction(user, 'can_view_purchase', 'edit');
+  const canDeletePurchase = canPerformFinixAction(user, 'can_view_purchase', 'delete');
   const fileRef = useRef(null);
   const gstr2bFileRef = useRef(null);
   const reqId = useRef(0);
@@ -365,6 +370,7 @@ function Purchase() {
   }));
 
   const handleSaveEdit = async (force = false) => {
+    if (!canEditPurchase) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!editingInvoice) return;
     const changes = {};
     EDITABLE.forEach((k) => {
@@ -393,6 +399,7 @@ function Purchase() {
   };
 
   const handleDelete = async (id) => {
+    if (!canDeletePurchase) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Are you sure you want to delete this purchase invoice?')) return;
     try {
       await api.delete(`/purchase-invoices/${id}`);
@@ -447,6 +454,7 @@ function Purchase() {
   };
 
   const handleCancelInvoice = async (inv) => {
+    if (!canEditPurchase) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Mark bill ${inv.invoice_no || ''} as cancelled? Its ledger entry will be removed.`)) return;
     try {
       await api.patch(`/purchase-invoices/${inv.id}/status`, { status: 'cancelled' });
@@ -490,17 +498,17 @@ function Purchase() {
           <Wallet className={`h-3.5 w-3.5 ${compact ? '' : 'mr-1'}`} />{!compact && ' Pay'}
         </Button>
       )}
-      <Button size="icon" variant="ghost" onClick={() => startEdit(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Edit / correct this bill">
+      {canEditPurchase && <Button size="icon" variant="ghost" onClick={() => startEdit(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Edit / correct this bill">
         <Edit className="h-3.5 w-3.5" />
-      </Button>
-      {inv.status !== 'cancelled' && (
+      </Button>}
+      {canEditPurchase && inv.status !== 'cancelled' && (
         <Button size="icon" variant="ghost" onClick={() => handleCancelInvoice(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40" title="Cancel bill (removes it from the ledger)">
           <Ban className="h-3.5 w-3.5" />
         </Button>
       )}
-      <Button size="icon" variant="ghost" onClick={() => handleDelete(inv.id)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40" title="Delete purchase invoice">
+      {canDeletePurchase && <Button size="icon" variant="ghost" onClick={() => handleDelete(inv.id)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40" title="Delete purchase invoice">
         <Trash2 className="h-3.5 w-3.5" />
-      </Button>
+      </Button>}
     </div>
   );
 
@@ -1074,9 +1082,9 @@ function Purchase() {
               )}
               <div className="flex justify-end gap-2 pt-4 border-t" style={{ borderColor: border }}>
                 <Button variant="outline" onClick={() => setEditingInvoice(null)} className="rounded-xl">Cancel</Button>
-                <Button onClick={() => handleSaveEdit(false)} disabled={savingEdit || editBlockers.length > 0 || (editHasMismatch && !editAck)} className="rounded-xl text-white" style={{ background: COLORS.mediumBlue }}>
+                {canEditPurchase && <Button onClick={() => handleSaveEdit(false)} disabled={savingEdit || editBlockers.length > 0 || (editHasMismatch && !editAck)} className="rounded-xl text-white" style={{ background: COLORS.mediumBlue }}>
                   {savingEdit ? <MiniLoader height={18} /> : 'Save Changes'}
-                </Button>
+                </Button>}
               </div>
             </>
           )}
