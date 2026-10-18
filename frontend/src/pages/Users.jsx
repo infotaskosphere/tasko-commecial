@@ -3028,6 +3028,22 @@ export default function Users() {
     { id: 'logs',       label: 'Attendance Log',icon: ClipboardList   },
   ];
 
+  const peopleMatrixMainTabs = [
+    { id: 'users', label: 'Users', icon: UsersIcon },
+    { id: 'identix', label: 'Identix', icon: Fingerprint },
+    ...(isAdmin ? [{ id: 'password_resets', label: 'Password Resets', icon: KeyRound }] : []),
+    ...(isAdmin ? [{ id: 'salary', label: 'Salary', icon: Wallet }] : []),
+    ...(isAdmin ? [{ id: 'access_requests', label: 'Access Requests', icon: ShieldCheck }] : []),
+  ];
+  const showAddMemberTab = mainTab === 'users' && isAdmin;
+  const peopleMatrixTabCount = peopleMatrixMainTabs.length + (showAddMemberTab ? 1 : 0);
+
+  const openNewMemberDialog = () => {
+    setSelectedUser(null);
+    setFormData({ full_name:'',email:'',password:'',role:'staff',departments:[],phone:'',birthday:'',profile_picture:'',punch_in_time:'10:30',grace_time:'00:10',punch_out_time:'19:00',telegram_id:'',is_active:true,status:'active',company_id:'',company_name:'',joining_date:'',training_period_end:'',payroll_date:'',monthly_salary:'' });
+    setDialogOpen(true);
+  };
+
   return (
     <motion.div
       className={`space-y-5 min-h-full ${isDark ? 'bg-[#0a0f1c]' : 'bg-slate-50'}`}
@@ -3075,54 +3091,55 @@ export default function Users() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Main tab switcher */}
-              <div className="flex gap-1 p-1 rounded-xl bg-white/10 backdrop-blur-sm">
-                {[
-                  { id: 'users',           label: 'Users',           icon: UsersIcon   },
-                  { id: 'identix',         label: 'Identix',         icon: Fingerprint },
-                  ...(isAdmin ? [{ id: 'password_resets', label: 'Password Resets', icon: KeyRound }] : []),
-                  ...(isAdmin ? [{ id: 'salary',          label: 'Salary',          icon: Wallet   }] : []),
-                  ...(isAdmin ? [{ id: 'access_requests', label: 'Access Requests', icon: ShieldCheck }] : []),
-                ].map(t => {
-                  const Icon = t.icon;
-                  return (
-                    <button key={t.id} onClick={() => setMainTab(t.id)}
-                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-                      style={mainTab === t.id
-                        ? { background: 'rgba(255,255,255,0.25)', color: '#fff' }
-                        : { color: 'rgba(255,255,255,0.6)' }}>
-                      <Icon className="h-4 w-4" />{t.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {mainTab === 'users' && isAdmin && (
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
-                  <Button
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setFormData({ full_name:'',email:'',password:'',role:'staff',departments:[],phone:'',birthday:'',profile_picture:'',punch_in_time:'10:30',grace_time:'00:10',punch_out_time:'19:00',telegram_id:'',is_active:true,status:'active',company_id:'',company_name:'',joining_date:'',training_period_end:'',payroll_date:'',monthly_salary:'' });
-                      setDialogOpen(true);
-                    }}
-                    className="h-10 px-6 rounded-xl font-semibold text-sm shadow-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 hover:border-white/30 transition-all">
-                    <Plus className="h-4 w-4 mr-2" />Add New Member
-                  </Button>
-                </motion.div>
-              )}
-              {mainTab === 'salary' && isAdmin && (
-                <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
-                  <Button
-                    onClick={() => openSalaryDialogFor('')}
-                    className="h-10 px-6 rounded-xl font-semibold text-sm shadow-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 hover:border-white/30 transition-all">
-                    <Plus className="h-4 w-4 mr-2" />Add Salary
-                  </Button>
-                </motion.div>
-              )}
-            </div>
+            {mainTab === 'salary' && isAdmin && (
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+                <Button
+                  onClick={() => openSalaryDialogFor('')}
+                  className="h-10 px-6 rounded-xl font-semibold text-sm shadow-lg bg-white/20 hover:bg-white/30 text-white border border-white/20 hover:border-white/30 transition-all">
+                  <Plus className="h-4 w-4 mr-2" />Add Salary
+                </Button>
+              </motion.div>
+            )}
           </div>
         </div>
       </motion.div>
+
+      {/* Main People Matrix navigation — one aligned row below the blue header */}
+      <div className="w-full min-w-0 overflow-x-auto pb-0.5">
+        <div
+          className={`grid w-full min-w-[900px] overflow-hidden rounded-lg border ${isDark ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'}`}
+          style={{ gridTemplateColumns: `repeat(${peopleMatrixTabCount}, minmax(0, 1fr))` }}
+        >
+          {peopleMatrixMainTabs.map((tab, index) => {
+            const Icon = tab.icon;
+            const isActive = mainTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setMainTab(tab.id)}
+                className={`flex h-11 min-w-0 w-full items-center justify-center gap-2 px-2 text-xs sm:text-sm font-semibold leading-none whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 ${index < peopleMatrixMainTabs.length - 1 || showAddMemberTab ? 'border-r' : ''} ${isDark ? 'border-slate-700' : 'border-slate-200'}`}
+                style={isActive
+                  ? { background: isDark ? '#1e40af' : '#0D3B66', color: '#ffffff' }
+                  : { background: isDark ? '#1e293b' : '#ffffff', color: isDark ? '#cbd5e1' : '#334155' }}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                <span className="whitespace-nowrap">{tab.label}</span>
+              </button>
+            );
+          })}
+          {showAddMemberTab && (
+            <button
+              type="button"
+              onClick={openNewMemberDialog}
+              className="flex h-11 min-w-0 w-full items-center justify-center gap-2 whitespace-nowrap px-2 text-xs sm:text-sm font-semibold leading-none text-white transition-colors bg-emerald-600 hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
+            >
+              <Plus className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Add New Member</span>
+            </button>
+          )}
+        </div>
+      </div>
 
       {/* ════ USERS TAB ════ */}
       {mainTab === 'users' && (
