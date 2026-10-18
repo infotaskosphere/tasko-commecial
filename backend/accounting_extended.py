@@ -63,6 +63,7 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel, Field
 
+from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user
 from backend.modules.finix_ai.accounting.models_extended import OpeningBalanceLine, OpeningBalanceRequest, MatchRequest, FixedAssetRequest, TDSTCSEntry, BulkJournalLine, BulkJournalEntry, BulkImportRequest, _run_bulk_import
 
@@ -907,8 +908,7 @@ async def set_opening_balances(
     req: OpeningBalanceRequest,
     current_user: User = Depends(get_current_user),
 ):
-    if not _can_manage(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_extended_accounts_reports", "edit")
 
     total_dr = _round2(sum(l.debit for l in req.lines))
     total_cr = _round2(sum(l.credit for l in req.lines))
@@ -1189,8 +1189,7 @@ async def match_reconciliation(
     req: MatchRequest,
     current_user: User = Depends(get_current_user),
 ):
-    if not _can_manage(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_bank", "edit")
 
     # Mark row as matched in statement
     await db.bank_reconciliation.update_one(
@@ -1213,8 +1212,7 @@ async def unmatch_reconciliation(
     req: MatchRequest,
     current_user: User = Depends(get_current_user),
 ):
-    if not _can_manage(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_bank", "edit")
 
     await db.bank_reconciliation.update_one(
         {"id": req.statement_id, "rows.id": req.row_id},
@@ -1419,8 +1417,7 @@ async def repair_depreciation_accounts(
     """Depreciation used to be booked as Dr Shipping & Freight (5500) / Cr Fixed Assets (1300). Re-points those entries
     to Dr Depreciation Expense (5800) / Cr Accumulated Depreciation (1310). Only entries created by the depreciation
     run are touched, and running it again changes nothing."""
-    if not _can_manage(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_extended_accounts_reports", "edit")
     old_exp = await get_default_account_id(company_id, "5500")
     old_asset = await get_default_account_id(company_id, "1300")
     new_exp = await get_default_account_id(company_id, "5800")
