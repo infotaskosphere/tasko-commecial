@@ -39,6 +39,10 @@ class FixedAssetRequest(BaseModel):
     method: str = "straight_line"
     asset_account_id: str = ""
     depreciation_account_id: str = ""
+    accumulated_depreciation_account_id: str = ""
+    # computers | furniture | plant_machinery | vehicles | buildings | software | intangibles | other
+    # (decides the Income Tax block rate used for tax depreciation and deferred tax)
+    category: str = "other"
 
 
 class TDSTCSEntry(BaseModel):

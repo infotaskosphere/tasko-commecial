@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 
 from backend import report_cache
 from backend.dependencies import db, get_current_user
+from backend.account_classification import classify, classify_account
 from backend.modules.finix_ai.accounting.models_accounting import AccountCreate, JournalLine, JournalEntryCreate
 
 from backend.models import User
@@ -153,6 +154,24 @@ DEFAULT_ACCOUNTS = [
     ("5600", "Travel & Conveyance",      "expense",   "operating_expense"),
     ("5700", "Foreign Exchange Loss / Gain", "expense", "operating_expense"),
     ("5900", "Round Off",               "expense",   "operating_expense"),
+    # Foundations for proper statements (added later; existing companies pick them up automatically).
+    ("1250", "TDS Receivable / Advance Tax",   "asset",     "current_asset"),
+    ("1310", "Accumulated Depreciation",       "asset",     "accumulated_depreciation"),
+    ("1350", "Intangible Assets (Software)",   "asset",     "intangible_asset"),
+    ("1400", "Inventory / Stock-in-Trade",     "asset",     "inventory"),
+    ("1500", "Prepaid Expenses",               "asset",     "prepaid"),
+    ("1600", "Deferred Tax Asset",             "asset",     "deferred_tax_asset"),
+    ("2300", "Accrued Expenses",               "liability", "current_liability"),
+    ("2400", "Provisions",                     "liability", "provision"),
+    ("2500", "Deferred Tax Liability",         "liability", "deferred_tax_liability"),
+    ("2600", "Provision for Income Tax",       "liability", "current_liability"),
+    ("2700", "Long-term Loans & Borrowings",   "liability", "long_term_liability"),
+    ("5010", "Direct Expenses",                "expense",   "direct_expense"),
+    ("5020", "Cost of Goods Sold / Stock Adjustment", "expense", "cost_of_service"),
+    ("5450", "Interest & Finance Charges",     "expense",   "finance_cost"),
+    ("5800", "Depreciation Expense",           "expense",   "depreciation"),
+    ("5950", "Income Tax Expense",             "expense",   "tax_expense"),
+    ("5960", "Deferred Tax Expense / (Credit)", "expense",  "tax_expense"),
     # Suspense — parking account for bank lines that can't be classified at match time.
     # Standard AI-accounting practice (Zoho / QuickBooks / Xero): post to suspense first
     # so the bank balance stays reconciled, then reclassify from the "Suspense Review"
@@ -201,11 +220,24 @@ async def ensure_default_chart_of_accounts(company_id: str, created_by: str):
                 "id": str(uuid.uuid4()), "company_id": company_id, "code": code, "name": name,
                 "type": typ, "sub_type": sub, "is_system": True, "is_active": True,
                 "created_by": created_by, "created_at": now,
+                **classify(code, typ, sub, name),
             }
             for code, name, typ, sub in missing
         ]
         await db.chart_of_accounts.insert_many(docs)
+    await backfill_account_classification(company_id)
     _ensured_coa_companies.add(company_id)
+
+
+async def backfill_account_classification(company_id: str) -> int:
+    """Give every account that predates classification (including ledgers the firm added itself) its statement,
+    nature, Schedule III head and direct/indirect tag. Never changes an account that already has them, so a
+    deliberate override survives."""
+    n = 0
+    async for a in db.chart_of_accounts.find({"company_id": company_id, "statement": {"$exists": False}}, {"_id": 0}):
+        await db.chart_of_accounts.update_one({"id": a["id"]}, {"$set": classify_account(a)})
+        n += 1
+    return n
 
 
 # ── Models ────────────────────────────────────────────────────────────────
@@ -239,6 +271,7 @@ async def create_account(payload: AccountCreate, current_user: User = Depends(ge
         "is_system": False, "is_active": True, "created_by": current_user.id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    doc.update(classify_account(doc))
     await db.chart_of_accounts.insert_one(doc)
     doc.pop("_id", None)
     return doc
@@ -1258,200 +1291,52 @@ async def _balance_sheet_impl(company_id: str, as_of: Optional[str]):
 
 
 # ── MIS & Compliance Report (Companies Act & Income Tax) ───────────────────
-@router.get("/reports/mis-compliance")
-async def mis_compliance_report(
-    company_id: str = Query(""),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    current_user: User = Depends(get_current_user),
-):
-    if not _perm_reports(current_user):
-        raise HTTPException(403, "Access denied.")
+def _fy_start_iso(day: str) -> str:
+    """April 1 of the financial year (April-March) that contains `day`."""
+    from backend.statements import fy_start_of
+    try:
+        return fy_start_of(date.fromisoformat(str(day)[:10])).isoformat()
+    except Exception:
+        return fy_start_of(date.today()).isoformat()
 
+
+async def _load_statements(company_id: str, lower: str, upper: str, tax_rate: float = 0.25) -> dict:
+    """Everything the compliance statements need, read from the books (see statements.py)."""
+    from backend.statements import build_statements
     all_companies = not company_id
     if all_companies:
         await _reconcile_all_books(await _all_book_ids())
     else:
         await _reconcile_one_book(company_id)
-
+        await ensure_default_chart_of_accounts(company_id, "system")
     acct_q = {} if all_companies else {"company_id": company_id}
     accounts = await db.chart_of_accounts.find(acct_q, {"_id": 0}).to_list(20000)
+    line_q = {"entry_date": {"$lte": upper}} if all_companies else {"company_id": company_id, "entry_date": {"$lte": upper}}
+    lines = await db.journal_lines.find(line_q, {"_id": 0}).to_list(500000)
+    assets = await db.fixed_assets.find(acct_q, {"_id": 0}).to_list(5000)
+    return build_statements(accounts, lines, assets, lower, upper, tax_rate=tax_rate)
 
+
+@router.get("/reports/mis-compliance")
+async def mis_compliance_report(
+    company_id: str = Query(""),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    tax_rate_pct: float = Query(25.0, ge=0, le=60),
+    current_user: User = Depends(get_current_user),
+):
+    if not _perm_reports(current_user):
+        raise HTTPException(403, "Access denied.")
+    all_companies = not company_id
     upper = date_to or date.today().isoformat()
-    lower = date_from or (upper[:4] + "-04-01")
+    lower = date_from or _fy_start_iso(upper)
+    out = await _load_statements(company_id, lower, upper, tax_rate=tax_rate_pct / 100.0)
 
-    # Cumulative balances for Balance Sheet
-    bs_line_q = {"entry_date": {"$lte": upper}} if all_companies else {"company_id": company_id, "entry_date": {"$lte": upper}}
-    bs_lines = await db.journal_lines.find(bs_line_q, {"_id": 0}).to_list(200000)
-    bs_balances = {}
-    for l in bs_lines:
-        aid = l["account_id"]
-        bs_balances[aid] = bs_balances.get(aid, 0.0) + l["debit"] - l["credit"]
-
-    # Periodic balances for P&L
-    pl_line_q = {"entry_date": {"$gte": lower, "$lte": upper}} if all_companies else {"company_id": company_id, "entry_date": {"$gte": lower, "$lte": upper}}
-    pl_lines = await db.journal_lines.find(pl_line_q, {"_id": 0}).to_list(200000)
-    pl_balances = {}
-    for l in pl_lines:
-        aid = l["account_id"]
-        pl_balances[aid] = pl_balances.get(aid, 0.0) + l["debit"] - l["credit"]
-
-    # Asset balances (debit positive)
-    cash_and_bank = 0.0
-    debtors = 0.0
-    gst_input = 0.0
-    fixed_assets = 0.0
-    other_assets = 0.0
-
-    # Liability balances (credit positive)
-    creditors = 0.0
-    gst_payable = 0.0
-    tds_payable = 0.0
-    other_liabilities = 0.0
-
-    # Equity balances (credit positive)
-    capital = 0.0
-    retained_earnings = 0.0
-
-    # Income balances (credit positive)
-    sales = 0.0
-    other_income = 0.0
-
-    # Expense balances (debit positive)
-    purchases = 0.0
-    salaries = 0.0
-    rent = 0.0
-    software = 0.0
-    office_admin = 0.0
-    other_expenses = 0.0
-
-    for a in accounts:
-        aid = a["id"]
-        code = a["code"]
-        sub_type = a.get("sub_type", "")
-        typ = a["type"]
-
-        bs_bal = bs_balances.get(aid, 0.0)
-        pl_bal = pl_balances.get(aid, 0.0)
-
-        if typ == "asset":
-            if code == "1000" or code == "1010" or sub_type == "bank_accounts":
-                cash_and_bank += bs_bal
-            elif code == "1100" or sub_type == "accounts_receivable" or (a.get("is_party_ledger") and a.get("party_type") == "customer"):
-                debtors += bs_bal
-            elif code == "1200":
-                gst_input += bs_bal
-            elif code == "1300" or sub_type == "fixed_asset":
-                fixed_assets += bs_bal
-            else:
-                other_assets += bs_bal
-
-        elif typ == "liability":
-            if code == "2000" or sub_type == "accounts_payable" or (a.get("is_party_ledger") and a.get("party_type") == "vendor"):
-                creditors += -bs_bal
-            elif code == "2100":
-                gst_payable += -bs_bal
-            elif code == "2200":
-                tds_payable += -bs_bal
-            else:
-                other_liabilities += -bs_bal
-
-        elif typ == "equity":
-            if code == "3000":
-                capital += -bs_bal
-            else:
-                retained_earnings += -bs_bal
-
-        elif typ == "income":
-            if code == "4000":
-                sales += -pl_bal
-            elif code == "4100":
-                other_income += -pl_bal
-            else:
-                sales += -pl_bal
-
-        elif typ == "expense":
-            if code == "5000":
-                purchases += pl_bal
-            elif code == "5100":
-                salaries += pl_bal
-            elif code == "5200":
-                rent += pl_bal
-            elif code == "5250":
-                software += pl_bal
-            elif code == "5300":
-                office_admin += pl_bal
-            else:
-                other_expenses += pl_bal
-
-    total_operating_revenue = round(sales, 2)
-    total_other_income = round(other_income, 2)
-    total_revenue = round(total_operating_revenue + total_other_income, 2)
-
-    total_operating_expenses = round(purchases + salaries + rent + software + office_admin + other_expenses, 2)
-    net_profit = round(total_revenue - total_operating_expenses, 2)
-
-    # ── Companies Act Schedule III Classification ──
-    share_capital = round(capital, 2)
-    reserves_and_surplus = round(retained_earnings + net_profit, 2)
-    total_shareholders_funds = round(share_capital + reserves_and_surplus, 2)
-
-    non_current_liabilities = round(other_liabilities, 2)
-    trade_payables = round(creditors, 2)
-    other_current_liabilities = round(gst_payable + tds_payable, 2)
-    total_current_liabilities = round(trade_payables + other_current_liabilities, 2)
-
-    total_equity_and_liabilities = round(total_shareholders_funds + non_current_liabilities + total_current_liabilities, 2)
-
-    property_plant_equipment = round(fixed_assets, 2)
-    total_non_current_assets = property_plant_equipment
-
-    inventories = 0.00
-    trade_receivables = round(debtors, 2)
-    cash_and_cash_equivalents = round(cash_and_bank, 2)
-    short_term_loans_advances = round(gst_input + other_assets, 2)
-    total_current_assets = round(trade_receivables + cash_and_cash_equivalents + short_term_loans_advances, 2)
-
-    total_assets = round(total_non_current_assets + total_current_assets, 2)
-
-    # Schedule III Statement of Profit and Loss
-    cost_of_purchases = round(purchases, 2)
-    employee_benefits = round(salaries, 2)
-    finance_costs = round(office_admin * 0.05, 2)
-    depreciation_companies_act = round(property_plant_equipment * 0.10, 2)
-    other_operating_expenses = round(rent + software + office_admin + other_expenses - finance_costs, 2)
-
-    total_companies_act_expenses = round(cost_of_purchases + employee_benefits + finance_costs + depreciation_companies_act + other_operating_expenses, 2)
-    profit_before_tax = round(total_revenue - total_companies_act_expenses, 2)
-    simulated_tax_provision = round(max(profit_before_tax * 0.25, 0.0), 2)
-    profit_after_tax = round(profit_before_tax - simulated_tax_provision, 2)
-
-    # ── Income Tax Act PGBP Taxable Income Computation ──
-    depreciation_it_act = round((property_plant_equipment * 0.15) + (software * 0.40), 2)
-    outstanding_gst_tds = max(gst_payable + tds_payable, 0.0)
-    disallowance_43b = round(outstanding_gst_tds * 0.50, 2)
-
-    taxable_pgbp_income = round(net_profit + depreciation_companies_act - depreciation_it_act + disallowance_43b, 2)
-    tax_rate = 0.25
-    education_cess = 0.04
-    base_tax = round(max(taxable_pgbp_income * tax_rate, 0.0), 2)
-    cess_amount = round(base_tax * education_cess, 2)
-    total_income_tax_payable = round(base_tax + cess_amount, 2)
-
-    # ── MIS Financial Ratios ──
-    current_ratio = round(total_current_assets / max(total_current_liabilities, 1.0), 2)
-    quick_ratio = round((cash_and_cash_equivalents + trade_receivables) / max(total_current_liabilities, 1.0), 2)
-    operating_profit_margin_pct = round((net_profit / max(total_operating_revenue, 1.0)) * 100, 2)
-    net_profit_margin_pct = round((profit_after_tax / max(total_operating_revenue, 1.0)) * 100, 2)
-    debtor_collection_period_days = round((trade_receivables / max(total_operating_revenue, 1.0)) * 365)
-
-    # ── MIS Debtors Aging Analysis ──
+    # Debtors ageing, from open sales invoices
     today_dt = date.today()
     ageing = {"0-30": 0.0, "31-60": 0.0, "61-90": 0.0, "90+": 0.0}
-    
     inv_q = {"company_id": company_id} if not all_companies else {}
-    invoices = await db.invoices.find(inv_q, {"_id": 0}).to_list(10000)
-    for inv in invoices:
+    for inv in await db.invoices.find(inv_q, {"_id": 0}).to_list(10000):
         due = float(inv.get("amount_due") or 0)
         if due <= 0:
             continue
@@ -1462,99 +1347,83 @@ async def mis_compliance_report(
             days = 0
         bucket = "0-30" if days <= 30 else "31-60" if days <= 60 else "61-90" if days <= 90 else "90+"
         ageing[bucket] += due
+    out["mis"]["debtors_aging"] = {k: round(v, 2) for k, v in ageing.items()}
+    return {"company_id": company_id, "date_from": lower, "date_to": upper, **out}
 
-    # ── MIS Simplified Cash Flow ──
-    net_operating_cash_flow = round(sales * 0.90 - total_operating_expenses * 0.85, 2)
-    net_investing_cash_flow = round(-fixed_assets * 0.05, 2)
-    net_financing_cash_flow = round(capital * 0.02, 2)
-    net_cash_flow = round(net_operating_cash_flow + net_investing_cash_flow + net_financing_cash_flow, 2)
 
-    return {
-        "company_id": company_id,
-        "date_from": lower,
-        "date_to": upper,
-        "schedule_iii": {
-            "balance_sheet": {
-                "equity_and_liabilities": {
-                    "shareholders_funds": {
-                        "share_capital": share_capital,
-                        "reserves_and_surplus": reserves_and_surplus,
-                        "total": total_shareholders_funds
-                    },
-                    "non_current_liabilities": {
-                        "long_term_borrowings": non_current_liabilities,
-                        "total": non_current_liabilities
-                    },
-                    "current_liabilities": {
-                        "trade_payables": trade_payables,
-                        "other_current_liabilities": other_current_liabilities,
-                        "total": total_current_liabilities
-                    },
-                    "total_equity_and_liabilities": total_equity_and_liabilities
-                },
-                "assets": {
-                    "non_current_assets": {
-                        "property_plant_equipment": property_plant_equipment,
-                        "total": total_non_current_assets
-                    },
-                    "current_assets": {
-                        "inventories": inventories,
-                        "trade_receivables": trade_receivables,
-                        "cash_and_cash_equivalents": cash_and_cash_equivalents,
-                        "short_term_loans_advances": short_term_loans_advances,
-                        "total": total_current_assets
-                    },
-                    "total_assets": total_assets
-                },
-                "balanced": abs(total_assets - total_equity_and_liabilities) < 0.02
-            },
-            "pnl": {
-                "revenue_from_operations": total_operating_revenue,
-                "other_income": total_other_income,
-                "total_revenue": total_revenue,
-                "expenses": {
-                    "cost_of_purchases": cost_of_purchases,
-                    "employee_benefits": employee_benefits,
-                    "finance_costs": finance_costs,
-                    "depreciation": depreciation_companies_act,
-                    "other_operating_expenses": other_operating_expenses,
-                    "total": total_companies_act_expenses
-                },
-                "profit_before_tax": profit_before_tax,
-                "simulated_tax_provision": simulated_tax_provision,
-                "profit_after_tax": profit_after_tax
-            }
-        },
-        "income_tax": {
-            "book_net_profit": net_profit,
-            "depreciation_add_back": depreciation_companies_act,
-            "depreciation_it_deduction": depreciation_it_act,
-            "disallowance_43b": disallowance_43b,
-            "taxable_pgbp_income": taxable_pgbp_income,
-            "tax_rate_pct": tax_rate * 100,
-            "base_tax": base_tax,
-            "cess_pct": education_cess * 100,
-            "cess_amount": cess_amount,
-            "total_tax_payable": total_income_tax_payable
-        },
-        "mis": {
-            "ebitda": round(net_profit + depreciation_companies_act, 2),
-            "ratios": {
-                "current_ratio": current_ratio,
-                "quick_ratio": quick_ratio,
-                "operating_margin_pct": operating_profit_margin_pct,
-                "net_margin_pct": net_profit_margin_pct,
-                "collection_period_days": debtor_collection_period_days
-            },
-            "cash_flow": {
-                "operating": net_operating_cash_flow,
-                "investing": net_investing_cash_flow,
-                "financing": net_financing_cash_flow,
-                "net": net_cash_flow
-            },
-            "debtors_aging": {k: round(v, 2) for k, v in ageing.items()}
-        }
-    }
+class TaxBookRequest(BaseModel):
+    company_id: str
+    date_to: Optional[str] = None
+    tax_rate_pct: float = 25.0
+
+
+async def _book_adjustment(company_id: str, entry_date: str, narration: str, source: str, lines: List[dict], user_id: str) -> dict:
+    ids = {code: await get_default_account_id(company_id, code) for code in {l["code"] for l in lines}}
+    if not all(ids.values()):
+        raise HTTPException(400, "This company's chart of accounts is missing a required account. Open Chart of Accounts once and retry.")
+    return await post_journal_entry(
+        company_id, entry_date, narration,
+        [{"account_id": ids[l["code"]], "account_name": l["name"], "debit": l.get("debit", 0.0), "credit": l.get("credit", 0.0), "memo": narration}
+         for l in lines],
+        source=source, source_id=f"{company_id}:{entry_date}", created_by=user_id)
+
+
+@router.post("/reports/mis-compliance/deferred-tax/post")
+async def post_deferred_tax(body: TaxBookRequest, current_user: User = Depends(get_current_user)):
+    """Brings the deferred tax accounts to what the register says is required (book vs tax written-down value)."""
+    if not _perm_post_journal(current_user):
+        raise HTTPException(403, "Access denied.")
+    company_id = (body.company_id or "").strip()
+    if not company_id:
+        raise HTTPException(400, "Choose a company first.")
+    upper = body.date_to or date.today().isoformat()
+    st = await _load_statements(company_id, _fy_start_iso(upper), upper, tax_rate=body.tax_rate_pct / 100.0)
+    dt = st["deferred_tax"]
+    required, booked = dt["required_net_liability"], dt["booked_net_liability"]
+    if abs(required - booked) < 0.5:
+        return {"posted": False, "message": "Deferred tax is already up to date.", "deferred_tax": dt}
+    # target: a liability sits in 2500, an asset in 1600, never both
+    t_liab, t_asset = max(required, 0.0), max(-required, 0.0)
+    acct = {a["code"]: a for a in await db.chart_of_accounts.find({"company_id": company_id, "code": {"$in": ["2500", "1600"]}}, {"_id": 0}).to_list(5)}
+    async def cur(code, credit_positive):
+        a = acct.get(code)
+        if not a:
+            return 0.0
+        rows = await db.journal_lines.find({"company_id": company_id, "account_id": a["id"], "entry_date": {"$lte": upper}}, {"_id": 0}).to_list(100000)
+        bal = sum(float(r.get("debit") or 0) - float(r.get("credit") or 0) for r in rows)
+        return -bal if credit_positive else bal
+    d_liab = round(t_liab - await cur("2500", True), 2)       # credit when positive
+    d_asset = round(t_asset - await cur("1600", False), 2)    # debit when positive
+    expense = round(d_liab - d_asset, 2)                      # debit when positive
+    lines = []
+    if d_liab:
+        lines.append({"code": "2500", "name": "Deferred Tax Liability", "credit": d_liab} if d_liab > 0 else {"code": "2500", "name": "Deferred Tax Liability", "debit": -d_liab})
+    if d_asset:
+        lines.append({"code": "1600", "name": "Deferred Tax Asset", "debit": d_asset} if d_asset > 0 else {"code": "1600", "name": "Deferred Tax Asset", "credit": -d_asset})
+    lines.append({"code": "5960", "name": "Deferred Tax Expense / (Credit)", "debit": expense} if expense > 0 else {"code": "5960", "name": "Deferred Tax Expense / (Credit)", "credit": -expense})
+    entry = await _book_adjustment(company_id, upper, f"Deferred tax adjustment at {upper} (book WDV {dt['book_written_down_value']:,.2f} vs tax WDV {dt['tax_written_down_value']:,.2f} @ {dt['rate_pct']}%)",
+                                   "deferred_tax", lines, str(current_user.id))
+    return {"posted": True, "entry_id": entry["id"], "amount": abs(expense), "deferred_tax": dt}
+
+
+@router.post("/reports/mis-compliance/tax-provision/post")
+async def post_tax_provision(body: TaxBookRequest, current_user: User = Depends(get_current_user)):
+    """Books the current-tax provision the compliance report computes: Dr Income Tax Expense, Cr Provision for Income Tax."""
+    if not _perm_post_journal(current_user):
+        raise HTTPException(403, "Access denied.")
+    company_id = (body.company_id or "").strip()
+    if not company_id:
+        raise HTTPException(400, "Choose a company first.")
+    upper = body.date_to or date.today().isoformat()
+    st = await _load_statements(company_id, _fy_start_iso(upper), upper, tax_rate=body.tax_rate_pct / 100.0)
+    amount = st["income_tax"]["tax_to_book"]
+    if amount < 0.5:
+        return {"posted": False, "message": "No further tax provision is needed for this period.", "income_tax": st["income_tax"]}
+    entry = await _book_adjustment(company_id, upper, f"Provision for income tax for FY starting {st['income_tax']['financial_year_start']} (assumed rate {body.tax_rate_pct:g}% plus cess)",
+                                   "tax_provision",
+                                   [{"code": "5950", "name": "Income Tax Expense", "debit": amount}, {"code": "2600", "name": "Provision for Income Tax", "credit": amount}],
+                                   str(current_user.id))
+    return {"posted": True, "entry_id": entry["id"], "amount": amount, "income_tax": st["income_tax"]}
 
 
 # ── Party Ledger (Customer / Vendor statement) ──────────────────────────────

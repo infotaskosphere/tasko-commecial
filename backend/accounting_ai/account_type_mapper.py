@@ -29,6 +29,23 @@ ACCOUNT_TYPE_MAP: Dict[str, Tuple[str, str]] = {
     "5600": ("expense", "operating_expense"),  # Travel & Conveyance
     "5700": ("expense", "operating_expense"),  # Foreign Exchange Loss / Gain
     "5900": ("expense", "operating_expense"),  # Round Off
+    "1250": ("asset", "current_asset"),                   # TDS Receivable / Advance Tax
+    "1310": ("asset", "accumulated_depreciation"),        # Accumulated Depreciation
+    "1350": ("asset", "intangible_asset"),                # Intangible Assets (Software)
+    "1400": ("asset", "inventory"),                       # Inventory / Stock-in-Trade
+    "1500": ("asset", "prepaid"),                         # Prepaid Expenses
+    "1600": ("asset", "deferred_tax_asset"),              # Deferred Tax Asset
+    "2300": ("liability", "current_liability"),           # Accrued Expenses
+    "2400": ("liability", "provision"),                   # Provisions
+    "2500": ("liability", "deferred_tax_liability"),      # Deferred Tax Liability
+    "2600": ("liability", "current_liability"),           # Provision for Income Tax
+    "2700": ("liability", "long_term_liability"),         # Long-term Loans & Borrowings
+    "5010": ("expense", "direct_expense"),                # Direct Expenses
+    "5020": ("expense", "cost_of_service"),               # Cost of Goods Sold
+    "5450": ("expense", "finance_cost"),                  # Interest & Finance Charges
+    "5800": ("expense", "depreciation"),                  # Depreciation Expense
+    "5950": ("expense", "tax_expense"),                   # Income Tax Expense
+    "5960": ("expense", "tax_expense"),                   # Deferred Tax Expense / (Credit)
 }
 
 def get_account_classification(code: str) -> Tuple[str, str]:

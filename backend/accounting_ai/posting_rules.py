@@ -54,10 +54,10 @@ DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
     },
     "DEPRECIATION": {
         "debit_mapping": [
-            {"account_code": "5300", "ratio": 1.0, "memo_prefix": "Depreciation Expense"}
+            {"account_code": "5800", "ratio": 1.0, "memo_prefix": "Depreciation Expense"}
         ],
         "credit_mapping": [
-            {"account_code": "1300", "ratio": 1.0, "memo_prefix": "Accumulated Depreciation"}
+            {"account_code": "1310", "ratio": 1.0, "memo_prefix": "Accumulated Depreciation"}
         ],
         "gst_allowed": False,
         "tds_allowed": False,

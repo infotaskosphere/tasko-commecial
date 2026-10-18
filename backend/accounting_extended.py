@@ -1251,6 +1251,8 @@ async def add_fixed_asset(
         "method": req.method,
         "asset_account_id": req.asset_account_id,
         "depreciation_account_id": req.depreciation_account_id,
+        "accumulated_depreciation_account_id": req.accumulated_depreciation_account_id,
+        "category": req.category or "other",
         "accumulated_depreciation": 0.0,
         "book_value": _round2(req.cost),
         "status": "active",
@@ -1312,6 +1314,26 @@ async def depreciation_schedule(
     return {"assets": result}
 
 
+def _monthly_depreciation(asset: dict) -> float:
+    """One month's book depreciation, never taking the asset below its salvage value.
+    Straight line: (cost - salvage) / life. WDV ("declining_balance"): opening book value x rate / 12, where the rate
+    is the one that brings cost down to salvage over the useful life."""
+    cost = float(asset.get("cost") or 0)
+    salvage = float(asset.get("salvage_value") or 0)
+    life = max(int(asset.get("useful_life_years") or 5), 1)
+    book = float(asset.get("book_value", cost) or 0)
+    if cost <= 0:
+        return 0.0
+    if asset.get("method") in ("declining_balance", "wdv") and salvage > 0:
+        rate = 1 - (salvage / cost) ** (1 / life)
+        dep = book * rate / 12
+    elif asset.get("method") in ("declining_balance", "wdv"):
+        dep = book * (2.0 / life) / 12      # no salvage value: double-declining
+    else:
+        dep = (cost - salvage) / (life * 12)
+    return max(_round2(min(dep, book - salvage)), 0.0)
+
+
 @router.post("/depreciation/run")
 async def run_depreciation(
     company_id: str = Form(""),
@@ -1338,8 +1360,7 @@ async def run_depreciation(
         except Exception:
             continue
 
-        dep_base = float(asset["cost"]) - float(asset.get("salvage_value", 0))
-        monthly_dep = _round2(dep_base / (int(asset.get("useful_life_years", 5)) * 12))
+        monthly_dep = _monthly_depreciation(asset)
         if monthly_dep <= 0:
             continue
 
@@ -1359,15 +1380,17 @@ async def run_depreciation(
         })
         # asset.depreciation_account_id / asset_account_id are expected to
         # already be real chart_of_accounts ids when explicitly set on the
-        # asset; the fallback must resolve the default code ("5500" / "1300")
+        # asset; the fallback must resolve the default code ("5800" / "1310")
         # to its real id the same way — posting the literal code string as
         # account_id makes the entry invisible to Trial Balance/Balance
         # Sheet/P&L, since reports join on chart_of_accounts.id, not code.
-        dep_acct = asset.get("depreciation_account_id") or await get_default_account_id(company_id, "5500")
-        asset_acct = asset.get("asset_account_id") or await get_default_account_id(company_id, "1300")
-        if not dep_acct or not asset_acct:
+        # Dr Depreciation Expense (5800), Cr Accumulated Depreciation (1310): the asset itself stays at cost on
+        # the balance sheet and the written-off amount is shown against it, as Schedule III requires.
+        dep_acct = asset.get("depreciation_account_id") or await get_default_account_id(company_id, "5800")
+        accum_acct = asset.get("accumulated_depreciation_account_id") or await get_default_account_id(company_id, "1310")
+        if not dep_acct or not accum_acct:
             continue
-        for line_acct, dr, cr in [(dep_acct, monthly_dep, 0), (asset_acct, 0, monthly_dep)]:
+        for line_acct, dr, cr in [(dep_acct, monthly_dep, 0), (accum_acct, 0, monthly_dep)]:
             await db.journal_lines.insert_one({
                 "id": str(uuid.uuid4()), "entry_id": entry_id, "company_id": company_id,
                 "account_id": line_acct, "debit": dr, "credit": cr,
@@ -1386,6 +1409,36 @@ async def run_depreciation(
 
     await _audit(company_id, str(current_user.id), "run_depreciation", "depreciation", period_end, {"posted": len(posted)})
     return {"period_end": period_end, "posted": len(posted), "entries": posted}
+
+
+@router.post("/depreciation/repair-accounts")
+async def repair_depreciation_accounts(
+    company_id: str = Form(""),
+    current_user: User = Depends(get_current_user),
+):
+    """Depreciation used to be booked as Dr Shipping & Freight (5500) / Cr Fixed Assets (1300). Re-points those entries
+    to Dr Depreciation Expense (5800) / Cr Accumulated Depreciation (1310). Only entries created by the depreciation
+    run are touched, and running it again changes nothing."""
+    if not _can_manage(current_user):
+        raise HTTPException(403, "Access denied.")
+    old_exp = await get_default_account_id(company_id, "5500")
+    old_asset = await get_default_account_id(company_id, "1300")
+    new_exp = await get_default_account_id(company_id, "5800")
+    new_accum = await get_default_account_id(company_id, "1310")
+    if not (old_exp and old_asset and new_exp and new_accum):
+        raise HTTPException(400, "Open Chart of Accounts once so the default accounts exist, then retry.")
+    fixed = 0
+    async for e in db.journal_entries.find({"company_id": company_id, "source": "depreciation"}, {"_id": 0, "id": 1}):
+        async for l in db.journal_lines.find({"entry_id": e["id"]}, {"_id": 0}):
+            if l["account_id"] == old_exp and float(l.get("debit") or 0) > 0:
+                await db.journal_lines.update_one({"id": l["id"]}, {"$set": {"account_id": new_exp}})
+                fixed += 1
+            elif l["account_id"] == old_asset and float(l.get("credit") or 0) > 0:
+                await db.journal_lines.update_one({"id": l["id"]}, {"$set": {"account_id": new_accum}})
+                fixed += 1
+    if fixed:
+        await _audit(company_id, str(current_user.id), "repair_depreciation_accounts", "depreciation", company_id, {"lines": fixed})
+    return {"lines_repaired": fixed}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

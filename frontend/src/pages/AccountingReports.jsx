@@ -505,6 +505,8 @@ function AccountingReportsInner() {
   const [dateFrom, setDateFrom] = useState(fyDates(currentFYStartYear()).from);
   const [dateTo, setDateTo] = useState(fyDates(currentFYStartYear()).to);
   const [misSubTab, setMisSubTab] = useState('insights');
+  const [taxRatePct, setTaxRatePct] = useState(25);
+  const [bookingTax, setBookingTax] = useState('');
 
   // Trial Balance pagination (client-side).
   const [tbPage, setTbPage] = useState(1);
@@ -587,7 +589,7 @@ function AccountingReportsInner() {
         api.get('/reports/trial-balance', { params: { company_id: cid, as_of: dt || undefined, date_from: df || undefined, date_to: dt || undefined } }),
         api.get('/reports/profit-loss', { params: { company_id: cid, date_from: df || undefined, date_to: dt || undefined } }),
         api.get('/reports/balance-sheet', { params: { company_id: cid, as_of: dt || undefined, date_from: df || undefined, date_to: dt || undefined } }),
-        api.get('/reports/mis-compliance', { params: { company_id: cid, date_from: df || undefined, date_to: dt || undefined } }),
+        api.get('/reports/mis-compliance', { params: { company_id: cid, date_from: df || undefined, date_to: dt || undefined, tax_rate_pct: taxRatePct } }),
       ]);
       setTrialBalance(tbR.status === 'fulfilled' ? tbR.value.data : null);
       setPnl(pnlR.status === 'fulfilled' ? pnlR.value.data : null);
@@ -598,6 +600,24 @@ function AccountingReportsInner() {
       toast.error('Failed to load reports');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Posts the tax entries the compliance tab proposes (deferred tax / current-tax provision). Both are idempotent on the server.
+  const bookTax = async (kind) => {
+    if (!companyId) { toast.error('Choose one company first. Tax is booked per company.'); return; }
+    setBookingTax(kind);
+    try {
+      const { data } = await api.post(`/reports/mis-compliance/${kind === 'deferred' ? 'deferred-tax' : 'tax-provision'}/post`, {
+        company_id: companyId, date_to: dateTo || undefined, tax_rate_pct: taxRatePct,
+      });
+      if (data?.posted) toast.success(kind === 'deferred' ? 'Deferred tax booked' : 'Tax provision booked', { description: `${fmtC(data.amount)} posted as a journal entry.` });
+      else toast.info(data?.message || 'Nothing to book.');
+      await fetchAll();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not book the entry.');
+    } finally {
+      setBookingTax('');
     }
   };
 
@@ -1294,6 +1314,11 @@ function AccountingReportsInner() {
                           <span className={isDark ? 'text-slate-200' : 'text-slate-700'}>Net cash movement</span>
                           <span className={`font-mono ${misData.mis?.cash_flow?.net >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{fmtC(misData.mis?.cash_flow?.net)}</span>
                         </div>
+                        <p className={`text-[11px] pt-1 ${misData.mis?.cash_flow?.reconciles ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {misData.mis?.cash_flow?.reconciles
+                            ? `Ties to the change in cash: ${fmtC(misData.mis?.cash_flow?.opening_cash)} to ${fmtC(misData.mis?.cash_flow?.closing_cash)}.`
+                            : `Does not tie to the change in cash (difference ${fmtC(misData.mis?.cash_flow?.difference)}). Check for entries without a classified account.`}
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1340,12 +1365,14 @@ function AccountingReportsInner() {
                         <div className="border-t pt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">2. Non-Current Liabilities</p>
                           <Row label="Long-term Borrowings / Liabilities" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.non_current_liabilities?.long_term_borrowings} isDark={isDark} />
+                          <Row label="Deferred Tax Liabilities (net)" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.non_current_liabilities?.deferred_tax_liabilities} isDark={isDark} />
                           <Row label="Subtotal: Non-Current Liabilities" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.non_current_liabilities?.total} isDark={isDark} bold />
                         </div>
                         <div className="border-t pt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">3. Current Liabilities</p>
                           <Row label="Trade Payables (Sundry Creditors)" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.current_liabilities?.trade_payables} isDark={isDark} />
                           <Row label="Other Current Liabilities (including GST &amp; TDS Payable)" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.current_liabilities?.other_current_liabilities} isDark={isDark} />
+                          <Row label="Short-term Provisions (Income Tax)" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.current_liabilities?.short_term_provisions} isDark={isDark} />
                           <Row label="Subtotal: Current Liabilities" value={misData.schedule_iii?.balance_sheet?.equity_and_liabilities?.current_liabilities?.total} isDark={isDark} bold />
                         </div>
                         <div className="border-t pt-3 mt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
@@ -1358,7 +1385,11 @@ function AccountingReportsInner() {
                       <div className="space-y-4">
                         <div>
                           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">1. Non-Current Assets</p>
-                          <Row label="Property, Plant and Equipment (Fixed Assets)" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.property_plant_equipment} isDark={isDark} />
+                          <Row label="Gross Block (cost of fixed assets)" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.gross_block} isDark={isDark} />
+                          <Row label="Less: Accumulated Depreciation" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.accumulated_depreciation} isDark={isDark} />
+                          <Row label="Property, Plant and Equipment (net block)" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.property_plant_equipment} isDark={isDark} bold />
+                          <Row label="Intangible Assets (net)" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.intangible_assets} isDark={isDark} />
+                          <Row label="Deferred Tax Assets (net)" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.deferred_tax_assets} isDark={isDark} />
                           <Row label="Subtotal: Non-Current Assets" value={misData.schedule_iii?.balance_sheet?.assets?.non_current_assets?.total} isDark={isDark} bold />
                         </div>
                         <div className="border-t pt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
@@ -1371,6 +1402,9 @@ function AccountingReportsInner() {
                         </div>
                         <div className="border-t pt-3 mt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                           <Row label="TOTAL ASSETS" value={misData.schedule_iii?.balance_sheet?.assets?.total_assets} isDark={isDark} bold />
+                          <p className={`text-[11px] pt-1 ${misData.schedule_iii?.balance_sheet?.balanced ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {misData.schedule_iii?.balance_sheet?.balanced ? 'Assets equal equity and liabilities.' : `Out of balance by ${fmtC(misData.schedule_iii?.balance_sheet?.difference)}. Run Verify & Fix.`}
+                          </p>
                         </div>
                       </div>
                     </ReportCard>
@@ -1394,11 +1428,34 @@ function AccountingReportsInner() {
 
                       <div className="border-t pt-2 mt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                         <Row label="V. Profit before Tax (III - IV)" value={misData.schedule_iii?.pnl?.profit_before_tax} isDark={isDark} bold />
-                        <Row label="VI. Provision for Tax (estimated corporate rate 25%)" value={misData.schedule_iii?.pnl?.simulated_tax_provision} isDark={isDark} />
+                        <Row label="VI. Tax expense (current and deferred, as booked)" value={misData.schedule_iii?.pnl?.tax_expense} isDark={isDark} />
                         <Row label="VII. Profit after Tax (V - VI)" value={misData.schedule_iii?.pnl?.profit_after_tax} isDark={isDark} bold />
+                        {misData.schedule_iii?.pnl?.tax_still_to_book > 0 && (
+                          <p className={`text-[11px] pt-1 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                            Estimated tax of {fmtC(misData.schedule_iii.pnl.tax_still_to_book)} is not booked yet. Book it from the Income Tax tab.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </ReportCard>
+
+                  {misData.trading_account && (
+                    <ReportCard title="Trading Account and Profit &amp; Loss Account" isDark={isDark}>
+                      <div className="space-y-2">
+                        <Row label="Sales (revenue from operations)" value={misData.trading_account.sales} isDark={isDark} />
+                        <Row label="Less: Direct costs (purchases and cost of service)" value={misData.trading_account.direct_costs} isDark={isDark} />
+                        <Row label={`Gross Profit (${misData.trading_account.gross_margin_pct}% of sales)`} value={misData.trading_account.gross_profit} isDark={isDark} bold />
+                        <div className="border-t pt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                          <Row label="Add: Other income" value={misData.trading_account.other_income} isDark={isDark} />
+                          <Row label="Less: Indirect expenses (incl. depreciation)" value={misData.trading_account.indirect_expenses} isDark={isDark} />
+                          <Row label="Net Profit before Tax" value={misData.trading_account.net_profit_before_tax} isDark={isDark} bold />
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Closing stock on the balance sheet: {fmtC(misData.trading_account.closing_stock_on_balance_sheet)}. Stock is not adjusted into cost of sales here, because inventory is not tracked as a period-end valuation.
+                        </p>
+                      </div>
+                    </ReportCard>
+                  )}
                 </div>
               )}
 
@@ -1415,13 +1472,13 @@ function AccountingReportsInner() {
                       
                       <div className="border-t pt-2 mt-1" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                         <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Additions:</p>
-                        <Row label="Add: Depreciation debited as per Companies Act rates" value={misData.income_tax?.depreciation_add_back} isDark={isDark} />
-                        <Row label="Add: Section 43B Disallowances (unpaid statutory dues like GST/TDS)" value={misData.income_tax?.disallowance_43b} isDark={isDark} />
+                        <Row label="Add: Depreciation debited in the books" value={misData.income_tax?.depreciation_add_back} isDark={isDark} />
+                        <Row label="Add: Section 43B disallowance (enter at return time)" value={misData.income_tax?.disallowance_43b} isDark={isDark} />
                       </div>
 
                       <div className="border-t pt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
                         <p className="text-xs font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider mb-1">Deductions:</p>
-                        <Row label="Less: Depreciation allowable as per Income Tax Rules, Section 32" value={misData.income_tax?.depreciation_it_deduction} isDark={isDark} />
+                        <Row label="Less: Depreciation allowable as per Income Tax Rules, Section 32 (block rates on written-down value)" value={misData.income_tax?.depreciation_it_deduction} isDark={isDark} />
                       </div>
 
                       <div className="border-t pt-3 mt-2" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
@@ -1433,9 +1490,95 @@ function AccountingReportsInner() {
                         <Row label={`Base Corporate/Proprietor Tax (${misData.income_tax?.tax_rate_pct}%)`} value={misData.income_tax?.base_tax} isDark={isDark} />
                         <Row label={`Add: Health and Education Cess (${misData.income_tax?.cess_pct}%)`} value={misData.income_tax?.cess_amount} isDark={isDark} />
                         <Row label="TOTAL ESTIMATED INCOME TAX PAYABLE" value={misData.income_tax?.total_tax_payable} isDark={isDark} bold />
+                        <Row label="Already booked as tax expense" value={misData.income_tax?.current_tax_booked} isDark={isDark} />
+                        <Row label="Still to book" value={misData.income_tax?.tax_to_book} isDark={isDark} bold />
+                        <div className="flex flex-wrap items-center gap-3 pt-2">
+                          <label className={`flex items-center gap-2 text-xs ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                            Assumed tax rate (%)
+                            <input
+                              type="number" min="0" max="60" step="0.5" value={taxRatePct}
+                              onChange={(e) => setTaxRatePct(Number(e.target.value))}
+                              onBlur={() => { if (Number(misData.income_tax?.tax_rate_pct) !== taxRatePct) fetchAll(); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && Number(misData.income_tax?.tax_rate_pct) !== taxRatePct) fetchAll(); }}
+                              className={`h-8 w-20 rounded-md border px-2 text-sm font-mono ${isDark ? 'bg-slate-900 border-slate-600 text-slate-100' : 'bg-white border-slate-300'}`}
+                            />
+                          </label>
+                          <Button
+                            size="sm" className="h-8 text-xs font-semibold"
+                            disabled={!companyId || bookingTax === 'provision' || !(misData.income_tax?.tax_to_book > 0)}
+                            onClick={() => bookTax('provision')}
+                          >
+                            {bookingTax === 'provision' ? 'Booking…' : 'Book tax provision'}
+                          </Button>
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          The rate is an assumption. Use the rate that applies to this entity (company, firm or proprietor, and the regime it has opted for). Cess is added at {misData.income_tax?.cess_pct}%.
+                          {!companyId && ' Choose one company to book the entry.'}
+                        </p>
+                        {misData.income_tax?.section_43b_exposure > 0 && (
+                          <p className={`text-[11px] ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                            Section 43B exposure: {fmtC(misData.income_tax.section_43b_exposure)} of GST and TDS is unpaid. Whatever is still unpaid at the return due date is added back to taxable income.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </ReportCard>
+
+                  {misData.deferred_tax && (
+                    <ReportCard title="Deferred Tax (book vs tax written-down value)" isDark={isDark}>
+                      <div className="space-y-2">
+                        <Row label="Fixed assets, written-down value in the books" value={misData.deferred_tax.book_written_down_value} isDark={isDark} />
+                        <Row label="Fixed assets, written-down value for tax" value={misData.deferred_tax.tax_written_down_value} isDark={isDark} />
+                        <Row label="Timing difference" value={misData.deferred_tax.timing_difference} isDark={isDark} bold />
+                        <Row label={`Deferred tax ${misData.deferred_tax.kind} required (${misData.deferred_tax.rate_pct}%)`} value={Math.abs(misData.deferred_tax.required_net_liability)} isDark={isDark} />
+                        <Row label="Already booked (net)" value={misData.deferred_tax.booked_net_liability} isDark={isDark} />
+                        <Row label="Adjustment to book" value={misData.deferred_tax.adjustment_to_book} isDark={isDark} bold />
+                        <div className="pt-2">
+                          <Button
+                            size="sm" className="h-8 text-xs font-semibold"
+                            disabled={!companyId || bookingTax === 'deferred' || Math.abs(misData.deferred_tax.adjustment_to_book) < 0.5}
+                            onClick={() => bookTax('deferred')}
+                          >
+                            {bookingTax === 'deferred' ? 'Booking…' : 'Book deferred tax'}
+                          </Button>
+                        </div>
+                        <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          A liability arises when the books carry an asset at more than its tax value, because depreciation is claimed faster for tax. The entry posts to Deferred Tax Liability or Asset against Deferred Tax Expense.
+                        </p>
+                      </div>
+                    </ReportCard>
+                  )}
+
+                  {misData.income_tax?.tax_depreciation_rows?.length > 0 && (
+                    <ReportCard title="Income Tax Depreciation by Asset" isDark={isDark}>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className={isDark ? 'text-slate-400' : 'text-slate-500'}>
+                              <th className="py-1.5 pr-3 text-left font-semibold">Asset</th>
+                              <th className="py-1.5 pr-3 text-left font-semibold">Block</th>
+                              <th className="py-1.5 pr-3 text-right font-semibold">Rate</th>
+                              <th className="py-1.5 pr-3 text-right font-semibold">Opening WDV</th>
+                              <th className="py-1.5 pr-3 text-right font-semibold">Depreciation</th>
+                              <th className="py-1.5 text-right font-semibold">Closing WDV</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {misData.income_tax.tax_depreciation_rows.map((r) => (
+                              <tr key={r.id} className="border-t" style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+                                <td className="py-1.5 pr-3">{r.name}</td>
+                                <td className="py-1.5 pr-3 capitalize">{String(r.category || '').replace(/_/g, ' ')}</td>
+                                <td className="py-1.5 pr-3 text-right font-mono">{r.rate_pct}%</td>
+                                <td className="py-1.5 pr-3 text-right font-mono">{fmtC(r.opening_wdv)}</td>
+                                <td className="py-1.5 pr-3 text-right font-mono">{fmtC(r.depreciation)}</td>
+                                <td className="py-1.5 text-right font-mono">{fmtC(r.closing_wdv)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </ReportCard>
+                  )}
                 </div>
               )}
             </>

@@ -3323,6 +3323,53 @@ def _duplicate_summary(d: Optional[dict]) -> Optional[dict]:
     return {k: d.get(k) for k in ("id", "invoice_no", "supplier_name", "invoice_date", "grand_total", "status", "created_at", "booked_via")}
 
 
+# Schedule II useful lives (years) used when a bill is capitalised; the reviewer can change them.
+_CAPITAL_LIFE = {"computers": 3, "furniture": 10, "plant_machinery": 15, "vehicles": 8, "buildings": 30,
+                 "software": 5, "intangibles": 10, "other": 10}
+_CAPITAL_LABEL = {"computers": "Computers and IT equipment", "furniture": "Furniture and fittings", "plant_machinery": "Plant and machinery",
+                  "vehicles": "Vehicles", "buildings": "Buildings and civil work", "software": "Computer software",
+                  "intangibles": "Other intangibles", "other": "Other fixed assets"}
+
+
+def _capital_suggestion(text: str, taxable: float, vendor: str = "", from_text_only: bool = True) -> dict:
+    """Capital or revenue? Only a suggestion: the person checking the bill decides."""
+    from backend.account_classification import suggest_capital
+    s = suggest_capital(text, taxable, vendor=vendor)
+    if from_text_only and s["confidence"] == "high":
+        s["confidence"] = "medium"          # read from the whole page, not from a clean line description
+    s["life_years"] = _CAPITAL_LIFE.get(s.get("block") or "other", 10)
+    return s
+
+
+async def _sync_capital_asset(invoice_id: str) -> None:
+    """A bill treated as capital owns one row in the fixed-asset register (that is what depreciation runs on).
+    Keeps it in step with the bill: created on save, cost follows edits, retired when the bill is cancelled or deleted."""
+    inv = await db.purchase_invoices.find_one({"id": invoice_id})
+    asset = await db.fixed_assets.find_one({"source_purchase_id": invoice_id})
+    if not inv or inv.get("status") == "cancelled" or inv.get("treatment") != "capital":
+        if asset and asset.get("status") != "cancelled":
+            await db.fixed_assets.update_one({"source_purchase_id": invoice_id}, {"$set": {"status": "cancelled"}})
+        return
+    cost = round(float(inv.get("grand_total") or 0) - float(inv.get("total_gst") or 0), 2)
+    cat = inv.get("asset_category") or "other"
+    fields = {"name": f"{inv.get('supplier_name') or 'Supplier'} - {inv.get('invoice_no') or ''}".strip(" -"),
+              "purchase_date": str(inv.get("invoice_date") or "")[:10], "category": cat,
+              "useful_life_years": int(inv.get("useful_life_years") or _CAPITAL_LIFE.get(cat, 10)), "status": "active"}
+    if asset:
+        if not float(asset.get("accumulated_depreciation") or 0):      # once depreciation is posted the cost is fixed
+            fields.update({"cost": cost, "book_value": cost})
+        await db.fixed_assets.update_one({"source_purchase_id": invoice_id}, {"$set": fields})
+        return
+    salvage = 0.0 if cat in ("software", "intangibles") else round(cost * 0.05, 2)       # Schedule II: residual value up to 5%
+    asset_id = str(uuid.uuid4())
+    await db.fixed_assets.insert_one({
+        "_id": asset_id, "id": asset_id, "company_id": inv.get("company_id") or "", **fields,
+        "cost": cost, "salvage_value": salvage, "method": "straight_line", "book_value": cost, "accumulated_depreciation": 0.0,
+        "asset_account_id": "", "depreciation_account_id": "", "accumulated_depreciation_account_id": "",
+        "source_purchase_id": invoice_id, "created_by": inv.get("created_by") or "system",
+        "created_at": datetime.now(timezone.utc).isoformat()})
+
+
 async def _read_purchase_upload(file: UploadFile, current_user: User, company_id: Optional[str], client_id: Optional[str]) -> dict:
     """Shared by /preview and the legacy /upload: read the file, match parties, look for duplicates."""
     filename = file.filename or "purchase-invoice"
@@ -3462,6 +3509,8 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
         },
         "vendor": vendor,
         "duplicate": _duplicate_summary(dup),
+        "capital_suggestion": _capital_suggestion(
+            f"{result.get('raw_text_excerpt') or ''}", float(result.get("taxable_amount") or 0), vendor=result.get("supplier_name") or ""),
         "fx": fx_note,
         "ledger": ledger,
         "learning": learning,
@@ -3630,11 +3679,28 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
                             "classification_confidence": 1.0})
         except Exception as ex:
             logger.warning("Expense ledger override %s failed: %s", override_code, ex)
+    capital = str(p.get("treat_as") or "expense").lower() == "capital"
+    if capital:
+        cat = str(p.get("asset_category") or "other").lower()
+        if cat not in _CAPITAL_LIFE:
+            cat = "other"
+        code = "1350" if cat in ("software", "intangibles") else "1300"
+        life = int(p.get("useful_life_years") or _CAPITAL_LIFE[cat])
+        if life < 1 or life > 100:
+            raise HTTPException(422, detail={"code": "validation", "message": "Useful life must be between 1 and 100 years."})
+        doc.update({"treatment": "capital", "asset_category": cat, "useful_life_years": life,
+                    "expense_ledger_code": code, "expense_ledger_name": "Intangible Assets (Software)" if code == "1350" else "Fixed Assets",
+                    "expense_nature": "asset", "expense_category": "intangible_asset" if code == "1350" else "fixed_asset",
+                    "classification_source": "capital_treatment", "classification_confidence": 1.0,
+                    "ledger_requires_review": False, "ledger_auto_applied": False})
+    else:
+        doc["treatment"] = "expense"
     await db.purchase_invoices.insert_one(dict(doc))
     if client:
         await db.clients.update_one({"id": client["id"]}, {"$set": {"last_purchase_invoice_at": now}, "$inc": {"purchase_invoice_count": 1}})
     await sync_purchase_journal_entry(doc["id"])
-    if learn:
+    await _sync_capital_asset(doc["id"])
+    if learn and not capital:       # a one-off asset purchase must not teach Finix that this vendor's bills are fixed assets
         await _il.learn_from_confirmed_bill(company_id, doc, proposed=proposed, edited_fields=p.get("edited_fields"), user_id=user.id)
     doc["save_warnings"] = warns
     return doc, dup
@@ -3688,6 +3754,9 @@ class PurchaseInvoiceConfirm(BaseModel):
     parse_confidence: Optional[float] = 0.0
     raw_text_excerpt: Optional[str] = ""
     zte_doc_id: Optional[str] = None      # set when the bill came from the pending-review list (a document read earlier)
+    treat_as: Optional[str] = "expense"   # "expense" (charged to profit) or "capital" (fixed asset, depreciated)
+    asset_category: Optional[str] = "other"
+    useful_life_years: Optional[int] = None
     edited_fields: List[str] = Field(default_factory=list)
     needs_review: bool = False
     # explicit overrides
@@ -4250,6 +4319,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
                                         [("purchase", invoice_id)], "edit this purchase bill")
     await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": update_data})
     await sync_purchase_journal_entry(invoice_id)
+    await _sync_capital_asset(invoice_id)
     updated = await db.purchase_invoices.find_one({"id": invoice_id}, {"_id": 0})
     new_code = str(update_data.get("expense_ledger_code") or "")
     if new_code and new_code != str(existing.get("expense_ledger_code") or ""):
@@ -4287,6 +4357,7 @@ async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(
 
     await db.purchase_invoices.delete_one({"id": invoice_id})
     await sync_purchase_journal_entry(invoice_id)  # document is gone -> ledger entry removed
+    await _sync_capital_asset(invoice_id)
     client_id = existing.get("client_id")
     if client_id:
         await db.clients.update_one({"id": client_id}, {"$inc": {"purchase_invoice_count": -1}})
@@ -4379,11 +4450,13 @@ async def update_purchase_invoice_status(
             "status": "cancelled", "amount_due": 0.0, "updated_at": now_iso,
         }})
         await sync_purchase_journal_entry(invoice_id)  # removes the bill's journal entry
+        await _sync_capital_asset(invoice_id)
         return {"id": invoice_id, "status": "cancelled", "amount_paid": inv.get("amount_paid", 0), "amount_due": 0.0}
 
     # new_status == "outstanding" — manual revert, doesn't touch already-recorded payments
     await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": {"status": "outstanding", "updated_at": now_iso}})
     await sync_purchase_journal_entry(invoice_id)
+    await _sync_capital_asset(invoice_id)
     return {"id": invoice_id, "status": "outstanding", "amount_paid": already_paid, "amount_due": inv.get("amount_due", grand_total)}
 
 

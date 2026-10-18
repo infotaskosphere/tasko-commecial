@@ -75,6 +75,14 @@ function DocumentPane({ file, rawText }) {
   return <pre className="h-full overflow-auto text-xs p-3 whitespace-pre-wrap">{rawText || 'Preview not available for this file type.'}</pre>;
 }
 
+// Mirrors the server's fixed-asset categories and default useful lives (Schedule II of the Companies Act, rounded).
+const ASSET_CATEGORIES = [
+  ['computers', 'Computers and IT equipment', 3], ['furniture', 'Furniture and fittings', 10], ['plant_machinery', 'Plant and machinery', 15],
+  ['vehicles', 'Vehicles', 8], ['buildings', 'Buildings and civil work', 30], ['software', 'Computer software', 5],
+  ['intangibles', 'Other intangibles', 10], ['other', 'Other fixed assets', 10],
+];
+const lifeFor = (cat) => (ASSET_CATEGORIES.find((c) => c[0] === cat) || [])[2] || 10;
+
 export default function InvoicePreviewDialog({
   open, onClose, preview, file, queue = null, companies, clients, isDark, onSaved, onSkip,
 }) {
@@ -90,11 +98,18 @@ export default function InvoicePreviewDialog({
   const [ledgerCode, setLedgerCode] = useState(proposedHead);
   const [ledgerTouched, setLedgerTouched] = useState(false);
   const [heads, setHeads] = useState([]);
+  // Capital or revenue: Finix only suggests; the person checking the bill decides.
+  const cap = preview?.capital_suggestion || null;
+  const [treatAs, setTreatAs] = useState(cap?.capital ? 'capital' : 'expense');
+  const [assetCategory, setAssetCategory] = useState(cap?.category || 'other');
+  const [lifeYears, setLifeYears] = useState(cap?.life_years || lifeFor(cap?.category || 'other'));
 
   useEffect(() => {
     setForm(initial); setForceDup(false); setAckMismatch(false); setServerErrors([]); setShowDoc(false);
     setLedgerCode(proposedHead); setLedgerTouched(false);
-  }, [initial, proposedHead]);
+    setTreatAs(cap?.capital ? 'capital' : 'expense'); setAssetCategory(cap?.category || 'other');
+    setLifeYears(cap?.life_years || lifeFor(cap?.category || 'other'));
+  }, [initial, proposedHead]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let alive = true;
@@ -163,7 +178,9 @@ export default function InvoicePreviewDialog({
         raw_text_excerpt: preview?.raw_text_excerpt || '',
         ...(preview?.zte_doc_id ? { zte_doc_id: preview.zte_doc_id } : {}),
         edited_fields: edited,
-        ...(ledgerTouched && ledgerCode ? { expense_ledger_code: ledgerCode } : {}),
+        ...(ledgerTouched && ledgerCode && treatAs !== 'capital' ? { expense_ledger_code: ledgerCode } : {}),
+        treat_as: treatAs,
+        ...(treatAs === 'capital' ? { asset_category: assetCategory, useful_life_years: Number(lifeYears) || lifeFor(assetCategory) } : {}),
         force_duplicate: forceDup,
         acknowledge_mismatch: ackMismatch,
       });
@@ -273,6 +290,7 @@ export default function InvoicePreviewDialog({
                     onChange={(e) => { setLedgerCode(e.target.value); setLedgerTouched(true); }}
                     className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs max-w-[16rem]"
                     data-testid="expense-head-select"
+                    disabled={treatAs === 'capital'}
                   >
                     <option value="">Let Finix choose</option>
                     {heads.map((h) => <option key={h.code} value={h.code}>{h.code} · {h.name}</option>)}
@@ -282,6 +300,49 @@ export default function InvoicePreviewDialog({
                   )}
                 </label>
               )}
+              <fieldset className="mt-2 text-xs" data-testid="treatment">
+                <legend className="opacity-80 mb-1">Treat this bill as</legend>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <label className="inline-flex items-center gap-1.5">
+                    <input type="radio" name="treat_as" checked={treatAs === 'expense'} onChange={() => setTreatAs('expense')} />
+                    Expense <span className="opacity-70">(charged to profit now)</span>
+                  </label>
+                  <label className="inline-flex items-center gap-1.5">
+                    <input type="radio" name="treat_as" checked={treatAs === 'capital'} onChange={() => setTreatAs('capital')} />
+                    Capital asset <span className="opacity-70">(on the balance sheet, depreciated over its life)</span>
+                  </label>
+                </div>
+                {cap?.reason && (
+                  <p className="mt-1 opacity-80">
+                    Finix suggests {cap.capital ? 'capital' : 'expense'} ({cap.confidence} confidence): {cap.reason}
+                  </p>
+                )}
+                {treatAs === 'capital' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <label className="inline-flex items-center gap-1.5">
+                      Asset type
+                      <select
+                        value={assetCategory}
+                        onChange={(e) => { setAssetCategory(e.target.value); setLifeYears(lifeFor(e.target.value)); }}
+                        className="rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs"
+                        data-testid="asset-category-select"
+                      >
+                        {ASSET_CATEGORIES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                      </select>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5">
+                      Useful life (years)
+                      <input
+                        type="number" min="1" max="100" value={lifeYears}
+                        onChange={(e) => setLifeYears(e.target.value)}
+                        className="w-16 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1 text-xs font-mono"
+                        data-testid="asset-life-input"
+                      />
+                    </label>
+                    <span className="opacity-70">It is added to the fixed-asset register. Depreciation runs from there.</span>
+                  </div>
+                )}
+              </fieldset>
             </div>
 
             <InvoiceForm
