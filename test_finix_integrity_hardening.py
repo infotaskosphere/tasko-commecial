@@ -67,3 +67,24 @@ class IntegrityContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class InvoiceDeleteTenantScopeTests(unittest.TestCase):
+    def test_invoice_delete_checks_licensee_company_visibility_before_mutating(self):
+        text = source("invoicing.py")
+        self.assertIn("async def _invoice_delete_visible_company_ids", text)
+        self.assertIn("rows = await _tenant_visible_companies(current_user)", text)
+        self.assertIn("raw_collection = getattr(invoice_collection, \"_collection\", invoice_collection)", text)
+        self.assertIn("if invoice_company_id not in allowed:", text)
+        self.assertIn("scope_token = set_authenticated_company(invoice_company_id)", text)
+        self.assertIn("finally:\n        if scope_token is not None:", text)
+
+    def test_bulk_delete_ranks_notes_before_invoices_across_visible_companies(self):
+        text = source("invoicing.py")
+        start = text.index('@router.delete("/invoices/bulk-delete")')
+        end = text.index('@router.delete("/invoices/{inv_id}")', start)
+        bulk = text[start:end]
+        self.assertIn("allowed_company_ids = await _invoice_delete_visible_company_ids(current_user)", bulk)
+        self.assertIn("raw_collection.find_one(", bulk)
+        self.assertIn('("credit_note", "debit_note")', bulk)
+        self.assertIn("_recalculate_invoice_parent_in_company", bulk)
+
