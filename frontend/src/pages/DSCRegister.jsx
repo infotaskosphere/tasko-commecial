@@ -2066,7 +2066,8 @@ export default function DSCRegister() {
               <p className="text-white/60 text-sm mt-0.5">Click any row to view full details & share via WhatsApp</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <style>{`#root #dsc-header-actions > *, #root #dsc-header-actions button { border-radius: 0 !important; }`}</style>
+          <div id="dsc-header-actions" className="flex items-center gap-2 flex-wrap">
             <Button variant="outline" onClick={handlePrint}
               className="h-9 px-4 gap-2 rounded-none text-sm bg-white/15 border-0 text-white hover:bg-white/25 backdrop-blur-sm shadow-sm">
               <Printer className="h-4 w-4" />Print
