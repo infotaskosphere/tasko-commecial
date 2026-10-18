@@ -3059,8 +3059,8 @@ export default function Users() {
             style={{ background: 'radial-gradient(circle, #5CCB5F 0%, transparent 70%)' }} />
           <div className="absolute right-40 bottom-0 w-40 h-40 rounded-full mb-[-40px] opacity-[0.06]"
             style={{ background: 'white' }} />
-          <div className="relative flex flex-col lg:flex-row lg:items-center justify-start gap-5">
-            <div className="flex w-full min-w-0 flex-1 items-center justify-start gap-4 text-left">
+          <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
               <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
                 {mainTab === 'identix'
                   ? <Fingerprint className="h-6 w-6 text-white" />
@@ -3070,17 +3070,17 @@ export default function Users() {
                       ? <ShieldCheck className="h-6 w-6 text-white" />
                       : <UsersIcon className="h-6 w-6 text-white" />}
               </div>
-              <div className="flex min-w-0 flex-col items-start justify-center text-left">
-                <div className="mb-1 flex w-full items-center justify-start gap-2 text-left">
-                  <span className="inline-flex items-center gap-1.5 self-start rounded-full bg-white/10 px-2.5 py-0.5 text-left backdrop-blur-sm border border-white/15">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/15">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
                     <p className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Team Management</p>
                   </span>
                 </div>
-                <h1 className="m-0 w-full text-left text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight" style={{ textAlign: 'left', marginLeft: 0, marginRight: 0 }}>
+                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight">
                   {mainTab === 'identix' ? 'Identix Machine Integration' : mainTab === 'salary' ? 'Salary & Payroll' : mainTab === 'access_requests' ? 'Access Requests' : 'User Directory'}
                 </h1>
-                <p className="mt-1 w-full max-w-md text-left text-white/70 text-xs sm:text-sm" style={{ textAlign: 'left', marginLeft: 0, marginRight: 0 }}>
+                <p className="text-white/70 text-xs sm:text-sm mt-1 max-w-md">
                   {mainTab === 'identix'
                     ? 'Manage biometric devices, enrollments, and attendance logs.'
                     : mainTab === 'salary'
