@@ -10,11 +10,12 @@ const STARTERS = [
 
 export default function EmptyState({ ready, providerCount, onPick }) {
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center px-1 py-10">
-      <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: "var(--aw-thread)", color: "#fff" }}>
-        <WeaveMark size={26} />
-      </div>
-      <h2 className="text-[28px] font-semibold leading-tight tracking-tight">What are you working on?</h2>
+    // `my-auto` centres the block while there is room and lets it scroll from its top edge when there
+    // is not (justify-center would push the heading above the scroll area on short windows).
+    <div className="flex min-h-full flex-col">
+    <div className="mx-auto my-auto w-full max-w-2xl px-1 py-8">
+      <WeaveMark size={40} tile className="mb-5" />
+      <h2 className="text-[26px] font-semibold leading-tight tracking-tight tablet:text-[28px]">What are you working on?</h2>
       <p className="mt-2 max-w-lg text-[15px] leading-6 aw-muted">
         {ready
           ? `Ask a question or attach documents. AIWeave picks from ${providerCount} connected provider${providerCount === 1 ? "" : "s"} and moves to another one if a model is busy.`
@@ -35,6 +36,7 @@ export default function EmptyState({ ready, providerCount, onPick }) {
           </li>
         ))}
       </ul>
+    </div>
     </div>
   );
 }

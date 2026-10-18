@@ -1,15 +1,31 @@
-/* AIWeave workspace. Colours are tokens so light and dark share one set of rules. */
+/*
+ * AIWeave workspace. Colours are tokens so light and dark share one set of rules.
+ * Brand colours come from the AIWeave logo: navy #0D3B66, blue #1F6FB2, green #1FAF5A.
+ *   --aw-user   navy: your messages, the primary buttons
+ *   --aw-thread blue: focus, links, the live-answer indicator
+ *   --aw-ok     green: healthy / connected
+ */
 .aw-root {
-  --aw-paper: #f5f7fa;
+  --aw-paper: #f4f6fa;
   --aw-surface: #ffffff;
   --aw-line: #e1e6ed;
   --aw-ink: #12202f;
-  --aw-muted: #627084;
-  --aw-thread: #0e9c9c;
-  --aw-fail: #c47a12;
+  --aw-muted: #5d6b7e;
+  --aw-thread: #1f6fb2;
+  --aw-ok: #1faf5a;
+  --aw-fail: #b86e0a;
   --aw-user: #0d3b66;
   background: var(--aw-paper);
   color: var(--aw-ink);
+  /* The app shell is a 64px header plus a 40px module bar, and pads its content area by
+     clamp(0.75rem, 1.5vw, 1.5rem) on every side; fill exactly what is left, so the message box is
+     never pushed below the window. */
+  --aw-shell-pad: clamp(0.75rem, 1.5vw, 1.5rem);
+  height: calc(100vh - 104px - 2 * var(--aw-shell-pad));
+  min-height: 420px;
+  border: 1px solid var(--aw-line);
+  border-radius: 14px;
+  container-type: inline-size;
 }
 .dark .aw-root {
   --aw-paper: #0c121a;
@@ -17,7 +33,8 @@
   --aw-line: #243040;
   --aw-ink: #e6ecf2;
   --aw-muted: #93a1b3;
-  --aw-thread: #2cc4c4;
+  --aw-thread: #6db3ee;
+  --aw-ok: #3fcf7a;
   --aw-fail: #e0a23c;
   --aw-user: #1d4f82;
 }
@@ -77,4 +94,4 @@
 }
 .aw-node[data-state="failed"] { border-color: var(--aw-fail); color: var(--aw-fail); }
 .aw-node[data-state="final"] { border-color: var(--aw-thread); background: var(--aw-thread); color: #fff; }
-.dark .aw-node[data-state="final"] { color: #06201f; }
+.dark .aw-node[data-state="final"] { color: #06223a; }

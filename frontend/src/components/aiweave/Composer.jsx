@@ -93,7 +93,7 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
               <Square size={14} fill="currentColor" />
             </button>
           ) : (
-            <button type="button" onClick={onSend} disabled={!canSend} aria-label="Send message" className="flex h-9 w-9 items-center justify-center rounded-xl text-white transition-opacity disabled:opacity-30" style={{ background: "var(--aw-thread)" }}>
+            <button type="button" onClick={onSend} disabled={!canSend} aria-label="Send message" className="flex h-9 w-9 items-center justify-center rounded-xl text-white transition-opacity disabled:opacity-30" style={{ background: "var(--aw-user)" }}>
               <ArrowUp size={17} />
             </button>
           )}

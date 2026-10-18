@@ -52,9 +52,7 @@ function AssistantMessage({ m, isLast, busy, selected, onSelect, onRegenerate })
   const label = meta.providerName || (streaming ? "Choosing a model" : "AIWeave");
   return (
     <div className="aw-rise flex gap-3" data-selected={selected} onClick={m.status === "done" ? onSelect : undefined}>
-      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ background: "var(--aw-thread)", color: "#fff" }}>
-        <WeaveMark size={16} />
-      </div>
+      <WeaveMark size={18} tile className="mt-0.5 self-start !rounded-lg" />
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center gap-2 text-xs aw-muted">
           <span className="font-medium" style={{ color: "var(--aw-ink)" }}>{label}</span>

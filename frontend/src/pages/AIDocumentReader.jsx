@@ -18,6 +18,7 @@ import HistoryRail from "@/components/aiweave/HistoryRail";
 import Inspector from "@/components/aiweave/Inspector";
 import SettingsDrawer from "@/components/aiweave/SettingsDrawer";
 import WeaveMark from "@/components/aiweave/WeaveMark";
+import useElementWidth, { INSPECTOR_DOCK_AT, RAIL_DOCK_AT } from "@/components/aiweave/useElementWidth";
 import "@/components/aiweave/aiweave.css";
 
 const MAX_ATTACHMENTS = 10;
@@ -26,8 +27,13 @@ const convId = (c) => c?.id || c?.conversation_id || null;
 
 export default function AIDocumentReader() {
   // layout
-  const [rail, setRail] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  const rootRef = useRef(null);
+  const width = useElementWidth(rootRef);
+  const railDocked = width >= RAIL_DOCK_AT;
+  const inspectorDocked = width >= INSPECTOR_DOCK_AT;
+  const [rail, setRail] = useState(false);              // history as a sheet over the page (narrow)
+  const [inspectorOpen, setInspectorOpen] = useState(true);  // details beside the chat (wide)
+  const [inspectorSheet, setInspectorSheet] = useState(false); // details as a sheet over the page (narrow)
   const [settings, setSettings] = useState(false);
   const [tab, setTab] = useState("providers");
   const [search, setSearch] = useState("");
@@ -107,7 +113,10 @@ export default function AIDocumentReader() {
   // keep the newest text in view unless the reader scrolled up to read
   useEffect(() => {
     const el = scroller.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    // An empty chat starts at its top; scrolling it to the bottom hides the heading on short windows.
+    if (!messages.length) { el.scrollTop = 0; pinned.current = true; return; }
+    if (pinned.current) el.scrollTop = el.scrollHeight;
   }, [messages]);
   const onScroll = () => {
     const el = scroller.current;
@@ -377,15 +386,17 @@ export default function AIDocumentReader() {
   const activeId = convId(active);
 
   return (
-    <div className="aw-root relative flex h-[calc(100vh-64px)] min-h-[560px] w-full min-w-0 overflow-hidden">
-      {/* history: a fixed column on wide screens, a sheet on narrow ones */}
-      <aside className="hidden w-[272px] shrink-0 tablet-md:block">
-        <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => setSettings(true)} stats={stats} providerCount={connected.length} />
-      </aside>
-      {rail && (
-        <div className="fixed inset-0 z-40 flex tablet-md:hidden">
-          <div className="w-[min(20rem,86vw)]">
-            <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => { setRail(false); setSettings(true); }} onClose={() => setRail(false)} stats={stats} providerCount={connected.length} />
+    <div ref={rootRef} className="aw-root relative flex w-full min-w-0 overflow-hidden">
+      {/* history: a fixed column when there is room, a sheet over the page when there is not */}
+      {railDocked && (
+        <aside className="w-[272px] shrink-0">
+          <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => setSettings(true)} stats={stats} providerCount={connected.length} />
+        </aside>
+      )}
+      {!railDocked && rail && (
+        <div className="absolute inset-0 z-30 flex">
+          <div className="w-[min(20rem,86%)] shadow-xl">
+            <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={(id) => { setRail(false); openChat(id); }} onDelete={removeChat} onNew={() => { setRail(false); newChat(); }} onSettings={() => { setRail(false); setSettings(true); }} onClose={() => setRail(false)} stats={stats} providerCount={connected.length} />
           </div>
           <button type="button" className="flex-1 bg-black/40" aria-label="Close history" onClick={() => setRail(false)} />
         </div>
@@ -394,14 +405,26 @@ export default function AIDocumentReader() {
       <main className="flex min-w-0 flex-1 flex-col">
         <header className="aw-line flex h-14 shrink-0 items-center justify-between gap-3 border-b px-3 tablet:px-5">
           <div className="flex min-w-0 items-center gap-2">
-            <button type="button" onClick={() => setRail(true)} aria-label="Open chat history" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 tablet-md:hidden dark:hover:bg-white/10"><Menu size={18} /></button>
-            <WeaveMark size={20} className="shrink-0 text-[var(--aw-thread)]" />
-            <h1 className="truncate text-base font-semibold">{active?.title && messages.length ? active.title : "AIWeave"}</h1>
+            {!railDocked && (
+              <button type="button" onClick={() => setRail(true)} aria-label="Open chat history" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg aw-muted hover:bg-black/5 dark:hover:bg-white/10"><Menu size={18} /></button>
+            )}
+            <WeaveMark size={22} className="shrink-0" />
+            {(active?.title && messages.length) || width >= 520 ? (
+              <h1 className="truncate text-base font-semibold">{active?.title && messages.length ? active.title : "AIWeave"}</h1>
+            ) : <h1 className="sr-only">AIWeave</h1>}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <ModelPicker connected={connected} models={models} provider={provider} model={selectedModel} onChange={(p, m) => { setProvider(p); setSelectedModel(m); }} />
-            <button type="button" onClick={newChat} disabled={running} aria-label="New chat" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 disabled:opacity-40 tablet-md:hidden dark:hover:bg-white/10"><Plus size={18} /></button>
-            <button type="button" onClick={() => setInspectorOpen((v) => !v)} aria-label="Toggle answer details" aria-pressed={inspectorOpen} className="hidden h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 xl:flex dark:hover:bg-white/10"><PanelRight size={18} /></button>
+            {!railDocked && (
+              <button type="button" onClick={newChat} disabled={running} aria-label="New chat" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"><Plus size={18} /></button>
+            )}
+            <button
+              type="button"
+              onClick={() => (inspectorDocked ? setInspectorOpen((v) => !v) : setInspectorSheet((v) => !v))}
+              aria-label="Toggle answer details"
+              aria-pressed={inspectorDocked ? inspectorOpen : inspectorSheet}
+              className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 dark:hover:bg-white/10"
+            ><PanelRight size={18} /></button>
           </div>
         </header>
 
@@ -444,7 +467,13 @@ export default function AIDocumentReader() {
         </div>
       </main>
 
-      {inspectorOpen && <aside className="hidden w-[288px] shrink-0 xl:block"><Inspector message={selected} stats={stats} /></aside>}
+      {inspectorDocked && inspectorOpen && <aside className="w-[288px] shrink-0"><Inspector message={selected} stats={stats} /></aside>}
+      {!inspectorDocked && inspectorSheet && (
+        <div className="absolute inset-0 z-30 flex justify-end">
+          <button type="button" className="flex-1 bg-black/40" aria-label="Close answer details" onClick={() => setInspectorSheet(false)} />
+          <aside className="w-[min(20rem,86%)] shadow-xl"><Inspector message={selected} stats={stats} /></aside>
+        </div>
+      )}
 
       <SettingsDrawer
         settings={settings} setSettings={setSettings} tab={tab} setTab={setTab}

@@ -20,7 +20,7 @@ export default function HistoryRail({ conversations, activeId, search, onSearch,
           <Plus size={16} />New chat
         </button>
         {onClose && (
-          <button type="button" onClick={onClose} aria-label="Close history" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 tablet-md:hidden dark:hover:bg-white/10">
+          <button type="button" onClick={onClose} aria-label="Close history" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 dark:hover:bg-white/10">
             <X size={18} />
           </button>
         )}
@@ -65,7 +65,10 @@ export default function HistoryRail({ conversations, activeId, search, onSearch,
       <div className="aw-line border-t p-3">
         <div className="mb-2 flex items-center justify-between text-xs aw-muted">
           <span>{providerCount} provider{providerCount === 1 ? "" : "s"} connected</span>
-          <span>{stats?.healthyAccounts ?? 0} healthy</span>
+          <span className="inline-flex items-center gap-1.5">
+            <i className="h-1.5 w-1.5 rounded-full" style={{ background: (stats?.healthyAccounts ?? 0) > 0 ? "var(--aw-ok)" : "var(--aw-fail)" }} aria-hidden="true" />
+            {stats?.healthyAccounts ?? 0} healthy
+          </span>
         </div>
         <button type="button" onClick={onSettings} className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-sm aw-muted hover:bg-black/5 dark:hover:bg-white/10">
           <Settings size={15} />Providers and history

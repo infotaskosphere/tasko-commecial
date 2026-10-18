@@ -30,7 +30,7 @@ export default function ModelPicker({ connected, models, provider, model, onChan
         aria-expanded={open}
         className="aw-surface inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium"
       >
-        <WeaveMark size={15} className="text-[var(--aw-thread)]" />
+        <WeaveMark size={16} />
         <span className="max-w-[160px] truncate">{label}</span>
         <ChevronDown size={14} className="aw-muted" />
       </button>

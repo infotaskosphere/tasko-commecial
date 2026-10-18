@@ -181,3 +181,30 @@ test("history grouping, titles, durations and failure wording", () => {
   assert.match(describeFailure({ status: 503 }), /No AI provider/);
   assert.equal(describeFailure({ message: "Network down" }), "Network down");
 });
+
+// ── brand and shell fit ──────────────────────────────────────────────────────
+import { readFileSync, existsSync } from "node:fs";
+const src = (p) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
+
+test("the AIWeave mark is the product's own icon, not a redrawn one", () => {
+  const mark = src("components/aiweave/WeaveMark.jsx");
+  assert.match(mark, /\/aiweave-icon\.png/);
+  assert.ok(existsSync(new URL("../public/aiweave-icon.png", import.meta.url)));
+  assert.match(src("module-branding.js"), /collapsedLogo: '\/aiweave-icon\.png'/); // same file the app shell shows
+  assert.ok(!/<svg/.test(mark), "no hand-drawn logo");
+});
+
+test("brand colours come from the logo (navy, blue, green), not an invented accent", () => {
+  const css = src("components/aiweave/aiweave.css");
+  for (const hex of ["#0d3b66", "#1f6fb2", "#1faf5a"]) assert.ok(css.includes(hex), hex);
+  assert.ok(!/0e9c9c|2cc4c4/i.test(css));
+});
+
+test("the page fills exactly the space the app shell leaves it", () => {
+  const shell = src("components/layout/DashboardLayout.jsx");
+  const header = Number(/HEADER_H = (\d+)/.exec(shell)[1]) + Number(/SECTION_BAR_H = (\d+)/.exec(shell)[1]);
+  const css = src("components/aiweave/aiweave.css");
+  assert.ok(css.includes(`calc(100vh - ${header}px - 2 * var(--aw-shell-pad))`), `css must subtract the ${header}px shell header`);
+  assert.ok(shell.includes("padding: 'clamp(0.75rem, 1.5vw, 1.5rem)'"), "shell padding changed: update --aw-shell-pad");
+  assert.ok(css.includes("--aw-shell-pad: clamp(0.75rem, 1.5vw, 1.5rem)"));
+});

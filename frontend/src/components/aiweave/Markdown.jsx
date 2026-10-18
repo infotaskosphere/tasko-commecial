@@ -79,7 +79,7 @@ function CodeBlock({ block }) {
       <figcaption className="flex items-center justify-between border-b border-white/10 bg-white/[0.04] px-3 py-1.5">
         <span className="font-mono text-xs text-slate-400">{block.lang || "text"}</span>
         {block.open
-          ? <span className="text-xs text-teal-300 motion-safe:animate-pulse">writing…</span>
+          ? <span className="text-xs text-sky-300 motion-safe:animate-pulse">writing…</span>
           : <CopyButton text={block.code} className="text-slate-300 hover:bg-white/10 hover:text-white" />}
       </figcaption>
       <pre className="overflow-x-auto p-4 text-[13px] leading-6"><code className="font-mono">
@@ -128,7 +128,7 @@ function Blocks({ blocks, caret, tight = false }) {
         return <hr key={i} className="my-5 border-slate-200 dark:border-slate-700" />;
       case "quote":
         return (
-          <blockquote key={i} className="my-3 border-l-2 border-teal-500/60 pl-4 text-slate-600 dark:text-slate-300">
+          <blockquote key={i} className="my-3 border-l-2 border-[color:var(--aw-thread)] pl-4 text-slate-600 dark:text-slate-300">
             <Blocks blocks={b.blocks} caret={last} />
           </blockquote>
         );
