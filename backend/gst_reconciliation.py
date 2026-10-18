@@ -1343,10 +1343,8 @@ async def get_session(session_id:str, current_user: User=Depends(get_current_use
 @router.delete("/history/{session_id}")
 async def delete_session(session_id:str, current_user: User=Depends(get_current_user)):
     require_finix_action(current_user, "can_view_gst_portal_sync", "delete")
-    doc = await db.gst_reconciliation_sessions.find_one({"id":session_id},{"_id":0,"created_by":1})
+    doc = await db.gst_reconciliation_sessions.find_one({"id":session_id},{"_id":0,"id":1})
     if not doc: raise HTTPException(404,"Session not found")
-    if current_user.role!="admin" and doc.get("created_by")!=current_user.id:
-        raise HTTPException(403,"Not authorised to delete this session")
     await db.gst_reconciliation_sessions.delete_one({"id":session_id})
 
     await _log_audit("delete_session",current_user,{"session_id":session_id})
