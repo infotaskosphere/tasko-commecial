@@ -1846,6 +1846,35 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         )
         license_id = _norm_id((license_doc or {}).get("id"))
 
+    # Prefer an authenticated user's explicit commercial_customer_id/license_id,
+    # but recover the customer from the user's company only when that company
+    # isn't the Platform Owner workspace.
+    if not customer_id and company_id:
+        company_identity = await raw.companies.find_one(
+            {"id": company_id},
+            {
+                "_id": 0,
+                "id": 1,
+                "commercial_customer_id": 1,
+                "license_id": 1,
+                "is_platform_owner_workspace": 1,
+            },
+        )
+        if company_identity and company_identity.get("is_platform_owner_workspace") is not True:
+            customer_id = _norm_id(company_identity.get("commercial_customer_id"))
+            if not license_id:
+                license_id = _norm_id(company_identity.get("license_id"))
+            if customer_id and not license_id:
+                license_doc = await raw.commercial_licenses.find_one(
+                    {
+                        "customer_id": customer_id,
+                        "status": {"$in": ["active", "trial"]},
+                    },
+                    {"_id": 0, "id": 1, "customer_id": 1},
+                    sort=[("issued_at", -1)],
+                )
+                license_id = _norm_id((license_doc or {}).get("id"))
+
     owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
     if not customer_id:
         return {"$and": [{"id": "__no_tenant_scope__"}, owner_workspace_filter]}
