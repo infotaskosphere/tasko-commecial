@@ -4,11 +4,20 @@
  *   --aw-user   navy: your messages, the primary buttons
  *   --aw-thread blue: focus, links, the live-answer indicator
  *   --aw-ok     green: healthy / connected
+ *
+ * The app has a global style layer (enterprise-design.css, commercial-business-ui.css, ...) written for
+ * its own header, sidebar and tables: square corners, 40px buttons, `header + div button` and
+ * `aside > div:last-child button` chrome rules, a 96px minimum textarea. This page therefore uses no
+ * <header>, <aside> or <main> elements (those rules would restyle every button inside), and the few
+ * generic rules that still reach in are overridden below. Corners are square like the rest of the app.
  */
 .aw-root {
-  --aw-paper: #f4f6fa;
+  --aw-paper: #f6f8fb;
+  --aw-canvas: #ffffff;
   --aw-surface: #ffffff;
   --aw-line: #e1e6ed;
+  --aw-hover: rgba(13, 59, 102, 0.05);
+  --aw-active: #eaf2fb;
   --aw-ink: #12202f;
   --aw-muted: #5d6b7e;
   --aw-thread: #1f6fb2;
@@ -17,20 +26,21 @@
   --aw-user: #0d3b66;
   background: var(--aw-paper);
   color: var(--aw-ink);
-  /* The app shell is a 64px header plus a 40px module bar, and pads its content area by
-     clamp(0.75rem, 1.5vw, 1.5rem) on every side; fill exactly what is left, so the message box is
-     never pushed below the window. */
-  --aw-shell-pad: clamp(0.75rem, 1.5vw, 1.5rem);
-  height: calc(100vh - 104px - 2 * var(--aw-shell-pad));
+  /* Fill the content area edge to edge. useShellFit sets these from the real padding of the app's
+     content area; until it runs (or if there is no such area) the page is simply 104px short of the window. */
+  height: var(--aw-fit-h, calc(100vh - 104px));
+  margin: calc(-1 * var(--aw-pt, 0px)) calc(-1 * var(--aw-pr, 0px)) calc(-1 * var(--aw-pb, 0px)) calc(-1 * var(--aw-pl, 0px));
   min-height: 420px;
-  border: 1px solid var(--aw-line);
-  border-radius: 14px;
-  container-type: inline-size;
+  isolation: isolate;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .dark .aw-root {
   --aw-paper: #0c121a;
+  --aw-canvas: #0f1722;
   --aw-surface: #131b26;
   --aw-line: #243040;
+  --aw-hover: rgba(255, 255, 255, 0.06);
+  --aw-active: rgba(109, 179, 238, 0.14);
   --aw-ink: #e6ecf2;
   --aw-muted: #93a1b3;
   --aw-thread: #6db3ee;
@@ -95,3 +105,57 @@
 .aw-node[data-state="failed"] { border-color: var(--aw-fail); color: var(--aw-fail); }
 .aw-node[data-state="final"] { border-color: var(--aw-thread); background: var(--aw-thread); color: #fff; }
 .dark .aw-node[data-state="final"] { color: #06223a; }
+
+/* ── Overrides for the app's global rules (see the note at the top) ───────────────────────────── */
+#root .aw-root textarea { min-height: 0; resize: none; }
+#root .aw-composer textarea { min-height: 44px; }
+#root .aw-root select { min-height: 0; height: 32px; box-shadow: none; }
+/* the composer draws its own focus ring on the container; the app's global textarea ring would double it */
+#root .aw-composer textarea:focus-visible { outline: none; box-shadow: none; }
+/* answers carry real tables: undo the app's fixed-layout, light-surface table rule inside chat text */
+#root .aw-root .aw-prose table { table-layout: auto; width: 100%; border: 0; background: transparent; }
+#root .aw-root .aw-prose th, #root .aw-root .aw-prose td { background: transparent; padding: 8px 12px; }
+#root .aw-root .aw-prose th { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
+#root .aw-root .aw-prose tbody td { border-bottom: 0; }
+#root .aw-root button { min-height: 0; }
+#root .aw-root input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { min-height: 0; }
+/* the app squares every [class*="rounded-"] element; status dots opt out with data-status-dot */
+#root .aw-root [data-status-dot] { border-radius: 9999px !important; }
+
+/* ── Layout pieces ────────────────────────────────────────────────────────────────────────────── */
+.aw-topbar { position: relative; z-index: 20; background: var(--aw-surface); border-bottom: 1px solid var(--aw-line); }
+.aw-canvas { background: var(--aw-canvas); }
+.aw-panel { background: var(--aw-surface); }
+
+/* history rows: flat list rows with a marker on the open chat, not cards */
+.aw-row { display: flex; align-items: center; border-left: 2px solid transparent; }
+.aw-row:hover { background: var(--aw-hover); }
+.aw-row[data-active="true"] { background: var(--aw-active); border-left-color: var(--aw-thread); }
+.aw-row[data-active="true"] .aw-row-title { font-weight: 600; }
+
+/* quick-start cards: equal height, one grid */
+.aw-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 10px; width: 100%; height: 100%;
+  padding: 14px; text-align: left; background: var(--aw-surface); border: 1px solid var(--aw-line);
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
+}
+.aw-card:hover { border-color: var(--aw-thread); box-shadow: 0 2px 10px rgba(13, 59, 102, 0.08); }
+.aw-card-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: none;
+  color: var(--aw-thread); background: var(--aw-active);
+}
+
+/* the model menu floats over the chat, so it must sit above the scroll area that follows the top bar */
+.aw-menu { z-index: 60; background: var(--aw-surface); border: 1px solid var(--aw-line); box-shadow: 0 12px 32px rgba(13, 30, 60, 0.18); }
+.aw-menu-item:hover, .aw-menu-item[data-focus="true"] { background: var(--aw-hover); }
+
+.aw-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; color: var(--aw-muted); }
+.aw-iconbtn:hover { background: var(--aw-hover); color: var(--aw-ink); }
+.aw-iconbtn[aria-pressed="true"] { background: var(--aw-active); color: var(--aw-thread); }
+.aw-iconbtn:disabled { opacity: .4; }
+
+.aw-btn-primary { background: var(--aw-user); color: #fff; }
+.aw-btn-primary:hover { filter: brightness(1.12); }
+.aw-btn-primary:disabled { opacity: .35; }
+
+.aw-sheet-scrim { background: rgba(10, 20, 35, 0.45); }

@@ -18,6 +18,7 @@ import HistoryRail from "@/components/aiweave/HistoryRail";
 import Inspector from "@/components/aiweave/Inspector";
 import SettingsDrawer from "@/components/aiweave/SettingsDrawer";
 import WeaveMark from "@/components/aiweave/WeaveMark";
+import useShellFit from "@/components/aiweave/useShellFit";
 import useElementWidth, { INSPECTOR_DOCK_AT, RAIL_DOCK_AT } from "@/components/aiweave/useElementWidth";
 import "@/components/aiweave/aiweave.css";
 
@@ -28,6 +29,7 @@ const convId = (c) => c?.id || c?.conversation_id || null;
 export default function AIDocumentReader() {
   // layout
   const rootRef = useRef(null);
+  useShellFit(rootRef);
   const width = useElementWidth(rootRef);
   const railDocked = width >= RAIL_DOCK_AT;
   const inspectorDocked = width >= INSPECTOR_DOCK_AT;
@@ -386,27 +388,27 @@ export default function AIDocumentReader() {
   const activeId = convId(active);
 
   return (
-    <div ref={rootRef} className="aw-root relative flex w-full min-w-0 overflow-hidden">
+    <div ref={rootRef} className="aw-root relative flex min-w-0 overflow-hidden">
       {/* history: a fixed column when there is room, a sheet over the page when there is not */}
       {railDocked && (
-        <aside className="w-[272px] shrink-0">
+        <div className="w-[272px] shrink-0">
           <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={openChat} onDelete={removeChat} onNew={newChat} onSettings={() => setSettings(true)} stats={stats} providerCount={connected.length} />
-        </aside>
+        </div>
       )}
       {!railDocked && rail && (
         <div className="absolute inset-0 z-30 flex">
           <div className="w-[min(20rem,86%)] shadow-xl">
             <HistoryRail conversations={conversations} activeId={activeId} search={search} onSearch={setSearch} onOpen={(id) => { setRail(false); openChat(id); }} onDelete={removeChat} onNew={() => { setRail(false); newChat(); }} onSettings={() => { setRail(false); setSettings(true); }} onClose={() => setRail(false)} stats={stats} providerCount={connected.length} />
           </div>
-          <button type="button" className="flex-1 bg-black/40" aria-label="Close history" onClick={() => setRail(false)} />
+          <button type="button" className="aw-sheet-scrim flex-1" aria-label="Close history" onClick={() => setRail(false)} />
         </div>
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="aw-line flex h-14 shrink-0 items-center justify-between gap-3 border-b px-3 tablet:px-5">
+      <div className="aw-canvas flex min-w-0 flex-1 flex-col">
+        <div className="aw-topbar flex h-14 shrink-0 items-center justify-between gap-3 px-3 tablet:px-5">
           <div className="flex min-w-0 items-center gap-2">
             {!railDocked && (
-              <button type="button" onClick={() => setRail(true)} aria-label="Open chat history" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg aw-muted hover:bg-black/5 dark:hover:bg-white/10"><Menu size={18} /></button>
+              <button type="button" onClick={() => setRail(true)} aria-label="Open chat history" className="aw-iconbtn shrink-0"><Menu size={18} /></button>
             )}
             <WeaveMark size={22} className="shrink-0" />
             {(active?.title && messages.length) || width >= 520 ? (
@@ -416,17 +418,17 @@ export default function AIDocumentReader() {
           <div className="flex shrink-0 items-center gap-2">
             <ModelPicker connected={connected} models={models} provider={provider} model={selectedModel} onChange={(p, m) => { setProvider(p); setSelectedModel(m); }} />
             {!railDocked && (
-              <button type="button" onClick={newChat} disabled={running} aria-label="New chat" className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"><Plus size={18} /></button>
+              <button type="button" onClick={newChat} disabled={running} aria-label="New chat" className="aw-iconbtn"><Plus size={18} /></button>
             )}
             <button
               type="button"
               onClick={() => (inspectorDocked ? setInspectorOpen((v) => !v) : setInspectorSheet((v) => !v))}
               aria-label="Toggle answer details"
               aria-pressed={inspectorDocked ? inspectorOpen : inspectorSheet}
-              className="flex h-9 w-9 items-center justify-center rounded-lg aw-muted hover:bg-black/5 dark:hover:bg-white/10"
+              className="aw-iconbtn"
             ><PanelRight size={18} /></button>
           </div>
-        </header>
+        </div>
 
         <div className="relative min-h-0 flex-1">
           <div ref={scroller} onScroll={onScroll} className="aw-scroll h-full overflow-y-auto px-3 tablet:px-6">
@@ -465,13 +467,13 @@ export default function AIDocumentReader() {
             <p className="mt-2 px-1 text-center text-xs aw-muted">AI can make mistakes. Check figures, dates and section numbers before you rely on them.</p>
           </div>
         </div>
-      </main>
+      </div>
 
-      {inspectorDocked && inspectorOpen && <aside className="w-[288px] shrink-0"><Inspector message={selected} stats={stats} /></aside>}
+      {inspectorDocked && inspectorOpen && <div className="w-[288px] shrink-0"><Inspector message={selected} stats={stats} /></div>}
       {!inspectorDocked && inspectorSheet && (
         <div className="absolute inset-0 z-30 flex justify-end">
-          <button type="button" className="flex-1 bg-black/40" aria-label="Close answer details" onClick={() => setInspectorSheet(false)} />
-          <aside className="w-[min(20rem,86%)] shadow-xl"><Inspector message={selected} stats={stats} /></aside>
+          <button type="button" className="aw-sheet-scrim flex-1" aria-label="Close answer details" onClick={() => setInspectorSheet(false)} />
+          <div className="w-[min(20rem,86%)] shadow-xl"><Inspector message={selected} stats={stats} /></div>
         </div>
       )}
 

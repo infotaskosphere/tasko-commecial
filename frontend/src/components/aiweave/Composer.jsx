@@ -22,9 +22,20 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
 
   useEffect(() => {
     const el = area.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    if (!el) return undefined;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    };
+    fit();
+    // the wrapped line count changes when the pane is resized or rotated, so re-measure on width changes too
+    if (typeof ResizeObserver === "undefined") return undefined;
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth !== lastWidth) { lastWidth = el.clientWidth; fit(); }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [value, area]);
 
   const onKeyDown = (e) => {
@@ -38,7 +49,7 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
 
   return (
     <div
-      className="aw-composer rounded-2xl p-2 shadow-sm"
+      className="aw-composer p-2"
       data-drop={drop}
       onDragOver={(e) => { e.preventDefault(); setDrop(true); }}
       onDragLeave={() => setDrop(false)}
@@ -72,7 +83,7 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={files.length >= MAX_FILES}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs aw-muted hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/10"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs aw-muted hover:bg-[var(--aw-hover)] disabled:opacity-40"
           >
             <Paperclip size={15} />Attach
           </button>
@@ -81,7 +92,7 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
             id="aw-mode"
             value={mode}
             onChange={(e) => onMode(e.target.value)}
-            className="h-8 w-[7.25rem] rounded-lg border-0 bg-transparent px-2 text-xs aw-muted hover:bg-black/5 dark:hover:bg-white/10"
+            className="h-8 w-[7.25rem] cursor-pointer border-0 bg-transparent px-2 text-xs aw-muted hover:bg-[var(--aw-hover)]"
           >
             {MODES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
@@ -89,11 +100,11 @@ export default function Composer({ value, onChange, onSend, onStop, running, fil
         <div className="flex shrink-0 items-center gap-2">
           {value.length > 20000 && <span className="text-xs aw-muted">{value.length.toLocaleString()} / {MAX_LEN.toLocaleString()}</span>}
           {running ? (
-            <button type="button" onClick={onStop} aria-label="Stop generating" className="flex h-9 w-9 items-center justify-center rounded-xl text-white" style={{ background: "var(--aw-ink)" }}>
+            <button type="button" onClick={onStop} aria-label="Stop generating" className="flex h-9 w-9 items-center justify-center text-white" style={{ background: "var(--aw-ink)" }}>
               <Square size={14} fill="currentColor" />
             </button>
           ) : (
-            <button type="button" onClick={onSend} disabled={!canSend} aria-label="Send message" className="flex h-9 w-9 items-center justify-center rounded-xl text-white transition-opacity disabled:opacity-30" style={{ background: "var(--aw-user)" }}>
+            <button type="button" onClick={onSend} disabled={!canSend} aria-label="Send message" className="aw-btn-primary flex h-9 w-9 items-center justify-center transition-opacity">
               <ArrowUp size={17} />
             </button>
           )}

@@ -200,11 +200,32 @@ test("brand colours come from the logo (navy, blue, green), not an invented acce
   assert.ok(!/0e9c9c|2cc4c4/i.test(css));
 });
 
-test("the page fills exactly the space the app shell leaves it", () => {
+test("the page fills the space the app shell leaves it, measured from the real shell", () => {
   const shell = src("components/layout/DashboardLayout.jsx");
   const header = Number(/HEADER_H = (\d+)/.exec(shell)[1]) + Number(/SECTION_BAR_H = (\d+)/.exec(shell)[1]);
   const css = src("components/aiweave/aiweave.css");
-  assert.ok(css.includes(`calc(100vh - ${header}px - 2 * var(--aw-shell-pad))`), `css must subtract the ${header}px shell header`);
-  assert.ok(shell.includes("padding: 'clamp(0.75rem, 1.5vw, 1.5rem)'"), "shell padding changed: update --aw-shell-pad");
-  assert.ok(css.includes("--aw-shell-pad: clamp(0.75rem, 1.5vw, 1.5rem)"));
+  assert.ok(css.includes(`calc(100vh - ${header}px)`), `fallback height must subtract the ${header}px shell header`);
+  const fit = src("components/aiweave/useShellFit.js");
+  assert.match(fit, /--aw-fit-h/);
+  assert.match(fit, /ResizeObserver/);
+  assert.match(src("pages/AIDocumentReader.jsx"), /useShellFit\(/);
+});
+
+test("AIWeave is square-cornered like the app and avoids tags the app's global CSS restyles", () => {
+  const css = src("components/aiweave/aiweave.css");
+  const root = /\.aw-root \{[^}]*\}/.exec(css)[0];
+  assert.ok(!/border-radius|border:/.test(root), ".aw-root must not draw its own rounded frame");
+  // `header + div button`, `aside > div:last-child button` and `#root main` padding all match these tags
+  const page = src("pages/AIDocumentReader.jsx");
+  for (const tag of ["header", "aside", "main"]) assert.ok(!new RegExp(`<${tag}[\\s>]`).test(page), `<${tag}> would pick up shell chrome styles`);
+  for (const rule of ["#root .aw-root textarea", "#root .aw-composer textarea:focus-visible", "#root .aw-root .aw-prose table", "[data-status-dot]"]) {
+    assert.ok(css.includes(rule), `missing override: ${rule}`);
+  }
+});
+
+test("the model menu opens above the chat and the composer starts compact", () => {
+  assert.match(src("components/aiweave/ModelPicker.jsx"), /aw-menu/);
+  assert.match(src("components/aiweave/aiweave.css"), /\.aw-menu \{[^}]*z-index: 60/);
+  assert.match(src("components/aiweave/Composer.jsx"), /min-h-\[44px\]/);
+  assert.match(src("components/aiweave/aiweave.css"), /#root \.aw-composer textarea \{ min-height: 44px; \}/);
 });

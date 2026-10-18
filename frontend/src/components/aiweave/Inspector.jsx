@@ -17,8 +17,8 @@ export default function Inspector({ message, stats }) {
   const meta = message?.meta || {};
   const trail = normaliseTrail(meta.fallbackTrail);
   return (
-    <div className="aw-surface flex h-full flex-col border-l">
-      <div className="aw-line border-b px-4 py-3.5">
+    <div className="aw-panel aw-line flex h-full flex-col border-l">
+      <div className="aw-line flex h-14 items-center border-b px-4">
         <h2 className="text-sm font-semibold">How this was answered</h2>
       </div>
       <div className="aw-scroll min-h-0 flex-1 overflow-y-auto px-4 py-3">

@@ -65,7 +65,7 @@ function AssistantMessage({ m, isLast, busy, selected, onSelect, onRegenerate })
           <div className="flex items-center gap-2 py-1 text-sm aw-muted" role="status">
             <span className="flex gap-1" aria-hidden="true">
               {[0, 1, 2].map((i) => (
-                <i key={i} className="aw-thread-live h-1.5 w-1.5 rounded-full" style={{ background: "var(--aw-thread)", animationDelay: `${i * 0.2}s` }} />
+                <i key={i} data-status-dot className="aw-thread-live h-1.5 w-1.5 rounded-full" style={{ background: "var(--aw-thread)", animationDelay: `${i * 0.2}s` }} />
               ))}
             </span>
             {m.note || "Finding the best available model…"}
@@ -86,9 +86,9 @@ function AssistantMessage({ m, isLast, busy, selected, onSelect, onRegenerate })
 
         {!streaming && (
           <div className="-ml-2 mt-2 flex flex-wrap items-center gap-0.5 text-xs aw-muted">
-            {m.content && <CopyButton text={m.content} className="hover:bg-black/5 dark:hover:bg-white/10" />}
+            {m.content && <CopyButton text={m.content} className="hover:bg-[var(--aw-hover)]" />}
             {isLast && !busy && (
-              <button type="button" onClick={onRegenerate} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-black/5 dark:hover:bg-white/10">
+              <button type="button" onClick={onRegenerate} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 hover:bg-[var(--aw-hover)]">
                 <RefreshCw size={13} />{m.status === "error" ? "Try again" : "Regenerate"}
               </button>
             )}
