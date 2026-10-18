@@ -2359,7 +2359,7 @@ export default function DSCRegister() {
             min-width: 0 !important;
             gap: 0 !important;
             padding: 0 !important;
-            height: 32px !important;
+            height: 40px !important; min-height: 40px !important;
             border-radius: 0 !important;
             overflow: hidden !important;
           }
@@ -2369,8 +2369,10 @@ export default function DSCRegister() {
             width: 0 !important;
             min-width: 0 !important;
             max-width: none !important;
-            padding-left: 0 !important;
-            padding-right: 0 !important;
+            height: 40px !important;
+            min-height: 40px !important;
+            padding: 0 !important;
+            align-self: stretch !important;
             align-items: center !important;
             justify-content: center !important;
             text-align: center !important;
@@ -2380,11 +2382,14 @@ export default function DSCRegister() {
           }
           #root #dsc-status-tabs > [role="tab"] > span {
             display: flex !important;
+            display: flex !important;
             width: 100% !important;
+            height: 100% !important;
             min-width: 0 !important;
             align-items: center !important;
             justify-content: center !important;
             text-align: center !important;
+            line-height: 1.2 !important;
             gap: 6px !important;
             margin: 0 !important;
           }
@@ -2396,7 +2401,7 @@ export default function DSCRegister() {
           }
         `}</style>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList id="dsc-status-tabs" className={`flex w-full h-8 items-stretch rounded-none p-0 gap-0 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
+          <TabsList id="dsc-status-tabs" className={`flex w-full h-10 items-stretch rounded-none p-0 gap-0 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
             {searchQuery.trim() && (
               <TabsTrigger value="all"
                 className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md">
