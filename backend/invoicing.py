@@ -5477,18 +5477,29 @@ async def bulk_delete_invoices(ids: List[str], current_user: User = Depends(chec
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     if not ids: raise HTTPException(400, "No IDs provided")
     deleted, errors = 0, []
+    allowed_company_ids = await _invoice_delete_visible_company_ids(current_user)
     # Notes first: an invoice and its credit notes can be selected together and
     # the notes must go before the invoice they refer to.
+    # Use the tenant-routed raw collection for ranking; each invoice is separately
+    # checked against allowed_company_ids before any mutation is attempted.
+    invoice_collection = db.invoices
+    raw_collection = getattr(invoice_collection, "_collection", invoice_collection)
     rank = {}
     for inv_id in ids:
-        doc = await db.invoices.find_one({"id": inv_id}, {"_id": 0, "invoice_type": 1})
+        doc = await raw_collection.find_one(
+            {"id": inv_id}, {"_id": 0, "invoice_type": 1, "company_id": 1}
+        )
         rank[inv_id] = 0 if (doc or {}).get("invoice_type") in ("credit_note", "debit_note") else 1
     for inv_id in sorted(ids, key=lambda x: rank.get(x, 1)):
         try:
-            outcome = await _delete_invoice_guarded(inv_id, current_user)
+            outcome = await _delete_invoice_guarded(
+                inv_id, current_user, allowed_company_ids=allowed_company_ids
+            )
             deleted += 1
             if outcome.get("parent_id"):
-                await recalculate_invoice_accounting(outcome["parent_id"])
+                await _recalculate_invoice_parent_in_company(
+                    outcome.get("company_id"), outcome["parent_id"]
+                )
         except HTTPException as exc:
             errors.append({"id": inv_id, "reason": exc.detail})
         except Exception as exc:
@@ -5503,7 +5514,9 @@ async def delete_invoice(inv_id: str, current_user: User = Depends(check_module_
     outcome = await _delete_invoice_guarded(inv_id, current_user)
     # A deleted Credit/Debit Note changes its parent's Outstanding.
     if outcome.get("parent_id"):
-        await recalculate_invoice_accounting(outcome["parent_id"])
+        await _recalculate_invoice_parent_in_company(
+            outcome.get("company_id"), outcome["parent_id"]
+        )
     return {"message": f"Invoice {inv_id} deleted"}
 
 
@@ -6208,8 +6221,70 @@ async def _guard_invoice_edit(ex: dict, new: dict) -> None:
         await _assert_ledger_changeable(new_company, [new_date], [], "edit this invoice")
 
 
-async def _delete_invoice_guarded(inv_id: str, current_user) -> dict:
-    """Delete a sales document without leaving the books inconsistent.
+async def _invoice_delete_visible_company_ids(current_user) -> set[str]:
+    """Return legal company IDs this authenticated user may delete invoices for."""
+    from backend.platform_owner import is_platform_owner
+    from backend.tenant_runtime import authenticated_company_id
+
+    role_value = getattr(current_user, "role", "")
+    role = str(getattr(role_value, "value", role_value) or "").strip().lower()
+    current_company = str(getattr(current_user, "company_id", "") or "").strip()
+    customer_id = str(getattr(current_user, "commercial_customer_id", "") or "").strip()
+    license_id = str(getattr(current_user, "license_id", "") or "").strip()
+    allowed: set[str] = set()
+
+    if is_platform_owner(current_user):
+        # Match the same owner-visible operational company boundary used by Master Data.
+        from backend.quotations import _platform_owner_operational_companies
+        rows = await _platform_owner_operational_companies(current_user)
+        allowed.update(str(row.get("id") or "").strip() for row in rows if row.get("id"))
+    elif role in {"admin", "licensee_admin", "tenant_admin"} and (customer_id or license_id):
+        # A licensee administrator can work with several legal companies under one license.
+        from backend.quotations import _tenant_visible_companies
+        rows = await _tenant_visible_companies(current_user)
+        allowed.update(str(row.get("id") or "").strip() for row in rows if row.get("id"))
+        # Keep legacy records that were stored against the licensee's operational
+        # company/customer identifier accessible, but never widen to another tenant.
+        if current_company:
+            allowed.add(current_company)
+        if customer_id:
+            allowed.add(customer_id)
+    elif current_company:
+        # Staff and non-commercial users remain restricted to their assigned company.
+        allowed.add(current_company)
+
+    authenticated_company = str(authenticated_company_id() or "").strip()
+    if authenticated_company and not is_platform_owner(current_user):
+        # Legacy invoices were sometimes stamped with the authenticated tenant ID
+        # rather than a legal-company profile ID. This is the current user's own scope.
+        allowed.add(authenticated_company)
+
+    return {company_id for company_id in allowed if company_id}
+
+
+async def _recalculate_invoice_parent_in_company(company_id: str, parent_id: str) -> None:
+    """Run a credit/debit note parent recalculation in that invoice's verified scope."""
+    from backend.tenant_runtime import (
+        authenticated_company_id,
+        set_authenticated_company,
+        reset_authenticated_company,
+    )
+
+    company_id = str(company_id or "").strip()
+    if not company_id:
+        raise HTTPException(409, "Invoice is missing its company assignment; accounting was not recalculated.")
+    token = None
+    if str(authenticated_company_id() or "").strip() != company_id:
+        token = set_authenticated_company(company_id)
+    try:
+        await recalculate_invoice_accounting(parent_id)
+    finally:
+        if token is not None:
+            reset_authenticated_company(token)
+
+
+async def _delete_invoice_guarded_for_company(inv_id: str, current_user, invoice_doc: dict) -> dict:
+    """Delete a sales document inside its already-verified legal-company scope.
 
     Blocks (HTTP 404/409/400) instead of cascading when the delete would
     orphan or erase other records:
@@ -6220,9 +6295,7 @@ async def _delete_invoice_guarded(inv_id: str, current_user) -> dict:
     Every successful delete is written to the hash-chained audit trail first.
     """
     from backend.accounting_lock import audit_ledger_event
-    inv = await db.invoices.find_one({"id": inv_id}, {"_id": 0})
-    if not inv:
-        raise HTTPException(404, "Invoice not found")
+    inv = invoice_doc
     inv_type = inv.get("invoice_type") or "tax_invoice"
     is_note = inv_type in ("credit_note", "debit_note")
     company_id = str(inv.get("company_id") or "")
@@ -6269,7 +6342,52 @@ async def _delete_invoice_guarded(inv_id: str, current_user) -> dict:
     for p in payments:
         await sync_payment_journal_entry(p["id"])
     await sync_invoice_journal_entry(inv_id)
-    return {"parent_id": inv.get("original_invoice_id") if is_note else None, "invoice_no": label}
+    return {
+        "parent_id": inv.get("original_invoice_id") if is_note else None,
+        "invoice_no": label,
+        "company_id": company_id,
+    }
+
+
+async def _delete_invoice_guarded(
+    inv_id: str,
+    current_user,
+    allowed_company_ids: Optional[set[str]] = None,
+) -> dict:
+    """Resolve invoice by ID, authorize its legal company, then delete in that scope."""
+    invoice_collection = db.invoices
+    # Query the already tenant-routed underlying collection by the invoice ID.
+    # The TenantAwareCollection wrapper's single active-company predicate is too
+    # narrow for admins who can view multiple legal companies within one license.
+    raw_collection = getattr(invoice_collection, "_collection", invoice_collection)
+    inv = await raw_collection.find_one({"id": inv_id}, {"_id": 0})
+    if not inv:
+        raise HTTPException(404, "Invoice not found; refresh the invoice list and retry.")
+
+    invoice_company_id = str(inv.get("company_id") or "").strip()
+    if not invoice_company_id:
+        raise HTTPException(409, "Invoice has no company assignment; it cannot be safely deleted.")
+
+    allowed = allowed_company_ids
+    if allowed is None:
+        allowed = await _invoice_delete_visible_company_ids(current_user)
+    if invoice_company_id not in allowed:
+        # Deliberately do not reveal whether an invoice from another company exists.
+        raise HTTPException(404, "Invoice not found.")
+
+    from backend.tenant_runtime import (
+        authenticated_company_id,
+        set_authenticated_company,
+        reset_authenticated_company,
+    )
+    scope_token = None
+    if str(authenticated_company_id() or "").strip() != invoice_company_id:
+        scope_token = set_authenticated_company(invoice_company_id)
+    try:
+        return await _delete_invoice_guarded_for_company(inv_id, current_user, inv)
+    finally:
+        if scope_token is not None:
+            reset_authenticated_company(scope_token)
 
 
 def _ledger_signature(lines: List[dict]) -> list:
