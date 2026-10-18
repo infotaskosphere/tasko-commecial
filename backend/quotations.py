@@ -2133,12 +2133,18 @@ async def create_company(
             or _norm_id(authenticated_customer_id() or "")
         )
         tenant_license_id = _norm_id(getattr(current_user, "license_id", ""))
-        if not tenant_customer_id and tenant_license_id:
+        if tenant_license_id:
             linked_license = await _tenant_raw_db().commercial_licenses.find_one(
                 {"id": tenant_license_id},
                 {"_id": 0, "id": 1, "customer_id": 1},
             )
-            tenant_customer_id = _norm_id((linked_license or {}).get("customer_id"))
+            linked_customer_id = _norm_id((linked_license or {}).get("customer_id"))
+            if tenant_customer_id and linked_customer_id and tenant_customer_id != linked_customer_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Authenticated user is not associated with the selected license",
+                )
+            tenant_customer_id = tenant_customer_id or linked_customer_id
         if not tenant_customer_id:
             raise HTTPException(
                 status_code=403,
