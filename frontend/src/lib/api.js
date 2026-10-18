@@ -408,6 +408,7 @@ api.interceptors.request.use(
 
     if (
       config.method?.toLowerCase() === "get" &&
+      !config._slashRetry &&
       SLASH_COMPATIBLE_COLLECTIONS.has(
         normalizedRequestPath
       )
@@ -557,128 +558,39 @@ api.interceptors.response.use(
         normalisedPath
       );
 
-    const transientStatus =
-      error.response?.status === 404 ||
-      error.response?.status === 502 ||
-      error.response?.status === 503 ||
-      error.response?.status === 504;
+    const responseStatus = error.response?.status;
+    const retryableStatus = [502, 503, 504].includes(responseStatus);
+    const isColdStartStatus = retryableStatus;
 
-    // FIX: a plain 404 means "this resource/route doesn't exist" — it is NOT
-    // evidence the backend is cold-starting. Only 502/503/504 (or no response
-    // at all, handled elsewhere via _reportNetworkResult) are real signs the
-    // server itself isn't up yet. Previously ANY 404 anywhere in the app —
-    // even a harmless "task not found" — reset the single shared readiness
-    // flag, which forced every other in-flight and future request across the
-    // ENTIRE app (every page, not just the one that got the 404) to sit and
-    // wait through the ~75s backoff sequence in ensureBackendReady() before
-    // proceeding. That produced exactly the symptom of "one page loads fine,
-    // then every other page goes blank for a long time with no console error."
-    const isColdStartStatus =
-      error.response?.status === 502 ||
-      error.response?.status === 503 ||
-      error.response?.status === 504;
-
-    // Mark backend as not ready once.
-    if (
-      isColdStartStatus &&
-      !error.config?._coldStartAttempt
-    ) {
+    if (isColdStartStatus && !error.config?._coldStartAttempt) {
       markBackendNotReady();
     }
 
-    // ─────────────────────────────────────────────────────────
-    // RETRY COLLECTION GET
-    // ─────────────────────────────────────────────────────────
-
-    if (
-      isCollectionGet &&
-      transientStatus
-    ) {
-      const attempt =
-        error.config._coldStartAttempt || 0;
-
-      const backoffs = [
-        1000,
-        2000,
-        3000,
-        5000,
-        6000,
-        7000,
-        8000,
-        8000,
-        8000,
-      ];
-
+    if (isCollectionGet && retryableStatus) {
+      const attempt = Number(error.config?._coldStartAttempt || 0);
+      const backoffs = [500, 1000, 1500];
       if (attempt < backoffs.length) {
         return new Promise((resolve, reject) => {
           setTimeout(() => {
-            api
-              .request({
-                ...error.config,
-
-                _coldStartAttempt:
-                  attempt + 1,
-
-                // The backend already answered this request,
-                // therefore don't run /health again.
-                _skipReadyGate: true,
-              })
-              .then(resolve)
-              .catch(reject);
+            api.request({
+              ...error.config,
+              _coldStartAttempt: attempt + 1,
+              _skipReadyGate: true,
+            }).then(resolve).catch(reject);
           }, backoffs[attempt]);
         });
       }
+    }
 
-      // ───────────────────────────────────────────────────────
-      // LEGACY TRAILING-SLASH RETRY
-      // ───────────────────────────────────────────────────────
-
-      if (
-        error.response?.status === 404 &&
-        !error.config?._slashRetry
-      ) {
-        return api
-          .request({
-            ...error.config,
-
-            url:
-              `${normalisedPath}/` +
-              `${requestQuery ? `?${requestQuery}` : ""}`,
-
-            _slashRetry: true,
-
-            _coldStartAttempt:
-              backoffs.length,
-
-            _skipReadyGate: true,
-          })
-          .catch(() =>
-            Promise.resolve({
-              data: [],
-              status: 200,
-              statusText:
-                "OK (empty — collection endpoint unavailable)",
-              headers:
-                error.response?.headers || {},
-              config: error.config,
-              _degraded: true,
-            })
-          );
-      }
-
-      // ───────────────────────────────────────────────────────
-      // DEGRADED EMPTY COLLECTION
-      // ───────────────────────────────────────────────────────
-
-      return Promise.resolve({
-        data: [],
-        status: 200,
-        statusText:
-          "OK (empty — collection endpoint unavailable)",
-        headers:
-          error.response?.headers || {},
-        config: error.config,
-        _degraded: true,
+    // A 404 is not a cold start. Try the other slash form once, then expose the
+    // actual route error rather than hiding it as an empty business collection.
+    if (isCollectionGet && responseStatus === 404 && !error.config?._slashRetry) {
+      const alternatePath = requestPath.endsWith("/") ? normalisedPath : `${normalisedPath}/`;
+      return api.request({
+        ...error.config,
+        url: `${alternatePath}${requestQuery ? `?${requestQuery}` : ""}`,
+        _slashRetry: true,
+        _skipReadyGate: true,
       });
     }
 

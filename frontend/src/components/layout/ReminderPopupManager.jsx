@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Bell, BellRing, CalendarClock, ClipboardCheck, MapPin, X } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -80,6 +72,12 @@ export default function ReminderPopupManager() {
   const [queue, setQueue] = useState([]);
   const pollRef = useRef(null);
   const fetchInFlightRef = useRef(false);
+  const dismissedIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    dismissedIdsRef.current.clear();
+    setQueue([]);
+  }, [user?.id, user?.company_id]);
 
   // Ask for desktop-notification permission once per session (a no-op if
   // already granted/denied, and browsers ignore repeated prompts anyway).
@@ -94,19 +92,24 @@ export default function ReminderPopupManager() {
     // Reminders are a Taskosphere feature. Do not poll this endpoint for
     // Finix-only or other module-only licenses, where a 403 is expected.
     if (!isPlatformOwner(user) && !hasModuleAccess(user, "taskosphere")) return;
+    if (fetchInFlightRef.current) return;
+    fetchInFlightRef.current = true;
     try {
-      const { data } = await api.get("/reminders/due-popups");
+      const { data } = await api.get("/reminders/due-popups", { _silent: true, timeout: 10000 });
       if (Array.isArray(data) && data.length > 0) {
         setQueue((prev) => {
           const existingIds = new Set(prev.map((p) => p.id));
-          const fresh = data.filter((p) => !existingIds.has(p.id));
+          const fresh = data.filter(
+            (p) => !existingIds.has(p.id) && !dismissedIdsRef.current.has(p.id)
+          );
           fresh.forEach(fireDesktopNotification);
           return [...prev, ...fresh];
         });
       }
     } catch (err) {
-      // Silent — popup polling should never disrupt the rest of the app
       console.error("Failed to fetch due popups:", err);
+    } finally {
+      fetchInFlightRef.current = false;
     }
   }, [user]);
 
@@ -120,7 +123,9 @@ export default function ReminderPopupManager() {
 
     const start = () => {
       if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(fetchDuePopups, readPollIntervalMs());
+      pollRef.current = setInterval(() => {
+        if (document.visibilityState === "visible") fetchDuePopups();
+      }, readPollIntervalMs());
     };
     start();
 
@@ -130,16 +135,23 @@ export default function ReminderPopupManager() {
         start();
       }
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") fetchDuePopups();
+    };
     window.addEventListener("storage", onChange);
     window.addEventListener("popup-interval-changed", onChange);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       clearInterval(pollRef.current);
       window.removeEventListener("storage", onChange);
       window.removeEventListener("popup-interval-changed", onChange);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [user, fetchDuePopups]);
 
   const dismissCurrent = () => {
+    const currentId = queue[0]?.id;
+    if (currentId) dismissedIdsRef.current.add(currentId);
     setQueue((prev) => prev.slice(1));
   };
 
@@ -150,42 +162,40 @@ export default function ReminderPopupManager() {
   const Icon = meta.icon;
 
   return (
-    <Dialog open={!!current} onOpenChange={(open) => !open && dismissCurrent()}>
-      <DialogContent
-        className="sm:max-w-md"
+    <div
+      className="pointer-events-none fixed bottom-4 right-4 z-[60] w-[min(420px,calc(100vw-2rem))]"
+      aria-live="polite"
+      aria-atomic="false"
+    >
+      <section
+        className="pointer-events-auto border border-slate-200 bg-white text-slate-800 shadow-2xl"
         data-testid="reminder-popup"
-        onInteractOutside={(e) => e.preventDefault()}
+        role="status"
+        aria-label="Reminder notification"
       >
-        <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${meta.bg}`}>
-              <Icon className={`h-5 w-5 ${meta.color}`} />
-            </div>
-            <div className="flex-1">
-              <DialogTitle>{current.title}</DialogTitle>
-            </div>
+        <div className="flex items-start gap-3 p-4">
+          <div className={`flex-shrink-0 flex h-10 w-10 items-center justify-center ${meta.bg}`}>
+            <Icon className={`h-5 w-5 ${meta.color}`} />
           </div>
-          <DialogDescription className="pt-2 text-sm text-slate-600">
-            {current.message}
-          </DialogDescription>
-        </DialogHeader>
-
-        {queue.length > 1 && (
-          <p className="text-xs text-slate-400">
-            {queue.length - 1} more reminder{queue.length - 1 !== 1 ? "s" : ""} waiting
-          </p>
-        )}
-
-        <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={dismissCurrent} data-testid="reminder-popup-dismiss">
-            <X className="h-4 w-4 mr-1.5" />
-            Dismiss
-          </Button>
-          <Button onClick={dismissCurrent} data-testid="reminder-popup-ok">
-            Got it
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold">{current.title}</div>
+            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{current.message}</p>
+            {queue.length > 1 && (
+              <p className="mt-2 text-xs text-slate-400">
+                {queue.length - 1} more reminder{queue.length - 1 !== 1 ? "s" : ""} waiting
+              </p>
+            )}
+          </div>
+          <button type="button" onClick={dismissCurrent} data-testid="reminder-popup-dismiss"
+            className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            aria-label="Dismiss reminder">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex justify-end border-t border-slate-100 px-4 py-3">
+          <Button onClick={dismissCurrent} data-testid="reminder-popup-ok">Got it</Button>
+        </div>
+      </section>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   BrainCircuit, Sparkles, X, Send, Paperclip, CheckCheck,
   CheckCircle2, FileText, Users, BarChart3, Search,
@@ -96,12 +96,43 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
   const [loading, setLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const scrollRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const requestControllerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "auto" });
   }, [messages, loading]);
+
+  const handleClose = useCallback(() => {
+    requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    setLoading(false);
+    onCloseRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      setLoading(false);
+      return undefined;
+    }
+    const handleEscape = (event) => {
+      if (event.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+    };
+  }, [isOpen, handleClose]);
 
   const handleSend = async (e, directText) => {
     if (e) e.preventDefault();
@@ -120,9 +151,16 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
       }
     ]);
     setLoading(true);
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
 
     try {
-      const { data } = await api.post('/v2/copilot/chat', { query: queryText });
+      const { data } = await api.post(
+        '/v2/copilot/chat',
+        { query: queryText },
+        { signal: controller.signal, timeout: 28000, _silent: true }
+      );
+      if (controller.signal.aborted) return;
       const replyText = data?.reply || data?.response || data?.message || (typeof data === 'string' ? data : '');
       const toolData = data?.tool_data;
       const respTime = getTimeString();
@@ -206,20 +244,26 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
           clientCount
         }
       ]);
-    } catch {
-      setTimeout(() => {
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `bot-${Date.now()}`,
-            role: 'assistant',
-            time: getTimeString(),
-            type: 'standard',
-            content: `Sorry, I couldn't process "${queryText}" right now. Please try again in a moment.`
-          }
-        ]);
-      }, 700);
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        error?.name === "AbortError" ||
+        error?.code === "ERR_CANCELED"
+      ) {
+        return;
+      }
+      setMessages(prev => [
+        ...prev,
+        {
+          id: `bot-${Date.now()}`,
+          role: 'assistant',
+          time: getTimeString(),
+          type: 'standard',
+          content: `Sorry, I couldn't process "${queryText}" right now. Please try again in a moment.`
+        }
+      ]);
     } finally {
+      if (requestControllerRef.current === controller) requestControllerRef.current = null;
       setLoading(false);
     }
   };
@@ -227,14 +271,14 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
   if (!isOpen) return null;
 
   return (
-    <div id="ai-search-drawer" data-ai-drawer="true" className="fixed inset-0 z-[250] flex justify-end">
-      {/* Backdrop */}
+    <div id="ai-search-drawer" data-ai-drawer="true" className="pointer-events-none fixed inset-0 z-[250] flex justify-end">
+      {/* Visual scrim only: underlying module navigation stays clickable. */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"
-        onClick={onClose}
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-slate-900/30 backdrop-blur-[2px]"
       />
 
       {/* Drawer Container (Strict zero curve) */}
@@ -243,7 +287,7 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
         animate={{ x: 0 }}
         exit={{ x: '100%' }}
         transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-        className={`relative h-full flex flex-col border-l shadow-2xl transition-all duration-300 ease-in-out ${
+        className={`pointer-events-auto relative h-full flex flex-col border-l shadow-2xl transition-all duration-300 ease-in-out ${
           isExpanded ? 'w-full max-w-[720px]' : 'w-full max-w-[490px]'
         } ${isDark ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'}`}
       >
@@ -285,7 +329,7 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
             </button>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Close"
             >
@@ -295,7 +339,7 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
         </div>
 
         {/* Message Area */}
-        <div className="flex-1 overflow-y-auto p-4 px-5 space-y-5 slim-scroll">
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 px-5 space-y-5 slim-scroll">
           {messages.map((m) => {
             const isUser = m.role === 'user';
 
@@ -726,14 +770,30 @@ export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {
             >
               <Paperclip className="h-4 w-4" />
             </button>
-            <button
-              type="submit"
-              disabled={!input.trim() || loading}
-              className="ai-send-btn w-9 h-9 bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-40 disabled:scale-100 text-white flex items-center justify-center shadow-md transition-all cursor-pointer flex-shrink-0"
-              title="Send message"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            {loading ? (
+              <button
+                type="button"
+                onClick={() => {
+                  requestControllerRef.current?.abort();
+                  requestControllerRef.current = null;
+                  setLoading(false);
+                }}
+                className="ai-send-btn w-9 h-9 bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-md transition-all cursor-pointer flex-shrink-0"
+                title="Stop AI response"
+                aria-label="Stop AI response"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                className="ai-send-btn w-9 h-9 bg-blue-600 hover:bg-blue-700 active:scale-95 disabled:opacity-40 disabled:scale-100 text-white flex items-center justify-center shadow-md transition-all cursor-pointer flex-shrink-0"
+                title="Send message"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </form>
       </motion.div>

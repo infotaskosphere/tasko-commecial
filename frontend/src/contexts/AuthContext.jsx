@@ -287,7 +287,7 @@ export const AuthProvider = ({ children }) => {
       if (tabClosedAt && localStorage.getItem('token')) { localStorage.removeItem('taskosphere_tab_closed'); if (!isKeepSignedIn() && !isReload) { clearStorage(); setLoading(false); return; } }
       try {
         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-        const meRes = await api.get("/auth/me");
+        const meRes = await api.get("/auth/me", { timeout: 10000, _silent: true });
         if (cancelled || generation !== authGenerationRef.current || window.__TASKO_LOGOUT_IN_PROGRESS__) return;
         const currentToken = sessionStorage.getItem("token") || localStorage.getItem("token");
         if (currentToken !== token) return;
@@ -299,13 +299,33 @@ export const AuthProvider = ({ children }) => {
       }
       catch (error) {
         if (cancelled || generation !== authGenerationRef.current || window.__TASKO_LOGOUT_IN_PROGRESS__) return;
-        if (error.message === "Network Error") setUser(normalizeTenantContext(JSON.parse(storedUser)));
-        else if (error.response && [401, 403].includes(error.response.status)) {
-          const ownedUserId = JSON.parse(storedUser || "{}")?.id || "";
+        const status = error?.response?.status;
+        const definitivelyInvalid = [401, 403].includes(status);
+        const transientFailure =
+          error?.message === "Network Error" ||
+          ["ECONNABORTED", "ETIMEDOUT"].includes(error?.code) ||
+          !error?.response ||
+          [408, 429, 500, 502, 503, 504].includes(status);
+
+        if (definitivelyInvalid) {
+          let ownedUserId = "";
+          try { ownedUserId = JSON.parse(storedUser || "{}")?.id || ""; } catch {}
           clearStorage(token, ownedUserId);
           setUser(null);
+        } else if (transientFailure) {
+          try {
+            const cachedUser = normalizeTenantContext(JSON.parse(storedUser || "null"));
+            const currentToken = sessionStorage.getItem("token") || localStorage.getItem("token");
+            if (cachedUser && currentToken === token) {
+              setUser(cachedUser);
+              console.warn("Session restore deferred because the backend is temporarily unavailable.");
+            }
+          } catch (storageError) {
+            console.error("Session restore could not use the cached profile:", storageError);
+          }
+        } else {
+          console.error("Session restore error:", error);
         }
-        else console.error("Session restore error:", error);
       }
       finally { if (!cancelled) setLoading(false); }
     };

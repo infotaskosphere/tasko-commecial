@@ -2983,14 +2983,14 @@ export default function Dashboard() {
         <AnimatePresence>
           {mustPunchIn && !todayIsHoliday && (
             <motion.div
-              className="fixed inset-0 z-[9999] flex items-center justify-center"
-              style={{ background: 'rgba(7,15,30,0.75)', backdropFilter: 'blur(10px)' }}
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="pointer-events-none fixed right-4 top-[112px] z-[40] flex w-[min(24rem,calc(100vw-2rem))] items-start justify-end"
+              initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 12 }}
+              aria-live="polite"
             >
               <motion.div
                 initial={{ scale: 0.88, y: 48 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.88, y: 48 }}
                 transition={{ type: 'spring', stiffness: 160, damping: 18 }}
-                className={`w-full max-w-sm mx-4 rounded-xl overflow-hidden ${isDark ? 'bg-slate-900' : 'bg-white'}`}
+                className={`pointer-events-auto w-full max-w-sm rounded-xl overflow-hidden ${isDark ? 'bg-slate-900' : 'bg-white'}`}
                 style={{ boxShadow: '0 32px 80px rgba(0,0,0,0.45)' }}
               >
                 <div
