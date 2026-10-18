@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backend import report_cache
+from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user
 from backend.account_classification import classify, classify_account
 from backend.modules.finix_ai.accounting.models_accounting import AccountCreate, JournalLine, JournalEntryCreate
@@ -279,8 +280,7 @@ async def create_account(payload: AccountCreate, current_user: User = Depends(ge
 
 @router.delete("/chart-of-accounts/{account_id}")
 async def delete_account(account_id: str, current_user: User = Depends(get_current_user)):
-    if not _perm_manage_coa(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_chart_of_accounts", "delete")
     acct = await db.chart_of_accounts.find_one({"id": account_id})
     if not acct:
         raise HTTPException(404, "Account not found.")
@@ -611,8 +611,8 @@ async def _delete_journal_entry_guarded(entry: dict, current_user: User) -> None
 
 @router.post("/journal-entries/bulk-delete")
 async def bulk_delete_journal_entries(payload: dict, current_user: User = Depends(get_current_user)):
-    if not _perm_post_journal(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
     entry_ids = payload.get("entry_ids") or []
     if not isinstance(entry_ids, list) or not entry_ids:
         raise HTTPException(400, "No entry_ids provided.")
@@ -641,8 +641,8 @@ async def delete_all_journal_entries(payload: dict, current_user: User = Depends
     bank matches, AI postings) are never removed here — they belong to their
     source documents — and entries in a locked period are skipped.
     """
-    if not _perm_post_journal(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
     company_id = str((payload or {}).get("company_id") or "").strip()
     if not company_id:
         raise HTTPException(400, "Select a single company before deleting journal entries; deleting across all companies is not allowed.")
@@ -764,8 +764,8 @@ async def resync_journal_entries(payload: dict, current_user: User = Depends(get
 
 @router.delete("/journal-entries/{entry_id}")
 async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_current_user)):
-    if not _perm_post_journal(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
+    require_finix_action(current_user, "can_view_journal_entries", "delete")
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
@@ -787,8 +787,8 @@ async def update_journal_entry(entry_id: str, payload: JournalEntryCreate, curre
     """Edit an existing manual journal entry. Auto-posted entries (from
     Sale/Purchase/Bank/Payment flows) must be corrected at the source
     document — editing here would drift the ledger away from the invoice."""
-    if not _perm_post_journal(current_user):
-        raise HTTPException(403, "Access denied.")
+    require_finix_action(current_user, "can_view_journal_entries", "edit")
+    require_finix_action(current_user, "can_view_journal_entries", "edit")
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
