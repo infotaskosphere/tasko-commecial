@@ -1812,7 +1812,7 @@ def _is_tenant_user(user: User) -> bool:
 
 
 async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
-    """Build a fail-closed company filter from authenticated customer/license IDs."""
+    """Build a fail-closed company filter for the authenticated licensee."""
     from backend.commercial_tenant_scope import authenticated_customer_id
 
     uid = _norm_id(getattr(current_user, "id", ""))
@@ -1826,10 +1826,10 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     role = _norm_id(getattr(role_value, "value", role_value)).lower()
     is_admin = role in {"admin", "licensee_admin", "tenant_admin"}
     raw = _tenant_raw_db()
+    owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
 
-    # Resolve the customer strictly from the authenticated license. The
-    # company_id may refer to a Platform Owner workspace in older sessions,
-    # so it must never be treated as proof of licensee ownership.
+    # Resolve customer identity from the authenticated license, never from
+    # company_id alone (older licensee sessions may reference an owner workspace).
     if license_id:
         linked_license = await raw.commercial_licenses.find_one(
             {"id": license_id},
@@ -1855,9 +1855,7 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         )
         license_id = _norm_id((license_doc or {}).get("id"))
 
-    owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
-
-    # Non-admin users remain confined to their assigned legal company.
+    # Staff/manager users remain constrained to their assigned company.
     if not is_admin:
         if not company_id:
             return {"id": "__no_tenant_scope__"}
@@ -1869,9 +1867,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             ]
         }
 
-    # Licensee admins can maintain multiple legal company profiles. Prefer
-    # explicit customer ownership, with safe legacy fallbacks for rows linked
-    # to this exact license or created by a user of the authenticated tenant.
+    # A licensee admin can own multiple legal company profiles. Query by the
+    # explicit customer marker or the matching license, while supporting older
+    # records created by the same tenant user that are not yet fully stamped.
     clauses: List[Dict[str, Any]] = [
         {"commercial_customer_id": customer_id},
         {"id": customer_id},
@@ -1904,7 +1902,7 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             "$and": [
                 {"created_by": {"$in": sorted(creator_ids)}},
                 {"commercial_customer_id": {"$in": [None, "", customer_id]}},
-                {"is_platform_owner_workspace": {"$ne": True}},
+                owner_workspace_filter,
             ]
         })
 
