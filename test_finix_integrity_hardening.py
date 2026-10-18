@@ -88,3 +88,16 @@ class InvoiceDeleteTenantScopeTests(unittest.TestCase):
         self.assertIn('("credit_note", "debit_note")', bulk)
         self.assertIn("_recalculate_invoice_parent_in_company", bulk)
 
+class AccountingAuditLockLeaseTests(unittest.TestCase):
+    def test_claim_filter_recovers_stale_or_legacy_lock_for_same_company_only(self):
+        controls = source("accounting_ai/accounting_controls.py")
+        self.assertIn("async def _append_audit", controls)
+        self.assertIn("stale_before=(now_dt-timedelta(seconds=60)).isoformat()", controls)
+        self.assertIn('{"locked_at": {"$lt": stale_before}}', controls)
+        self.assertIn('{"locked_at": {"$exists": False}}', controls)
+        self.assertIn('"company_id": company_id', controls)
+        self.assertIn('"company_id":company', controls)
+
+    def test_changed_accounting_controls_python_parses(self):
+        ast.parse(source("accounting_ai/accounting_controls.py"), filename="accounting_controls.py")
+
