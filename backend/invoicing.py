@@ -2504,8 +2504,6 @@ async def update_product(pid: str, data: ProductCreate, current_user: User = Dep
     require_finix_action(current_user, "can_view_sale", "edit")
     ex = await db.products.find_one({"id": pid})
     if not ex: raise HTTPException(404, "Product not found")
-    if current_user.role != "admin" and ex.get("created_by") != current_user.id:
-        raise HTTPException(403, "Not authorized")
     await db.products.update_one({"id": pid}, {"$set": data.model_dump()})
     return await db.products.find_one({"id": pid}, {"_id": 0})
 
@@ -4982,8 +4980,6 @@ async def update_invoice_status(
     invoices don't inflate the outstanding balance.
     """
     require_finix_action(current_user, "can_view_sale", "edit")
-    if not _perm(current_user):
-        raise HTTPException(403, "Access denied")
 
     new_status = (payload.get("status") or "").strip().lower()
     if new_status not in INV_STATUS:
@@ -7349,8 +7345,6 @@ async def create_unprepared_income(payload: UnpreparedIncomeCreate, current_user
 @router.put("/unprepared-incomes/{income_id}")
 async def update_unprepared_income(income_id: str, payload: UnpreparedIncomeCreate, current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_sale", "edit")
-    if not _perm(current_user):
-        raise HTTPException(403, "Access denied")
     existing = await db.unprepared_incomes.find_one({"id": income_id})
     if not existing:
         raise HTTPException(404, "Income record not found")
@@ -7374,8 +7368,6 @@ async def update_unprepared_income(income_id: str, payload: UnpreparedIncomeCrea
 @router.delete("/unprepared-incomes/{income_id}")
 async def delete_unprepared_income(income_id: str, current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_sale", "delete")
-    if not _perm(current_user):
-        raise HTTPException(403, "Access denied")
     existing = await db.unprepared_incomes.find_one({"id": income_id})
     if not existing:
         raise HTTPException(404, "Income record not found")
