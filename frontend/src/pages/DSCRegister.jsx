@@ -2363,12 +2363,14 @@ export default function DSCRegister() {
             border-radius: 0 !important;
             overflow: hidden !important;
           }
-          #root #dsc-status-tabs [role="tab"] {
-            display: inline-flex !important;
-            flex: 1 1 0 !important;
+          #root #dsc-status-tabs > [role="tab"] {
+            display: flex !important;
+            flex: 1 1 0% !important;
             width: 0 !important;
             min-width: 0 !important;
             max-width: none !important;
+            padding-left: 0 !important;
+            padding-right: 0 !important;
             align-items: center !important;
             justify-content: center !important;
             text-align: center !important;
@@ -2376,35 +2378,65 @@ export default function DSCRegister() {
             border-radius: 0 !important;
             margin: 0 !important;
           }
+          #root #dsc-status-tabs > [role="tab"] > span {
+            display: flex !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            gap: 6px !important;
+            margin: 0 !important;
+          }
+          #root #dsc-status-tabs > [role="tab"] > span > span {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+          }
         `}</style>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList id="dsc-status-tabs" className={`flex w-full h-8 items-stretch rounded-none p-0 gap-0 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
             {searchQuery.trim() && (
               <TabsTrigger value="all"
-                className="rounded-lg px-5 py-2 text-sm font-semibold transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-                🔍 All Results ({allDSC.length})
+                className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md">
+                <span className="flex w-full items-center justify-center gap-1.5 text-center">
+                  <span>🔍 All Results ({allDSC.length})</span>
+                </span>
               </TabsTrigger>
             )}
             <TabsTrigger value="in"
-              className="rounded-lg px-5 py-2 text-sm font-semibold transition-all data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md">
-              <ArrowDownCircle className="h-4 w-4 mr-1.5 inline" />IN ({inDSC.length})
+              className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-emerald-500 data-[state=active]:text-white data-[state=active]:shadow-md">
+              <span className="flex w-full items-center justify-center gap-1.5 text-center">
+                <ArrowDownCircle className="h-4 w-4 shrink-0" />
+                <span>IN ({inDSC.length})</span>
+              </span>
             </TabsTrigger>
             <TabsTrigger value="out"
-              className="rounded-lg px-5 py-2 text-sm font-semibold transition-all data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-md">
-              <ArrowUpCircle className="h-4 w-4 mr-1.5 inline" />OUT ({outDSC.length})
+              className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-red-500 data-[state=active]:text-white data-[state=active]:shadow-md">
+              <span className="flex w-full items-center justify-center gap-1.5 text-center">
+                <ArrowUpCircle className="h-4 w-4 shrink-0" />
+                <span>OUT ({outDSC.length})</span>
+              </span>
             </TabsTrigger>
             <TabsTrigger value="expired"
-              className="rounded-lg px-5 py-2 text-sm font-semibold transition-all data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md">
-              <AlertCircle className="h-4 w-4 mr-1.5 inline" />EXPIRED ({expiredDSC.length})
+              className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-amber-600 data-[state=active]:text-white data-[state=active]:shadow-md">
+              <span className="flex w-full items-center justify-center gap-1.5 text-center">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>EXPIRED ({expiredDSC.length})</span>
+              </span>
             </TabsTrigger>
             <TabsTrigger value="expiring7"
-              className="rounded-lg px-4 py-2 text-sm font-semibold transition-all data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-md relative">
-              <Clock className="h-4 w-4 mr-1.5 inline" />EXPIRING 7 DAYS
-              {expiring7DSC.length > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-orange-500 text-white data-[state=active]:bg-white data-[state=active]:text-orange-600" style={{background: activeTab === 'expiring7' ? '#fff' : '#f97316', color: activeTab === 'expiring7' ? '#ea580c' : '#fff'}}>
-                  {expiring7DSC.length}
-                </span>
-              )}
+              className="rounded-none px-0 py-2 text-sm font-semibold transition-all data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-md">
+              <span className="flex w-full items-center justify-center gap-1.5 text-center">
+                <Clock className="h-4 w-4 shrink-0" />
+                <span>EXPIRING 7 DAYS</span>
+                {expiring7DSC.length > 0 && (
+                  <span className="inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full text-[10px] font-bold bg-orange-500 text-white data-[state=active]:bg-white data-[state=active]:text-orange-600" style={{background: activeTab === 'expiring7' ? '#fff' : '#f97316', color: activeTab === 'expiring7' ? '#ea580c' : '#fff'}}>
+                    {expiring7DSC.length}
+                  </span>
+                )}
+              </span>
             </TabsTrigger>
           </TabsList>
 
