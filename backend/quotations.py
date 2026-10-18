@@ -2124,8 +2124,10 @@ async def create_company(
     if not doc["name"]:
         raise HTTPException(400, "Company name is required")
     if _is_tenant_user(current_user):
-        # Only stamp explicit, verified license/customer context. Avoid
-        # inheriting stale commercial markers from a legacy owner workspace.
+        # Company profiles belong to the commercial customer rather than the
+        # currently selected operating-company context. Resolve the customer
+        # from verified request identity/license metadata, then insert into
+        # the central company registry.
         from backend.commercial_tenant_scope import authenticated_customer_id
 
         tenant_customer_id = (
