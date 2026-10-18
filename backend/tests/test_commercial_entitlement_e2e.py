@@ -50,6 +50,13 @@ def env():
 
     yield server.app, raw, dep
 
+    # Modules first imported while the tests ran (lazy imports) captured the
+    # in-memory database as their own; hand every such reference back too, or
+    # later test modules would keep talking to this database.
+    for name, mod in list(sys.modules.items()):
+        if (name == "backend" or name.startswith("backend.")) and mod is not None:
+            if getattr(mod, "db", None) is wrapped:
+                mod.db = original
     for mod in swapped:
         mod.db = original
     dep.db = original
