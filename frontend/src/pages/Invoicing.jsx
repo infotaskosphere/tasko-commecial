@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import GifLoader, { MiniLoader } from '@/components/ui/GifLoader.jsx';
 import { useDark } from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -5430,6 +5431,9 @@ const CATEGORY_COLORS = [
 const getCatColor = (cat) => CATEGORY_COLORS.find(c => c.value === cat) || CATEGORY_COLORS[0];
 
 const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
+  const { user } = useAuth();
+  const canEditSale = canPerformFinixAction(user, 'can_view_sale', 'edit');
+  const canDeleteSale = canPerformFinixAction(user, 'can_view_sale', 'delete');
   const emptyForm = { name: '', description: '', hsn_sac: '', unit: 'service', unit_price: 0, gst_rate: 18, category: '', is_service: true, color: 'blue', notes: '', discount: 0 };
   const [products, setProducts] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -5452,6 +5456,7 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
   }, [open]);
 
   const handleSave = async () => {
+    if (editing && !canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!form.name?.trim()) { toast.error('Service name is required'); return; }
     setLoading(true);
     try {
@@ -5465,17 +5470,20 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
   };
 
   const handleEdit = (p) => {
+    if (!canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setEditing(p);
     setForm({ name: p.name, description: p.description || '', hsn_sac: p.hsn_sac || '', unit: p.unit || 'service', unit_price: p.unit_price || 0, gst_rate: p.gst_rate || 18, category: p.category || '', is_service: p.is_service !== false, color: p.color || 'blue', notes: p.notes || '', discount: p.discount || 0 });
     setActiveTab('add');
   };
 
   const handleDelete = async (id) => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     try { await api.delete(`/products/${id}`); setProducts(p => p.filter(x => x.id !== id)); toast.success('Deleted'); if (editing?.id === id) { setEditing(null); setForm(emptyForm); } }
     catch { toast.error('Failed'); }
   };
 
   const handleBulkDelete = async () => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!selectedIds.size) return;
     try {
       await Promise.all([...selectedIds].map(id => api.delete(`/products/${id}`)));
@@ -5711,7 +5719,7 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
                   ) : (
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-red-600 font-medium">Confirm delete {selectedIds.size} items?</span>
-                      <button onClick={handleBulkDelete} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors">Yes, Delete</button>
+                      {canDeleteSale && <button onClick={handleBulkDelete} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors">Yes, Delete</button>}
                       <button onClick={() => setBulkDeleteConfirm(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors">Cancel</button>
                     </div>
                   )}
@@ -5762,8 +5770,8 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
                         {/* Action buttons */}
                         <div className={`absolute top-2.5 right-2.5 z-10 flex gap-1 transition-opacity ${isSelected ? 'opacity-0' : 'opacity-0 group-hover:opacity-100'}`} onClick={e => e.stopPropagation()}>
                           <button onClick={() => handleDuplicate(p)} className={`w-6 h-6 flex items-center justify-center rounded-lg transition-colors ${isDark ? 'text-slate-400 hover:bg-slate-700 hover:text-slate-200' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`} title="Duplicate"><Copy className="h-3 w-3" /></button>
-                          <button onClick={() => handleEdit(p)} className="w-6 h-6 flex items-center justify-center rounded-lg text-blue-500 hover:bg-blue-50 transition-colors"><Edit className="h-3 w-3" /></button>
-                          <button onClick={() => handleDelete(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors"><Trash2 className="h-3 w-3" /></button>
+                          {canEditSale && <button onClick={() => handleEdit(p)} className="w-6 h-6 flex items-center justify-center rounded-lg text-blue-500 hover:bg-blue-50 transition-colors" title="Edit product"><Edit className="h-3 w-3" /></button>}
+                          {canDeleteSale && <button onClick={() => handleDelete(p.id)} className="w-6 h-6 flex items-center justify-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete product"><Trash2 className="h-3 w-3" /></button>}
                         </div>
 
                         <div className="p-4 pt-3" onClick={() => handleEdit(p)}>
