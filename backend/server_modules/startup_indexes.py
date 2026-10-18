@@ -5,6 +5,26 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+async def make_unique_per_company(collection, key: str) -> None:
+    """Make ``key`` unique within a company instead of across the whole platform.
+
+    These collections hold each licensee's own records, but their unique index
+    was on ``key`` alone: two companies tracking the same trademark, holiday
+    date or WhatsApp contact collided, and one company's insert could be
+    refused (or overwrite) because of another company's data.
+    """
+    old_name = f"{key}_1"
+    try:
+        info = await collection.index_information()
+        if old_name in info and info[old_name].get("unique"):
+            await collection.drop_index(old_name)
+    except Exception as exc:  # non-fatal, like the rest of startup indexing
+        logger.warning("Could not drop platform-wide unique index %s: %s", old_name, exc)
+    await collection.create_index(
+        [("company_id", 1), (key, 1)], unique=True, background=True, name=f"uq_company_{key}"
+    )
+
+
 async def initialize_startup_indexes(
     db,
     *,
@@ -146,7 +166,7 @@ async def initialize_startup_indexes(
         await db.staff_activity.create_index("domain")
         await db.staff_activity.create_index([("user_id", 1), ("timestamp", -1)])
         await db.staff_activity.create_index([("user_id", 1), ("type", 1)])
-        await db.trademark_sphere.create_index("application_number", unique=True)
+        await make_unique_per_company(db.trademark_sphere, "application_number")
 
         # ── FIXED: EMAIL CONNECTIONS INDEX ──────────────────────────────────
         try:
@@ -167,7 +187,7 @@ async def initialize_startup_indexes(
         await db.clients.create_index(
             [("created_by", 1), ("company_name", 1)], unique=True, background=True
         )
-        await db.holidays.create_index("date", unique=True, background=True)
+        await make_unique_per_company(db.holidays, "date")
 
         # ── WhatsApp Hub indexes ─────────────────────────────────────────────
         # message_id + session_id: used by duplicate check on every bulk-sync insert
@@ -180,12 +200,12 @@ async def initialize_startup_indexes(
             [("jid", 1), ("timestamp", -1)], background=True
         )
         await db.whatsapp_hub_messages.create_index("timestamp", background=True)
-        await db.whatsapp_hub_contacts.create_index("jid", unique=True, background=True)
+        await make_unique_per_company(db.whatsapp_hub_contacts, "jid")
         await db.whatsapp_hub_contacts.create_index(
             [("last_message_at", -1)], background=True
         )
         await db.whatsapp_hub_contacts.create_index("session_id", background=True)
-        await db.whatsapp_hub_groups.create_index("jid", unique=True, background=True)
+        await make_unique_per_company(db.whatsapp_hub_groups, "jid")
 
         # ── ACCOUNTING / INVOICING — the most-queried collections ────────────
         # These are called on every report load, reconcile, and invoice CRUD.

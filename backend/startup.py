@@ -77,7 +77,8 @@ async def startup_event():
             unique=True,
             background=True
         )
-        await db.holidays.create_index("date", unique=True, background=True)
+        from backend.server_modules.startup_indexes import make_unique_per_company
+        await make_unique_per_company(db.holidays, "date")
 
         # ✅ VISIT REPAIR — backfill missing `id` fields
         visits = await db.visits.find({"id": {"$exists": False}}).to_list(10000)

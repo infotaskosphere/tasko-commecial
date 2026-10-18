@@ -354,6 +354,36 @@ async def _message_history_scope_query(current_user: User) -> dict:
     }
 
 
+async def resolve_sendable_session(current_user: User, session_id: Optional[str]) -> Optional[str]:
+    """The WhatsApp number a user may send from.
+
+    Session ids were taken straight from the request (and are just
+    ``wa_<timestamp>``), so one company could send messages from another
+    company's connected number. A non-owner may only use a session that
+    belongs to their own company; with none given, their own connected number
+    is used - never the bridge's default, which may belong to anyone.
+    """
+    if is_platform_owner(current_user):
+        if session_id:
+            return session_id
+        connected = [s.get("sessionId") for s in await _get_cached_sessions() if s.get("status") == "connected"]
+        return connected[0] if connected else None
+    scope = await _whatsapp_session_scope_query(current_user)
+    own = await _db()["whatsapp_sessions"].find(scope).to_list(100)
+    own_ids = {r.get("session_id") for r in own}
+    if session_id:
+        if session_id not in own_ids:
+            raise HTTPException(403, "This WhatsApp number does not belong to your company.")
+        return session_id
+    connected = [
+        s["sessionId"] for s in await _get_cached_sessions()
+        if s.get("status") == "connected" and s.get("sessionId") in own_ids
+    ]
+    if not connected:
+        raise HTTPException(503, "No connected WhatsApp number for your company.")
+    return connected[0]
+
+
 # ── Multi-session endpoints ──────────────────────────────────────────────────
 
 @router.get("/numbers")
@@ -396,7 +426,8 @@ async def list_sessions(current_user: User = Depends(get_current_user)):
     bridge_sessions = await _get_cached_sessions()
 
     db = _db()
-    db_records = await db["whatsapp_sessions"].find({}).to_list(100)
+    scope = await _whatsapp_session_scope_query(current_user)
+    db_records = await db["whatsapp_sessions"].find(scope).to_list(100)
     labels = {d["session_id"]: d for d in db_records}
 
     result = []
@@ -613,6 +644,7 @@ async def decide_access_request(body: WAAccessDecision, current_user: User = Dep
 async def send_message(body: WASendMessageRequest, current_user: User = Depends(get_current_user)):
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "You do not have permission to send WhatsApp messages.")
+    body.session_id = await resolve_sendable_session(current_user, body.session_id)
     try:
         result = await _bridge_post("/send", {"to": body.to, "message": body.message, "sessionId": body.session_id})
         await _store_message(current_user.id, body.to, body.message, body.message_type, body.context_id, "sent", body.session_id, batch_id=body.batch_id, batch_name=body.batch_name)
@@ -626,6 +658,7 @@ async def send_message(body: WASendMessageRequest, current_user: User = Depends(
 async def send_bulk(body: WABulkSendRequest, current_user: User = Depends(get_current_user)):
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "WhatsApp access not granted")
+    body.session_id = await resolve_sendable_session(current_user, body.session_id)
     results = []
     for recipient in body.recipients:
         try:
@@ -651,6 +684,7 @@ async def send_media(body: WASendMediaRequest, current_user: User = Depends(get_
     """
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "You do not have permission to send WhatsApp messages.")
+    body.session_id = await resolve_sendable_session(current_user, body.session_id)
     try:
         result = await _bridge_post_large("/send-media-base64", {
             "to":        body.to,
@@ -922,6 +956,7 @@ async def schedule_bulk_send(body: WAScheduleBulkRequest, current_user: User = D
     """Schedule a bulk personalized WhatsApp send at a future datetime."""
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "WhatsApp access not granted")
+    body.session_id = await resolve_sendable_session(current_user, body.session_id)
     db = _db()
     company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
     job_id = f"bulk_{int(_time.time() * 1000)}"

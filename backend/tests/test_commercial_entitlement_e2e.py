@@ -444,3 +444,179 @@ def test_staff_of_a_fully_licensed_tenant_can_use_every_module_they_were_given(c
             if r.status_code == 403:
                 blocked.append((path, r.json().get("detail")))
     assert not blocked, blocked
+
+
+# --------------------------------------------------------------------------- #
+# 6. Database isolation between licensees
+# --------------------------------------------------------------------------- #
+
+def _wa_env(monkeypatch, sessions):
+    """Stand in for the WhatsApp bridge; return the list of sends it received."""
+    import backend.whatsapp_integration as wa
+
+    sent = []
+
+    async def fake_sessions():
+        return sessions
+
+    async def fake_post(path, payload=None, *args, **kwargs):
+        sent.append((path, payload))
+        return {"success": True, "messageId": "m1"}
+
+    monkeypatch.setattr(wa, "_get_cached_sessions", fake_sessions)
+    monkeypatch.setattr(wa, "_bridge_post", fake_post)
+    return sent
+
+
+def test_whatsapp_numbers_belong_to_one_company(client, env, monkeypatch):
+    raw = env[1]
+    _run(raw.whatsapp_sessions.delete_many({}))
+    _run(raw.whatsapp_sessions.insert_many([
+        {"session_id": "wa_mine", "company_id": "everything", "label": "mine", "added_by": "everything-admin"},
+        {"session_id": "wa_theirs", "company_id": "other_co", "label": "THEIR-LINE", "added_by": "other_co-admin"},
+    ]))
+    sent = _wa_env(monkeypatch, [
+        {"sessionId": "wa_mine", "status": "connected", "phoneNumber": "+1"},
+        {"sessionId": "wa_theirs", "status": "connected", "phoneNumber": "+2", "displayName": "THEIR-LINE"},
+    ])
+    admin = _auth(env, "everything-admin")
+
+    listed = client.get("/api/whatsapp/sessions", headers=admin).json()["sessions"]
+    assert [s["sessionId"] for s in listed] == ["wa_mine"]
+
+    # Cannot send from another company's number - directly, in bulk, scheduled or via the hub.
+    body = {"to": "919999999999", "message": "hi", "session_id": "wa_theirs"}
+    assert client.post("/api/whatsapp/send", json=body, headers=admin).status_code == 403
+    assert client.post("/api/whatsapp/send/bulk", headers=admin,
+                       json={"recipients": ["919999999999"], "message": "hi", "session_id": "wa_theirs"}).status_code == 403
+    assert client.post("/api/whatsapp/hub/reply", headers=admin,
+                       json={"jid": "919@s.whatsapp.net", "message": "hi", "session_id": "wa_theirs"}).status_code == 403
+    assert sent == []
+
+    # Own number works, and with no number chosen the company's own one is used - never the bridge default.
+    assert client.post("/api/whatsapp/send", json={**body, "session_id": "wa_mine"}, headers=admin).status_code == 200
+    assert client.post("/api/whatsapp/hub/reply", headers=admin,
+                       json={"jid": "919@s.whatsapp.net", "message": "hi"}).status_code == 200
+    assert {p["sessionId"] for _path, p in sent} == {"wa_mine"}
+
+    # A company with no number of its own cannot borrow someone else's.
+    other = _auth(env, "only_finix-admin")
+    assert client.post("/api/whatsapp/hub/reply", headers=other,
+                       json={"jid": "919@s.whatsapp.net", "message": "hi"}).status_code in (403, 503)
+
+
+def test_whatsapp_bridge_callbacks_are_stored_under_the_owning_company(client, env, monkeypatch):
+    monkeypatch.setenv("WA_BRIDGE_SECRET", "bridge-secret-for-tests")
+    raw = env[1]
+    _run(raw.whatsapp_sessions.delete_many({}))
+    _run(raw.whatsapp_hub_contacts.delete_many({}))
+    _run(raw.whatsapp_hub_messages.delete_many({}))
+    _run(raw.whatsapp_sessions.insert_one(
+        {"session_id": "wa_b", "company_id": "other_co", "label": "b", "added_by": "other_co-admin"}))
+    r = client.post("/api/whatsapp/hub/webhook/message", headers={"X-WA-Bridge-Secret": "bridge-secret-for-tests"},
+                    json={"jid": "919@s.whatsapp.net", "session_id": "wa_b", "message_id": "m1", "body": "hello"})
+    assert r.status_code == 200, r.text
+    contact = _run(raw.whatsapp_hub_contacts.find_one({"jid": "919@s.whatsapp.net"}))
+    message = _run(raw.whatsapp_hub_messages.find_one({"message_id": "m1"}))
+    assert contact["company_id"] == "other_co"
+    assert message["company_id"] == "other_co"
+    # The other company's inbox cannot see it.
+    assert client.get("/api/whatsapp/hub/inbox", headers=_auth(env, "everything-admin")).json()["contacts"] == []
+
+
+def test_device_command_queue_is_limited_to_the_callers_devices(client, env):
+    raw = env[1]
+    _run(raw.identix_devices.delete_many({}))
+    _run(raw.identix_cmd_queue.delete_many({}))
+    _run(raw.identix_devices.insert_many([
+        {"id": "d1", "company_id": "everything", "serial_number": "SN-MINE", "name": "mine"},
+        {"id": "d2", "company_id": "other_co", "serial_number": "SN-THEIRS", "name": "theirs"},
+    ]))
+    _run(raw.identix_cmd_queue.insert_many([
+        {"cmd_id": "c1", "device_serial": "SN-MINE", "status": "pending", "created_at": "2026-10-01"},
+        {"cmd_id": "c2", "device_serial": "SN-THEIRS", "status": "pending", "created_at": "2026-10-01"},
+    ]))
+    admin = _auth(env, "everything-admin")
+    listed = client.get("/api/identix/cmd-queue", headers=admin).json()
+    assert [c["cmd_id"] for c in listed["commands"]] == ["c1"]
+    assert client.get("/api/identix/cmd-queue?device_serial=SN-THEIRS", headers=admin).json()["total"] == 0
+    assert client.delete("/api/identix/cmd-queue", headers=admin).status_code == 200
+    assert _run(raw.identix_cmd_queue.count_documents({"cmd_id": "c2"})) == 1  # untouched
+    assert _run(raw.identix_cmd_queue.count_documents({"cmd_id": "c1"})) == 0
+
+
+def test_company_data_never_appears_in_another_companys_reads(client, env):
+    """Black-box: put marker data for company B in every collection, read as A."""
+    import json
+    import re
+    import signal
+    from pathlib import Path
+
+    from backend.tenant_runtime import TENANT_COLLECTIONS
+    from backend.tests.test_collection_classification_audit import _referenced_collections
+
+    app, raw, _dep = env
+    skip = {"users", "companies", "commercial_licenses", "commercial_license_customers"}
+    names = sorted((_referenced_collections(Path(__file__).resolve().parents[1]) | set(TENANT_COLLECTIONS)) - skip)
+
+    async def seed():
+        for name in names:
+            for co in ("everything", "other_co"):
+                try:
+                    await raw[name].insert_one({
+                        "id": f"iso-{co}-{name}", "company_id": co, "user_id": f"{co}-admin",
+                        "created_by": f"{co}-admin", "assigned_to": f"{co}-admin", "status": "active",
+                        "name": f"ISO_{co}_{name}", "title": f"ISO_{co}_{name}", "date": "2026-10-01",
+                    })
+                except Exception:
+                    pass
+
+    _run(seed())
+    skip_prefix = ("/api/app-backup", "/api/whatsapp", "/api/email", "/api/desktop", "/api/client-portal")
+    paths = [
+        re.sub(r"\{[^}]+\}", "x", p) for p, ops in app.openapi()["paths"].items()
+        if "get" in ops and "{" not in p and not p.startswith(skip_prefix) and "download" not in p
+    ]
+
+    class _Timeout(BaseException):
+        pass
+
+    def _on_alarm(*_a):
+        raise _Timeout()
+
+    old = signal.signal(signal.SIGALRM, _on_alarm)
+    headers = _auth(env, "everything-admin")
+    leaks, own = [], 0
+    try:
+        for path in paths:
+            signal.alarm(5)
+            try:
+                text = client.get(path, headers=headers).text
+            except _Timeout:
+                continue
+            finally:
+                signal.alarm(0)
+            if "ISO_other_co_" in text:
+                leaks.append((path, sorted(set(re.findall(r"ISO_other_co_[a-z_0-9]+", text)))))
+            own += "ISO_everything_" in text
+    finally:
+        signal.signal(signal.SIGALRM, old)
+    assert not leaks, f"Another company's data was returned: {leaks}"
+    assert own >= 20, "the detector found too little of the caller's own data to be meaningful"
+
+
+def test_company_unique_indexes_do_not_collide_between_companies():
+    import asyncio
+
+    from backend.server_modules.startup_indexes import make_unique_per_company
+
+    async def go():
+        coll = mongomock_motor.AsyncMongoMockClient()["idx"].holidays
+        await coll.create_index("date", unique=True)  # the old platform-wide index
+        await make_unique_per_company(coll, "date")
+        await coll.insert_one({"company_id": "a", "date": "2026-10-20"})
+        await coll.insert_one({"company_id": "b", "date": "2026-10-20"})  # was a DuplicateKeyError
+        with pytest.raises(Exception):
+            await coll.insert_one({"company_id": "a", "date": "2026-10-20"})
+
+    asyncio.new_event_loop().run_until_complete(go())

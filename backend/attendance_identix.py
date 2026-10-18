@@ -2126,6 +2126,25 @@ async def iclock_cdata(request: Request):
         logger.error(f"❌ iclock/cdata error: {e}\n{traceback.format_exc()}")
         return "OK\n"
 
+async def _own_device_queue_scope(current_user: User) -> dict:
+    """Limit command-queue access to the caller's own devices.
+
+    The queue is one platform-wide collection keyed by device serial; listing or
+    clearing it used to touch every company's commands. Devices are
+    company-scoped, so the caller's serials are the boundary. The Platform Owner
+    manages the whole queue.
+    """
+    from backend.platform_owner import is_platform_owner
+
+    if is_platform_owner(current_user):
+        return {}
+    devices = await db.identix_devices.find({}, {"_id": 0, "serial_number": 1}).to_list(5000)
+    serials = [
+        _normalize_serial_number(d.get("serial_number")) for d in devices if d.get("serial_number")
+    ]
+    return {"device_serial": {"$in": serials}}
+
+
 @identix_router.get("/cmd-queue")
 async def get_cmd_queue(
     status: Optional[str] = None,
@@ -2134,11 +2153,14 @@ async def get_cmd_queue(
     current_user: User = Depends(require_admin()),
 ):
     """View ADMS commands with optional real-time sync filters."""
-    query = {}
+    query = await _own_device_queue_scope(current_user)
     if status:
         query["status"] = status
     if device_serial:
-        query["device_serial"] = _normalize_serial_number(device_serial)
+        wanted = _normalize_serial_number(device_serial)
+        if "device_serial" in query and wanted not in query["device_serial"]["$in"]:
+            wanted = "__not_your_device__"
+        query["device_serial"] = wanted
     if batch_id:
         query["batch_id"] = batch_id
     cmds = await db.identix_cmd_queue.find(query, {"_id": 0}).sort("created_at", -1).limit(1000).to_list(1000)
@@ -2154,7 +2176,7 @@ async def clear_cmd_queue(
     current_user: User = Depends(require_admin()),
 ):
     """Clear all commands from the queue (sent, failed, and pending)."""
-    result = await db.identix_cmd_queue.delete_many({})
+    result = await db.identix_cmd_queue.delete_many(await _own_device_queue_scope(current_user))
     return {"deleted": result.deleted_count, "message": f"Cleared {result.deleted_count} commands from queue"}
 
 

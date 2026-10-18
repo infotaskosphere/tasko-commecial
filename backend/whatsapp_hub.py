@@ -412,6 +412,29 @@ class HubAccessUpdate(BaseModel):
     grant: bool
 
 
+async def _scope_webhook_to_session_company(session_id: str) -> None:
+    """Run this bridge callback inside the company that owns the WhatsApp number.
+
+    Bridge callbacks carry no user login, so their writes used to reach the
+    tenant collections with no company_id: contacts and messages of different
+    companies were mixed under one key and no tenant-scoped read could find
+    them. The session record says which company owns the number; from here on
+    every hub read/write in this request is stamped and scoped to it. A session
+    with no company on record (a Platform Owner number) behaves as before.
+    """
+    try:
+        from backend import dependencies as _deps
+        from backend.tenant_runtime import set_authenticated_company
+        record = await _deps._raw_db["whatsapp_sessions"].find_one(
+            {"session_id": session_id}, {"_id": 0, "company_id": 1}
+        )
+        company_id = str((record or {}).get("company_id") or "").strip()
+        if company_id:
+            set_authenticated_company(company_id)
+    except Exception as exc:  # never lose an incoming message over bookkeeping
+        logger.warning("Could not scope WhatsApp webhook to a company: %s", exc)
+
+
 # ── Webhook: single incoming message ─────────────────────────────────────────
 
 @router.post("/webhook/message")
@@ -432,6 +455,8 @@ async def hub_incoming_message(request: Request):
 
     if not jid or not body:
         return {"ok": True}
+
+    await _scope_webhook_to_session_company(session_id)
 
     ts_raw = payload.get("timestamp")
     ts     = datetime.fromtimestamp(ts_raw, tz=timezone.utc) if ts_raw else datetime.now(timezone.utc)
@@ -527,6 +552,7 @@ async def hub_bulk_sync(request: Request):
 
     session_id    = raw.get("session_id", "unknown")
     session_label = raw.get("session_label", session_id)
+    await _scope_webhook_to_session_company(session_id)
     db = _db()
     contacts_upserted = 0
     messages_stored   = 0
@@ -658,6 +684,7 @@ async def hub_groups_sync(request: Request):
         raise HTTPException(400, "Invalid JSON")
 
     session_id = raw.get("session_id", "unknown")
+    await _scope_webhook_to_session_company(session_id)
     db = _db()
     stored = 0
     for g in raw.get("groups", []) or []:
@@ -884,15 +911,12 @@ async def hub_conversation(
 async def hub_reply(body: HubReply, current_user: User = Depends(get_current_user)):
     if not await _has_hub_access(current_user):
         raise HTTPException(403, "No access")
-    from backend.whatsapp_integration import _get_cached_sessions, _bridge_post
+    from backend.whatsapp_integration import _bridge_post, resolve_sendable_session
 
-    session_id = body.session_id
+    # Only a number that belongs to the caller's company; never the bridge default.
+    session_id = await resolve_sendable_session(current_user, body.session_id)
     if not session_id:
-        sess = await _get_cached_sessions()
-        conn = [s for s in sess if s.get("status") == "connected"]
-        if not conn:
-            raise HTTPException(503, "No connected WhatsApp session.")
-        session_id = conn[0]["sessionId"]
+        raise HTTPException(503, "No connected WhatsApp session.")
 
     send_jid = await _resolve_send_jid(body.jid, session_id)
     if not send_jid:
@@ -941,15 +965,12 @@ async def hub_reply(body: HubReply, current_user: User = Depends(get_current_use
 async def hub_reply_media(body: HubReplyMedia, current_user: User = Depends(get_current_user)):
     if not await _has_hub_access(current_user):
         raise HTTPException(403, "No access")
-    from backend.whatsapp_integration import _get_cached_sessions, _bridge_post
+    from backend.whatsapp_integration import _bridge_post, resolve_sendable_session
 
-    session_id = body.session_id
+    # Only a number that belongs to the caller's company; never the bridge default.
+    session_id = await resolve_sendable_session(current_user, body.session_id)
     if not session_id:
-        sess = await _get_cached_sessions()
-        conn = [s for s in sess if s.get("status") == "connected"]
-        if not conn:
-            raise HTTPException(503, "No connected WhatsApp session.")
-        session_id = conn[0]["sessionId"]
+        raise HTTPException(503, "No connected WhatsApp session.")
 
     send_jid = await _resolve_send_jid(body.jid, session_id)
     if not send_jid:
