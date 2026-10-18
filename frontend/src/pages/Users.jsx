@@ -3051,17 +3051,98 @@ export default function Users() {
 
       {/* ── Page Header ── */}
       <motion.div variants={slideIn}>
-        <div className="relative overflow-hidden rounded-3xl px-5 sm:px-8 pt-6 sm:pt-7 pb-6"
+        <div id="people-matrix-user-header" className="relative overflow-hidden rounded-3xl px-5 sm:px-8 pt-6 sm:pt-7 pb-6"
           style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue} 0%, ${COLORS.mediumBlue} 55%, #2196d1 100%)`, boxShadow: '0 20px 48px -12px rgba(13,59,102,0.42)' }}>
+          <style>{`
+            #root #people-matrix-user-header #people-matrix-header-row {
+              display: flex !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              gap: 16px !important;
+              width: 100% !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-group {
+              display: flex !important;
+              flex: 1 1 auto !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              gap: 16px !important;
+              width: auto !important;
+              min-width: 0 !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-icon {
+              display: flex !important;
+              flex: 0 0 56px !important;
+              align-items: center !important;
+              justify-content: center !important;
+              width: 56px !important;
+              min-width: 56px !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-copy {
+              display: flex !important;
+              flex: 1 1 auto !important;
+              flex-direction: column !important;
+              align-items: flex-start !important;
+              justify-content: center !important;
+              width: auto !important;
+              min-width: 0 !important;
+              text-align: left !important;
+              gap: 0 !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-meta {
+              display: flex !important;
+              flex-direction: row !important;
+              align-items: center !important;
+              justify-content: flex-start !important;
+              align-self: flex-start !important;
+              width: max-content !important;
+              max-width: 100% !important;
+              margin: 0 0 4px 0 !important;
+              text-align: left !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-title {
+              display: block !important;
+              position: static !important;
+              align-self: flex-start !important;
+              width: auto !important;
+              max-width: 100% !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              text-align: left !important;
+              transform: none !important;
+            }
+            #root #people-matrix-user-header #people-matrix-header-description {
+              display: block !important;
+              position: static !important;
+              align-self: flex-start !important;
+              width: auto !important;
+              max-width: 520px !important;
+              margin: 4px 0 0 0 !important;
+              text-align: left !important;
+              transform: none !important;
+            }
+            @media (max-width: 1023px) {
+              #root #people-matrix-user-header #people-matrix-header-row {
+                flex-direction: column !important;
+                align-items: stretch !important;
+              }
+              #root #people-matrix-user-header #people-matrix-header-group,
+              #root #people-matrix-user-header #people-matrix-header-copy {
+                width: 100% !important;
+              }
+            }
+          `}</style>
           <div className="absolute -right-24 -top-24 w-80 h-80 rounded-full opacity-15"
             style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
           <div className="absolute -left-20 -bottom-20 w-72 h-72 rounded-full opacity-10"
             style={{ background: 'radial-gradient(circle, #5CCB5F 0%, transparent 70%)' }} />
           <div className="absolute right-40 bottom-0 w-40 h-40 rounded-full mb-[-40px] opacity-[0.06]"
             style={{ background: 'white' }} />
-          <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
+          <div id="people-matrix-header-row" className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div id="people-matrix-header-group" className="flex items-center gap-4">
+              <div id="people-matrix-header-icon" className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 flex items-center justify-center flex-shrink-0 shadow-inner">
                 {mainTab === 'identix'
                   ? <Fingerprint className="h-6 w-6 text-white" />
                   : mainTab === 'salary'
@@ -3070,17 +3151,17 @@ export default function Users() {
                       ? <ShieldCheck className="h-6 w-6 text-white" />
                       : <UsersIcon className="h-6 w-6 text-white" />}
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-1">
+              <div id="people-matrix-header-copy" className="min-w-0">
+                <div id="people-matrix-header-meta" className="flex items-center gap-2 mb-1">
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm border border-white/15">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
                     <p className="text-white/80 text-[10px] font-bold uppercase tracking-widest">Team Management</p>
                   </span>
                 </div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight">
+                <h1 id="people-matrix-header-title" className="text-2xl sm:text-3xl font-bold text-white tracking-tight leading-tight">
                   {mainTab === 'identix' ? 'Identix Machine Integration' : mainTab === 'salary' ? 'Salary & Payroll' : mainTab === 'access_requests' ? 'Access Requests' : 'User Directory'}
                 </h1>
-                <p className="text-white/70 text-xs sm:text-sm mt-1 max-w-md">
+                <p id="people-matrix-header-description" className="text-white/70 text-xs sm:text-sm mt-1 max-w-md">
                   {mainTab === 'identix'
                     ? 'Manage biometric devices, enrollments, and attendance logs.'
                     : mainTab === 'salary'
