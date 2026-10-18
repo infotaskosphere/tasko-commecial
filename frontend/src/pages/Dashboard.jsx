@@ -2143,6 +2143,11 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
+        {/* MAIN DASHBOARD CONTENT — white workspace surface, matching Finix */}
+        <div className={`min-w-0 rounded-xl border p-3 sm:p-4 space-y-5 sm:space-y-6 ${
+          isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200 shadow-sm'
+        }`}>
+
         {/* CUSTOMIZE BUTTON */}
         <motion.div variants={itemVariants} className="flex justify-end gap-2">
           {/* GLITCH FIX: creating your own task must always be available — this
@@ -2978,6 +2983,8 @@ export default function Dashboard() {
           );
           return null;
         })}
+
+        </div>
 
         {/* PUNCH-IN GATE OVERLAY */}
         <AnimatePresence>
