@@ -2352,8 +2352,33 @@ export default function DSCRegister() {
         </div>
 
         {/* Tabs */}
+        <style>{`
+          #root #dsc-status-tabs {
+            display: flex !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            gap: 0 !important;
+            padding: 0 !important;
+            height: 32px !important;
+            border-radius: 0 !important;
+            overflow: hidden !important;
+          }
+          #root #dsc-status-tabs [role="tab"] {
+            display: inline-flex !important;
+            flex: 1 1 0 !important;
+            width: 0 !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            align-items: center !important;
+            justify-content: center !important;
+            text-align: center !important;
+            white-space: nowrap !important;
+            border-radius: 0 !important;
+            margin: 0 !important;
+          }
+        `}</style>
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`inline-flex h-11 items-center rounded-xl p-1 gap-1 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
+          <TabsList id="dsc-status-tabs" className={`flex w-full h-8 items-stretch rounded-none p-0 gap-0 ${isDark ? 'bg-slate-800 border border-slate-700' : 'bg-slate-100 border border-slate-200'}`}>
             {searchQuery.trim() && (
               <TabsTrigger value="all"
                 className="rounded-lg px-5 py-2 text-sm font-semibold transition-all data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-md">
