@@ -408,14 +408,17 @@ api.interceptors.request.use(
 
     if (
       config.method?.toLowerCase() === "get" &&
-      !config._slashRetry &&
       SLASH_COMPATIBLE_COLLECTIONS.has(
         normalizedRequestPath
       )
     ) {
-      config.url =
-        `${normalizedRequestPath}/` +
-        `${requestQuery ? `?${requestQuery}` : ""}`;
+      if (!config._collectionRetryStartedAt) {
+        config._collectionRetryStartedAt = Date.now();
+      }
+      if (!config._slashRetry) {
+        config.url = `${normalizedRequestPath}/` +
+          `${requestQuery ? `?${requestQuery}` : ""}`;
+      }
     }
 
     // ─────────────────────────────────────────────────────────
@@ -566,28 +569,40 @@ api.interceptors.response.use(
       markBackendNotReady();
     }
 
+    // One 10-second cumulative retry window includes delays and attempt timeouts.
+    const retryWindowMs = 10000;
+    const retryStartedAt = Number(error.config?._collectionRetryStartedAt || Date.now());
+    const retryElapsedMs = Math.max(0, Date.now() - retryStartedAt);
     if (isCollectionGet && retryableStatus) {
       const attempt = Number(error.config?._coldStartAttempt || 0);
-      const backoffs = [500, 1000, 1500];
-      if (attempt < backoffs.length) {
+      const backoffs = [500, 1000];
+      const delayMs = backoffs[attempt];
+      const remainingMs = retryWindowMs - retryElapsedMs;
+
+      if (attempt < backoffs.length && remainingMs > delayMs + 500) {
+        const retryTimeoutMs = Math.max(
+          250,
+          Math.min(Number(error.config?.timeout || 8000), remainingMs - delayMs)
+        );
         return new Promise((resolve, reject) => {
           setTimeout(() => {
             api.request({
               ...error.config,
+              timeout: retryTimeoutMs,
               _coldStartAttempt: attempt + 1,
               _skipReadyGate: true,
             }).then(resolve).catch(reject);
-          }, backoffs[attempt]);
+          }, delayMs);
         });
       }
     }
 
-    // A 404 is not a cold start. Try the other slash form once, then expose the
-    // actual route error rather than hiding it as an empty business collection.
+    // A 404 is not a cold start. Try the alternate slash form once with a short timeout.
     if (isCollectionGet && responseStatus === 404 && !error.config?._slashRetry) {
       const alternatePath = requestPath.endsWith("/") ? normalisedPath : `${normalisedPath}/`;
       return api.request({
         ...error.config,
+        timeout: Math.min(Number(error.config?.timeout || 5000), 5000),
         url: `${alternatePath}${requestQuery ? `?${requestQuery}` : ""}`,
         _slashRetry: true,
         _skipReadyGate: true,
