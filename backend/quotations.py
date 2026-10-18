@@ -2101,12 +2101,6 @@ async def create_company(
                 status_code=403,
                 detail="Cannot save company profile without a verified licensee customer",
             )
-
-        if not tenant_customer_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Cannot save company profile without a verified licensee customer",
-            )
         doc["commercial_customer_id"] = tenant_customer_id
         if tenant_license_id:
             doc["license_id"] = tenant_license_id
