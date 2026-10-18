@@ -37,6 +37,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from backend.finix_action_permissions import require_finix_action
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend import accounting_core as ac
@@ -462,8 +463,7 @@ async def refresh_gstin(gstin: str, company_id: str = Query(""), current_user: U
 
 @router.delete("/gstins/{gstin}")
 async def remove_gstin(gstin: str, company_id: str = Query(""), current_user: User = Depends(get_current_user)):
-    if not _can_manage(current_user):
-        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    require_finix_action(current_user, "can_view_gst_portal_sync", "delete")
     company_id = _cid(current_user, company_id)
     res = await db.gst_portal_registrations.delete_one({"company_id": company_id, "gstin": gstin.strip().upper()})
     if not res.deleted_count:
