@@ -248,7 +248,7 @@ async def get_current_user_hardened(
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "The selected company is not in your licensed workspace's "
+                        "Cross-company access is not permitted: the selected company is not in your licensed workspace's "
                         "authorized Master Data company list. Select one of your own "
                         "companies from the company selector."
                     ),
@@ -267,7 +267,7 @@ async def get_current_user_hardened(
                 raise HTTPException(
                     status_code=403,
                     detail=(
-                        "The selected company is not in your licensed workspace's "
+                        "Cross-company access is not permitted: the selected company is not in your licensed workspace's "
                         "authorized Master Data company list."
                     ),
                 )
