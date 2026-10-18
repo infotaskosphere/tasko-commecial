@@ -2099,9 +2099,8 @@ async def create_company(
     if not doc["name"]:
         raise HTTPException(400, "Company name is required")
     if _is_tenant_user(current_user):
-        # Company profiles belong to the authenticated commercial customer.
-        # Resolve ownership once and use the same central registry as the list
-        # endpoint, so success means the new row is available in Master Data.
+        # Save company profiles centrally with the authenticated tenant
+        # markers so the same customer's Master Data query can list the row.
         from backend.commercial_tenant_scope import authenticated_customer_id
 
         tenant_customer_id = (
