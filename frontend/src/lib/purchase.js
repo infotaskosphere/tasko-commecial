@@ -271,5 +271,6 @@ export const METHOD_LABEL = {
   'text+ai': 'PDF text, checked by AI',
   'ocr+ai': 'Scan (OCR), checked by AI',
   manual: 'Entered manually',
+  zero_touch: 'Read earlier, not yet booked',
   none: 'Could not be read automatically',
 };

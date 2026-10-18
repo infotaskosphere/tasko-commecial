@@ -45,7 +45,6 @@ const NAV_GROUPS = [
     { path: '/purchase', icon: ShoppingBag, label: 'Purchase', permission: 'can_view_purchase' },
     { path: '/bank-accounts', icon: Landmark, label: 'Bank Accounts', permission: 'can_view_bank' },
     { path: '/journal-entries', icon: NotebookPen, label: 'Journal Entries', permission: ['can_view_journal_entries', 'can_post_journal_entries'] },
-    { path: '/zero-touch-entry', icon: ScanLine, label: 'Zero Touch Entries', permission: 'can_view_zero_touch_entries' },
     { path: '/accounting-reports', icon: BarChart3, label: 'Accounting Reports', permission: 'can_view_accounting_reports' },
     { path: '/day-book', icon: BarChart3, label: 'Extended Accounts Reports', permission: 'can_view_extended_accounts_reports' },
     { path: '/gst-portal-sync', icon: Landmark, label: 'Live GST Portal Sync', permission: 'can_view_gst_portal_sync' },

@@ -77,7 +77,7 @@ const TYPE_ROUTE_MAP = {
   tax_invoice: "/invoicing",
   credit_note: "/invoicing",
   debit_note: "/invoicing",
-  approved_zte_journal: "/zero-touch-entry",
+  approved_zte_journal: "/purchase",
   purchase: "/purchase",
   bank: "/bank-accounts",
   journal_entry: "/journal-entries",

@@ -122,6 +122,11 @@ function Purchase() {
   const [preview, setPreview] = useState(null);
   const [dragOver, setDragOver] = useState(false);
 
+  // bills the old Zero Touch page read but nobody had booked yet
+  const [inbox, setInbox] = useState([]);
+  const [inboxBusy, setInboxBusy] = useState('');
+  const [dismissing, setDismissing] = useState(null);   // { id, reason }
+
   // GSTR-2B
   const [gstr2bFile, setGstr2bFile] = useState(null);
   const [gstr2bCompanyId, setGstr2bCompanyId] = useState('');
@@ -205,6 +210,44 @@ function Purchase() {
       .catch(() => {});
     return () => { alive = false; };
   }, [filters.company_id, tick]);
+
+  useEffect(() => {
+    let alive = true;
+    api.get('/purchase-invoices/inbox')
+      .then((r) => { if (alive) setInbox(Array.isArray(r.data?.items) ? r.data.items : []); })
+      .catch(() => { if (alive) setInbox([]); });
+    return () => { alive = false; };
+  }, [tick]);
+
+  const openInboxItem = async (item) => {
+    setInboxBusy(item.id);
+    try {
+      const { data } = await api.get(`/purchase-invoices/inbox/${item.id}/draft`);
+      setQueue({ files: [], index: 0 });
+      setPreview({ data, file: null });
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not open this bill'));
+      refresh();
+    } finally {
+      setInboxBusy('');
+    }
+  };
+
+  const dismissInboxItem = async () => {
+    if (!dismissing) return;
+    if ((dismissing.reason || '').trim().length < 3) { toast.error('Say why this bill is being dismissed'); return; }
+    setInboxBusy(dismissing.id);
+    try {
+      await api.post(`/purchase-invoices/inbox/${dismissing.id}/dismiss`, { reason: dismissing.reason.trim() });
+      toast.success('Bill dismissed');
+      setDismissing(null);
+      refresh();
+    } catch (err) {
+      toast.error(errorMessage(err, 'Could not dismiss this bill'));
+    } finally {
+      setInboxBusy('');
+    }
+  };
 
   const setFilter = (patch) => setFilters((f) => ({ ...f, ...patch }));
   const clearFilters = () => setFilters(EMPTY_FILTERS);
@@ -518,6 +561,55 @@ function Purchase() {
             </div>
           ))}
         </div>
+
+        {/* ── bills read earlier by the old Zero Touch page that were never booked ── */}
+        {inbox.length > 0 && (
+          <div className={`${card} p-5`} style={{ borderColor: COLORS.amber }}>
+            <div className="flex items-start gap-3 mb-3">
+              <div className="h-10 w-10 shrink-0 rounded-xl flex items-center justify-center text-white" style={{ background: COLORS.amber }}>
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className={`font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Waiting for review ({inbox.length})</h2>
+                <p className="text-xs text-slate-400">These bills were read earlier but never booked. Open one, check it, and add it to the register.</p>
+              </div>
+            </div>
+            <ul className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-100'}`}>
+              {inbox.map((it) => (
+                <li key={it.id} className="py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                  <div className="min-w-0 flex-1 basis-56">
+                    <p className={`text-sm font-semibold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{it.supplier_name || it.file_name || 'Unnamed bill'}</p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {[it.invoice_no && `Invoice ${it.invoice_no}`, it.invoice_date && fmtDate(it.invoice_date), it.note].filter(Boolean).join(' · ') || it.file_name}
+                    </p>
+                  </div>
+                  <p className={`text-sm font-bold tabular-nums ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                    {it.currency && it.currency !== 'INR' ? `${it.currency} ${Number(it.total || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}` : fmtC(it.total)}
+                  </p>
+                  {dismissing?.id === it.id ? (
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <Input
+                        autoFocus value={dismissing.reason} placeholder="Why dismiss this bill?"
+                        onChange={(e) => setDismissing({ id: it.id, reason: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') dismissInboxItem(); }}
+                        className="h-9 text-sm sm:w-64"
+                      />
+                      <Button size="sm" disabled={inboxBusy === it.id} onClick={dismissInboxItem}>Dismiss</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setDismissing(null)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Button size="sm" disabled={!!inboxBusy} onClick={() => openInboxItem(it)} style={{ background: COLORS.mediumBlue }} className="text-white">
+                        {inboxBusy === it.id ? <MiniLoader height={16} /> : <><Eye className="h-4 w-4 mr-1.5" />Review and add</>}
+                      </Button>
+                      <Button size="sm" variant="ghost" disabled={!!inboxBusy} onClick={() => setDismissing({ id: it.id, reason: '' })}>Dismiss</Button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* ── add bills: upload + GSTR-2B side by side, register gets the full width below ── */}
         <div className="grid lg:grid-cols-2 gap-5 items-stretch">
@@ -970,6 +1062,7 @@ function Purchase() {
                 clients={clients}
                 issues={editIssues}
                 original={editOriginal}
+                showCurrency={false}
                 isDark={isDark}
                 onSwapParties={swapEditParties}
               />

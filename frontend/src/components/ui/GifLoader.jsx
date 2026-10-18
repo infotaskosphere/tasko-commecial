@@ -33,7 +33,6 @@ const PAGE_INSIGHTS = {
   "/purchase": ["TIP", "Match purchases to the correct vendor and document before posting."],
   "/bank-accounts": ["TIP", "Review unmatched transactions first when investigating a reconciliation gap."],
   "/journal-entries": ["TIP", "Review debit and credit totals before posting a journal entry."],
-  "/zero-touch-entry": ["TIP", "Leave company selection blank when you want the document workflow to auto-detect context."],
   "/accounting-reports": ["TIP", "Select the financial year and reporting period before comparing reports."],
   "/day-book": ["TIP", "Use the day book to trace posting activity in date order."],
   "/cash-bank-book": ["TIP", "Review the transaction date range before exporting a cash or bank book."],

@@ -51,6 +51,16 @@ class FinancialValidator:
                 return False, "Duplicate source document detected."
             if irn and await db.zte_processed_documents.find_one({"company_id": company_id, "status": "posted", "$or": [{"extracted.irn": irn}, {"extracted.invoice_reference_number": irn}]}, {"_id": 0, "id": 1}):
                 return False, "Duplicate invoice IRN/reference detected."
+            if str(extracted_data.get("document_type") or "PURCHASE").upper() == "PURCHASE":
+                import re as _re
+                key = _re.sub(r"[^a-z0-9]", "", invoice_no.lower())
+                gstin = str(extracted_data.get("tax_registration_number") or "").upper()
+                ors = [{"supplier_name": {"$regex": f"^{_re.escape(vendor_name)}$", "$options": "i"}}]
+                if gstin:
+                    ors.append({"supplier_gstin": gstin})
+                async for pi in db.purchase_invoices.find({"company_id": company_id, "status": {"$ne": "cancelled"}, "$or": ors}, {"_id": 0, "invoice_no": 1}):
+                    if _re.sub(r"[^a-z0-9]", "", str(pi.get("invoice_no") or "").lower()) == key:
+                        return False, f"Invoice {invoice_no} from {vendor_name} is already in the Purchase Register."
             if await db.journal_entries.find_one({"company_id": company_id, "source": "ai_zero_touch", "narration": {"$regex": invoice_no, "$options": "i"}}, {"_id": 0, "id": 1}):
                 return False, f"Potential duplicate journal entry for invoice {invoice_no}."
             if await db.zte_processed_documents.find_one({"company_id": company_id, "status": "posted", "extracted.invoice_number": invoice_no, "extracted.vendor_or_customer_name": vendor_name}, {"_id": 0, "id": 1}):

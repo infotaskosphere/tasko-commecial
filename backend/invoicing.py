@@ -3264,15 +3264,63 @@ async def _find_duplicate_purchase(supplier_name: str, supplier_gstin: str, invo
     async for d in db.purchase_invoices.find({"$or": ors}, {"_id": 0}):
         if exclude_id and d.get("id") == exclude_id:
             continue
+        if d.get("status") == "cancelled":
+            continue
         if _norm_invoice_key(d.get("invoice_no")) == key:
             return d
+    return await _find_zero_touch_duplicate(supplier_name, supplier_gstin, key)
+
+
+async def _find_zero_touch_duplicate(supplier_name: str, supplier_gstin: str, key: str) -> Optional[dict]:
+    """Bills that were booked through the retired Zero Touch page live in `zte_processed_documents` (journal only,
+    no purchase-register row). Keep matching them so the same bill is never booked a second time."""
+    zors: List[dict] = []
+    if supplier_gstin:
+        zors.append({"extracted.tax_registration_number": supplier_gstin.upper()})
+    if supplier_name and supplier_name.strip():
+        zors.append({"extracted.vendor_or_customer_name": {"$regex": f"^{re.escape(supplier_name.strip())}$", "$options": "i"}})
+    if not zors:
+        return None
+    try:
+        async for z in db.zte_processed_documents.find({"status": "posted", "$or": zors}, {"_id": 0}):
+            ex = z.get("extracted") or {}
+            if _norm_invoice_key(ex.get("invoice_number")) == key:
+                return {"id": z.get("id"), "invoice_no": ex.get("invoice_number"), "supplier_name": ex.get("vendor_or_customer_name"),
+                        "invoice_date": ex.get("invoice_date"), "grand_total": ex.get("total_invoice_value"),
+                        "status": "posted", "created_at": z.get("created_at"), "booked_via": "zero_touch"}
+    except Exception:
+        logger.exception("Zero Touch duplicate lookup failed")
     return None
+
+
+async def _fx_to_inr(p: dict) -> Optional[dict]:
+    """A bill in USD/EUR/... is booked in rupees at the ECB rate on the invoice date (the same source Zero Touch used).
+    Converts the amounts in `p` in place and returns what is needed to show the original figures; None for INR bills."""
+    ccy = (p.get("currency") or "INR").upper().strip() or "INR"
+    if ccy == "INR":
+        p["currency"] = "INR"
+        return None
+    from backend.zero_touch_entry import get_historical_fx_rate
+    try:
+        rate = float(await get_historical_fx_rate(ccy, "INR", p.get("invoice_date") or date.today().isoformat()))
+    except HTTPException as e:
+        raise HTTPException(422, detail={"code": "fx_unavailable", "message":
+                            f"Could not get the {ccy} to INR rate for {p.get('invoice_date')}. {e.detail} Try again, or enter the amounts in INR."})
+    original = {k: float(p.get(k) or 0) for k in _PURCHASE_AMOUNT_KEYS}
+    for k in _PURCHASE_AMOUNT_KEYS:
+        p[k] = round(original[k] * rate, 2)
+    comp = round(p["cgst_amount"] + p["sgst_amount"] + p["igst_amount"] + p["cess_amount"], 2)
+    if comp > 0:
+        p["total_gst"] = comp
+    p["currency"] = "INR"
+    return {"original_currency": ccy, "original_grand_total": original["grand_total"], "original_taxable_amount": original["taxable_amount"],
+            "original_total_gst": original["total_gst"], "fx_rate": rate, "fx_rate_date": p.get("invoice_date") or ""}
 
 
 def _duplicate_summary(d: Optional[dict]) -> Optional[dict]:
     if not d:
         return None
-    return {k: d.get(k) for k in ("id", "invoice_no", "supplier_name", "invoice_date", "grand_total", "status", "created_at")}
+    return {k: d.get(k) for k in ("id", "invoice_no", "supplier_name", "invoice_date", "grand_total", "status", "created_at", "booked_via")}
 
 
 async def _read_purchase_upload(file: UploadFile, current_user: User, company_id: Optional[str], client_id: Optional[str]) -> dict:
@@ -3359,6 +3407,21 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
                                   f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} is already in the Purchase Register "
                                   f"(added {str(dup.get('created_at') or '')[:10]})."))
 
+    fx_note = None
+    ccy = str(result.get("currency") or "INR").upper().strip() or "INR"
+    if ccy != "INR":
+        try:
+            probe = {k: result.get(k) or 0 for k in _PURCHASE_AMOUNT_KEYS}
+            probe.update(currency=ccy, invoice_date=_pr.normalise_date(result.get("invoice_date")) or str(result.get("invoice_date") or ""))
+            fx_note = await _fx_to_inr(probe)
+            fx_note = {**fx_note, "inr_grand_total": probe["grand_total"]}
+            warnings.append(_pr._w("currency", "foreign_currency", "info",
+                                   f"Foreign-currency bill: {ccy} {fx_note['original_grand_total']:,.2f} will be booked as "
+                                   f"INR {probe['grand_total']:,.2f} at the {fx_note['fx_rate']:.4f} rate for {fx_note['fx_rate_date']}."))
+        except HTTPException as e:
+            detail = e.detail.get("message") if isinstance(e.detail, dict) else str(e.detail)
+            warnings.append(_pr._w("currency", "fx_unavailable", "warn", detail))
+
     ledger = None
     if suggested_company and result.get("supplier_name"):
         try:
@@ -3399,6 +3462,7 @@ async def _read_purchase_upload(file: UploadFile, current_user: User, company_id
         },
         "vendor": vendor,
         "duplicate": _duplicate_summary(dup),
+        "fx": fx_note,
         "ledger": ledger,
         "learning": learning,
         "file": {"name": filename, "size": len(contents), "content_type": file.content_type or "application/octet-stream"},
@@ -3497,6 +3561,8 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
     if errs:
         raise HTTPException(422, detail={"code": "validation", "message": errs[0]["message"], "errors": errs})
 
+    fx = await _fx_to_inr(p)
+
     company_id = (p.get("company_id") or "").strip()
     company_doc = None
     if company_id:
@@ -3544,6 +3610,8 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
         # Dr expense head + Dr GST Input, Cr Accounts Payable.
         "status": "outstanding", "amount_paid": 0.0, "amount_due": round(p["grand_total"], 2),
     }
+    if fx:
+        doc.update(fx)
     if extra:
         doc.update(extra)
     override_code = (p.get("expense_ledger_code") or "").strip()
@@ -3619,6 +3687,7 @@ class PurchaseInvoiceConfirm(BaseModel):
     extraction_method: Optional[str] = ""
     parse_confidence: Optional[float] = 0.0
     raw_text_excerpt: Optional[str] = ""
+    zte_doc_id: Optional[str] = None      # set when the bill came from the pending-review list (a document read earlier)
     edited_fields: List[str] = Field(default_factory=list)
     needs_review: bool = False
     # explicit overrides
@@ -3632,6 +3701,13 @@ async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: U
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     payload = data.model_dump()
+    zte_doc = None
+    if data.zte_doc_id:
+        zte_doc = await db.zte_processed_documents.find_one({"id": data.zte_doc_id}, {"_id": 0})
+        if not zte_doc:
+            raise HTTPException(404, detail={"code": "inbox_missing", "message": "That pending bill no longer exists."})
+        if zte_doc.get("status") in ("posted", "rejected"):
+            raise HTTPException(409, detail={"code": "inbox_done", "message": f"That bill was already {zte_doc['status']}."})
     doc, dup = await _save_purchase_invoice(
         payload, current_user, source="upload" if data.file_name else "manual",
         file_meta={"name": data.file_name or "", "size": data.file_size or 0, "content_type": data.content_type or ""},
@@ -3640,7 +3716,114 @@ async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: U
         raise HTTPException(409, detail={"code": "duplicate", "message":
                             f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} already exists.",
                             "existing": _duplicate_summary(dup)})
+    if zte_doc:
+        await db.zte_processed_documents.update_one(
+            {"id": zte_doc["id"]},
+            {"$set": {"status": "posted", "purchase_invoice_id": doc["id"], "posting_error": None,
+                      "reviewed_by": str(current_user.id), "reviewed_at": datetime.now(timezone.utc).isoformat()}})
     return {"purchase_invoice": doc, "duplicate": False, "warnings": doc.get("save_warnings", [])}
+
+
+# ── Pending bills read earlier through the old Zero Touch page ──────────────────────────────────────
+# Zero Touch is merged into Purchase. Anything it read but nobody had approved yet is listed here, opened in the
+# same editable review as a fresh upload, and saved as an ordinary purchase bill (one booking path, one register).
+_INBOX_STATUSES = ["pending_approval", "needs_review"]
+
+
+def _inbox_row(d: dict) -> dict:
+    ex = d.get("extracted") or {}
+    return {
+        "id": d.get("id"), "file_name": d.get("filename") or d.get("file_name") or "", "status": d.get("status"),
+        "supplier_name": ex.get("vendor_or_customer_name") or "", "invoice_no": ex.get("invoice_number") or "",
+        "invoice_date": ex.get("invoice_date") or "", "currency": ex.get("currency") or "INR",
+        "total": float(ex.get("total_invoice_value") or 0), "company_id": d.get("company_id") or "",
+        "note": d.get("posting_error") or "", "created_at": d.get("created_at") or "",
+        "document_type": (ex.get("document_type") or "PURCHASE").upper(),
+    }
+
+
+@router.get("/purchase-invoices/inbox")
+async def purchase_inbox(current_user: User = Depends(get_current_user)):
+    if not _perm_purchase(current_user):
+        raise HTTPException(403, "Access denied")
+    docs = await db.zte_processed_documents.find({"status": {"$in": _INBOX_STATUSES}}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return {"items": [_inbox_row(d) for d in docs if (d.get("extracted") or {}).get("document_type", "PURCHASE").upper() != "SALE"]}
+
+
+@router.get("/purchase-invoices/inbox/{doc_id}/draft")
+async def purchase_inbox_draft(doc_id: str, current_user: User = Depends(get_current_user)):
+    """The pending bill shaped exactly like a /preview response, so the same review dialog opens it."""
+    if not _perm_purchase(current_user):
+        raise HTTPException(403, "Access denied")
+    d = await db.zte_processed_documents.find_one({"id": doc_id, "status": {"$in": _INBOX_STATUSES}}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "That pending bill was not found, or it has already been dealt with.")
+    ex = d.get("extracted") or {}
+    tb = ex.get("tax_breakup") or {}
+    cgst, sgst, igst = (float(tb.get(k) or 0) for k in ("cgst", "sgst", "igst"))
+    total_tax = float(ex.get("total_tax") or 0)
+    sup_g = str(ex.get("tax_registration_number") or "").upper()
+    company_id = d.get("company_id") or ""
+    comp = await db.companies.find_one({"id": company_id}, {"_id": 0, "id": 1, "name": 1, "gstin": 1}) if company_id else None
+    if total_tax > 0 and cgst + sgst + igst <= 0:        # only a total was read: split it the way GST does
+        own_g = str((comp or {}).get("gstin") or "")
+        if len(own_g) >= 2 and len(sup_g) >= 2 and own_g[:2] == sup_g[:2]:
+            cgst = sgst = round(total_tax / 2, 2)
+        else:
+            igst = total_tax
+    extracted = {
+        "supplier_name": ex.get("vendor_or_customer_name") or "", "supplier_gstin": sup_g,
+        "buyer_name": "", "buyer_gstin": str((comp or {}).get("gstin") or ""),
+        "invoice_no": ex.get("invoice_number") or "", "invoice_date": ex.get("invoice_date") or "", "due_date": "",
+        "taxable_amount": float(ex.get("taxable_value") or 0), "cgst_amount": cgst, "sgst_amount": sgst, "igst_amount": igst,
+        "cess_amount": 0.0, "total_gst": round(cgst + sgst + igst, 2), "round_off": 0.0,
+        "grand_total": float(ex.get("total_invoice_value") or 0), "currency": (ex.get("currency") or "INR").upper(),
+        "place_of_supply": "", "document_type": "tax_invoice",
+    }
+    dup = await _find_duplicate_purchase(extracted["supplier_name"], extracted["supplier_gstin"], extracted["invoice_no"])
+    warnings = []
+    if d.get("posting_error"):
+        warnings.append(_pr._w("file", "inbox_note", "warn", f"Why this was held back: {d['posting_error']}"))
+    if dup:
+        warnings.insert(0, _pr._w("invoice_no", "duplicate", "error",
+                                  f"Invoice {dup.get('invoice_no')} from {dup.get('supplier_name')} is already booked "
+                                  f"(added {str(dup.get('created_at') or '')[:10]})."))
+    ledger = None
+    if company_id and extracted["supplier_name"]:
+        try:
+            ledger = await _classify_purchase_ledger(company_id, extracted["supplier_name"], sup_g, "")
+        except Exception:
+            ledger = None
+    return {
+        "extracted": extracted, "warnings": warnings, "needs_review": True,
+        "parse_confidence": float(((d.get("ocr_metadata") or {}).get("confidence")) or 0), "field_confidence": {},
+        "extraction_method": "zero_touch", "suggested": {"company_id": company_id, "company_name": (comp or {}).get("name", ""),
+                                                          "client_id": "", "client_name": "", "match_method": "zero_touch"},
+        "vendor": None, "duplicate": _duplicate_summary(dup), "fx": None, "ledger": ledger,
+        "learning": {"vendor_known": False, "confirmations": 0, "layout_filled": [], "ledger": None},
+        "file": {"name": d.get("filename") or d.get("file_name") or "", "size": 0, "content_type": ""},
+        "raw_text_excerpt": (d.get("raw_ocr_text") or "")[:5000], "zte_doc_id": d["id"],
+    }
+
+
+class InboxDismiss(BaseModel):
+    reason: str = Field(..., min_length=3)
+
+
+@router.post("/purchase-invoices/inbox/{doc_id}/dismiss")
+async def purchase_inbox_dismiss(doc_id: str, body: InboxDismiss, current_user: User = Depends(get_current_user)):
+    if not _perm_purchase(current_user):
+        raise HTTPException(403, "Access denied")
+    d = await db.zte_processed_documents.find_one({"id": doc_id}, {"_id": 0, "status": 1})
+    if not d:
+        raise HTTPException(404, "That pending bill was not found.")
+    if d["status"] in ("posted", "rejected"):
+        raise HTTPException(409, f"That bill is already {d['status']}.")
+    await db.zte_processed_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"status": "rejected", "rejection_reason": body.reason.strip(),
+                  "reviewed_by": str(current_user.id), "reviewed_at": datetime.now(timezone.utc).isoformat()}})
+    return {"success": True}
 
 
 @router.post("/purchase-invoices/upload")
@@ -3651,7 +3834,7 @@ async def upload_purchase_invoice(file: UploadFile = File(...), client_id: Optio
     prev = await _read_purchase_upload(file, current_user, company_id, client_id)
     ex = prev["extracted"]
     if prev["duplicate"]:
-        existing = await db.purchase_invoices.find_one({"id": prev["duplicate"]["id"]}, {"_id": 0})
+        existing = await db.purchase_invoices.find_one({"id": prev["duplicate"]["id"]}, {"_id": 0}) or prev["duplicate"]
         return {"purchase_invoice": existing, "matched_client": {"id": prev["suggested"]["client_id"], "company_name": prev["suggested"]["client_name"]} if prev["suggested"]["client_id"] else None, "duplicate": True}
     payload = {**ex, "company_id": prev["suggested"]["company_id"] if company_id in (None, "", "none") else company_id,
                "client_id": prev["suggested"]["client_id"], "parse_confidence": prev["parse_confidence"],
@@ -6292,7 +6475,9 @@ async def sync_purchase_journal_entry(invoice_id: str) -> str:
         lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
     return await _apply_source_journal("purchase", invoice_id, {
         "company_id": company_id, "entry_date": invoice_date,
-        "narration": f"Purchase Bill {invoice_no} from {supplier_name}",
+        "narration": f"Purchase Bill {invoice_no} from {supplier_name}" + (
+            f" [{inv['original_currency']} {inv.get('original_grand_total')} @ {float(inv['fx_rate']):.4f} on {inv.get('fx_rate_date') or invoice_date}]"
+            if inv.get("original_currency") and inv.get("fx_rate") else ""),
         "lines": lines, "created_by": inv.get("created_by", "system"),
     })
 

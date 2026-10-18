@@ -56,6 +56,7 @@ export default function InvoiceForm({
   original = null,          // extracted values, to mark edited fields
   isDark = false,
   showBuyer = true,
+  showCurrency = true,      // new bills only: a saved bill is already in rupees
   companyLabel = 'Concerned company (from Master Data)',
   companyHint = 'The company whose books this purchase is posted to.',
   onSwapParties,
@@ -63,6 +64,9 @@ export default function InvoiceForm({
   const byField = useMemo(() => groupIssues(issues), [issues]);
   const checks = useMemo(() => computeChecks(form), [form]);
   const compsTotal = gstComponentsTotal(form);
+  const ccy = String(form.currency || 'INR').toUpperCase().trim() || 'INR';
+  const foreign = ccy !== 'INR';
+  const sym = foreign ? `${ccy} ` : '₹';
   const compOptions = useMemo(() => companyOptions(companies), [companies]);
   const cliOptions = useMemo(() => clientOptions(clients), [clients]);
 
@@ -168,7 +172,22 @@ export default function InvoiceForm({
 
       {/* ── Money ── */}
       <section className="space-y-3">
-        <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Amounts (₹)</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">Amounts ({foreign ? ccy : '₹'})</h3>
+          {showCurrency && <label className="flex items-center gap-2 text-xs text-slate-500">
+            Currency
+            <Input
+              value={ccy} maxLength={3} aria-label="Currency"
+              onChange={(e) => set({ currency: e.target.value.toUpperCase().replace(/[^A-Z]/g, '') })}
+              className={inputClass(byField.currency, isDark, 'h-8 w-16 text-center font-mono text-[13px]')}
+            />
+          </label>}
+        </div>
+        {foreign && showCurrency && (
+          <p className="text-xs text-sky-700 dark:text-sky-300">
+            Enter the amounts exactly as printed in {ccy}. When you add the bill they are converted to rupees at the exchange rate for the invoice date.
+          </p>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {money('taxable_amount', 'Taxable value')}
           {money('cgst_amount', 'CGST')}
@@ -197,32 +216,32 @@ export default function InvoiceForm({
                 <span>Enter the invoice total to check the figures.</span>
               ) : checks.ok ? (
                 <span>
-                  Figures add up: ₹{fmtNum(num(form.taxable_amount))} + GST ₹{fmtNum(checks.gst)}
-                  {num(form.round_off) !== 0 && <> {num(form.round_off) > 0 ? '+' : '−'} round-off ₹{fmtNum(Math.abs(num(form.round_off)))}</>} = ₹{fmtNum(checks.total)}
+                  Figures add up: {sym}{fmtNum(num(form.taxable_amount))} + GST {sym}{fmtNum(checks.gst)}
+                  {num(form.round_off) !== 0 && <> {num(form.round_off) > 0 ? '+' : '−'} round-off {sym}{fmtNum(Math.abs(num(form.round_off)))}</>} = {sym}{fmtNum(checks.total)}
                   {checks.ratePct != null && checks.gst > 0 && <span className="opacity-75"> · GST ≈ {checks.ratePct}% of taxable</span>}
                 </span>
               ) : (
                 <>
                   <p className="font-semibold">
-                    Taxable + GST + round-off = ₹{fmtNum(checks.sum)} but the total says ₹{fmtNum(checks.total)} (off by ₹{fmtNum(Math.abs(checks.diff))}).
+                    Taxable + GST + round-off = {sym}{fmtNum(checks.sum)} but the total says {sym}{fmtNum(checks.total)} (off by {sym}{fmtNum(Math.abs(checks.diff))}).
                   </p>
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {checks.fixTotal != null && (
                       <button type="button" onClick={() => set({ grand_total: String(checks.fixTotal) })}
                         className="px-2 py-1 rounded-lg bg-white/80 border border-current/20 hover:bg-white font-medium inline-flex items-center gap-1">
-                        <Wand2 className="h-3 w-3" /> Set total to ₹{fmtNum(checks.fixTotal)}
+                        <Wand2 className="h-3 w-3" /> Set total to {sym}{fmtNum(checks.fixTotal)}
                       </button>
                     )}
                     {checks.fixTaxable != null && (
                       <button type="button" onClick={() => set({ taxable_amount: String(checks.fixTaxable) })}
                         className="px-2 py-1 rounded-lg bg-white/80 border border-current/20 hover:bg-white font-medium inline-flex items-center gap-1">
-                        <Wand2 className="h-3 w-3" /> Set taxable to ₹{fmtNum(checks.fixTaxable)}
+                        <Wand2 className="h-3 w-3" /> Set taxable to {sym}{fmtNum(checks.fixTaxable)}
                       </button>
                     )}
                     {checks.fixRound != null && checks.fixRound !== 0 && (
                       <button type="button" onClick={() => set({ round_off: String(checks.fixRound) })}
                         className="px-2 py-1 rounded-lg bg-white/80 border border-current/20 hover:bg-white font-medium inline-flex items-center gap-1">
-                        <Wand2 className="h-3 w-3" /> Set round-off to {checks.fixRound > 0 ? '+' : '−'}₹{fmtNum(Math.abs(checks.fixRound))}
+                        <Wand2 className="h-3 w-3" /> Set round-off to {checks.fixRound > 0 ? '+' : '−'}{sym}{fmtNum(Math.abs(checks.fixRound))}
                       </button>
                     )}
                   </div>

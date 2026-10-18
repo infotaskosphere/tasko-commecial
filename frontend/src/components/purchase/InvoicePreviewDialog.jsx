@@ -26,6 +26,8 @@ const NOTE_CODES = new Set([
   'gstin_repaired', 'missing_supplier_gstin',
   // Finix learning notes (filled from this vendor's usual layout, unusual GST rate / numbering, learned expense head)
   'layout_filled', 'layout_differs', 'gst_rate_unusual', 'invoice_no_unusual', 'ledger_learned_auto', 'ledger_learned_review',
+  // foreign-currency booking and bills carried over from the old Zero Touch page
+  'foreign_currency', 'fx_unavailable', 'inbox_note',
 ]);
 const OVERRIDABLE = new Set(['mismatch', 'duplicate']);
 
@@ -67,7 +69,7 @@ function DocumentPane({ file, rawText }) {
   const name = (file?.name || '').toLowerCase();
   const isPdf = name.endsWith('.pdf') || file?.type === 'application/pdf';
   const isImg = /\.(png|jpe?g|webp)$/.test(name) || (file?.type || '').startsWith('image/');
-  if (!file) return <div className="h-full flex items-center justify-center text-sm text-slate-400">No document to show</div>;
+  if (!file) return <div className="h-full flex items-center justify-center text-sm text-slate-400">The original file is not stored for this bill.</div>;
   if (isPdf) return <iframe title="Invoice document" src={url} className="w-full h-full bg-white" />;
   if (isImg) return <div className="h-full overflow-auto bg-slate-100 dark:bg-slate-950 p-2"><img src={url} alt="Invoice" className="max-w-full mx-auto" /></div>;
   return <pre className="h-full overflow-auto text-xs p-3 whitespace-pre-wrap">{rawText || 'Preview not available for this file type.'}</pre>;
@@ -159,6 +161,7 @@ export default function InvoicePreviewDialog({
         extraction_method: preview?.extraction_method || '',
         parse_confidence: preview?.parse_confidence || 0,
         raw_text_excerpt: preview?.raw_text_excerpt || '',
+        ...(preview?.zte_doc_id ? { zte_doc_id: preview.zte_doc_id } : {}),
         edited_fields: edited,
         ...(ledgerTouched && ledgerCode ? { expense_ledger_code: ledgerCode } : {}),
         force_duplicate: forceDup,
