@@ -221,8 +221,10 @@ class AdjustmentNoteOverride(BaseModel):
 
 @router.post("/adjustment-note")
 async def raise_adjustment_note(body: AdjustmentNoteOverride, current_user: User = Depends(get_current_user)):
-    if not _perm_admin_override(current_user):
-        raise HTTPException(403, "Access denied. Adjustment overrides require elevated permissions.")
+    # An adjustment rewrites the figures of a posted entry: it is an edit of
+    # Journal Entries, allowed for admins or an explicit Permission Matrix grant.
+    from backend.finix_action_permissions import require_finix_action
+    require_finix_action(current_user, "can_view_journal_entries", "edit")
 
     original = await db.journal_entries.find_one({"id": body.original_entry_id}, {"_id": 0})
     if not original:

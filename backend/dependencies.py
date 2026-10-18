@@ -1183,8 +1183,8 @@ def check_module_permission(module,action):
         # Finix edit/delete must be granted explicitly in Permission Matrix.
         # Keep the commercial license check above as the hard entitlement cap.
         if module == "invoicing" and action in {"edit", "delete"}:
-            if current_user.role == "admin":
-                return current_user
+            # Admins (owner admin / licensee admin) and Permission-Matrix grants
+            # only. Platform Owner staff are not admins for this purpose.
             from backend.finix_action_permissions import has_finix_action_permission
             if has_finix_action_permission(current_user, "can_view_sale", action):
                 return current_user

@@ -159,3 +159,40 @@ def is_platform_owner(user) -> bool:
         or company_id == "platform-owner-48fe785fdd75127f"
         or company_id.startswith("platform-owner-")
     )
+
+
+_OWNER_PRINCIPAL_ROLES = {"platform_owner", "superadmin", "saas_admin"}
+_OWNER_BOOTSTRAP_IDS = {"saas-bootstrap-admin", "usr-admin-01"}
+
+
+def _plain_role(user) -> str:
+    """Normalize role values, including ``UserRole.admin`` enum members."""
+    role = user.get("role") if isinstance(user, dict) else getattr(user, "role", "")
+    for candidate in (getattr(role, "value", None), getattr(role, "name", None), role):
+        normalized = str(candidate or "").strip().lower()
+        if normalized:
+            return normalized.rsplit(".", 1)[-1]
+    return ""
+
+
+def is_platform_owner_admin(user) -> bool:
+    """True only for the software owner's administrator(s).
+
+    ``is_platform_owner`` is deliberately broad: it is also True for staff and
+    managers that belong to the Platform Owner organization (identity type
+    ``platform_owner_user``). Those users must NOT inherit owner-level
+    edit/delete rights. They need an explicit grant in Permission Matrix,
+    exactly like staff of a licensee.
+    """
+    if not is_platform_owner(user):
+        return False
+    get = user.get if isinstance(user, dict) else (lambda key, default=None: getattr(user, key, default))
+    role = _plain_role(user)
+    if role == "admin" or role in _OWNER_PRINCIPAL_ROLES:
+        return True
+    email = str(get("email") or "").strip().lower()
+    if email and email in platform_owner_emails():
+        # Reserved owner identities are the software owner themself.
+        return True
+    user_id = str(get("id") or get("_id") or "").strip()
+    return user_id in _OWNER_BOOTSTRAP_IDS

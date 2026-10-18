@@ -16,6 +16,8 @@ import {
   updateCommercialModulePrice,
 } from "@/lib/licenseApi";
 import { fetchCompanyList } from "@/lib/companies";
+import { useAuth } from "@/contexts/AuthContext";
+import { canPerformPlatformOwnerAction } from "@/lib/commercialPermissionMatrix";
 import {
   getCommercialSystemHealth,
   getCommercialAnalytics,
@@ -132,6 +134,10 @@ function Input(props) {
 }
 
 export default function MasterConsole() {
+  const { user: consoleUser } = useAuth();
+  // Platform Owner admin: full control. Owner staff: only what Permission Matrix grants.
+  const canEditLicense = canPerformPlatformOwnerAction(consoleUser, "can_view_platform_licenses", "edit");
+  const canDeleteLicensee = canPerformPlatformOwnerAction(consoleUser, "can_view_platform_licensees", "delete");
   const [tab, setTab] = useState("overview");
   const [state, setState] = useState({ licenses: [], customers: [] });
   const [modules, setModules] = useState([]);
@@ -348,6 +354,7 @@ export default function MasterConsole() {
   };
 
   const changeStatus = async (license, status) => {
+    if (!canEditLicense) { toast.error("Only the Platform Owner admin, or staff granted edit in Permission Matrix, can change a license."); return; }
     try {
       await updateLicenseStatus(license.id, status);
       await refreshAll();
@@ -358,6 +365,7 @@ export default function MasterConsole() {
   };
 
   const removeCompany = async (license) => {
+    if (!canDeleteLicensee) { toast.error("Only the Platform Owner admin, or staff granted delete in Permission Matrix, can remove a licensee."); return; }
     if (!window.confirm(`Delete ${license.customer_name || "this company"} from the License Registry? Historical invoices will be preserved.`)) return;
     try {
       await deleteCommercialCompany(license.id);
@@ -593,7 +601,7 @@ export default function MasterConsole() {
                                 >
                                   <Mail size={11} /> Email
                                 </button>
-                                <select
+                                {canEditLicense && <select
                                   aria-label="Change status"
                                   value=""
                                   onChange={(e) => e.target.value && changeStatus(license, e.target.value)}
@@ -603,15 +611,15 @@ export default function MasterConsole() {
                                   <option value="active">Activate</option>
                                   <option value="suspended">Suspend</option>
                                   <option value="revoked">Revoke</option>
-                                </select>
-                                <button
+                                </select>}
+                                {canDeleteLicensee && <button
                                   type="button"
                                   onClick={() => removeCompany(license)}
                                   title="Remove customer"
                                   className="rounded-lg border border-red-200 p-1 text-red-600 hover:bg-red-50 transition"
                                 >
                                   <Trash2 size={13} />
-                                </button>
+                                </button>}
                               </div>
                             </td>
                           </tr>

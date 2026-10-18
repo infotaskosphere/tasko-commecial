@@ -1472,7 +1472,7 @@ function FinixDashboardInner() {
       )}
 
       {!loading && companyId && companyId !== ALL_COMPANIES_ID && (
-        <FinixLearningPanel companyId={companyId} isDark={isDark} isAdmin={String(user?.role?.value || user?.role || '').toLowerCase() === 'admin'} />
+        <FinixLearningPanel companyId={companyId} isDark={isDark} isAdmin={canPerformFinixAction(user, 'can_view_zero_touch_entries', 'delete')} />
       )}
 
       {companyId === ALL_COMPANIES_ID && !loading && (

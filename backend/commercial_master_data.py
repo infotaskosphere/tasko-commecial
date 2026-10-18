@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import db, get_current_user, create_audit_log
+from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import User
 from backend.commercial_onboarding import _active_company_license, pwd_context
 from backend.commercial_onboarding_extensions import _apply_feature_entitlements
@@ -440,6 +441,7 @@ async def update_platform_company_user(
     customer_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    require_platform_owner_action(current_user, "can_view_platform_licensee_users", "edit")
     target_id = company_id or customer_id or str(payload.get("company_id") or payload.get("customer_id") or "")
     license_doc, company = await _platform_company_context(current_user, target_id)
     cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
@@ -543,6 +545,7 @@ async def list_platform_company_deleted_users(company_id: Optional[str] = Query(
 
 @router.post("/platform-users/{user_id}/restore")
 async def restore_platform_company_user(user_id: str, company_id: Optional[str] = Query(None), customer_id: Optional[str] = Query(None), license_id: Optional[str] = Query(None), current_user: User = Depends(get_current_user)):
+    require_platform_owner_action(current_user, "can_view_platform_licensee_users", "edit")
     target_id = company_id or customer_id or license_id
     license_doc, company = await _platform_company_context(current_user, target_id)
     cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")
@@ -564,6 +567,7 @@ async def activate_platform_company_user(
     customer_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    require_platform_owner_action(current_user, "can_view_platform_licensee_users", "edit")
     target_id = company_id or customer_id
     return await _platform_change_user_status(user_id, target_id, "active", current_user)
 
@@ -575,6 +579,7 @@ async def deactivate_platform_company_user(
     customer_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    require_platform_owner_action(current_user, "can_view_platform_licensee_users", "edit")
     target_id = company_id or customer_id
     return await _platform_change_user_status(user_id, target_id, "inactive", current_user)
 
@@ -586,6 +591,7 @@ async def delete_platform_company_user(
     customer_id: Optional[str] = Query(None),
     current_user: User = Depends(get_current_user),
 ):
+    require_platform_owner_action(current_user, "can_view_platform_licensee_users", "delete")
     target_id = company_id or customer_id
     license_doc, company = await _platform_company_context(current_user, target_id)
     cust_id = str(company.get("commercial_customer_id") or license_doc.get("customer_id") or "")

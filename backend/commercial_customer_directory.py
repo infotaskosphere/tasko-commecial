@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from backend.dependencies import db, get_current_user
+from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import User
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.platform_owner import is_platform_owner
@@ -17,6 +18,7 @@ def _feature_flags(module_id: str) -> List[str]:
     return [str(page.get("flag")) for page in MODULE_HIERARCHY.get(module_id, {}).get("pages", []) if page.get("flag")]
 @router.put("/customers/{customer_id}")
 async def update_commercial_customer(customer_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
+    require_platform_owner_action(current_user, "can_view_platform_licensees", "edit")
     _require_platform_owner(current_user); customer = await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0})
     if not customer: raise HTTPException(status_code=404, detail="Commercial customer was not found.")
     company_name = str(payload.get("company_name") or "").strip(); admin_name = str(payload.get("admin_name") or customer.get("admin_name") or "").strip(); email = str(payload.get("email") or "").strip().lower()
@@ -29,6 +31,7 @@ async def update_commercial_customer(customer_id: str, payload: Dict[str, Any], 
     return _public(await db.commercial_license_customers.find_one({"id": str(customer_id)}, {"_id": 0}) or {})
 @router.put("/licenses/{license_id}")
 async def update_commercial_license(license_id: str, payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
+    require_platform_owner_action(current_user, "can_view_platform_licenses", "edit")
     _require_platform_owner(current_user); license_doc = await db.commercial_licenses.find_one({"id": str(license_id)}, {"_id": 0})
     if not license_doc: raise HTTPException(status_code=404, detail="License was not found.")
     customer_id = str(license_doc.get("customer_id") or ""); customer = await db.commercial_license_customers.find_one({"id": customer_id}, {"_id": 0})

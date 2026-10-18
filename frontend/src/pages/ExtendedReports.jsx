@@ -11,6 +11,8 @@ import { ContentLoader } from '@/components/ui/GifLoader.jsx';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
@@ -335,6 +337,8 @@ function OutstandingSection({ isDark, companyId }) {
 
 /* ── 5. Bank Reconciliation ─────────────────────────────────────────────*/
 function BankReconciliationSection({ isDark, companyId }) {
+  const { user } = useAuth();
+  const canEditBank = canPerformFinixAction(user, 'can_view_bank', 'edit');
   const [bankAccounts, setBankAccounts] = useState([]);
   const [selectedBank, setSelectedBank] = useState('');
   const [transactions, setTransactions] = useState([]);
@@ -395,6 +399,7 @@ function BankReconciliationSection({ isDark, companyId }) {
   };
 
   const unmatchRow = async (txnId) => {
+    if (!canEditBank) { toast.error('Unmatching is an edit. Ask your admin to grant it in Permission Matrix.'); return; }
     try {
       await api.post(`/bank-transactions/${txnId}/unmatch`, { reason: '' });
       toast.success('Unmatched'); loadAll(selectedBank);
@@ -478,7 +483,7 @@ function BankReconciliationSection({ isDark, companyId }) {
                       {t.matched_type === 'suspense' ? (
                         <span className="text-xs inline-flex items-center gap-1 text-amber-600"><AlertTriangle className="h-3.5 w-3.5" /> In Suspense</span>
                       ) : t.matched_type ? (
-                        <button onClick={() => unmatchRow(t.id)} className="text-xs inline-flex items-center gap-1 text-emerald-600 hover:text-rose-600"><CheckCircle className="h-3.5 w-3.5" /> Matched</button>
+                        <button onClick={() => unmatchRow(t.id)} disabled={!canEditBank} title={canEditBank ? 'Unmatch' : 'Matched'} className={`text-xs inline-flex items-center gap-1 text-emerald-600 ${canEditBank ? 'hover:text-rose-600' : 'cursor-default'}`}><CheckCircle className="h-3.5 w-3.5" /> Matched</button>
                       ) : (
                         <Link to="/bank-accounts" className="text-xs inline-flex items-center gap-1 text-slate-400 hover:text-blue-600"><Link2 className="h-3.5 w-3.5" /> Match</Link>
                       )}
@@ -863,6 +868,8 @@ function YearlySection({ isDark }) {
 
 /* ── 11. Opening Balances ────────────────────────────────────────────── */
 function OpeningBalancesSection({ isDark }) {
+  const { user } = useAuth();
+  const canEditOpening = canPerformFinixAction(user, 'can_view_extended_accounts_reports', 'edit');
   const location = useLocation();
   const companyId = new URLSearchParams(location.search).get('company_id') || '';
   const [fy, setFy] = useState(new URLSearchParams(location.search).get('fy') || currentFYLabel());
@@ -899,6 +906,7 @@ function OpeningBalancesSection({ isDark }) {
   const totalCr = Object.values(editing).reduce((s, v) => s + (Number(v?.credit) || 0), 0);
 
   const save = async () => {
+    if (!canEditOpening) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     const lines = Object.entries(editing)
       .filter(([, v]) => Number(v?.debit) || Number(v?.credit))
       .map(([account_id, v]) => ({ account_id, debit: Number(v.debit) || 0, credit: Number(v.credit) || 0 }));
@@ -985,7 +993,7 @@ function OpeningBalancesSection({ isDark }) {
                   <input type="number" value={editing[a.id]?.credit ?? ''} onChange={(e) => setCell(a.id, 'credit', e.target.value)} className={`${inputCls(isDark)} text-right`} />
                 </div>
               ))}
-              <div className="mt-3 flex justify-end"><Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Opening Balances'}</Button></div>
+              <div className="mt-3 flex justify-end"><Button onClick={save} disabled={saving || !canEditOpening} title={canEditOpening ? undefined : 'Only an admin, or a user granted edit in Permission Matrix, can change opening balances'}>{saving ? 'Saving…' : 'Save Opening Balances'}</Button></div>
             </div>
           )}
         </ReportCard>

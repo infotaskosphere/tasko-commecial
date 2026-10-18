@@ -401,23 +401,62 @@ export function firstAccessiblePath(user, preferredModule = null) { if (!user) r
 
 
 /**
- * Finix mutation policy shared by Finix pages.
- * Platform Owner and tenant admins have full edit/delete rights inside the
- * company/database scope enforced by the backend. Other users need an explicit
- * action in Permission Matrix; page visibility alone is not an edit/delete grant.
+ * True only for the software owner's administrator. `isPlatformOwner` is also
+ * true for the owner organization's managers/staff, who must NOT inherit
+ * owner-level edit/delete rights (mirrors backend is_platform_owner_admin).
+ */
+export function isPlatformOwnerAdmin(user) {
+  if (!user || !isPlatformOwner(user)) return false;
+  const role = String(user.role?.value ?? user.role?.name ?? user.role ?? "").trim().toLowerCase().split(".").pop();
+  if (["admin", "platform_owner", "superadmin", "saas_admin"].includes(role)) return true;
+  const email = String(user.email || "").trim().toLowerCase();
+  if (email && getPlatformOwnerEmails().has(email)) return true;
+  const id = String(user.id || "").trim();
+  return id === "usr-admin-01" || id === "saas-bootstrap-admin";
+}
+
+function matrixGrants(user, key, action) {
+  const matrix = user?.permissions?.governance_matrix;
+  if (!matrix || typeof matrix !== "object" || Array.isArray(matrix)) return false;
+  const grants = matrix[key];
+  if (!Array.isArray(grants)) return false;
+  return grants.some((grant) => String(grant || "").trim().toLowerCase() === action);
+}
+
+/**
+ * Finix edit/delete policy shared by every Finix page (mirrors
+ * backend/finix_action_permissions.py):
+ *  - Platform Owner admin: always.
+ *  - Licensee admin: inside the Finix pages licensed by the Platform Owner.
+ *  - Everyone else, including Platform Owner staff: only when Permission
+ *    Matrix grants that exact action on that page.
  */
 export function canPerformFinixAction(user, pageFlag, action) {
   const normalizedAction = String(action || "").trim().toLowerCase();
   if (!user || !pageFlag || !["edit", "delete"].includes(normalizedAction)) return false;
-  if (isPlatformOwner(user)) return true;
+  if (isPlatformOwner(user)) {
+    if (isPlatformOwnerAdmin(user)) return true;
+    const perms = user.permissions || {};
+    if (perms.can_access_finix !== true || perms[pageFlag] !== true) return false;
+    return matrixGrants(user, `finix.${pageFlag}`, normalizedAction);
+  }
   if (isAdminRole(user)) {
     // A licensee admin remains capped by the Platform Owner's selected pages.
     return !isCommercialTenant(user) || hasPageLicense(user, pageFlag, "finix");
   }
   if (!hasEffectivePermission(user, pageFlag)) return false;
-  const matrix = user.permissions?.governance_matrix;
-  if (!matrix || typeof matrix !== "object" || Array.isArray(matrix)) return false;
-  const grants = matrix[`finix.${pageFlag}`];
-  if (!Array.isArray(grants)) return false;
-  return grants.some((grant) => String(grant || "").trim().toLowerCase() === normalizedAction);
+  return matrixGrants(user, `finix.${pageFlag}`, normalizedAction);
+}
+
+/**
+ * Platform Owner console (licensees, licenses/installations, licensee users,
+ * packages, console settings): owner admin always; owner staff only with a
+ * Permission Matrix grant under "Platform Owner Console"; nobody else.
+ */
+export function canPerformPlatformOwnerAction(user, pageFlag, action) {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  if (!user || !pageFlag || !["edit", "delete"].includes(normalizedAction)) return false;
+  if (!isPlatformOwner(user)) return false;
+  if (isPlatformOwnerAdmin(user)) return true;
+  return matrixGrants(user, `platform_console.${pageFlag}`, normalizedAction);
 }

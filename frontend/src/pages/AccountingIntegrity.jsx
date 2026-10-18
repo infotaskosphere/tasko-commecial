@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import api from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
@@ -236,6 +238,9 @@ function AdjustmentDrawer({ entry, accounts, isDark, onClose, onSaved }) {
 }
 
 function AccountingIntegrityInner() {
+  const { user } = useAuth();
+  // Adjustment notes rewrite a posted entry: an edit of Journal Entries.
+  const canEditJournal = canPerformFinixAction(user, 'can_view_journal_entries', 'edit');
   const isDark = useDark();
   const [loading, setLoading] = useState(true);
   const [locked, setLocked] = useState([]);
@@ -324,7 +329,7 @@ function AccountingIntegrityInner() {
                         : <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>—</span>}
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="outline" onClick={() => setActiveEntry(e)}>Fix this entry</Button>
+                      {canEditJournal && <Button size="sm" variant="outline" onClick={() => setActiveEntry(e)}>Fix this entry</Button>}
                     </TableCell>
                   </TableRow>
                 ))}
