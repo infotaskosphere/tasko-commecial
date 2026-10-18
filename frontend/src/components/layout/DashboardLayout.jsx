@@ -142,7 +142,70 @@ const springSnap = { type: 'spring', stiffness: 500, damping: 28 }, springMed = 
 const DashboardLayout = ({ children }) => {
   const { user, logout, hasPermission, loading, isPlatformOwner } = useAuth(); const navigate = useNavigate(); const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false); const [collapsed, setCollapsed] = useState(() => typeof window !== 'undefined' && localStorage.getItem('sidebarCollapsed') === 'true'); const [viewportWidth, setViewportWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1440); const [userMenuOpen, setUserMenuOpen] = useState(false); const [isDark, setIsDark] = useState(() => typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark'); const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024); const [hasUnread, setHasUnread] = useState(false); const [searchOpen, setSearchOpen] = useState(false); const [copilotOpen, setCopilotOpen] = useState(false); const sidebarNavRef = useRef(null), mainRef = useRef(null), activeItemRef = useRef(null);
-  useEffect(() => { if (mainRef.current) mainRef.current.scrollTo({ top: 0, behavior: 'auto' }); }, [location.pathname]); useEffect(() => { setCopilotOpen(false); }, [location.pathname]); useEffect(() => { if (activeItemRef.current) activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [location.pathname]); useEffect(() => { localStorage.setItem('theme', isDark ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', isDark); }, [isDark]); useActivityTracker(Boolean(user) && (Boolean(isPlatformOwner) || hasModuleAccess(user, 'taskosphere'))); useEffect(() => { localStorage.setItem('sidebarCollapsed', String(collapsed)); }, [collapsed]); const handleResize = useCallback(() => { const desktop = window.innerWidth >= 1024; setIsDesktop(desktop); if (!desktop) setCollapsed(false); }, []); useEffect(() => { window.addEventListener('resize', handleResize); const updateViewportWidth = () => setViewportWidth(window.innerWidth); updateViewportWidth(); return () => window.removeEventListener('resize', handleResize); }, [handleResize]); useEffect(() => { if (window.innerWidth >= 1024) setSidebarOpen(true); }, []); useEffect(() => { if (!isDesktop) setSidebarOpen(false); }, [location.pathname, isDesktop]); useEffect(() => { if (!userMenuOpen) return; const handle = (e) => { if (!e.target.closest('[data-user-menu]')) setUserMenuOpen(false); }; document.addEventListener('mousedown', handle); return () => document.removeEventListener('mousedown', handle); }, [userMenuOpen]);
+  const navigationDiagnosticsEnabled = () => {
+    try { return localStorage.getItem("taskosphere_navigation_debug") === "1"; }
+    catch { return false; }
+  };
+  useEffect(() => { if (mainRef.current) mainRef.current.scrollTo({ top: 0, behavior: 'auto' }); }, [location.pathname]); 
+  useEffect(() => {
+    const onNavigationClick = (event) => {
+      const anchor = event.target?.closest?.("a[href]");
+      if (!anchor) return;
+      try {
+        const target = new URL(anchor.href, window.location.origin);
+        if (target.origin !== window.location.origin || target.pathname === window.location.pathname) return;
+        const attempt = { path: target.pathname, startedAt: performance.now() };
+        window.__TASKO_LAST_NAVIGATION_ATTEMPT__ = attempt;
+        if (navigationDiagnosticsEnabled()) {
+          console.info("[Taskosphere navigation] click", { path: target.pathname });
+          window.setTimeout(() => {
+            if (window.__TASKO_LAST_NAVIGATION_ATTEMPT__ === attempt &&
+                window.location.pathname !== attempt.path &&
+                navigationDiagnosticsEnabled()) {
+              console.warn("[Taskosphere navigation] destination not reached within 5 seconds", {
+                path: attempt.path
+              });
+            }
+          }, 5000);
+        }
+      } catch {}
+    };
+    const onWindowError = (event) => {
+      if (!navigationDiagnosticsEnabled()) return;
+      console.error("[Taskosphere runtime] window error", {
+        message: String(event.message || "unknown").slice(0, 200),
+        source: String(event.filename || "").split("/").pop(),
+        line: event.lineno || null
+      });
+    };
+    const onUnhandledRejection = (event) => {
+      if (!navigationDiagnosticsEnabled()) return;
+      console.error("[Taskosphere runtime] unhandled promise rejection", {
+        reasonType: event.reason?.name || typeof event.reason
+      });
+    };
+    document.addEventListener("click", onNavigationClick, true);
+    window.addEventListener("error", onWindowError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+    return () => {
+      document.removeEventListener("click", onNavigationClick, true);
+      window.removeEventListener("error", onWindowError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+  useEffect(() => {
+    setCopilotOpen(false);
+    const attempt = window.__TASKO_LAST_NAVIGATION_ATTEMPT__;
+    if (attempt && attempt.path === location.pathname) {
+      if (navigationDiagnosticsEnabled()) {
+        console.info("[Taskosphere navigation] route reached", {
+          path: location.pathname,
+          elapsedMs: Math.round(performance.now() - attempt.startedAt)
+        });
+      }
+      delete window.__TASKO_LAST_NAVIGATION_ATTEMPT__;
+    }
+  }, [location.pathname]); useEffect(() => { if (activeItemRef.current) activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, [location.pathname]); useEffect(() => { localStorage.setItem('theme', isDark ? 'dark' : 'light'); document.documentElement.classList.toggle('dark', isDark); }, [isDark]); useActivityTracker(Boolean(user) && (Boolean(isPlatformOwner) || hasModuleAccess(user, 'taskosphere'))); useEffect(() => { localStorage.setItem('sidebarCollapsed', String(collapsed)); }, [collapsed]); const handleResize = useCallback(() => { const desktop = window.innerWidth >= 1024; setIsDesktop(desktop); if (!desktop) setCollapsed(false); }, []); useEffect(() => { window.addEventListener('resize', handleResize); const updateViewportWidth = () => setViewportWidth(window.innerWidth); updateViewportWidth(); return () => window.removeEventListener('resize', handleResize); }, [handleResize]); useEffect(() => { if (window.innerWidth >= 1024) setSidebarOpen(true); }, []); useEffect(() => { if (!isDesktop) setSidebarOpen(false); }, [location.pathname, isDesktop]); useEffect(() => { if (!userMenuOpen) return; const handle = (e) => { if (!e.target.closest('[data-user-menu]')) setUserMenuOpen(false); }; document.addEventListener('mousedown', handle); return () => document.removeEventListener('mousedown', handle); }, [userMenuOpen]);
   useEffect(() => { const fetchUnread = async () => { try { const { data } = await api.get('/notifications/unread-count', { _silent: true }); setHasUnread((data?.count ?? 0) > 0); } catch {} }; fetchUnread(); const interval = setInterval(fetchUnread, 30000); return () => clearInterval(interval); }, []);
   
   // Runtime compatibility guard: older navigation state or a legacy injected entry
