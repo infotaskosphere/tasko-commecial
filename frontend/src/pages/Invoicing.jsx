@@ -1923,6 +1923,8 @@ function parseSaleReportExcel(file) {
 // REMOVE BACKUP SECTION (shown inside ImportModal choose step)
 // ════════════════════════════════════════════════════════════════════════════════
 const RemoveBackupSection = ({ isDark }) => {
+  const { user } = useAuth();
+  const canDeleteSale = canPerformFinixAction(user, 'can_view_sale', 'delete');
   const [sources, setSources] = useState([]);
   const [loadingSources, setLoadingSources] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -1951,6 +1953,7 @@ const RemoveBackupSection = ({ isDark }) => {
   };
 
   const handleRemove = async (source) => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     const src = sources.find(s => s.source === source);
     if (!window.confirm(
       `Remove all data imported from "${SOURCE_LABELS[source] || source}"?\n\n` +
@@ -2000,14 +2003,14 @@ const RemoveBackupSection = ({ isDark }) => {
                     {s.invoice_count} invoices · {s.client_count} clients · {s.product_count} products
                   </p>
                 </div>
-                <button
+                {canDeleteSale && <button
                   type="button"
                   disabled={removing === s.source}
                   onClick={() => handleRemove(s.source)}
                   className="flex-shrink-0 flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 disabled:opacity-50 transition-colors">
                   {removing === s.source ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                   Remove
-                </button>
+                </button>}
               </div>
             ))
           )}
@@ -2544,7 +2547,7 @@ const StatusPill = ({ inv }) => {
 // Selectable statuses exposed in the inline dropdown (overdue is computed, not stored)
 const INLINE_STATUSES = ['draft', 'sent', 'partially_paid', 'paid', 'cancelled'];
 
-const InlineStatusDropdown = ({ inv, onStatusChange, isDark }) => {
+const InlineStatusDropdown = ({ inv, onStatusChange, isDark, canEdit = false }) => {
   const [open, setOpen]       = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   // Fixed-position coordinates — computed from the trigger button's screen rect
@@ -2575,6 +2578,7 @@ const InlineStatusDropdown = ({ inv, onStatusChange, isDark }) => {
 
   const handleToggle = (e) => {
     e.stopPropagation();
+    if (!canEdit) { toast.error('Changing the status is an edit. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!open) recalcPos();
     setOpen(v => !v);
   };
@@ -6450,23 +6454,55 @@ const fetchAll = useCallback(async () => {
     if (!selectedIds.size) return;
     if (!window.confirm(`Permanently delete ${selectedIds.size} invoice${selectedIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkDeleteLoading(true);
-    try {
-      const ids = Array.from(selectedIds);
-      const { data: result } = await api.delete('/invoices/bulk-delete', { data: ids });
-      setSelectedIds(new Set());
-      fetchAll();
-      const deletedCount = result?.deleted ?? 0;
-      const blocked = result?.errors || [];
-      if (deletedCount) toast.success(`Deleted ${deletedCount} invoice${deletedCount > 1 ? 's' : ''}`);
-      if (blocked.length) {
-        // Server refuses deletes that would orphan credit notes, erase payments or touch a locked period.
-        toast.error(`${blocked.length} not deleted: ${blocked[0].reason}${blocked.length > 1 ? ` (+${blocked.length - 1} more)` : ''}`, { duration: 9000 });
+    // Each delete runs ledger, lock-period and audit checks on the server, so a
+    // single request for ~100 invoices outlived the 30s client timeout and was
+    // reported as "Nothing was changed" while the server kept deleting.
+    // Delete in small batches, credit/debit notes first (they must go before
+    // the invoice they belong to), and report exactly what happened.
+    const typeById = new Map((invoices || []).map((i) => [i.id, i.invoice_type]));
+    const isNote = (id) => ['credit_note', 'debit_note'].includes(typeById.get(id));
+    const ids = Array.from(selectedIds).sort((a, b) => Number(!isNote(a)) - Number(!isNote(b)));
+    const BATCH = 15;
+    let deletedCount = 0;
+    const blocked = [];
+    let aborted = null;
+    for (let start = 0; start < ids.length; start += BATCH) {
+      const batch = ids.slice(start, start + BATCH);
+      try {
+        const { data: result } = await api.delete('/invoices/bulk-delete', { data: batch, timeout: 180000 });
+        deletedCount += result?.deleted ?? 0;
+        blocked.push(...(result?.errors || []));
+      } catch (err) {
+        const detail = err?.response?.data?.detail;
+        aborted = {
+          // A server answer (e.g. 403) means that batch was refused as a whole.
+          // A timeout/network error means the outcome of that batch is unknown.
+          certain: Boolean(err?.response),
+          reason: typeof detail === 'string' && detail ? detail
+            : err?.code === 'ECONNABORTED' ? 'the server took too long to respond'
+            : err?.response ? `server error ${err.response.status}`
+            : 'the server could not be reached',
+        };
+        break;
       }
-    } catch (err) {
-      toast.error(err?.response?.data?.detail || 'Bulk delete failed. Nothing was changed.');
+    }
+    setSelectedIds(new Set());
+    fetchAll();
+    if (deletedCount) toast.success(`Deleted ${deletedCount} of ${ids.length} invoice${ids.length > 1 ? 's' : ''}`);
+    if (blocked.length) {
+      // Server refuses deletes that would orphan credit notes, erase payments or touch a locked period.
+      toast.error(`${blocked.length} not deleted: ${blocked[0].reason}${blocked.length > 1 ? ` (+${blocked.length - 1} more)` : ''}`, { duration: 9000 });
+    }
+    if (aborted) {
+      toast.error(
+        aborted.certain && !deletedCount
+          ? `Bulk delete failed: ${aborted.reason}. Nothing was deleted.`
+          : `Bulk delete stopped: ${aborted.reason}. The list has been refreshed — check it and retry the remaining invoices.`,
+        { duration: 12000 },
+      );
     }
     setBulkDeleteLoading(false);
-  }, [selectedIds, fetchAll, canDeleteSale]);
+  }, [selectedIds, invoices, fetchAll, canDeleteSale]);
 
   const handleEdit = useCallback((inv) => {
     if (!canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
@@ -6637,8 +6673,9 @@ const fetchAll = useCallback(async () => {
   }, [companies]);
 
   const handleMarkSent = useCallback(async (inv) => {
+    if (!canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     try { await api.post(`/invoices/${inv.id}/mark-sent`); fetchAll(); toast.success('Marked as sent'); } catch { toast.error('Failed'); }
-  }, [fetchAll]);
+  }, [fetchAll, canEditSale]);
 
   // Optimistic status update — avoids a full refetch on every dropdown change
   const handleStatusChange = useCallback((invId, newStatus, serverAmounts = {}) => {
@@ -6766,6 +6803,7 @@ const fetchAll = useCallback(async () => {
 
   const handleSaveIncome = async (e) => {
     e.preventDefault();
+    if (editingIncome && !canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!incomeForm.company_id) { toast.error('Please select a company'); return; }
     if (!incomeForm.date) { toast.error('Please select a date'); return; }
     if (!incomeForm.amount || parseFloat(incomeForm.amount) <= 0) { toast.error('Please enter a valid amount'); return; }
@@ -6804,6 +6842,7 @@ const fetchAll = useCallback(async () => {
   };
 
   const handleDeleteIncome = async (incomeId) => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Are you sure you want to delete this direct income record?')) return;
     try {
       await api.delete(`/unprepared-incomes/${incomeId}`);
@@ -7126,7 +7165,7 @@ const fetchAll = useCallback(async () => {
                       ) : null}
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
-                      <InlineStatusDropdown inv={inv} onStatusChange={handleStatusChange} isDark={isDark} />
+                      <InlineStatusDropdown inv={inv} onStatusChange={handleStatusChange} isDark={isDark} canEdit={canEditSale} />
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
@@ -7354,7 +7393,7 @@ const fetchAll = useCallback(async () => {
                           <td className="p-4 text-xs text-slate-400 max-w-xs truncate" title={inc.description}>{inc.description || '—'}</td>
                           <td className="p-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
-                              <button
+                              {canEditSale && <button
                                 onClick={() => {
                                   setEditingIncome(inc);
                                   setIncomeForm({
@@ -7372,14 +7411,14 @@ const fetchAll = useCallback(async () => {
                                 className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/30' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
                               >
                                 <Edit className="h-3.5 w-3.5" />
-                              </button>
-                              <button
+                              </button>}
+                              {canDeleteSale && <button
                                 onClick={() => handleDeleteIncome(inc.id)}
                                 title="Delete"
                                 className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-red-400 hover:bg-red-900/30' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}`}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              </button>}
                             </div>
                           </td>
                         </tr>

@@ -366,10 +366,11 @@ class ResetVendorRequest(BaseModel):
 
 @router.post("/learning/reset-vendor")
 async def learning_reset_vendor(body: ResetVendorRequest, current_user: User = Depends(get_current_user)):
-    """Admin only: make Finix forget what it learned about one vendor (ledger, GST rate, layout).
+    """Admin, or a user granted 'delete' on Zero Touch Entries in Permission Matrix:
+    make Finix forget what it learned about one vendor (ledger, GST rate, layout).
     Bills already posted are not changed; the reset itself is logged."""
-    if not is_admin_role(current_user):
-        raise HTTPException(403, "Only an admin can reset what Finix has learned.")
+    from backend.finix_action_permissions import require_finix_action
+    require_finix_action(current_user, "can_view_zero_touch_entries", "delete")
     from backend.accounting_ai import invoice_learning
     cid = _company(current_user, body.company_id)
     if not await invoice_learning.reset_vendor(cid, body.vendor_key, current_user.id):

@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 
 from backend.dependencies import create_access_token, db, get_current_user, require_admin
+from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.licensing_api import create_license_record, _expiry_reason, _find_license, _now, _public_license
@@ -395,6 +396,7 @@ async def get_custom_module_catalog(current_user: User = Depends(require_admin()
 
 @router.put("/module-catalog/{module_id}")
 async def update_custom_module_catalog(module_id: str, payload: Dict[str, Any], current_user: User = Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_packages", "edit")
     if module_id not in MODULE_IDS:
         raise HTTPException(status_code=404, detail="Module not found.")
     try:
@@ -767,6 +769,7 @@ async def get_custom_my_company(current_user: User = Depends(get_current_user)):
 
 @router.delete("/licenses/{license_id}/company")
 async def delete_commercial_company(license_id: str, current_user: User = Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_licensees", "delete")
     license_doc = await db.commercial_licenses.find_one({"id": license_id}, {"_id": 0})
     if not license_doc:
         raise HTTPException(status_code=404, detail="License not found.")

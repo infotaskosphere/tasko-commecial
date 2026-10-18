@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.dependencies import db, get_current_user, require_admin
+from backend.platform_owner_actions import require_platform_owner_action
 from backend.identity_hierarchy import (ensure_identity_email_link, ensure_licensee_uid, ensure_license_uid, release_stale_licensee_email_link)
 from backend.platform_owner import platform_owner_emails
 
@@ -674,21 +675,25 @@ async def create_license(payload: Dict[str, Any], current_user=Depends(require_a
 
 @router.patch("/licenses/{license_id}/status")
 async def update_license_status(license_id: str, payload: Dict[str, Any], current_user=Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_licenses", "edit")
     return await update_license_status_record(license_id, payload.get("status"))
 
 
 @router.patch("/licenses/{license_id}/package")
 async def upgrade_license(license_id: str, payload: Dict[str, Any], current_user=Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_licenses", "edit")
     return await upgrade_license_record(license_id, str(payload.get("package_id") or ""))
 
 
 @router.put("/packages/{package_id}")
 async def save_package(package_id: str, payload: Dict[str, Any], current_user=Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_packages", "edit")
     return await save_package_record(payload, package_id)
 
 
 @router.post("/licenses/{license_id}/installations/{installation_id}/revoke")
 async def revoke_installation(license_id: str, installation_id: str, current_user=Depends(require_admin())):
+    require_platform_owner_action(current_user, "can_view_platform_licenses", "delete")
     return await revoke_installation_record(license_id, installation_id)
 
 

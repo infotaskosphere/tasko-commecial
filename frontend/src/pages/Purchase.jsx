@@ -240,6 +240,7 @@ function Purchase() {
 
   const dismissInboxItem = async () => {
     if (!dismissing) return;
+    if (!canDeletePurchase) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if ((dismissing.reason || '').trim().length < 3) { toast.error('Say why this bill is being dismissed'); return; }
     setInboxBusy(dismissing.id);
     try {
@@ -610,7 +611,7 @@ function Purchase() {
                       <Button size="sm" disabled={!!inboxBusy} onClick={() => openInboxItem(it)} style={{ background: COLORS.mediumBlue }} className="text-white">
                         {inboxBusy === it.id ? <MiniLoader height={16} /> : <><Eye className="h-4 w-4 mr-1.5" />Review and add</>}
                       </Button>
-                      <Button size="sm" variant="ghost" disabled={!!inboxBusy} onClick={() => setDismissing({ id: it.id, reason: '' })}>Dismiss</Button>
+                      {canDeletePurchase && <Button size="sm" variant="ghost" disabled={!!inboxBusy} onClick={() => setDismissing({ id: it.id, reason: '' })}>Dismiss</Button>}
                     </div>
                   )}
                 </li>

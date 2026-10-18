@@ -2415,6 +2415,7 @@ async def sync_invoices_for_client(
     Bulk-update client details across all invoices that reference this client_id.
     Called automatically when a client record is saved/updated.
     """
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
     allowed = {
@@ -3881,6 +3882,7 @@ class InboxDismiss(BaseModel):
 
 @router.post("/purchase-invoices/inbox/{doc_id}/dismiss")
 async def purchase_inbox_dismiss(doc_id: str, body: InboxDismiss, current_user: User = Depends(get_current_user)):
+    require_finix_action(current_user, "can_view_purchase", "delete")
     if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     d = await db.zte_processed_documents.find_one({"id": doc_id}, {"_id": 0, "status": 1})
@@ -5138,6 +5140,7 @@ async def reconcile_paid_receipts(
     Safe to run more than once — an invoice is only touched if its recorded
     payments (db.payments) don't yet add up to its grand_total.
     """
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
 
@@ -5202,6 +5205,7 @@ async def reconcile_gst_registration(
     Safe to run more than once — a document is only touched if it still
     carries non-zero GST and its company is (still) not GST-registered.
     """
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user):
         raise HTTPException(403, "Access denied")
 
@@ -5847,6 +5851,7 @@ async def send_invoice_email(inv_id: str, background_tasks: BackgroundTasks,
 
 @router.post("/invoices/{inv_id}/mark-sent")
 async def mark_invoice_sent(inv_id: str, current_user: User = Depends(check_module_permission("invoicing", "create"))):
+    require_finix_action(current_user, "can_view_sale", "edit")
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     result = await db.invoices.update_one({"id": inv_id},
         {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})

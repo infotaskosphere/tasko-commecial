@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from backend.dependencies import db, get_current_user
+from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import User
 from backend.platform_owner import is_platform_owner
 from backend.commercial_onboarding_approval import router as commercial_onboarding_approval_router
@@ -324,6 +325,7 @@ async def update_omni_settings(
     user: User = Depends(require_commercial_admin)
 ):
     """Update runtime settings for AIWeave Universal Omni Route."""
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
     payload = settings.dict()
     payload["key"] = "aiweave_omni_config"
     payload["updated_at"] = _now_iso()
@@ -396,6 +398,7 @@ async def delete_domain(
     user: User = Depends(require_commercial_admin)
 ):
     """Remove a connected commercial domain."""
+    require_platform_owner_action(user, "can_view_platform_settings", "delete")
     result = await db.commercial_domains.delete_one({"id": domain_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Domain not found")
@@ -497,6 +500,7 @@ async def update_email_config(
     user: User = Depends(require_commercial_admin)
 ):
     """Update centralized email settings (SMTP, SendGrid, Brevo, Sender)."""
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
     updated = await email_service.save_config(body, updated_by=str(user.id))
     await AuditSecurity.log_security_event(
         event_type="email_config_updated",
@@ -554,6 +558,7 @@ async def update_email_template(
     user: User = Depends(require_commercial_admin)
 ):
     """Update subject, html_body, or text_body of a template."""
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
     code_up = code.upper()
     try:
         updated = await email_service.update_template(code_up, body, user_id=str(user.id))
@@ -664,6 +669,7 @@ async def send_template_test_email(
 @router.post("/email/templates/{code}/reset")
 async def reset_email_template(code: str, user: User = Depends(require_commercial_admin)):
     """Reset template back to factory defaults."""
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
     code_up = code.upper()
     try:
         reset_tmpl = await email_service.reset_template_to_default(code_up)
@@ -721,6 +727,7 @@ async def update_recovery_settings(
     user: User = Depends(require_commercial_admin)
 ):
     """Update security and account recovery policy controls."""
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
     current = await AccountRecoveryService.get_recovery_settings()
     merged = {**current.model_dump(), **body}
     new_settings = AccountRecoverySettings(**merged)
@@ -779,6 +786,7 @@ async def update_licensee_email_settings(
     user: User = Depends(require_commercial_admin)
 ):
     """Save customer/licensee email addresses and notification preferences."""
+    require_platform_owner_action(user, "can_view_platform_licensees", "edit")
     fields = [
         "secondary_email", "billing_email", "notification_email",
         "recovery_email", "email_enabled", "notification_preferences",
@@ -816,6 +824,7 @@ async def verify_user_email_manual(
     user: User = Depends(require_commercial_admin)
 ):
     """Administrator manually marks a user's email as verified."""
+    require_platform_owner_action(user, "can_view_platform_licensee_users", "edit")
     target_user = await db.users.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -869,6 +878,7 @@ async def trigger_user_password_reset(
     user: User = Depends(require_commercial_admin)
 ):
     """Admin triggers a password reset email for a user."""
+    require_platform_owner_action(user, "can_view_platform_licensee_users", "edit")
     target_user = await db.users.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")

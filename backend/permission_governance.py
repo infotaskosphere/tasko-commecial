@@ -304,6 +304,12 @@ async def get_module_hierarchy(current_user: User = Depends(get_current_user)):
     unaffected and keep seeing every module, exactly as before.
     """
     tree = [{"module": key, **value} for key, value in MODULE_HIERARCHY.items()]
+    from backend.platform_owner import is_platform_owner
+    if is_platform_owner(current_user):
+        # The owner's own staff can be granted console edit/delete actions.
+        # Never shown to licensees: it is not a licensable module.
+        from backend.platform_owner_actions import platform_console_tree_entry
+        return tree + [platform_console_tree_entry()]
     licensed_modules = await _resolve_actor_licensed_modules(current_user)
     if licensed_modules:
         tree = [m for m in tree if m["module"] == "admin" or m["module"] in licensed_modules]
