@@ -1923,6 +1923,11 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             ]
         })
 
+    # The tenant-aware DB applies its own customer filter to companies. Using
+    # that wrapper here would silently narrow this verified company-master
+    # query to one operating company. Query the raw registry with the complete
+    # customer/creator scope already built above, while excluding conflicting
+    # ownership markers and the Platform Owner workspace.
     return {
         "$and": [
             {"$or": clauses},
