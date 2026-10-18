@@ -75,6 +75,9 @@ class FakeGeminiResponse:
 
 
 class FakeAsyncGeminiClient:
+    def __init__(self, *args, **kwargs):
+        self.timeout = kwargs.get("timeout")
+
     async def __aenter__(self):
         return self
 
