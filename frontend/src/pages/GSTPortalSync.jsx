@@ -4,7 +4,7 @@ import {
   Landmark, RefreshCw, AlertTriangle, CheckCircle2, ShieldCheck,
   Search, Copy, Check, ExternalLink, Settings, Building2,
   FileSpreadsheet, Upload, Download, Sparkles, Database, Layers,
-  MapPin, Hash, UserCheck, ArrowRight, Play, Wallet, Wifi
+  MapPin, Hash, UserCheck, ArrowRight, Play, Wallet, Wifi, Plus, Trash2, Eye, Clock
 } from 'lucide-react';
 import { ContentLoader } from '@/components/ui/GifLoader.jsx';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,28 @@ const COLORS = {
 
 const fmtC = (n) => (n === null || n === undefined) ? '—' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
+// The company being worked on is the one chosen in Finix; an empty value means the signed-in user's own.
+const activeCompanyId = () => {
+  try { return localStorage.getItem('accountingReports:lastCompanyId') || ''; } catch { return ''; }
+};
+
+const fmtWhen = (iso) => {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+// What each stored status means to the reader. Only a status an outside service confirmed is shown as
+// the taxpayer's real status; a well-formed number nobody has confirmed is labelled for what it is.
+const STATUS_STYLE = {
+  Active: { cls: 'bg-emerald-600 text-white', note: 'Confirmed active' },
+  'Format valid': { cls: 'bg-amber-100 text-amber-800 border border-amber-300', note: 'The number is well-formed, but no GST service confirmed it. Press Update to check again.' },
+  'Not checked yet': { cls: 'bg-slate-100 text-slate-600 border border-slate-300', note: 'Not checked yet. Press Update to check it.' },
+  'Invalid GSTIN': { cls: 'bg-rose-100 text-rose-700 border border-rose-300', note: 'This is not a valid GSTIN.' },
+};
+const statusStyle = (status) => STATUS_STYLE[status] || { cls: 'bg-rose-100 text-rose-700 border border-rose-300', note: status };
+
 function MetricCard({ label, value, icon: Icon, color, isDark, sub }) {
   return (
     <div className={`rounded-xl border p-4 shadow-sm transition-all ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
@@ -66,6 +88,12 @@ function GSTPortalSyncInner() {
   const [snapshots, setSnapshots] = useState([]);
   const [riskRows, setRiskRows] = useState([]);
 
+  // The company's saved GSTINs and the status stored for each
+  const [gstins, setGstins] = useState([]);
+  const [canManage, setCanManage] = useState(true);
+  const [addValue, setAddValue] = useState('');
+  const [busy, setBusy] = useState(''); // gstin being updated/synced/removed, 'add' or 'all'
+
   // Search state
   const [searchGstin, setSearchGstin] = useState('');
   const [taxpayerResult, setTaxpayerResult] = useState(null);
@@ -85,20 +113,31 @@ function GSTPortalSyncInner() {
   });
   const [savingConfig, setSavingConfig] = useState(false);
 
+  // Reads saved data only. Nothing here contacts an outside GST service.
   const fetchAll = async () => {
     setLoading(true);
+    const params = { company_id: activeCompanyId() };
     try {
-      const [m, s, r, c] = await Promise.allSettled([
-        api.get('/gst-portal/dashboard-metrics'),
-        api.get('/gst-portal/snapshot'),
-        api.get('/gst-portal/audit-risk'),
+      const [m, s, r, c, g] = await Promise.allSettled([
+        api.get('/gst-portal/dashboard-metrics', { params, cache: false }),
+        api.get('/gst-portal/snapshot', { params, cache: false }),
+        api.get('/gst-portal/audit-risk', { params, cache: false }),
         api.get('/gst/config'),
+        api.get('/gst-portal/gstins', { params, cache: false }),
       ]);
       setMetrics(m.status === 'fulfilled' ? m.value.data : null);
       setSnapshots(s.status === 'fulfilled' ? s.value.data : []);
       setRiskRows(r.status === 'fulfilled' ? r.value.data : []);
       if (c.status === 'fulfilled' && c.value.data?.config) {
         setConfigData(c.value.data.config);
+      }
+      if (g.status === 'fulfilled') {
+        setGstins(g.value.data?.gstins || []);
+        setCanManage(g.value.data?.can_manage !== false);
+      } else {
+        setGstins([]);
+        const detail = g.reason?.response?.data?.detail;
+        if (detail) toast.error(detail, { id: 'gst-list-error' });
       }
     } catch {
       toast.error('Failed to load GST portal data');
@@ -109,9 +148,80 @@ function GSTPortalSyncInner() {
 
   useEffect(() => {
     fetchAll();
-    // Pre-populate with first sample for fast preview
-    handleLookup('29AABCU9603R1ZJ');
   }, []);
+
+  const replaceEntry = (entry) =>
+    setGstins((list) => {
+      const rest = list.filter((e) => e.gstin !== entry.gstin);
+      return [...rest, entry].sort((a, b) => Number(b.saved) - Number(a.saved) || a.gstin.localeCompare(b.gstin));
+    });
+
+  const errorText = (err, fallback) => err?.response?.data?.detail || err?.message || fallback;
+
+  const handleAdd = async (value) => {
+    const g = String(value ?? addValue).trim().toUpperCase();
+    if (g.length !== 15) { toast.error('A GSTIN has 15 characters.'); return; }
+    setBusy('add');
+    try {
+      const { data } = await api.post('/gst-portal/gstins', { company_id: activeCompanyId(), gstin: g });
+      replaceEntry(data);
+      setAddValue('');
+      toast.success(`${g} added: ${data.status}`);
+    } catch (err) {
+      toast.error(errorText(err, 'Could not add this GSTIN'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const handleUpdate = async (g) => {
+    setBusy(g);
+    try {
+      const { data } = await api.post(`/gst-portal/gstins/${encodeURIComponent(g)}/refresh`, null, { params: { company_id: activeCompanyId() } });
+      replaceEntry(data);
+      toast.success(`${g} updated: ${data.status}`);
+    } catch (err) {
+      toast.error(errorText(err, 'Could not update this GSTIN'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const handleUpdateAll = async () => {
+    setBusy('all');
+    try {
+      const { data } = await api.post('/gst-portal/gstins/refresh-all', null, { params: { company_id: activeCompanyId() }, timeout: 180000 });
+      (data.updated || []).forEach(replaceEntry);
+      if (data.failed?.length) toast.warning(`${data.updated.length} updated, ${data.failed.length} could not be checked.`);
+      else toast.success(`${data.updated.length} GSTIN${data.updated.length === 1 ? '' : 's'} updated.`);
+    } catch (err) {
+      toast.error(errorText(err, 'Could not update GSTINs'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const handleRemove = async (g) => {
+    if (!window.confirm(`Remove ${g} from this company's GSTINs? Its stored status and sync history stay on record.`)) return;
+    setBusy(g);
+    try {
+      await api.delete(`/gst-portal/gstins/${encodeURIComponent(g)}`, { params: { company_id: activeCompanyId() } });
+      setGstins((list) => list.filter((e) => e.gstin !== g));
+      toast.success(`${g} removed`);
+    } catch (err) {
+      toast.error(errorText(err, 'Could not remove this GSTIN'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  // Show the details already stored for a saved GSTIN. No lookup.
+  const handleView = (entry) => {
+    if (!entry.profile) { toast.info('This GSTIN has not been checked yet. Press Update to check it.'); return; }
+    setTaxpayerResult({ ...decodeGSTIN(entry.gstin), state_name: entry.state_name, state_code: entry.state_code, pan: entry.pan, entity_type: entry.entity_type, checksum_valid: entry.checksum_valid, ...entry.profile, status: entry.status, status_confirmed: entry.status_confirmed, _stored: true });
+    setSearchGstin(entry.gstin);
+    requestAnimationFrame(() => document.getElementById('gst-result')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
 
   const handleLookup = async (gstinToSearch) => {
     const target = (gstinToSearch || searchGstin).trim().toUpperCase();
@@ -123,7 +233,7 @@ function GSTPortalSyncInner() {
     setSearchGstin(target);
     try {
       const res = await lookupGSTIN(target);
-      setTaxpayerResult(res);
+      setTaxpayerResult({ ...res, _stored: false });
       if (res.valid) {
         toast.success(`Verified: ${res.legal_name || 'Taxpayer'}`);
       } else {
@@ -137,19 +247,20 @@ function GSTPortalSyncInner() {
   };
 
   const handleSyncNow = async (targetGstin) => {
-    const g = (targetGstin || searchGstin || taxpayerResult?.gstin || '29AABCU9603R1ZJ').trim().toUpperCase();
+    const g = (targetGstin || taxpayerResult?.gstin || '').trim().toUpperCase();
+    if (g.length !== 15) { toast.error('Choose a GSTIN to sync.'); return; }
     setSyncing(true);
+    setBusy(`sync:${g}`);
     try {
-      await api.post('/gst-portal/register', { company_id: '', gstin: g, active: true });
-      const res = await api.post(`/gst-portal/sync-now?company_id=&gstin=${encodeURIComponent(g)}`);
-      toast.success(res.data?.message || 'Synced live liability & credit ledger via Free GST API.');
+      const res = await api.post('/gst-portal/sync-now', null, { params: { company_id: activeCompanyId(), gstin: g } });
+      toast.success(res.data?.message || 'Synced liability and credit ledger with the books.');
       await fetchAll();
       setActiveTab('ledgers');
     } catch (err) {
-      const detail = err.response?.data?.detail || 'Sync failed';
-      toast.error(detail);
+      toast.error(errorText(err, 'Sync failed'));
     } finally {
       setSyncing(false);
+      setBusy('');
     }
   };
 
@@ -313,20 +424,133 @@ function GSTPortalSyncInner() {
               TAB 1: LIVE GSTIN SEARCH & VERIFICATION
              ════════════════════════════════════════════════════════════════════ */}
           <TabsContent value="lookup" className="space-y-5">
+            {/* ── Saved GSTINs: stored status, no outside call until you add or update ── */}
+            <div className={`rounded-xl border shadow-sm overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div className={`px-5 py-4 flex flex-col md:flex-row md:items-center justify-between gap-3 border-b ${isDark ? 'border-slate-700' : 'border-slate-100'}`}>
+                <div>
+                  <h3 className="font-bold text-base">Your GSTINs</h3>
+                  <p className="text-xs text-slate-500">Status shown is what was stored when each number was last checked. Nothing is checked until you add or update one.</p>
+                </div>
+                {canManage && (
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input
+                      placeholder="Add a GSTIN (15 characters)"
+                      value={addValue}
+                      onChange={(e) => setAddValue(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                      maxLength={15}
+                      aria-label="GSTIN to add"
+                      className="font-mono uppercase placeholder:normal-case placeholder:font-sans h-10 w-full sm:w-64"
+                    />
+                    <Button onClick={() => handleAdd()} disabled={busy === 'add' || addValue.length !== 15} className="h-10 whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white font-semibold">
+                      {busy === 'add' ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+                      Add GSTIN
+                    </Button>
+                    <Button onClick={handleUpdateAll} disabled={!!busy || !gstins.some((e) => e.saved)} variant="outline" className="h-10 whitespace-nowrap">
+                      <RefreshCw className={`h-4 w-4 mr-2 ${busy === 'all' ? 'animate-spin' : ''}`} />
+                      Update all
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {gstins.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <p className="text-sm font-medium">No GSTINs saved for this company yet.</p>
+                  <p className="text-xs text-slate-500 mt-1">{canManage ? 'Add the company\'s GSTIN above to see its status here.' : 'Ask an administrator to add the company\'s GSTIN.'}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className={`text-left text-[11px] font-semibold uppercase tracking-wide ${isDark ? 'text-slate-400 bg-slate-900/40' : 'text-slate-500 bg-slate-50'}`}>
+                        <th className="px-5 py-2.5">GSTIN</th>
+                        <th className="px-3 py-2.5">Taxpayer</th>
+                        <th className="px-3 py-2.5">Status</th>
+                        <th className="px-3 py-2.5">Last checked</th>
+                        <th className="px-3 py-2.5">Books sync</th>
+                        <th className="px-5 py-2.5 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${isDark ? 'divide-slate-700' : 'divide-slate-100'}`}>
+                      {gstins.map((e) => {
+                        const st = statusStyle(e.status);
+                        const rowBusy = busy === e.gstin || busy === `sync:${e.gstin}` || busy === 'all';
+                        return (
+                          <tr key={e.gstin} className="align-top">
+                            <td className="px-5 py-3">
+                              <span className="font-mono font-semibold">{e.gstin}</span>
+                              {!e.saved && <div className="text-[11px] text-slate-500">From company profile</div>}
+                            </td>
+                            <td className="px-3 py-3">
+                              <div className="font-medium">{e.legal_name || <span className="text-slate-400">Not known yet</span>}</div>
+                              <div className="text-[11px] text-slate-500">{e.state_name}</div>
+                            </td>
+                            <td className="px-3 py-3">
+                              <span title={st.note} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${st.cls}`}>
+                                {e.status === 'Active' && <CheckCircle2 className="h-3 w-3" />}
+                                {['Format valid', 'Invalid GSTIN'].includes(e.status) && <AlertTriangle className="h-3 w-3" />}
+                                {e.status}
+                              </span>
+                              {e.checked && e.source && <div className="text-[11px] text-slate-500 mt-1 max-w-[190px]">Source: {e.source}</div>}
+                            </td>
+                            <td className="px-3 py-3 text-xs">
+                              {fmtWhen(e.verified_at) ? (<span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-slate-400" />{fmtWhen(e.verified_at)}</span>) : <span className="text-slate-400">Never</span>}
+                            </td>
+                            <td className="px-3 py-3 text-xs">
+                              {e.last_synced_at ? (
+                                <>
+                                  <div>{fmtWhen(e.last_synced_at)}</div>
+                                  {e.total_liability != null && <div className="text-slate-500">Liability {fmtC(e.total_liability)}</div>}
+                                  {e.is_audit_risk && <div className="text-rose-600 font-semibold">Audit risk · {e.variance_pct}% off books</div>}
+                                </>
+                              ) : <span className="text-slate-400">Not synced</span>}
+                            </td>
+                            <td className="px-5 py-3">
+                              <div className="flex flex-wrap justify-end gap-1.5">
+                                <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => handleView(e)} disabled={!e.checked} title={e.checked ? 'Show stored details' : 'Check it first'}>
+                                  <Eye className="h-3.5 w-3.5" />View
+                                </Button>
+                                {canManage && (
+                                  <>
+                                    <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => handleUpdate(e.gstin)} disabled={!!busy}>
+                                      <RefreshCw className={`h-3.5 w-3.5 ${busy === e.gstin ? 'animate-spin' : ''}`} />Update
+                                    </Button>
+                                    <Button size="sm" className="h-8 text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => handleSyncNow(e.gstin)} disabled={!!busy || rowBusy}>
+                                      <Database className="h-3.5 w-3.5" />Sync books
+                                    </Button>
+                                    {e.saved && (
+                                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-rose-600" onClick={() => handleRemove(e.gstin)} disabled={!!busy} aria-label={`Remove ${e.gstin}`}>
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             {/* Search Input Box */}
             <div className={`rounded-xl border p-5 shadow-sm ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-slate-500">
-                Enter 15-Character GSTIN to Search &amp; Verify
+                Look up any other GSTIN (not saved)
               </label>
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                   <Input
-                    placeholder="e.g. 29AABCU9603R1ZJ"
+                    placeholder="Enter a 15-character GSTIN"
                     value={searchGstin}
                     onChange={(e) => setSearchGstin(e.target.value.toUpperCase())}
                     onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
                     maxLength={15}
-                    className="font-mono uppercase text-base h-11 pr-10"
+                    className="font-mono uppercase placeholder:normal-case placeholder:font-sans text-base h-11 pr-10"
                   />
                   {searchGstin && (
                     <button
@@ -348,7 +572,7 @@ function GSTPortalSyncInner() {
                   ) : (
                     <Search className="h-4 w-4 mr-2" />
                   )}
-                  {searching ? 'Querying Free API…' : 'Search & Verify via Free API'}
+                  {searching ? 'Checking…' : 'Look up'}
                 </Button>
               </div>
 
@@ -376,7 +600,7 @@ function GSTPortalSyncInner() {
 
             {/* Taxpayer Verification Card */}
             {taxpayerResult && (
-              <div className={`rounded-xl border shadow-md overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <div id="gst-result" className={`rounded-xl border shadow-md overflow-hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
                 {/* Header */}
                 <div className={`p-5 border-b flex flex-col md:flex-row md:items-center justify-between gap-4 ${isDark ? 'border-slate-700 bg-slate-800/80' : 'border-slate-100 bg-slate-50/80'}`}>
                   <div>
@@ -384,15 +608,20 @@ function GSTPortalSyncInner() {
                       <span className="font-mono font-bold text-lg text-blue-600 dark:text-blue-400">
                         {taxpayerResult.gstin}
                       </span>
-                      {taxpayerResult.valid ? (
-                        <Badge className="bg-emerald-600 hover:bg-emerald-600 gap-1">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Valid &amp; Active
-                        </Badge>
-                      ) : (
+                      {!taxpayerResult.valid ? (
                         <Badge variant="destructive" className="gap-1">
                           <AlertTriangle className="h-3 w-3" />
                           Checksum Mismatch
+                        </Badge>
+                      ) : taxpayerResult.status_confirmed === false ? (
+                        <Badge className="bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-100 gap-1" title="The number is well-formed, but no GST service confirmed its status.">
+                          <AlertTriangle className="h-3 w-3" />
+                          Format valid, status not confirmed
+                        </Badge>
+                      ) : (
+                        <Badge className={`${(taxpayerResult.status || 'Active') === 'Active' ? 'bg-emerald-600 hover:bg-emerald-600' : 'bg-rose-600 hover:bg-rose-600'} gap-1`}>
+                          <CheckCircle2 className="h-3 w-3" />
+                          {taxpayerResult.status || 'Active'}
                         </Badge>
                       )}
                       <Badge variant="outline" className="text-xs">
@@ -417,10 +646,16 @@ function GSTPortalSyncInner() {
                       {copiedKey === 'json' ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
                       Copy JSON
                     </Button>
+                    {canManage && !gstins.some((e) => e.saved && e.gstin === taxpayerResult.gstin) && (
+                      <Button size="sm" variant="outline" onClick={() => handleAdd(taxpayerResult.gstin)} disabled={busy === 'add'} className="text-xs gap-1">
+                        <Plus className="h-3.5 w-3.5" />
+                        Add to my GSTINs
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       onClick={() => handleSyncNow(taxpayerResult.gstin)}
-                      disabled={syncing}
+                      disabled={syncing || !canManage}
                       className="text-xs gap-1 bg-emerald-600 hover:bg-emerald-700 text-white"
                     >
                       <RefreshCw className={`h-3.5 w-3.5 ${syncing ? 'animate-spin' : ''}`} />
@@ -487,7 +722,7 @@ function GSTPortalSyncInner() {
                   <div className="flex items-center gap-2 text-[11px]">
                     <span>Source: <strong className="text-slate-800 dark:text-slate-200">{taxpayerResult.source || 'Free GST API'}</strong></span>
                     <span>•</span>
-                    <span>Verified: {new Date(taxpayerResult.verified_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                    <span>{taxpayerResult._stored ? 'Last checked' : 'Checked'}: {fmtWhen(taxpayerResult.verified_at) || '—'}</span>
                   </div>
                 </div>
               </div>
@@ -647,7 +882,11 @@ function GSTPortalSyncInner() {
                   <p className={`text-sm ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>No portal snapshots stored yet.</p>
                   <Button
                     size="sm"
-                    onClick={() => handleSyncNow()}
+                    onClick={() => {
+                      const saved = gstins.filter((e) => e.saved);
+                      if (saved.length === 1) handleSyncNow(saved[0].gstin);
+                      else { setActiveTab('lookup'); toast.info(saved.length ? 'Choose a GSTIN and press Sync books.' : 'Add a GSTIN first, then press Sync books.'); }
+                    }}
                     className="mt-3 bg-blue-600 hover:bg-blue-700 text-white text-xs"
                   >
                     Sync First Snapshot Now

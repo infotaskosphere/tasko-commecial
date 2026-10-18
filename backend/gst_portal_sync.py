@@ -15,6 +15,12 @@ Endpoints (all under /api/gst-portal):
   GET  /snapshot            List stored portal snapshots
   GET  /audit-risk          List stored portal-vs-books comparisons
   GET  /dashboard-metrics   Rolled-up summary for the page header cards
+  GET  /gstins              The company's GSTINs with their LAST STORED status (database only,
+                             never contacts an outside service)
+  POST /gstins              Add a GSTIN: verify it once and store the result
+  POST /gstins/{g}/refresh  Update one GSTIN's status (the only other call to the outside service)
+  POST /gstins/refresh-all  Update every saved GSTIN, one after another
+  DELETE /gstins/{g}        Remove a saved GSTIN
 
 GSP connectivity is optional infrastructure: without `GSP_BASE_URL`,
 `GSP_CLIENT_ID` and `GSP_CLIENT_SECRET` set in the environment, this module
@@ -233,6 +239,7 @@ async def sync_now(
     portal = await _fetch_portal_balances(gstin, period, company_id=company_id)
 
     now = datetime.now(timezone.utc).isoformat()
+    await _store_profile(company_id, gstin, portal.get("taxpayer"), current_user.id, synced_at=now)
     snapshot = {
         "id": str(uuid.uuid4()), "company_id": company_id, "gstin": gstin, "period": period,
         "outward_cash_liability": portal["outward_cash_liability"],
@@ -314,6 +321,154 @@ async def dashboard_metrics(company_id: str = Query(""), current_user: User = De
         "is_audit_risk": bool(risk["is_risk"]) if risk else False,
         "last_synced_at": snap["fetched_at"] if snap else None,
     }
+
+
+# ── Saved GSTINs: stored status, updated only on request ─────────────────
+from backend.free_gst_api import decode_gstin_parts, lookup_gstin_details  # noqa: E402
+
+MAX_REFRESH_ALL = 25
+_UNCONFIRMED_SOURCES = ("Free Algorithmic",)
+
+
+async def _store_profile(company_id: str, gstin: str, profile: Optional[dict], user_id: str,
+                         synced_at: Optional[str] = None) -> None:
+    """Save the latest verified details on the company's registration for this GSTIN, creating it if needed."""
+    now = datetime.now(timezone.utc).isoformat()
+    fields: dict = {"updated_at": now}
+    if profile:
+        fields.update({"profile": profile, "verified_at": profile.get("verified_at") or now})
+    if synced_at:
+        fields["last_synced_at"] = synced_at
+    res = await db.gst_portal_registrations.update_one({"company_id": company_id, "gstin": gstin}, {"$set": fields})
+    if not getattr(res, "matched_count", 1):
+        await db.gst_portal_registrations.insert_one({
+            "id": str(uuid.uuid4()), "company_id": company_id, "gstin": gstin, "active": True,
+            "created_by": user_id, "created_at": now, **fields,
+        })
+
+
+def _entry(gstin: str, reg: Optional[dict], snap: Optional[dict], risk: Optional[dict], origin: str) -> dict:
+    """One row for the page. Built only from stored data."""
+    decoded = decode_gstin_parts(gstin)
+    profile = (reg or {}).get("profile") or {}
+    checked = bool(profile)
+    source = str(profile.get("source") or "")
+    confirmed = bool(profile.get("status_confirmed", checked and not source.startswith(_UNCONFIRMED_SOURCES)))
+    if not decoded["valid"]:
+        status = "Invalid GSTIN"
+    elif not checked:
+        status = "Not checked yet"
+    elif confirmed:
+        status = str(profile.get("status") or "Active")
+    else:
+        status = "Format valid"  # well-formed, but no outside service has confirmed it
+    return {
+        "gstin": gstin, "origin": origin, "saved": reg is not None, "active": (reg or {}).get("active", True),
+        "status": status, "status_confirmed": confirmed, "checked": checked,
+        "verified_at": (reg or {}).get("verified_at"), "source": source or None,
+        "legal_name": profile.get("legal_name") or "", "trade_name": profile.get("trade_name") or "",
+        "taxpayer_type": profile.get("taxpayer_type") or "",
+        "state_name": decoded["state_name"], "state_code": decoded["state_code"],
+        "pan": decoded["pan"], "entity_type": decoded["entity_type"], "checksum_valid": decoded["checksum_valid"],
+        "last_synced_at": (reg or {}).get("last_synced_at") or (snap or {}).get("fetched_at"),
+        "total_liability": (snap or {}).get("outward_total_liability"),
+        "available_itc": (snap or {}).get("available_itc"),
+        "variance_pct": (risk or {}).get("variance_pct"), "is_audit_risk": bool((risk or {}).get("is_risk")),
+        "profile": profile or None,
+    }
+
+
+async def _verify_and_store(user: User, company_id: str, gstin: str, force: bool) -> dict:
+    decoded = decode_gstin_parts(gstin)
+    if not decoded["valid"]:
+        why = "the check digit does not match" if decoded["format_valid"] else "it is not in the 15-character GSTIN format"
+        raise HTTPException(400, f"{gstin} is not a valid GSTIN: {why}.")
+    profile = await lookup_gstin_details(gstin, force_refresh=force)  # the only outside call
+    await _store_profile(company_id, gstin, profile, user.id)
+    reg = await db.gst_portal_registrations.find_one({"company_id": company_id, "gstin": gstin}, {"_id": 0})
+    snap = await db.gst_portal_snapshots.find_one({"company_id": company_id, "gstin": gstin}, {"_id": 0}, sort=[("fetched_at", -1)])
+    risk = await db.gst_portal_audit_risk.find_one({"company_id": company_id, "gstin": gstin}, {"_id": 0}, sort=[("computed_at", -1)])
+    return _entry(gstin, reg, snap, risk, "registered")
+
+
+class GSTINAdd(BaseModel):
+    company_id: str = ""
+    gstin: str = Field(..., min_length=15, max_length=15)
+
+
+@router.get("/gstins")
+async def list_gstins(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
+    """The company's GSTINs with the status stored the last time each was checked.
+
+    Reads the database only: opening the page never contacts an outside GST service. A number that
+    sits on the company profile but was never saved here is listed as "Not checked yet"."""
+    if not _can_view(current_user):
+        raise HTTPException(403, "Access denied.")
+    company_id = _cid(current_user, company_id)
+    regs = await db.gst_portal_registrations.find({"company_id": company_id}, {"_id": 0}).to_list(500)
+    by_gstin = {r["gstin"]: r for r in regs}
+
+    profile_gstin = ""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0, "gstin": 1})
+    if company:
+        profile_gstin = str(company.get("gstin") or "").strip().upper()
+
+    snaps: dict = {}
+    for s in await db.gst_portal_snapshots.find({"company_id": company_id}, {"_id": 0}).sort("fetched_at", -1).to_list(2000):
+        snaps.setdefault(s["gstin"], s)
+    risks: dict = {}
+    for r in await db.gst_portal_audit_risk.find({"company_id": company_id}, {"_id": 0}).sort("computed_at", -1).to_list(2000):
+        risks.setdefault(r["gstin"], r)
+
+    rows = [_entry(g, reg, snaps.get(g), risks.get(g), "registered") for g, reg in by_gstin.items()]
+    if len(profile_gstin) == 15 and profile_gstin not in by_gstin:
+        rows.append(_entry(profile_gstin, None, snaps.get(profile_gstin), risks.get(profile_gstin), "company_profile"))
+    rows.sort(key=lambda e: (not e["saved"], e["gstin"]))
+    return {"company_id": company_id, "gstins": rows, "can_manage": _can_manage(current_user)}
+
+
+@router.post("/gstins")
+async def add_gstin(body: GSTINAdd, current_user: User = Depends(get_current_user)):
+    """Add a GSTIN to the company: verify it once, then keep the result."""
+    if not _can_manage(current_user):
+        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    company_id = _cid(current_user, body.company_id)
+    return await _verify_and_store(current_user, company_id, body.gstin.strip().upper(), force=False)
+
+
+@router.post("/gstins/refresh-all")
+async def refresh_all_gstins(company_id: str = Query(""), current_user: User = Depends(get_current_user)):
+    if not _can_manage(current_user):
+        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    company_id = _cid(current_user, company_id)
+    regs = await db.gst_portal_registrations.find({"company_id": company_id, "active": {"$ne": False}}, {"_id": 0, "gstin": 1}).to_list(MAX_REFRESH_ALL)
+    done, failed = [], []
+    for r in regs:
+        try:
+            done.append(await _verify_and_store(current_user, company_id, r["gstin"], force=True))
+        except HTTPException as e:
+            failed.append({"gstin": r["gstin"], "error": e.detail})
+    return {"updated": done, "failed": failed}
+
+
+@router.post("/gstins/{gstin}/refresh")
+async def refresh_gstin(gstin: str, company_id: str = Query(""), current_user: User = Depends(get_current_user)):
+    """Update one GSTIN's status from the outside service and store it."""
+    if not _can_manage(current_user):
+        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    company_id = _cid(current_user, company_id)
+    return await _verify_and_store(current_user, company_id, gstin.strip().upper(), force=True)
+
+
+@router.delete("/gstins/{gstin}")
+async def remove_gstin(gstin: str, company_id: str = Query(""), current_user: User = Depends(get_current_user)):
+    if not _can_manage(current_user):
+        raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
+    company_id = _cid(current_user, company_id)
+    res = await db.gst_portal_registrations.delete_one({"company_id": company_id, "gstin": gstin.strip().upper()})
+    if not res.deleted_count:
+        raise HTTPException(404, "That GSTIN is not saved for this company.")
+    return {"success": True, "gstin": gstin.strip().upper()}
 
 
 @router.get("/lookup")

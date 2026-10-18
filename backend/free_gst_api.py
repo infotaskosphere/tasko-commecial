@@ -249,6 +249,9 @@ async def lookup_gstin_details(gstin: str, force_refresh: bool = False) -> Dict[
             "state_code": decoded["state_code"],
         },
         "filing_frequency": "Monthly (GSTR-1, GSTR-3B)",
+        # True only when an outside service actually answered. Without it the status above is just
+        # "the number is well-formed", and callers must not present it as a portal status.
+        "status_confirmed": bool(external_data),
         "source": (external_data and external_data.get("source")) or "Free Algorithmic & Local Register Engine",
         "verified_at": now,
         "from_cache": False,
