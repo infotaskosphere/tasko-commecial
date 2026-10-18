@@ -18,10 +18,12 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { Calendar as CalendarComponent } from '../components/ui/calendar';
 import LayoutCustomizer from '../components/layout/LayoutCustomizer';
 import { usePageLayout } from '../hooks/usePageLayout';
+import { hasModuleAccess, isCommercialTenant, normalizeModules } from '../lib/commercialPermissionMatrix';
 
 
 import {
   CheckSquare,
+  Lock,
   FileText,
   Clock,
   TrendingUp,
@@ -1262,7 +1264,7 @@ export default function Dashboard() {
       const perms = authUser?.permissions || {};
       const isCommercial = Boolean(authUser?.company_id);
       const canFetchUsers = !isCommercial || (perms.can_access_people_matrix === true && perms.can_view_user_page !== false);
-      const canFetchLeads = !isCommercial || (perms.can_access_proposals === true && perms.can_view_all_leads !== false);
+      const canFetchLeads = !isCommercial || (hasModuleAccess(authUser, 'proposals') && perms.can_access_proposals === true && perms.can_view_all_leads !== false);
 
       const [users, leads] = await Promise.all([
         canFetchUsers ? apiFetch('/users') : Promise.resolve([]),
@@ -1302,6 +1304,24 @@ export default function Dashboard() {
   }, [rankingPeriod, apiFetch]);
 
   const isAdmin = user?.role === 'admin';
+
+  // Modules this company has not subscribed to (licence) or this user has not
+  // been given (permission matrix). The dashboard never asks the server for
+  // their data (it would be refused); it says so instead.
+  const MODULE_LABELS = { proposals: 'LeadSense', records: 'ClientSync', compliance: 'CompliGenie' };
+  const { notSubscribed, noAccess } = useMemo(() => {
+    if (!authUser || !isCommercialTenant(authUser)) return { notSubscribed: {}, noAccess: {} };
+    const licensed = normalizeModules(authUser);
+    const ns = {}; const na = {};
+    for (const id of Object.keys(MODULE_LABELS)) {
+      const isLicensed = licensed.size === 0 || licensed.has(id);
+      ns[id] = !isLicensed;
+      na[id] = isLicensed && !hasModuleAccess(authUser, id);
+    }
+    return { notSubscribed: ns, noAccess: na };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser]);
+  const missingModules = Object.keys(MODULE_LABELS).filter((id) => notSubscribed[id]);
 
   const hasCrossVisibility = useMemo(() => {
     if (isAdmin) return true;
@@ -2859,6 +2879,7 @@ export default function Dashboard() {
           {[
             {
               path:'/leads',
+              module:'proposals',
               icon:<Target className="h-4 w-4" style={{ color:COLORS.mediumBlue }} />,
               iconBg: isDark ? 'rgba(31,111,178,0.2)' : `${COLORS.mediumBlue}12`,
               label:String(openLeadsCount),
@@ -2866,6 +2887,7 @@ export default function Dashboard() {
             },
             {
               path:'/clients',
+              module:'records',
               icon:<Building2 className="h-4 w-4" style={{ color:COLORS.emeraldGreen }} />,
               iconBg: isDark ? 'rgba(31,175,90,0.2)' : `${COLORS.emeraldGreen}12`,
               label:String(stats?.total_clients || 0),
@@ -2873,6 +2895,7 @@ export default function Dashboard() {
             },
             {
               path:'/dsc',
+              module:'records',
               icon:<Key className={`h-4 w-4 ${stats?.expiring_dsc_count > 0 ? 'text-red-500' : isDark ? 'text-slate-400' : 'text-slate-400'}`} />,
               iconBg: stats?.expiring_dsc_count > 0 ? isDark ? 'rgba(239,68,68,0.2)' : '#fef2f2' : isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
               label:String(stats?.total_dsc || 0),
@@ -2880,12 +2903,27 @@ export default function Dashboard() {
             },
             {
               path:'/compliance',
+              module:'compliance',
               icon:<CalendarIcon className={`h-4 w-4 ${stats?.upcoming_due_dates > 0 ? 'text-amber-500' : isDark ? 'text-slate-400' : 'text-slate-400'}`} />,
               iconBg: stats?.upcoming_due_dates > 0 ? isDark ? 'rgba(245,158,11,0.2)' : '#fffbeb' : isDark ? 'rgba(255,255,255,0.06)' : '#f8fafc',
               label:String(stats?.upcoming_due_dates || 0),
               sub:'Compliance',
             },
-          ].map(tile => (
+          ].map(tile => (notSubscribed[tile.module] || noAccess[tile.module]) ? (
+            <div key={tile.path} data-testid={`tile-locked-${tile.module}`}
+              className={`${metricCardCls} ${metricCardDefault} cursor-default opacity-70`}
+              title={notSubscribed[tile.module] ? `${MODULE_LABELS[tile.module]} is not part of your subscription` : `You have not been given access to ${MODULE_LABELS[tile.module]}`}>
+              <CardContent className="p-3.5 flex items-center gap-3">
+                <div className="p-2.5 rounded-xl flex-shrink-0" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#f1f5f9' }}>
+                  <Lock className="h-4 w-4 text-slate-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold tracking-tight text-slate-500">{notSubscribed[tile.module] ? 'Not subscribed' : 'No access'}</p>
+                  <p className="text-xs font-medium text-slate-400 truncate">{tile.sub} · {MODULE_LABELS[tile.module]}</p>
+                </div>
+              </CardContent>
+            </div>
+          ) : (
             <motion.div key={tile.path} whileHover={{ y:-3, transition:springPhysics.card }} whileTap={{ scale:0.97 }}
               onClick={() => navigate(tile.path)} className={`${metricCardCls} ${metricCardDefault}`}>
               <CardContent className="p-3.5 flex items-center gap-3">
@@ -2925,6 +2963,17 @@ export default function Dashboard() {
             </CardContent>
           </motion.div>
         </motion.div>
+        {missingModules.length > 0 && (
+          <motion.div variants={itemVariants} data-testid="modules-not-subscribed"
+            className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${isDark ? 'border-slate-700 bg-slate-800/60 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+            <Lock className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
+            <p>
+              <span className="font-semibold">{missingModules.map((id) => MODULE_LABELS[id]).join(', ')}</span>
+              {missingModules.length === 1 ? ' is' : ' are'} not part of your subscription, so {missingModules.length === 1 ? 'its' : 'their'} data
+              is not shown here. Ask your administrator to contact your provider to add {missingModules.length === 1 ? 'it' : 'them'}.
+            </p>
+          </motion.div>
+        )}
         </React.Fragment>
           );
           return null;
