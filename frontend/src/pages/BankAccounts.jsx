@@ -17,6 +17,7 @@ import api from '@/lib/api';
 import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { mirrorBankToSettings, bankFromAccount } from '@/lib/bankSync';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
@@ -116,8 +117,10 @@ function scoreInvoiceMatch(txn, inv) {
 function BankAccountsInner() {
   const navigate = useNavigate();
   const isDark = useDark();
-  const { user, hasPermission } = useAuth();
-  const canMatch = user?.role === 'admin' || hasPermission('can_match_bank');
+  const { user } = useAuth();
+  const canEditBank = canPerformFinixAction(user, 'can_view_bank', 'edit');
+  const canDeleteBank = canPerformFinixAction(user, 'can_view_bank', 'delete');
+  const canMatch = canEditBank;
   const fileRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
@@ -133,6 +136,7 @@ function BankAccountsInner() {
   const [editingAccountId, setEditingAccountId] = useState(null);
 
   const openEditAccount = (a) => {
+    if (!canEditBank) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     setEditingAccountId(a.id);
     setForm({
       bank_name: a.bank_name || '',
@@ -333,6 +337,7 @@ function BankAccountsInner() {
   };
 
   const createAccount = async () => {
+    if (editingAccountId && !canEditBank) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!form.bank_name.trim()) { toast.error('Bank name is required'); return; }
     setSavingAccount(true);
     try {
@@ -354,6 +359,7 @@ function BankAccountsInner() {
   };
 
   const deleteAccount = async (id) => {
+    if (!canDeleteBank) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Delete this bank account and all its transactions?')) return;
     try {
       await api.delete(`/bank-accounts/${id}`);
@@ -967,10 +973,10 @@ function BankAccountsInner() {
                     <div className="flex flex-col items-end gap-2">
                       <ChevronRight className="h-4 w-4 text-slate-300" />
                       <div className="flex items-center gap-2">
-                        <Edit3 className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-pointer"
-                          onClick={(e) => { e.stopPropagation(); openEditAccount(a); }} />
-                        <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-rose-500 cursor-pointer"
-                          onClick={(e) => { e.stopPropagation(); deleteAccount(a.id); }} />
+                        {canEditBank && <Edit3 className="h-3.5 w-3.5 text-slate-400 hover:text-blue-500 cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); openEditAccount(a); }} />}
+                        {canDeleteBank && <Trash2 className="h-3.5 w-3.5 text-slate-400 hover:text-rose-500 cursor-pointer"
+                          onClick={(e) => { e.stopPropagation(); deleteAccount(a.id); }} />}
                       </div>
                     </div>
                   </button>
