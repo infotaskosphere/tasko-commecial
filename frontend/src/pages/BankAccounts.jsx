@@ -189,6 +189,7 @@ function BankAccountsInner() {
   const [showNewAccount, setShowNewAccount] = useState(false);
   const [form, setForm] = useState({ bank_name: '', account_holder: '', account_number: '', ifsc: '', branch: '', account_type: 'current', opening_balance: 0, upi_id: '', company_id: '' });
   const [savingAccount, setSavingAccount] = useState(false);
+  const [companyDetailsLoading, setCompanyDetailsLoading] = useState(false);
   const [editingAccountId, setEditingAccountId] = useState(null);
 
   const openEditAccount = (a) => {
@@ -405,6 +406,7 @@ function BankAccountsInner() {
   const handleCompanyChange = async (value) => {
     const companyId = value === '__none__' ? '' : value;
     if (!companyId) {
+      setCompanyDetailsLoading(false);
       setForm(current => ({ ...current, company_id: '' }));
       return;
     }
@@ -416,9 +418,8 @@ function BankAccountsInner() {
       ...bankFieldsFromCompany(cachedCompany || {}),
     }));
 
-    // Pull the selected record from Master Data as well, so the form uses the
-    // latest saved bank details even when the dropdown list was loaded earlier.
-    // Ignore a late response if the user has already selected another company.
+    // Show clear feedback while refreshing the latest saved bank details.
+    setCompanyDetailsLoading(true);
     try {
       const { data: company } = await api.get(`/companies/${companyId}`, { _silent: true });
       if (company && typeof company === 'object') {
@@ -428,6 +429,8 @@ function BankAccountsInner() {
       }
     } catch {
       // The company-list record already provides a fallback if the detail fetch fails.
+    } finally {
+      setCompanyDetailsLoading(false);
     }
   };
 
@@ -1761,16 +1764,26 @@ function BankAccountsInner() {
             <Input type="number" placeholder="Opening balance" value={form.opening_balance} onChange={e => setForm(f => ({ ...f, opening_balance: e.target.value }))} />
             <div className="space-y-1">
               <Label className="text-xs font-semibold text-slate-600">Link to Company (optional)</Label>
-              <Select value={form.company_id || '__none__'} onValueChange={handleCompanyChange}>
-                <SelectTrigger className="rounded-xl text-sm"><SelectValue placeholder="Select company…" /></SelectTrigger>
+              <Select value={form.company_id || '__none__'} onValueChange={handleCompanyChange} disabled={companyDetailsLoading}>
+                <SelectTrigger className="rounded-xl text-sm" disabled={companyDetailsLoading}>
+                  <SelectValue placeholder="Select company…" />
+                  {companyDetailsLoading && <RefreshCw className="ml-2 h-3.5 w-3.5 shrink-0 animate-spin text-slate-500" aria-hidden="true" />}
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Not linked —</SelectItem>
                   {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-slate-400">Selecting a company pre-fills its saved bank details from Master Data. Verify or edit them before saving.</p>
+              {companyDetailsLoading ? (
+                <p className="flex items-center gap-1.5 text-[10px] font-medium text-blue-600" role="status">
+                  <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  Fetching company bank details…
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-400">Selecting a company pre-fills its saved bank details from Master Data. Verify or edit them before saving.</p>
+              )}
             </div>
-            <Button onClick={createAccount} disabled={savingAccount} className="w-full rounded-xl">
+            <Button onClick={createAccount} disabled={savingAccount || companyDetailsLoading} className="w-full rounded-xl">
               {savingAccount ? <MiniLoader height={18} /> : 'Save bank account'}
             </Button>
           </div>
