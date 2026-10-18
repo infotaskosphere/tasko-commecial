@@ -1614,8 +1614,6 @@ async def edit_match_transaction(txn_id: str, payload: ManualMatchInput, current
     reconciliation's ledger/status effects, then applies the new one. Refuses
     to 're-edit' onto the exact same record (duplicate reconciliation)."""
     require_finix_action(current_user, "can_view_bank", "edit")
-    if not _perm_match_bank(current_user):
-        raise HTTPException(403, "Access denied. Editing a match requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
@@ -1685,8 +1683,6 @@ async def edit_match_transaction(txn_id: str, payload: ManualMatchInput, current
 @router.post("/bank-transactions/{txn_id}/unmatch")
 async def unmatch_transaction(txn_id: str, payload: UnmatchInput = UnmatchInput(), current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_bank", "edit")
-    if not _perm_match_bank(current_user):
-        raise HTTPException(403, "Access denied. Unmatching requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
@@ -1712,8 +1708,6 @@ async def ignore_transaction(txn_id: str, payload: IgnoreInput = IgnoreInput(), 
     survives a page reload. Does not touch matched_type/matched_id, so an
     ignored transaction can still be matched later if that changes."""
     require_finix_action(current_user, "can_view_bank", "edit")
-    if not _perm_match_bank(current_user):
-        raise HTTPException(403, "Access denied. Ignoring a transaction requires Match permission — request access from your admin.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
@@ -1725,8 +1719,6 @@ async def ignore_transaction(txn_id: str, payload: IgnoreInput = IgnoreInput(), 
 async def reject_suggestion(txn_id: str, current_user: User = Depends(get_current_user)):
     """Rejects/dismisses a suggested match on an unmatched bank transaction."""
     require_finix_action(current_user, "can_view_bank", "edit")
-    if not _perm_match_bank(current_user):
-        raise HTTPException(403, "Access denied. Rejecting a suggestion requires Match permission.")
     txn = await db.bank_transactions.find_one({"id": txn_id}, {"_id": 0})
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
