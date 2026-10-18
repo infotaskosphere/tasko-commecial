@@ -475,11 +475,20 @@ def _scope_update(update: Any, query: Any = None) -> Any:
         return update
     result = dict(update)
     set_values = dict(result.get("$set") or {})
+    set_on_insert_values = dict(result.get("$setOnInsert") or {})
     if in_platform_owner_context():
-        has_company_update = COMPANY_FIELD in set_values or COMPANY_FIELD in result
+        has_company_update = (
+            COMPANY_FIELD in set_values
+            or COMPANY_FIELD in result
+            or COMPANY_FIELD in set_on_insert_values
+        )
         if _is_commercial_control_context() and has_company_update:
             return update
-        requested_update_company = set_values.get(COMPANY_FIELD, result.get(COMPANY_FIELD))
+        requested_update_company = set_values.get(COMPANY_FIELD)
+        if requested_update_company is None:
+            requested_update_company = result.get(COMPANY_FIELD)
+        if requested_update_company is None:
+            requested_update_company = set_on_insert_values.get(COMPANY_FIELD)
         if requested_update_company is not None and not _owner_company_value_allowed(requested_update_company):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -521,8 +530,27 @@ def _scope_update(update: Any, query: Any = None) -> Any:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="company_id cannot be removed")
     if COMPANY_FIELD in set_values and str(set_values[COMPANY_FIELD]) != company_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
-    set_values[COMPANY_FIELD] = company_id
-    result["$set"] = set_values
+    if COMPANY_FIELD in set_on_insert_values and str(set_on_insert_values[COMPANY_FIELD]) != company_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-company access is not permitted")
+
+    # MongoDB rejects the same update path appearing under both $set and
+    # $setOnInsert. If the caller already stamps company_id on insert, preserve
+    # that operator instead of injecting company_id into $set as well. The
+    # query is tenant-scoped above, so existing records remain company-bound.
+    if COMPANY_FIELD in set_values and COMPANY_FIELD in set_on_insert_values:
+        set_on_insert_values.pop(COMPANY_FIELD, None)
+
+    if COMPANY_FIELD not in set_on_insert_values:
+        set_values[COMPANY_FIELD] = company_id
+
+    if set_values:
+        result["$set"] = set_values
+    else:
+        result.pop("$set", None)
+    if set_on_insert_values:
+        result["$setOnInsert"] = set_on_insert_values
+    else:
+        result.pop("$setOnInsert", None)
     return result
 
 
