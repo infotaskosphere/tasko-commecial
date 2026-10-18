@@ -1338,7 +1338,22 @@ function FinixDashboardInner() {
   const COLORS_CHART = ['#1FAF5A', '#FF6B6B', '#3B82F6', '#FF9F43'];
 
   return (
-    <div className={`p-6 min-h-screen ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+    <div id="finix-dashboard-root" className={`p-6 min-h-screen ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+      {/* Keep the shared loader, but remove its grey tray only on the Finix dashboard. */}
+      <style>{`
+        #finix-dashboard-root .taskosphere-loader--fullscreen {
+          min-height: 0 !important;
+          padding: 0 !important;
+          background: transparent !important;
+          animation: none !important;
+        }
+        #finix-dashboard-root .taskosphere-loader--fullscreen.is-dark {
+          background: transparent !important;
+        }
+        #finix-dashboard-root .taskosphere-loader__body {
+          padding: 16px 0 !important;
+        }
+      `}</style>
 
       {/* ── Branded Header Banner ── */}
       <div
@@ -1489,9 +1504,9 @@ function FinixDashboardInner() {
       )}
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24">
+        <div className="flex flex-col items-center justify-center py-10">
           <ContentLoader />
-          <p className="text-sm text-slate-400 mt-4 animate-pulse">Syncing general ledgers, GST schedules &amp; TDS liabilities...</p>
+          <p className="text-sm text-slate-400 mt-3 animate-pulse">Syncing general ledgers, GST schedules &amp; TDS liabilities...</p>
         </div>
       ) : !companyId ? (
         <div className="text-center py-24 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700">
