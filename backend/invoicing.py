@@ -267,6 +267,20 @@ def _perm(user: User) -> bool:
     return bool(perms.get("can_create_quotations") or perms.get("can_manage_invoices"))
 
 
+def _perm_purchase(user: User) -> bool:
+    """Purchase routes: the Purchase page works on its own.
+
+    ``can_manage_invoices`` is the legacy Sale-page flag, so a licensee that
+    sold Purchase without Sale would otherwise lock every non-admin out of it.
+    The commercial guard has already checked the licence/page/matrix.
+    """
+    if _perm(user):
+        return True
+    perms = user.permissions if isinstance(user.permissions, dict) else (
+        user.permissions.model_dump() if user.permissions else {})
+    return bool(perms.get("can_view_purchase"))
+
+
 # ═══════════════════════════════════════════════════════════
 # NEXT INVOICE NUMBER
 # ═══════════════════════════════════════════════════════════
@@ -2991,7 +3005,7 @@ async def list_purchase_invoices(
     page_size: int = Query(100, ge=1, le=1000),
     current_user: User = Depends(get_current_user),
 ):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     q = _build_purchase_query(
         current_user, company_id=company_id, client_id=client_id, search=search, status=status_filter,
@@ -3011,7 +3025,7 @@ async def purchase_invoice_facets(
     current_user: User = Depends(get_current_user),
 ):
     """Values for the register's filter dropdowns (suppliers, expense heads), scoped like the list."""
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     q = _build_purchase_query(current_user, company_id=company_id)
     sup_rows = await db.purchase_invoices.aggregate([
@@ -3042,7 +3056,7 @@ async def purchase_invoice_masters(current_user: User = Depends(get_current_user
     Master Data shows that user. Logos / QR images are NOT sent (the full /companies/list payload
     carries them and is far heavier than a dropdown needs).
     """
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     raw = await _master_company_rows(current_user)
     bound = getattr(current_user, "company_id", None) if getattr(current_user, "role", None) != "admin" else None
@@ -3403,7 +3417,7 @@ async def preview_purchase_invoice(
     current_user: User = Depends(get_current_user),
 ):
     """Step 1 of adding a vendor bill: read it and return an EDITABLE draft. Nothing is saved here."""
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     return await _read_purchase_upload(file, current_user, company_id, client_id)
 
@@ -3561,7 +3575,7 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
 @router.get("/purchase-invoices/expense-heads")
 async def purchase_expense_heads(company_id: str, current_user: User = Depends(get_current_user)):
     """Ledgers a purchase bill can be booked to for one company (for the expense-head picker on the preview)."""
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     if not await _find_master_company(current_user, company_id):
         raise HTTPException(400, "That company is not in Master Data.")
@@ -3615,7 +3629,7 @@ class PurchaseInvoiceConfirm(BaseModel):
 @router.post("/purchase-invoices/confirm")
 async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: User = Depends(get_current_user)):
     """Step 2: store the invoice exactly as corrected in the preview."""
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     payload = data.model_dump()
     doc, dup = await _save_purchase_invoice(
@@ -3632,7 +3646,7 @@ async def confirm_purchase_invoice(data: PurchaseInvoiceConfirm, current_user: U
 @router.post("/purchase-invoices/upload")
 async def upload_purchase_invoice(file: UploadFile = File(...), client_id: Optional[str] = Form(None), company_id: Optional[str] = Form(None), current_user: User = Depends(get_current_user)):
     """Legacy one-step upload (read + save). New screens use /preview then /confirm so a person can correct the reading."""
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     prev = await _read_purchase_upload(file, current_user, company_id, client_id)
     ex = prev["extracted"]
@@ -3682,7 +3696,7 @@ class PurchaseInvoiceCreate(BaseModel):
 
 @router.post("/purchase-invoices")
 async def create_purchase_invoice(data: PurchaseInvoiceCreate, current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     payload = data.model_dump()
     # Older callers (bank-statement matching) only know taxable + GST + total: absorb any rounding into round_off.
@@ -3734,7 +3748,7 @@ async def export_purchase_invoices(body: PurchaseExportRequest, current_user: Us
       tally_xml      Tally 'Import Data' file (Purchase vouchers, optionally with ledger masters)
       tally_masters  only the ledger masters (import this first if the ledgers do not exist yet)
     """
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     flt = {k: v for k, v in (body.filters or {}).items() if k in _EXPORT_FILTER_KEYS and v not in (None, "")}
     for k in ("amount_min", "amount_max"):
@@ -3833,7 +3847,7 @@ async def upload_gstr2b_purchases(
          and is available for the bank-statement auto-matching engine to
          settle once the vendor is actually paid.
     """
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     if not await _find_master_company(current_user, company_id):
         raise HTTPException(400, "That company is not in Master Data. Pick one from the list.")
@@ -3972,7 +3986,7 @@ _PURCHASE_EDITABLE = (
 
 @router.put("/purchase-invoices/{invoice_id}")
 async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
     if not existing:
@@ -4066,7 +4080,7 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
 
 @router.delete("/purchase-invoices/{invoice_id}")
 async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     existing = await db.purchase_invoices.find_one({"id": invoice_id})
     if not existing:
@@ -4118,7 +4132,7 @@ async def update_purchase_invoice_status(
       payment_mode  — 'cash' | 'bank' (default 'bank').
       reference_no, notes
     """
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
 
     new_status = (payload.get("status") or "").strip().lower()
@@ -4192,7 +4206,7 @@ async def update_purchase_invoice_status(
 
 @router.get("/purchase-payments")
 async def list_purchase_payments(purchase_invoice_id: Optional[str] = None, current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     q: dict = {}
     if purchase_invoice_id:
@@ -4208,7 +4222,7 @@ async def list_purchase_payments(purchase_invoice_id: Optional[str] = None, curr
 
 @router.delete("/purchase-payments/{payment_id}")
 async def delete_purchase_payment(payment_id: str, current_user: User = Depends(get_current_user)):
-    if not _perm(current_user):
+    if not _perm_purchase(current_user):
         raise HTTPException(403, "Access denied")
     payment = await db.purchase_payments.find_one({"id": payment_id})
     if not payment:

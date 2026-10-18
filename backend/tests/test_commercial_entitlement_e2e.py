@@ -627,3 +627,157 @@ def test_company_unique_indexes_do_not_collide_between_companies():
             await coll.insert_one({"company_id": "a", "date": "2026-10-20"})
 
     asyncio.new_event_loop().run_until_complete(go())
+
+
+# --------------------------------------------------------------------------- #
+# Licence lifecycle and seats
+# --------------------------------------------------------------------------- #
+
+def _licence(env, cust, **fields):
+    _run(env[1].commercial_licenses.update_one({"id": f"lic-{cust}"}, {"$set": fields}))
+
+
+@pytest.fixture()
+def lifecycle_tenant(env):
+    """A fresh two-module tenant for each test, so edits never bleed over."""
+    _run(_seed(env[1], "life", ["finix", "taskosphere"]))
+    _licence(env, "life", status="active", expires_at=FUTURE, max_users=50,
+             modules=["finix", "taskosphere"], licensed_modules=["finix", "taskosphere"])
+    return {role: _auth(env, f"life-{role}") for role in ("admin", "staff")}
+
+
+def _reach(client, headers):
+    return client.get("/api/invoices", headers=headers).status_code, client.get("/api/tasks", headers=headers).status_code
+
+
+@pytest.mark.parametrize("state", ["suspended", "revoked", "cancelled", "expired", "inactive"])
+def test_a_licence_that_is_not_active_locks_every_user_out_immediately(client, env, lifecycle_tenant, state):
+    _licence(env, "life", status=state)
+    for role, headers in lifecycle_tenant.items():
+        assert _reach(client, headers) == (403, 403), f"{role} still works on a {state} licence"
+
+
+def test_an_expired_or_malformed_expiry_date_locks_the_tenant(client, env, lifecycle_tenant):
+    past = (dt.datetime.utcnow() - dt.timedelta(days=1)).isoformat()
+    for value in (past, "not-a-date"):
+        _licence(env, "life", expires_at=value)
+        for headers in lifecycle_tenant.values():
+            assert _reach(client, headers) == (403, 403), value
+
+
+def test_trial_licences_work_and_renewal_restores_access_without_a_new_login(client, env, lifecycle_tenant):
+    _licence(env, "life", status="trial")
+    assert all(_reach(client, h) == (200, 200) for h in lifecycle_tenant.values())
+    _licence(env, "life", status="suspended")
+    assert all(_reach(client, h) == (403, 403) for h in lifecycle_tenant.values())
+    _licence(env, "life", status="active")  # the SAME tokens come back to life
+    assert all(_reach(client, h) == (200, 200) for h in lifecycle_tenant.values())
+
+
+def test_removing_a_module_or_a_page_takes_effect_on_the_next_request(client, env, lifecycle_tenant):
+    headers = lifecycle_tenant["staff"]
+    assert _reach(client, headers) == (200, 200)
+    _licence(env, "life", modules=["taskosphere"], licensed_modules=["taskosphere"])  # finix withdrawn
+    assert _reach(client, headers) == (403, 200)
+    _licence(env, "life", modules=["finix", "taskosphere"], licensed_modules=["finix", "taskosphere"])  # upgrade
+    assert _reach(client, headers) == (200, 200)
+    _licence(env, "life", selected_features={"finix": ["can_view_purchase"]})  # only one finix page left
+    assert client.get("/api/invoices", headers=headers).status_code == 403
+    assert client.get("/api/purchase-invoices", headers=headers).status_code == 200
+    _licence(env, "life", selected_features=None)
+
+
+def test_a_deleted_or_deactivated_user_s_token_stops_working(client, env, lifecycle_tenant):
+    _run(_seed(env[1], "life", ["finix", "taskosphere"]))
+    headers = lifecycle_tenant["staff"]
+    assert client.get("/api/tasks", headers=headers).status_code == 200
+    _run(env[1].users.update_one({"id": "life-staff"}, {"$set": {"is_active": False}}))
+    assert client.get("/api/tasks", headers=headers).status_code in (401, 403)
+    _run(env[1].users.update_one({"id": "life-staff"}, {"$set": {"is_active": True}}))
+    _run(env[1].users.delete_one({"id": "life-staff"}))
+    assert client.get("/api/tasks", headers=headers).status_code in (401, 403, 404)
+
+
+def _staff_body(n, **extra):
+    return {"full_name": f"S{n}", "email": f"s{n}@life.test", "password": "Passw0rd!x1", **extra}
+
+
+def test_the_seat_limit_is_enforced_on_every_way_of_adding_a_user(client, env, lifecycle_tenant):
+    pytest.importorskip("bcrypt")
+    admin = lifecycle_tenant["admin"]
+    used = _run(env[1].users.count_documents({"commercial_customer_id": "life"}))
+    _licence(env, "life", max_users=used + 1)  # exactly one free seat
+    first = client.post("/api/commercial-onboarding/create-staff", json=_staff_body(1), headers=admin)
+    assert first.status_code == 200, first.text
+    for path, body in (
+        ("/api/commercial-onboarding/create-staff", _staff_body(2)),
+        ("/api/role-admin/users", {"full_name": "R", "email": "r@life.test", "password": "Passw0rd!x1", "role_key": "staff"}),
+    ):
+        r = client.post(path, json=body, headers=admin)
+        assert r.status_code == 403 and "limit" in r.text.lower(), (path, r.status_code, r.text[:120])
+    # a seat is freed when a user is deleted
+    new_id = first.json()["id"]
+    assert client.delete(f"/api/users/{new_id}", headers=admin).status_code == 200
+    again = client.post("/api/role-admin/users",
+                        json={"full_name": "R", "email": "r@life.test", "password": "Passw0rd!x1", "role_key": "staff"},
+                        headers=admin)
+    assert again.status_code == 200, again.text
+    # ... and the employee landed inside the tenant, not outside it
+    created = _run(env[1].users.find_one({"email": "r@life.test"}))
+    assert created["company_id"] == "life" and created["commercial_customer_id"] == "life"
+
+
+def test_staff_cannot_create_users_and_a_requested_admin_role_is_downgraded(client, env, lifecycle_tenant):
+    pytest.importorskip("bcrypt")
+    r = client.post("/api/commercial-onboarding/create-staff", json=_staff_body(7), headers=lifecycle_tenant["staff"])
+    assert r.status_code == 403
+    r = client.post("/api/commercial-onboarding/create-staff", json=_staff_body(8, role="admin"), headers=lifecycle_tenant["admin"])
+    assert r.status_code == 200 and r.json()["role"] == "staff"
+
+
+def test_a_suspended_licence_cannot_add_users(client, env, lifecycle_tenant):
+    pytest.importorskip("bcrypt")
+    _licence(env, "life", status="suspended")
+    r = client.post("/api/commercial-onboarding/create-staff", json=_staff_body(9), headers=lifecycle_tenant["admin"])
+    assert r.status_code == 403
+
+
+# --------------------------------------------------------------------------- #
+# Every sellable page must work on its own - for staff, not only for admins
+# --------------------------------------------------------------------------- #
+
+def test_every_page_works_for_staff_when_it_is_the_only_page_sold(client, env):
+    """Sell ONE page at a time. Wherever the admin gets in, the staff user must
+    too (legacy per-route checks used to veto pages like Purchase on their own)."""
+    from backend import commercial_module_guard as guard
+    from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
+
+    vetoed, checked, n = [], 0, 0
+    for module_id, module in MODULE_HIERARCHY.items():
+        if module_id == "admin":
+            continue
+        for page in module["pages"]:
+            prefixes = guard.FEATURE_PREFIXES.get(module_id, {}).get(page["flag"]) or ()
+            if not prefixes:
+                continue
+            n += 1
+            cust = f"solo{n}"
+            _run(_seed(env[1], cust, [module_id], {module_id: [page["flag"]]}))
+            for prefix in prefixes:
+                admin = client.get("/api" + prefix, headers=_auth(env, f"{cust}-admin")).status_code
+                staff = client.get("/api" + prefix, headers=_auth(env, f"{cust}-staff")).status_code
+                checked += 1
+                if admin != 403 and staff == 403:
+                    vetoed.append((module_id, page["flag"], prefix, admin, staff))
+    assert checked > 80
+    assert not vetoed, f"pages that work for admin but not for staff when sold alone: {vetoed}"
+
+
+def test_a_purchase_only_licence_opens_purchase_and_nothing_else(client, env):
+    _run(_seed(env[1], "buyonly", ["finix"], {"finix": ["can_view_purchase"]}))
+    for role in ("admin", "staff"):
+        headers = _auth(env, f"buyonly-{role}")
+        assert client.get("/api/purchase-invoices", headers=headers).status_code == 200
+        assert client.get("/api/purchase-payments", headers=headers).status_code == 200
+        for closed in ("/api/invoices", "/api/bank-accounts", "/api/zte/documents", "/api/reports/day-book"):
+            assert client.get(closed, headers=headers).status_code == 403, (role, closed)

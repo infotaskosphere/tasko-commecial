@@ -467,6 +467,14 @@ async def create_employee(payload: EmployeeIn, current_user: User = Depends(get_
         "grace_time": "00:10",
         "punch_out_time": "19:00",
     }
+    # A licensee's employee belongs to the creating admin's company and
+    # licence. Without these the seat-limit/company guard rejects every
+    # licensee admin ("must belong to a legal company"), and the user would
+    # sit outside the tenant. Platform/legacy installs have none of these set.
+    for tenant_field in ("company_id", "commercial_customer_id", "license_id", "licensee_uid", "identity_org_uid"):
+        tenant_value = getattr(current_user, tenant_field, None)
+        if tenant_value:
+            doc[tenant_field] = tenant_value
     await db.users.insert_one(dict(doc))
     await create_audit_log(current_user, "CREATE", "users", record_id=doc["id"], new_data={
         "email": email, "role": role["base_role"], "role_key": role["key"]})

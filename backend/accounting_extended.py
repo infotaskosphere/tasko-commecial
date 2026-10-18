@@ -100,7 +100,12 @@ def _perms(user: User) -> dict:
     return p.model_dump() if p else {}
 
 def _can_reports(user: User) -> bool:
-    return user.role == "admin" or bool(_perms(user).get("can_view_accounting_reports"))
+    # "Extended Accounts Reports" is a separately sellable page whose routes
+    # live here; it must work on its own, without the Accounting Reports page.
+    perms = _perms(user)
+    return user.role == "admin" or bool(
+        perms.get("can_view_accounting_reports") or perms.get("can_view_extended_accounts_reports")
+    )
 
 def _can_post(user: User) -> bool:
     return user.role == "admin" or bool(_perms(user).get("can_post_journal_entries"))
