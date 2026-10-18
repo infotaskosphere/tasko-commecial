@@ -25,6 +25,7 @@ from backend.platform_owner import is_platform_owner
 from backend.tenant_runtime import (
     TenantAwareCollection, in_platform_owner_context,
     set_authenticated_company, set_authenticated_tenant_database,
+    set_tenant_company_ids,
 )
 
 _current_customer_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_customer_id", default=None)
@@ -479,6 +480,43 @@ async def _resolve_tenant_company_id(
     )
 
 
+_LICENSEE_COMPANY_CACHE: dict[tuple, tuple[float, frozenset[str]]] = {}
+_LICENSEE_COMPANY_TTL_SECONDS = 60.0
+
+
+async def _licensee_company_ids(user: Any, resolved_company_id: str) -> frozenset[str]:
+    """Legal companies of the authenticated licensee, exactly as Master Data lists them."""
+    import time
+
+    key = (
+        str(getattr(user, "commercial_customer_id", "") or ""),
+        str(getattr(user, "license_id", "") or ""),
+        str(resolved_company_id or ""),
+    )
+    cached = _LICENSEE_COMPANY_CACHE.get(key)
+    now = time.monotonic()
+    if cached and now - cached[0] < _LICENSEE_COMPANY_TTL_SECONDS:
+        return cached[1]
+    ids = {str(resolved_company_id or "").strip()}
+    try:
+        from backend.quotations import _tenant_visible_companies
+
+        rows = await _tenant_visible_companies(user, {"_id": 0, "id": 1, "is_platform_owner_workspace": 1})
+        ids.update(
+            str(row.get("id") or "").strip()
+            for row in rows or []
+            if row.get("id") and row.get("is_platform_owner_workspace") is not True
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        # Fail closed: the licensee keeps only its authenticated company.
+        pass
+    result = frozenset(value for value in ids if value)
+    _LICENSEE_COMPANY_CACHE[key] = (now, result)
+    return result
+
+
 async def _apply_live_license_permissions(user: Any, customer_id: str | None):
     """Apply the active commercial license as a hard ceiling without
     overwriting the licensee admin's Permission Matrix grants.
@@ -505,6 +543,9 @@ async def _apply_live_license_permissions(user: Any, customer_id: str | None):
     )
     user = type(user).model_validate(data)
     set_authenticated_company(resolved_company_id)
+    # Every legal company this licensee keeps in Master Data may be selected in
+    # Finix and the other operational pages; nothing outside it.
+    set_tenant_company_ids(await _licensee_company_ids(user, resolved_company_id))
 
     try:
         license_docs = await raw_db.commercial_licenses.find(

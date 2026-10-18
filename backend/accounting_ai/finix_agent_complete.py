@@ -15,6 +15,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
+from backend.tenant_runtime import company_in_request_scope
 from backend import report_cache
 from backend.dependencies import db, get_current_user
 from backend.models import User
@@ -112,7 +113,7 @@ async def agent_feedback(payload: FeedbackRequest, current_user: User = Depends(
     proposal = await db.finix_ai_proposals.find_one({"id": payload.proposal_id}, {"_id": 0})
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
-    if proposal.get("company_id") != getattr(current_user, "company_id", "") and not is_admin_role(current_user):
+    if not company_in_request_scope(current_user, proposal.get("company_id")) and not is_admin_role(current_user):
         raise HTTPException(403, "Proposal belongs to another company.")
     if proposal.get("created_by") != current_user.id and not is_admin_role(current_user):
         raise HTTPException(403, "Only the proposal owner or an admin can provide feedback.")
@@ -136,7 +137,7 @@ async def agent_inbox_action(payload: InboxActionRequest, current_user: User = D
     if not proposal:
         raise HTTPException(404, "Finix proposal not found.")
     is_admin = is_admin_role(current_user)
-    if not is_admin and proposal.get("company_id") != getattr(current_user, "company_id", ""):
+    if not is_admin and not company_in_request_scope(current_user, proposal.get("company_id")):
         raise HTTPException(403, "Proposal belongs to another company.")
     if proposal.get("created_by") != current_user.id and not is_admin:
         raise HTTPException(403, "Only the proposal owner or an admin can action this proposal.")

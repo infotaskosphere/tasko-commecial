@@ -71,8 +71,10 @@ def _authorized_company(requested_company_id:str,user:User)->str:
     if user.role=="admin":
         if not requested: raise HTTPException(400,"company_id is required for accounting administration.")
         return requested
-    if not own or requested!=own: raise HTTPException(403,"Accounting data is restricted to your company.")
-    return own
+    if not requested: requested=own
+    from backend.tenant_runtime import company_in_request_scope
+    if not company_in_request_scope(user,requested): raise HTTPException(403,"Accounting data is restricted to your company.")
+    return requested
 
 def _canonical(value:Any)->str: return json.dumps(value,sort_keys=True,separators=(",",":"),default=str)
 def _event_hash(previous_hash:str,event:dict)->str: return hashlib.sha256(f"{previous_hash}|{_canonical(event)}".encode()).hexdigest()

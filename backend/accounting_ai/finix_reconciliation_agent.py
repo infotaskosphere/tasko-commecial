@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from backend.tenant_runtime import company_in_request_scope
 from backend.dependencies import db, get_current_user
 from backend.models import User
 from backend.accounting_ai.finix_learning import record_learning
@@ -93,7 +94,7 @@ async def reconciliation_feedback(payload: ReconciliationFeedback, current_user:
     if not txn:
         raise HTTPException(404, "Bank transaction not found.")
     cid = txn.get("company_id")
-    if cid and cid != getattr(current_user, "company_id", "") and not is_admin_role(current_user):
+    if cid and not company_in_request_scope(current_user, cid) and not is_admin_role(current_user):
         raise HTTPException(403, "Bank transaction belongs to another company.")
     await db.bank_transactions.update_one({"id": payload.bank_transaction_id}, {"$set": {"matched_type": payload.matched_type, "matched_id": payload.matched_id, "finix_learned_at": datetime.now(timezone.utc).isoformat()}})
     await record_learning(cid or getattr(current_user, "company_id", ""), "BANK_RECONCILIATION", payload.party_name or txn.get("description", ""), {"id": payload.bank_transaction_id, "transaction": txn, "matched_type": payload.matched_type, "matched_id": payload.matched_id}, "CORRECTED", current_user.id, payload.correction)

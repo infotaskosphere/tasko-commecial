@@ -298,7 +298,21 @@ FEATURE_PREFIXES = {
         "finix_bank_data": ("/bank-transactions",),
         "finix_audit_trail_data": ("/audit-trail",),
         "finix_ledger_data": ("/party-ledgers", "/ledger", "/v2/exports/ledger"),
-        "finix_learning_data": ("/learning",),
+        # "/finix/ai/learning/*" (Finix Dashboard learning panel) previously
+        # fell under the broad "/finix" prefix -> can_view_finix_ai, which is
+        # never license-selectable, so every licensee got a 403.
+        "finix_learning_data": ("/learning", "/finix/ai/learning"),
+        # Finix Dashboard AI workspace: describe-a-transaction, AI chat,
+        # document upload, review inbox, ledger diagnostics and resync. Same
+        # "/finix" fall-through problem as above. The endpoints keep their own
+        # view/post permission checks; this only stops the license guard from
+        # refusing them outright for licensees who bought these pages.
+        "finix_ai_workspace_data": (
+            "/finix/ai/agent", "/finix/ai/ask", "/finix/ai/upload", "/finix/ai/inbox",
+            "/finix/ai/feedback", "/finix/ai/ledger-diagnostics", "/finix/ai/resync",
+            "/finix/ai/interpret", "/finix/ai/propose", "/finix/ai/post",
+            "/finix/ai/bank-transfer", "/finix/ai/reconciliation",
+        ),
         # Report-data endpoints are shared by Finix Dashboard and Accounting Reports.
         # _permission_flag allows either explicitly selected page to read the data;
         # the frontend still controls which page is visible in navigation.
@@ -417,6 +431,10 @@ ANY_OF_FEATURES = {
     ("finix", "finix_learning_data"): (
         "can_view_zero_touch_entries", "can_view_accounting_reports",
         "can_view_finix_dashboard", "can_view_purchase",
+    ),
+    ("finix", "finix_ai_workspace_data"): (
+        "can_view_finix_dashboard", "can_view_zero_touch_entries",
+        "can_view_journal_entries", "can_view_accounting_reports",
     ),
     ("compliance", "compliance_mis_data"): ("can_view_mis_report", "can_view_compliance_dashboard"),
     ("compliance", "compliance_trademark_data"): (

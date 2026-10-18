@@ -240,9 +240,11 @@ function FinixDashboardInner() {
       });
     }
 
-    // Licensees can operate only inside their authenticated tenant workspace.
+    // Licensees: /companies is already limited by the backend to the legal
+    // companies this licensee keeps in Master Data, and the backend accepts any
+    // of them for Finix. Show them all (previously only the login company).
     if (tenantCompanyId) {
-      const own = rows.filter((c) => c && typeof c === 'object' && String(c.id || '') === tenantCompanyId);
+      const own = rows.filter((c) => c && typeof c === 'object' && c.id);
       return own.length ? own : [{ id: tenantCompanyId, name: tenantCompanyName }];
     }
 
@@ -362,7 +364,11 @@ function FinixDashboardInner() {
     }
 
     if (tenantCompanyId) {
-      // The authenticated licensee company ID is the only permitted fallback.
+      // Any company in the licensee's Master Data list may be selected; the
+      // authenticated licensee company is the fallback.
+      if (availableCompanies.some((company) => String(company?.id || '') === requested)) {
+        return requested;
+      }
       const resolved = String(tenantCompanyId);
       if (requested !== resolved) {
         setCompanyId(resolved);
