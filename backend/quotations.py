@@ -1826,10 +1826,7 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     is_admin = role in {"admin", "licensee_admin", "tenant_admin"}
     raw = _tenant_raw_db()
 
-    # This route module can be imported before the commercial auth wrappers
-    # install their request-local ContextVars. Resolve a customer from the
-    # user's explicit license link as a safe fallback; never derive it from
-    # company_id, because legacy sessions may point at an Owner workspace.
+    # Resolve customer ownership only from the authenticated identity/license.
     if not customer_id and license_id:
         linked_license = await raw.commercial_licenses.find_one(
             {"id": license_id},
@@ -1838,8 +1835,6 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         if linked_license and str(linked_license.get("customer_id") or "").strip():
             customer_id = _norm_id(linked_license.get("customer_id"))
 
-    # Resolve missing license metadata from the authenticated customer, never
-    # by borrowing the license marker from the user's current company row.
     if customer_id and not license_id:
         license_doc = await raw.commercial_licenses.find_one(
             {
@@ -1852,20 +1847,22 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         license_id = _norm_id((license_doc or {}).get("id"))
 
     owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
-
     if not customer_id:
-        # A company_id alone is not proof of commercial ownership; it may refer
-        # to the Platform Owner's workspace, especially in legacy sessions.
         return {"$and": [{"id": "__no_tenant_scope__"}, owner_workspace_filter]}
 
+    # Non-admin users see only their assigned operational company.
     if not is_admin:
         if not company_id:
             return {"$and": [{"id": "__no_tenant_scope__"}, owner_workspace_filter]}
         company = await raw.companies.find_one(
             {"id": company_id},
             {
-                "_id": 0, "id": 1, "commercial_customer_id": 1,
-                "license_id": 1, "source": 1, "is_platform_owner_workspace": 1,
+                "_id": 0,
+                "id": 1,
+                "commercial_customer_id": 1,
+                "license_id": 1,
+                "source": 1,
+                "is_platform_owner_workspace": 1,
             },
         )
         if company_id == customer_id:
@@ -1884,20 +1881,23 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             return {"$and": [{"id": "__no_tenant_scope__"}, owner_workspace_filter]}
         return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
-    # Resolve company-master ownership from the same authenticated identity
-    # context used when creating a company. This includes the request-local
-    # customer scope even when the User model did not persist that field.
+    # Company Profiles may contain multiple legal entities for one licensee.
+    # Include exact customer matches, the canonical legacy customer company,
+    # companies tied to the active license, and legacy unmarked rows created
+    # by users verified against this same customer/license. Every fallback
+    # excludes the Platform Owner workspace and conflicting customer markers.
     clauses: List[Dict[str, Any]] = [
         {"commercial_customer_id": customer_id},
-        {"id": customer_id},  # legacy generated company id
+        {"id": customer_id},
     ]
     if license_id:
-        clauses.append({"license_id": license_id})
+        clauses.append({
+            "$and": [
+                {"license_id": license_id},
+                {"commercial_customer_id": {"$in": [None, "", customer_id]}},
+            ]
+        })
 
-    # Company creation records created_by with the authenticated user ID.
-    # Include companies created by this licensee admin even if the older
-    # user record is not stamped with commercial_customer_id. Explicit
-    # conflicting customer/license markers and owner workspaces remain excluded.
     creator_ids = {uid} if uid else set()
     tenant_users = await raw.users.find(
         {
@@ -1918,26 +1918,16 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             "$and": [
                 {"created_by": {"$in": sorted(creator_ids)}},
                 {"commercial_customer_id": {"$in": [None, "", customer_id]}},
-                {"license_id": {"$in": [None, "", license_id]}},
-                owner_workspace_filter,
+                {"is_platform_owner_workspace": {"$ne": True}},
             ]
         })
 
-    # The tenant-aware DB applies its own customer filter to companies. Using
-    # that wrapper here would silently narrow this verified company-master
-    # query to one operating company. Query the raw registry with the complete
-    # customer/creator scope already built above, while excluding conflicting
-    # ownership markers and the Platform Owner workspace.
     return {
         "$and": [
             {"$or": clauses},
             owner_workspace_filter,
-            {"commercial_customer_id": {"$in": [None, "", customer_id]}},
-            {"license_id": {"$in": [None, "", license_id]}},
         ]
     }
-
-
 
 
 async def _heal_tenant_company_markers(current_user: User, companies: List[Dict[str, Any]]) -> None:
