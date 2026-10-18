@@ -2074,8 +2074,9 @@ async def create_company(
     if not doc["name"]:
         raise HTTPException(400, "Company name is required")
     if _is_tenant_user(current_user):
-        # Reuse the active authenticated customer's identity so the newly
-        # created company is stamped exactly as the Master Data list expects.
+        # Use the verified customer context to stamp newly created tenant
+        # profiles. The current operational company ID may point to a legacy
+        # workspace and must never determine customer ownership by itself.
         from backend.commercial_tenant_scope import authenticated_customer_id
 
         tenant_customer_id = (
@@ -2095,6 +2096,40 @@ async def create_company(
                     detail="Authenticated user is not associated with the selected license",
                 )
             tenant_customer_id = tenant_customer_id or linked_customer_id
+
+        # Legacy account records can be missing commercial_customer_id while
+        # their exact license is still recoverable from a verified company row.
+        if not tenant_customer_id:
+            current_company_id = _norm_id(getattr(current_user, "company_id", ""))
+            current_company = await _tenant_raw_db().companies.find_one(
+                {"id": current_company_id},
+                {
+                    "_id": 0,
+                    "commercial_customer_id": 1,
+                    "license_id": 1,
+                    "is_platform_owner_workspace": 1,
+                },
+            ) if current_company_id else None
+            if current_company and current_company.get("is_platform_owner_workspace") is not True:
+                company_customer_id = _norm_id(current_company.get("commercial_customer_id"))
+                company_license_id = _norm_id(current_company.get("license_id"))
+                if company_license_id:
+                    linked_license = await _tenant_raw_db().commercial_licenses.find_one(
+                        {"id": company_license_id},
+                        {"_id": 0, "id": 1, "customer_id": 1},
+                    )
+                    linked_customer_id = _norm_id((linked_license or {}).get("customer_id"))
+                    if linked_customer_id:
+                        tenant_customer_id = linked_customer_id
+                        tenant_license_id = company_license_id
+                if not tenant_customer_id and company_customer_id:
+                    linked_customer = await _tenant_raw_db().commercial_license_customers.find_one(
+                        {"id": company_customer_id},
+                        {"_id": 0, "id": 1},
+                    )
+                    if linked_customer:
+                        tenant_customer_id = company_customer_id
+
         if not tenant_customer_id:
             raise HTTPException(
                 status_code=403,
