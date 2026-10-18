@@ -1884,6 +1884,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             return {"$and": [{"id": "__no_tenant_scope__"}, owner_workspace_filter]}
         return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
+    # Resolve company-master ownership from the same authenticated identity
+    # context used when creating a company. This includes the request-local
+    # customer scope even when the User model did not persist that field.
     clauses: List[Dict[str, Any]] = [
         {"commercial_customer_id": customer_id},
         {"id": customer_id},  # legacy generated company id
@@ -1891,11 +1894,18 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     if license_id:
         clauses.append({"license_id": license_id})
 
-    # Legacy unmarked records are admitted only if created by a user belonging
-    # to this tenant, and never if ownership markers contradict the tenant.
+    # Company creation records created_by with the authenticated user ID.
+    # Include companies created by this licensee admin even if the older
+    # user record is not stamped with commercial_customer_id. Explicit
+    # conflicting customer/license markers and owner workspaces remain excluded.
     creator_ids = {uid} if uid else set()
     tenant_users = await raw.users.find(
-        {"commercial_customer_id": customer_id},
+        {
+            "$or": [
+                {"commercial_customer_id": customer_id},
+                {"license_id": license_id} if license_id else {"id": "__no_matching_user__"},
+            ]
+        },
         {"_id": 0, "id": 1},
     ).to_list(5000)
     creator_ids.update(
@@ -1917,6 +1927,8 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         "$and": [
             {"$or": clauses},
             owner_workspace_filter,
+            {"commercial_customer_id": {"$in": [None, "", customer_id]}},
+            {"license_id": {"$in": [None, "", license_id]}},
         ]
     }
 
