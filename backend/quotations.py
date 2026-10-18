@@ -1838,8 +1838,8 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             customer_id = _norm_id(linked_license.get("customer_id"))
 
     # The generated tenant company historically uses the commercial customer
-    # ID as its record ID. Resolve that exact canonical row only when there is
-    # no explicit customer/license identity available.
+    # ID as its record ID. Recover identity from a row only when the company is
+    # independently linked to the commercial customer/license registry.
     if not customer_id and company_id:
         company_identity = await raw.companies.find_one(
             {"id": company_id},
@@ -1855,9 +1855,35 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             candidate_customer = _norm_id(company_identity.get("commercial_customer_id"))
             candidate_license = _norm_id(company_identity.get("license_id"))
             if candidate_customer:
-                customer_id = candidate_customer
-            if not license_id:
-                license_id = candidate_license
+                customer_record = await raw.commercial_license_customers.find_one(
+                    {"id": candidate_customer}, {"_id": 0, "id": 1}
+                )
+                license_record = await raw.commercial_licenses.find_one(
+                    {"customer_id": candidate_customer},
+                    {"_id": 0, "id": 1, "customer_id": 1},
+                    sort=[("issued_at", -1)],
+                )
+                if customer_record or license_record:
+                    customer_id = candidate_customer
+            if not license_id and candidate_license:
+                linked_license = await raw.commercial_licenses.find_one(
+                    {"id": candidate_license},
+                    {"_id": 0, "id": 1, "customer_id": 1},
+                )
+                if linked_license:
+                    license_id = candidate_license
+                    customer_id = customer_id or _norm_id(linked_license.get("customer_id"))
+            if not customer_id and not candidate_license:
+                linked_customer = await raw.commercial_license_customers.find_one(
+                    {"id": company_id}, {"_id": 0, "id": 1}
+                )
+                linked_license = await raw.commercial_licenses.find_one(
+                    {"customer_id": company_id},
+                    {"_id": 0, "id": 1, "customer_id": 1},
+                )
+                if linked_customer or linked_license:
+                    customer_id = company_id
+                    license_id = license_id or _norm_id((linked_license or {}).get("id"))
 
     if customer_id and not license_id:
         license_doc = await raw.commercial_licenses.find_one(
