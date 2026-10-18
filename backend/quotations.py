@@ -1828,8 +1828,9 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
     raw = _tenant_raw_db()
     owner_workspace_filter = {"is_platform_owner_workspace": {"$ne": True}}
 
-    # Resolve customer identity from the authenticated license, never from
-    # company_id alone (older licensee sessions may reference an owner workspace).
+    # Resolve the commercial customer by authenticated customer/license ID,
+    # and support older logins through the exact assigned company only when
+    # that record is not the Platform Owner workspace.
     if license_id:
         linked_license = await raw.commercial_licenses.find_one(
             {"id": license_id},
@@ -1840,6 +1841,36 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             if customer_id and customer_id != linked_customer_id:
                 return {"id": "__no_tenant_scope__"}
             customer_id = customer_id or linked_customer_id
+
+    if not customer_id and company_id:
+        company_identity = await raw.companies.find_one(
+            {"id": company_id},
+            {
+                "_id": 0,
+                "id": 1,
+                "commercial_customer_id": 1,
+                "license_id": 1,
+                "is_platform_owner_workspace": 1,
+            },
+        )
+        if company_identity and company_identity.get("is_platform_owner_workspace") is not True:
+            candidate_customer = _norm_id(company_identity.get("commercial_customer_id"))
+            candidate_license = _norm_id(company_identity.get("license_id"))
+            if candidate_license:
+                linked_license = await raw.commercial_licenses.find_one(
+                    {"id": candidate_license},
+                    {"_id": 0, "id": 1, "customer_id": 1},
+                )
+                candidate_from_license = _norm_id((linked_license or {}).get("customer_id"))
+                if candidate_from_license:
+                    customer_id = candidate_from_license
+                    license_id = candidate_license
+            if not customer_id and candidate_customer:
+                customer_row = await raw.commercial_license_customers.find_one(
+                    {"id": candidate_customer}, {"_id": 0, "id": 1}
+                )
+                if customer_row:
+                    customer_id = candidate_customer
 
     if not customer_id:
         return {"id": "__no_tenant_scope__"}
