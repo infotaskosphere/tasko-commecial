@@ -1338,7 +1338,7 @@ function FinixDashboardInner() {
   const COLORS_CHART = ['#1FAF5A', '#FF6B6B', '#3B82F6', '#FF9F43'];
 
   return (
-    <div id="finix-dashboard-root" className={`p-6 min-h-screen ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
+    <div id="finix-dashboard-root" className={`w-full min-w-0 ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
       {/* Keep the shared loader, but remove its grey tray only on the Finix dashboard. */}
       <style>{`
         #finix-dashboard-root .taskosphere-loader--fullscreen {
