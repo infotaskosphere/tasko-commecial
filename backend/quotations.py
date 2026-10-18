@@ -1854,26 +1854,27 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
         if company_identity and company_identity.get("is_platform_owner_workspace") is not True:
             candidate_customer = _norm_id(company_identity.get("commercial_customer_id"))
             candidate_license = _norm_id(company_identity.get("license_id"))
-            if candidate_customer:
-                customer_record = await raw.commercial_license_customers.find_one(
-                    {"id": candidate_customer}, {"_id": 0, "id": 1}
-                )
-                license_record = await raw.commercial_licenses.find_one(
-                    {"customer_id": candidate_customer},
-                    {"_id": 0, "id": 1, "customer_id": 1},
-                    sort=[("issued_at", -1)],
-                )
-                if customer_record or license_record:
-                    customer_id = candidate_customer
-            if not license_id and candidate_license:
+            if candidate_license:
                 linked_license = await raw.commercial_licenses.find_one(
                     {"id": candidate_license},
                     {"_id": 0, "id": 1, "customer_id": 1},
                 )
                 if linked_license:
+                    linked_customer = _norm_id(linked_license.get("customer_id"))
+                    if candidate_customer and linked_customer and candidate_customer != linked_customer:
+                        # A stale marker is not proof of ownership; accept only
+                        # the authoritative customer value from the license.
+                        customer_id = linked_customer
+                    else:
+                        customer_id = linked_customer or candidate_customer
                     license_id = candidate_license
-                    customer_id = customer_id or _norm_id(linked_license.get("customer_id"))
-            if not customer_id and not candidate_license:
+            if not customer_id and candidate_customer:
+                customer_record = await raw.commercial_license_customers.find_one(
+                    {"id": candidate_customer}, {"_id": 0, "id": 1}
+                )
+                if customer_record:
+                    customer_id = candidate_customer
+            if not customer_id:
                 linked_customer = await raw.commercial_license_customers.find_one(
                     {"id": company_id}, {"_id": 0, "id": 1}
                 )
