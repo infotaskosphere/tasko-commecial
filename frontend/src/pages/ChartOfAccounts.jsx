@@ -10,6 +10,7 @@ import api from '@/lib/api';
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { useAuth } from '@/contexts/AuthContext.jsx';
+import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
 
 const COLORS = { deepBlue: '#0D3B66', mediumBlue: '#1F6FB2', emeraldGreen: '#1FAF5A', amber: '#F59E0B', coral: '#FF6B6B' };
@@ -19,6 +20,8 @@ function ChartOfAccountsInner() {
   const isDark = useDark();
   const { hasPermission, user } = useAuth();
   const canManage = user?.role === 'admin' || hasPermission('can_manage_chart_of_accounts');
+  const canEditChart = canPerformFinixAction(user, 'can_view_chart_of_accounts', 'edit');
+  const canDeleteChart = canPerformFinixAction(user, 'can_view_chart_of_accounts', 'delete');
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState([]);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -91,6 +94,7 @@ function ChartOfAccountsInner() {
   };
 
   const purgeAccount = async (id, name) => {
+    if (!canDeleteChart) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Delete \"${name}\" and every journal entry posted against it? This cannot be undone — if this balance is real, re-enter it via Accounting Reports → Add Opening Balance afterwards.`)) return;
     try {
       await api.delete(`/chart-of-accounts/${id}`, { params: { purge: true } });
@@ -103,6 +107,7 @@ function ChartOfAccountsInner() {
   };
 
   const deleteAccount = async (id) => {
+    if (!canDeleteChart) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm('Delete this account?')) return;
     try {
       await api.delete(`/chart-of-accounts/${id}`);
@@ -164,7 +169,7 @@ function ChartOfAccountsInner() {
                       <span className={`text-xs font-mono px-2 py-1 rounded-lg flex-shrink-0 max-w-full ${isDark ? 'bg-slate-900 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>{a.code}</span>
                       <p className={`text-sm font-semibold min-w-0 truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{a.name}</p>
                     </div>
-                    {canManage && !a.is_system && (
+                    {canDeleteChart && !a.is_system && (
                       <button onClick={() => deleteAccount(a.id)} className="text-slate-300 hover:text-rose-500 flex-shrink-0"><Trash2 className="h-4 w-4" /></button>
                     )}
                   </div>
