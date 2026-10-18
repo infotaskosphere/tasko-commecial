@@ -50,6 +50,62 @@ const cleanDescription = (str) => {
     .trim();
 };
 
+// Normalise the different response shapes used by the sale and purchase APIs.
+const getPagedRows = (payload) => {
+  const data = payload?.data !== undefined ? payload.data : payload;
+  if (Array.isArray(data)) return data;
+  for (const key of ['items', 'invoices', 'purchase_invoices', 'results']) {
+    if (Array.isArray(data?.[key])) return data[key];
+  }
+  return [];
+};
+
+// Bank matching needs the full invoice register, but the purchase API caps each
+// page at 1,000 rows. Follow the API's pagination metadata (or keep reading full
+// pages for older response shapes) instead of requesting an invalid page_size.
+async function fetchAllPagedRecords(url, params = {}, pageSize = 1000) {
+  const requestPage = async (page) => {
+    const { data } = await api.get(url, {
+      params: { ...params, page, page_size: pageSize },
+    });
+    return data;
+  };
+
+  const firstPayload = await requestPage(1);
+  const firstRows = getPagedRows(firstPayload);
+  const allRows = [...firstRows];
+  const declaredPages = Number(firstPayload?.total_pages ?? firstPayload?.totalPages);
+  const totalValue = firstPayload?.total;
+  const total = Number(totalValue);
+  const totalPages = Number.isFinite(declaredPages) && declaredPages > 0
+    ? Math.ceil(declaredPages)
+    : (totalValue !== undefined && totalValue !== null && Number.isFinite(total) && total >= 0
+      ? Math.ceil(total / pageSize)
+      : null);
+
+  for (
+    let page = 2;
+    totalPages !== null ? page <= totalPages : allRows.length >= (page - 1) * pageSize;
+    page += 1
+  ) {
+    const payload = await requestPage(page);
+    const pageRows = getPagedRows(payload);
+    if (!pageRows.length) break;
+    allRows.push(...pageRows);
+    if (pageRows.length < pageSize) break;
+  }
+
+  // A duplicate at a page boundary should not inflate the suggestion cache.
+  const seenIds = new Set();
+  return allRows.filter((row) => {
+    if (!row?.id) return true;
+    const id = String(row.id);
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+}
+
 // Computes similarity score (0 to 100) between two transactions
 const getTxnSimilarity = (t1, t2) => {
   const isDebit1 = Number(t1.debit || 0) > 0;
@@ -336,6 +392,45 @@ function BankAccountsInner() {
     }
   };
 
+  const bankFieldsFromCompany = (company = {}) => ({
+    bank_name: company.bank_name || '',
+    account_holder: company.bank_account_name || company.bank_account_holder || '',
+    account_number: company.bank_account_no || company.bank_account_number || company.account_number_full || '',
+    ifsc: String(company.bank_ifsc || company.ifsc || '').toUpperCase(),
+    branch: company.bank_branch || company.branch || '',
+    account_type: String(company.bank_account_type || 'current').toLowerCase(),
+    upi_id: company.upi_id || '',
+  });
+
+  const handleCompanyChange = async (value) => {
+    const companyId = value === '__none__' ? '' : value;
+    if (!companyId) {
+      setForm(current => ({ ...current, company_id: '' }));
+      return;
+    }
+
+    const cachedCompany = companies.find(c => String(c.id) === String(companyId));
+    setForm(current => ({
+      ...current,
+      company_id: companyId,
+      ...bankFieldsFromCompany(cachedCompany || {}),
+    }));
+
+    // Pull the selected record from Master Data as well, so the form uses the
+    // latest saved bank details even when the dropdown list was loaded earlier.
+    // Ignore a late response if the user has already selected another company.
+    try {
+      const { data: company } = await api.get(`/companies/${companyId}`, { _silent: true });
+      if (company && typeof company === 'object') {
+        setForm(current => current.company_id === companyId
+          ? { ...current, ...bankFieldsFromCompany(company) }
+          : current);
+      }
+    } catch {
+      // The company-list record already provides a fallback if the detail fetch fails.
+    }
+  };
+
   const createAccount = async () => {
     if (editingAccountId && !canEditBank) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!form.bank_name.trim()) { toast.error('Bank name is required'); return; }
@@ -498,40 +593,45 @@ function BankAccountsInner() {
     setInvoiceLoading(true);
     try {
       const [salesRes, purchasesRes] = await Promise.allSettled([
-        api.get('/invoices', { params: { page: 1, page_size: 2000, company_id: companyId } }),
-        api.get('/purchase-invoices', { params: { page_size: 2000, company_id: companyId } })
+        fetchAllPagedRecords('/invoices', { company_id: companyId }),
+        fetchAllPagedRecords('/purchase-invoices', { company_id: companyId }),
       ]);
 
-      let salesList = [];
-      if (salesRes.status === 'fulfilled') {
-        const data = salesRes.value.data;
-        const rawSales = Array.isArray(data) ? data : (data?.items || data?.invoices || []);
-        salesList = rawSales.map(s => ({
-          ...s,
-          isPurchase: false,
-          invoice_no: s.invoice_no || s.invoice_number || s.number || s.bill_number || '',
-          client_name: s.client_name || s.customer_name || s.party_name || s.buyer_name || 'Customer',
-          grand_total: s.grand_total || s.amount || s.total || 0,
-          invoice_date: s.invoice_date || s.date || s.bill_date || ''
-        }));
+      const salesRows = salesRes.status === 'fulfilled' ? salesRes.value : [];
+      const purchaseRows = purchasesRes.status === 'fulfilled' ? purchasesRes.value : [];
+
+      if (salesRes.status === 'rejected') {
+        console.error('[Bank Accounts] Could not load the full sales register for matching.', salesRes.reason);
+        toast.warning('Sales invoices could not be fully loaded. Some bank matches may be unavailable.');
+      }
+      if (purchasesRes.status === 'rejected') {
+        console.error('[Bank Accounts] Could not load the full purchase register for matching.', purchasesRes.reason);
+        toast.warning('Purchase invoices could not be fully loaded. Some bank matches may be unavailable.');
       }
 
-      let purchasesList = [];
-      if (purchasesRes.status === 'fulfilled') {
-        const data = purchasesRes.value.data;
-        const rawPurchases = Array.isArray(data) ? data : (data?.items || data?.invoices || data?.purchase_invoices || []);
-        purchasesList = rawPurchases.map(p => ({
-          ...p,
-          isPurchase: true,
-          invoice_no: p.invoice_no || p.bill_number || p.invoice_number || '',
-          client_name: p.supplier_name || p.vendor_name || p.client_name || 'Vendor',
-          grand_total: p.grand_total || p.amount || p.total || 0,
-          invoice_date: p.invoice_date || p.date || p.bill_date || ''
-        }));
-      }
+      const salesList = salesRows.map(s => ({
+        ...s,
+        isPurchase: false,
+        invoice_no: s.invoice_no || s.invoice_number || s.number || s.bill_number || '',
+        client_name: s.client_name || s.customer_name || s.party_name || s.buyer_name || 'Customer',
+        grand_total: s.grand_total || s.amount || s.total || 0,
+        invoice_date: s.invoice_date || s.date || s.bill_date || ''
+      }));
+
+      const purchasesList = purchaseRows.map(p => ({
+        ...p,
+        isPurchase: true,
+        invoice_no: p.invoice_no || p.bill_number || p.invoice_number || '',
+        client_name: p.supplier_name || p.vendor_name || p.client_name || 'Vendor',
+        grand_total: p.grand_total || p.amount || p.total || 0,
+        invoice_date: p.invoice_date || p.date || p.bill_date || ''
+      }));
 
       setInvoiceCache([...salesList, ...purchasesList]);
-      setLoadedCompanyId(companyId);
+      // A failed page must remain retryable instead of caching a partial register as complete.
+      setLoadedCompanyId(
+        salesRes.status === 'fulfilled' && purchasesRes.status === 'fulfilled' ? companyId : ''
+      );
     } catch { /* silent */ }
     finally { setInvoiceLoading(false); }
   };
@@ -1661,14 +1761,14 @@ function BankAccountsInner() {
             <Input type="number" placeholder="Opening balance" value={form.opening_balance} onChange={e => setForm(f => ({ ...f, opening_balance: e.target.value }))} />
             <div className="space-y-1">
               <Label className="text-xs font-semibold text-slate-600">Link to Company (optional)</Label>
-              <Select value={form.company_id || '__none__'} onValueChange={v => setForm(f => ({ ...f, company_id: v === '__none__' ? '' : v }))}>
+              <Select value={form.company_id || '__none__'} onValueChange={handleCompanyChange}>
                 <SelectTrigger className="rounded-xl text-sm"><SelectValue placeholder="Select company…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">— Not linked —</SelectItem>
                   {companies.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <p className="text-[10px] text-slate-400">Links this bank account to a company so Sale &amp; Quotation PDFs can use the same bank details.</p>
+              <p className="text-[10px] text-slate-400">Selecting a company pre-fills its saved bank details from Master Data. Verify or edit them before saving.</p>
             </div>
             <Button onClick={createAccount} disabled={savingAccount} className="w-full rounded-xl">
               {savingAccount ? <MiniLoader height={18} /> : 'Save bank account'}
