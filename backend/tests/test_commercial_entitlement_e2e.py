@@ -781,3 +781,100 @@ def test_a_purchase_only_licence_opens_purchase_and_nothing_else(client, env):
         assert client.get("/api/purchase-payments", headers=headers).status_code == 200
         for closed in ("/api/invoices", "/api/bank-accounts", "/api/zte/documents", "/api/reports/day-book"):
             assert client.get(closed, headers=headers).status_code == 403, (role, closed)
+
+
+# --------------------------------------------------------------------------- #
+# Frontend/backend parity fixes
+# --------------------------------------------------------------------------- #
+
+def test_the_most_specific_prefix_decides_which_page_owns_a_route():
+    from backend import commercial_module_guard as guard
+
+    assert guard.feature_for_path("/api/compliance/salary-slips") == ("compliance", "can_view_salary_slips")
+    assert guard.feature_for_path("/api/compliance/salary-slips/employees") == ("compliance", "can_view_salary_slips")
+    assert guard.feature_for_path("/api/compliance/types") == ("compliance", "can_view_compliance")
+    assert guard.feature_for_path("/api/v2/exports/ledger") == ("finix", "finix_ledger_data")
+
+
+def test_salary_slips_page_works_without_the_compliance_page(client, env):
+    _run(_seed(env[1], "slips", ["compliance"], {"compliance": ["can_view_salary_slips"]}))
+    _run(_seed(env[1], "cpl", ["compliance"], {"compliance": ["can_view_compliance"]}))
+    for role in ("admin", "staff"):
+        assert client.get("/api/compliance/salary-slips", headers=_auth(env, f"slips-{role}")).status_code != 403
+        # the Compliance page does not buy the Salary Slips page
+        assert client.get("/api/compliance/salary-slips", headers=_auth(env, f"cpl-{role}")).status_code == 403
+
+
+def test_a_dashboard_page_gets_its_own_summary_but_not_the_raw_lists(client, env):
+    _run(_seed(env[1], "dashc", ["compliance"], {"compliance": ["can_view_compliance_dashboard"]}))
+    _run(_seed(env[1], "dashf", ["finix"], {"finix": ["can_view_finix_dashboard"]}))
+    for role in ("admin", "staff"):
+        c = _auth(env, f"dashc-{role}")
+        assert client.get("/api/compliance/dashboard/summary", headers=c).status_code == 200
+        assert client.get("/api/compliance/salary-slips/dashboard-summary", headers=c).status_code == 200
+        assert client.get("/api/gst-reconciliation/dashboard-summary", headers=c).status_code == 200
+        assert client.get("/api/compliance/salary-slips", headers=c).status_code == 403
+        f = _auth(env, f"dashf-{role}")
+        assert client.get("/api/invoices/orphan-notes", headers=f).status_code == 200
+        assert client.get("/api/invoices", headers=f).status_code == 403
+
+
+def test_chart_of_accounts_is_a_read_only_lookup_for_finix_pages(client, env):
+    for role in ("admin", "staff"):
+        buy = _auth(env, f"buyonly-{role}")  # Purchase page only
+        assert client.get("/api/chart-of-accounts", headers=buy).status_code == 200
+        assert client.post("/api/chart-of-accounts", json={}, headers=buy).status_code == 403
+        assert client.get("/api/chart-of-accounts", headers=_auth(env, f"only_taskosphere-{role}")).status_code == 403
+        # bank accounts hold balances: the Bank page is still required
+        assert client.get("/api/bank-accounts", headers=buy).status_code == 403
+
+
+def test_finix_payments_and_products_need_finix(client, env):
+    for role in ("admin", "staff"):
+        for path in ("/api/payments", "/api/products"):
+            assert client.get(path, headers=_auth(env, f"only_taskosphere-{role}")).status_code == 403, path
+            assert client.get(path, headers=_auth(env, f"only_compliance-{role}")).status_code == 403, path
+        assert client.get("/api/payments", headers=_auth(env, f"sales_only-{role}")).status_code != 403
+        # products are the Invoicing page's catalogue: Purchase alone does not open them
+        assert client.get("/api/products", headers=_auth(env, f"buyonly-{role}")).status_code == 403
+
+
+def test_trademark_root_routes_need_the_trademark_page(client, env):
+    _run(_seed(env[1], "tmk", ["compliance"], {"compliance": ["can_view_trademark_sphere"]}))
+    for role in ("admin", "staff"):
+        for path in ("/api/check", "/api/search", "/api/watchlist"):
+            assert client.get(path, headers=_auth(env, f"only_finix-{role}")).status_code == 403, path
+            assert client.get(path, headers=_auth(env, f"only_taskosphere-{role}")).status_code == 403, path
+            assert client.get(path, headers=_auth(env, f"tmk-{role}")).status_code != 403, path
+
+
+def test_reminders_and_staff_activity_reads_need_their_module(client, env):
+    for role in ("admin", "staff"):
+        assert client.get("/api/email/reminders", headers=_auth(env, f"only_finix-{role}")).status_code == 403
+        assert client.get("/api/email/reminders", headers=_auth(env, f"only_taskosphere-{role}")).status_code != 403
+    # staff activity: admins read it, staff need the page flag
+    assert client.get("/api/desktop/activity", headers=_auth(env, "only_taskosphere-admin")).status_code != 403
+    assert client.get("/api/desktop/activity", headers=_auth(env, "only_taskosphere-staff")).status_code == 403
+
+
+def test_a_manager_cannot_change_permissions_of_a_user_in_another_company(client, env, monkeypatch):
+    import backend.permission_governance as pg
+
+    _run(env[1].users.replace_one(
+        {"id": "only_taskosphere-mgr"},
+        {"id": "only_taskosphere-mgr", "email": "mgr@only_taskosphere.test", "full_name": "Mgr", "role": "manager",
+         "company_id": "only_taskosphere", "license_id": "lic-only_taskosphere",
+         "commercial_customer_id": "only_taskosphere", "is_active": True, "hashed_password": "x",
+         "permissions": {"can_manage_users": True, "can_view_user_page": True}},
+        upsert=True,
+    ))
+
+    async def fake_team(_manager_id):
+        return ["other_co-staff"]  # a user that belongs to a different company
+
+    monkeypatch.setattr(pg, "get_team_user_ids", fake_team)
+    r = client.put("/api/users/other_co-staff/permissions", json={"can_view_tasks": True},
+                   headers=_auth(env, "only_taskosphere-mgr"))
+    assert r.status_code in (403, 404), r.text
+    stored = _run(env[1].users.find_one({"id": "other_co-staff"}))
+    assert not (stored.get("permissions") or {}).get("can_view_tasks")

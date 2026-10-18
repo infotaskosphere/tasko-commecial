@@ -45,6 +45,8 @@ async def approve_recommendation(rec_id: str, current_user: User = Depends(get_c
             raise HTTPException(status_code=404, detail="Recommendation ID not found.")
         await LearningAuditEngine.log_learning_event(event_type="recommendation_accepted", source_id=rec_id, company_id=company_id, user_id=current_user.id, description=f"Recommendation {rec_id} manually accepted and approved.", before_state="pending", after_state="accepted", meta_data={"user_id": current_user.id})
         return {"success": True, "message": "Recommendation successfully approved."}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error approving recommendation: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

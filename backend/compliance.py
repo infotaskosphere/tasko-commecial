@@ -341,12 +341,23 @@ async def create_compliance_master(
 # DASHBOARD SUMMARY
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _compliance_summary_user(current_user: User = Depends(get_current_user)) -> User:
+    """Compliance page or Compliance Dashboard page (its own summary)."""
+    if getattr(current_user, "role", None) == "admin":
+        return current_user
+    perms = current_user.permissions if isinstance(current_user.permissions, dict) else (
+        current_user.permissions.model_dump() if current_user.permissions else {})
+    if any(perms.get(flag) for flag in ('can_view_compliance', 'can_view_compliance_dashboard')):
+        return current_user
+    raise HTTPException(status_code=403, detail="You do not have permission to view this summary.")
+
+
 @router.get("/dashboard/summary")
-async def compliance_dashboard(current_user: User = Depends(check_module_permission("compliance", "view"))):
+async def compliance_dashboard(current_user: User = Depends(_compliance_summary_user)):
     # ── Permission gate ─────────────────────────────────────────────────────
     perms = current_user.permissions if isinstance(current_user.permissions, dict) else \
             (current_user.permissions.model_dump() if hasattr(current_user.permissions, "model_dump") else {})
-    if current_user.role != "admin" and not perms.get("can_view_compliance", False):
+    if current_user.role != "admin" and not (perms.get("can_view_compliance", False) or perms.get("can_view_compliance_dashboard", False)):
         raise HTTPException(403, "You do not have permission to view the Compliance Dashboard")
 
     # ── Dept scope for non-admins ────────────────────────────────────────────

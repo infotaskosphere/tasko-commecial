@@ -77,11 +77,25 @@ def _name_match_query(name: str) -> dict:
     return {"$regex": f"^{normalized}$", "$options": "i"}
 
 
+_COA_LOOKUP_PAGES = (
+    "can_view_accounting_reports", "can_view_extended_accounts_reports",
+    "can_view_accounting_integrity", "can_view_finix_dashboard",
+    "can_view_journal_entries", "can_view_zero_touch_entries", "can_view_bank",
+    "can_view_sale", "can_view_purchase", "can_view_accounting_audit_trail",
+    "can_view_gst_portal_sync",
+)
+
+
 def _perm_view_coa(user: User) -> bool:
     if user.role == "admin":
         return True
     perms = user.permissions if isinstance(user.permissions, dict) else (user.permissions.model_dump() if user.permissions else {})
-    return bool(perms.get("can_view_chart_of_accounts"))
+    # The account list is a read-only lookup for every Finix page that posts or
+    # reports on accounts (the commercial guard has already checked the licence).
+    return bool(
+        perms.get("can_view_chart_of_accounts")
+        or any(perms.get(flag) for flag in _COA_LOOKUP_PAGES)
+    )
 
 
 def _perm_manage_coa(user: User) -> bool:

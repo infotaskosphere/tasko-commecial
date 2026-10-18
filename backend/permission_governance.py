@@ -705,7 +705,9 @@ async def update_user_permissions(
         team_ids = await get_team_user_ids(current_user.id)
         if user_id not in team_ids:
             raise HTTPException(status_code=403, detail="User is not in your team")
-        existing = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+        existing = await db.users.find_one(
+            _scope_user_query({"id": user_id}), {"_id": 0, "password": 0}
+        )
         if not existing:
             raise HTTPException(status_code=404, detail="User not found")
         if existing.get("role") in ("admin", "manager"):
@@ -741,7 +743,7 @@ async def update_user_permissions(
             safe_permissions, current_user, manager_perms
         )
         await db.users.update_one(
-            {"id": user_id}, {"$set": {"permissions": safe_permissions}}
+            _scope_user_query({"id": user_id}), {"$set": {"permissions": safe_permissions}}
         )
         await create_audit_log(
             current_user,

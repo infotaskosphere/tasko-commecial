@@ -4993,9 +4993,20 @@ async def reconcile_gst_registration(
     return {"fixed_count": len(fixed), "skipped_count": skipped, "fixed": fixed}
 
 
+def _orphan_notes_user(current_user: User = Depends(get_current_user)) -> User:
+    """Sale page or Finix Dashboard page (the dashboard shows this warning)."""
+    if getattr(current_user, "role", None) == "admin":
+        return current_user
+    perms = current_user.permissions if isinstance(current_user.permissions, dict) else (
+        current_user.permissions.model_dump() if current_user.permissions else {})
+    if any(perms.get(flag) for flag in ('can_manage_invoices', 'can_view_sale', 'can_view_finix_dashboard')):
+        return current_user
+    raise HTTPException(status_code=403, detail="You do not have permission to view this summary.")
+
+
 @router.get("/invoices/orphan-notes")
 async def list_orphan_notes(company_id: Optional[str] = None,
-                            current_user: User = Depends(check_module_permission("invoicing", "view"))):
+                            current_user: User = Depends(_orphan_notes_user)):
     """Credit/debit notes whose original invoice no longer exists.
 
     These keep posting negative sales / reduced receivables to the ledger even
@@ -5003,7 +5014,8 @@ async def list_orphan_notes(company_id: Optional[str] = None,
     transaction is "still visible" on the dashboard. Delete them with
     DELETE /invoices/{id}.
     """
-    if not _perm(current_user): raise HTTPException(403, "Access denied")
+    # access already decided by _orphan_notes_user (Sale page or Finix Dashboard)
+    pass
     q: dict = {"invoice_type": {"$in": ["credit_note", "debit_note"]}}
     if company_id: q["company_id"] = company_id
     notes = await db.invoices.find(q, {"_id": 0}).to_list(5000)

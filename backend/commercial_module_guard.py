@@ -169,6 +169,8 @@ MODULE_PREFIXES = {
         "/bank-transactions",
         "/audit-trail",
         "/learning",
+        "/payments",
+        "/products",
     ),
     "compliance": (
         "/compliance-dashboard",
@@ -191,6 +193,17 @@ MODULE_PREFIXES = {
         "/class-finder",
         "/search-ipindia",
         "/fetch-preview",
+        "/add",
+        "/add-manual",
+        "/bulk",
+        "/check",
+        "/combined-pdf",
+        "/import-attorney",
+        "/portal-sync",
+        "/report",
+        "/search",
+        "/send-otp",
+        "/watchlist",
     ),
     "records": (
         "/records-dashboard",
@@ -257,7 +270,7 @@ FEATURE_PREFIXES = {
     },
     "finix": {
         "can_view_finix_dashboard": ("/finix-dashboard",),
-        "can_view_sale": ("/invoicing", "/sales", "/invoices", "/credit-notes", "/unprepared-incomes"),
+        "can_view_sale": ("/invoicing", "/sales", "/invoices", "/credit-notes", "/unprepared-incomes", "/payments", "/products"),
         "can_view_purchase": ("/purchase", "/purchase-invoices", "/purchases", "/purchase-payments"),
         "can_view_bank": ("/bank-accounts", "/bank-reconciliation"),
         "can_view_chart_of_accounts": ("/chart-of-accounts",),
@@ -284,7 +297,7 @@ FEATURE_PREFIXES = {
         "finix_debit_note_data": ("/debit-notes",),
         "finix_bank_data": ("/bank-transactions",),
         "finix_audit_trail_data": ("/audit-trail",),
-        "finix_ledger_data": ("/party-ledgers", "/ledger"),
+        "finix_ledger_data": ("/party-ledgers", "/ledger", "/v2/exports/ledger"),
         "finix_learning_data": ("/learning",),
         # Report-data endpoints are shared by Finix Dashboard and Accounting Reports.
         # _permission_flag allows either explicitly selected page to read the data;
@@ -314,14 +327,19 @@ FEATURE_PREFIXES = {
         "can_view_yearly_report": ("/yearly-report",),
         "can_view_opening_balances": ("/opening-balances",),
         "can_view_accounting_audit_trail": ("/accounting-audit-trail",),
-        "can_view_finix_ai": ("/finix", "/v2/exports/ledger"),
+        "can_view_finix_ai": ("/finix",),
     },
     "compliance": {
         "can_view_compliance_dashboard": ("/compliance-dashboard",),
         "can_view_compliance": ("/compliance",),
         "can_manage_compliance": ("/compliance/manage",),
         "can_view_gst_reconciliation": ("/gst-reconciliation", "/gst-sphere"),
-        "can_view_trademark_sphere": ("/trademark-sphere", "/trademark-qc"),
+        "can_view_trademark_sphere": (
+            "/trademark-sphere", "/trademark-qc",
+            # root-level Trademark Sphere actions (router mounted without a prefix)
+            "/add", "/add-manual", "/bulk", "/check", "/combined-pdf", "/import-attorney",
+            "/portal-sync", "/report", "/search", "/send-otp", "/watchlist",
+        ),
         "can_view_roc_sphere": ("/roc-sphere",),
         "can_view_mis_report": ("/mis-report",),
         "compliance_mis_data": ("/mis",),
@@ -331,7 +349,7 @@ FEATURE_PREFIXES = {
             "/search-ipindia", "/fetch-preview",
         ),
         "can_manage_mis_report": ("/mis-report/manage",),
-        "can_view_salary_slips": ("/salary-slips",),
+        "can_view_salary_slips": ("/salary-slips", "/compliance/salary-slips"),
         "can_manage_salary_slips": ("/salary-slips/manage",),
     },
     "records": {
@@ -405,6 +423,52 @@ ANY_OF_FEATURES = {
         "can_view_trademark_sphere", "can_view_compliance_dashboard", "can_view_compliance",
     ),
 }
+
+
+# Read-only access to a route that has ONE owning page: other listed pages may
+# also GET it, because they render it as a lookup (dropdown) or as their own
+# dashboard summary. Writes still need the owning page. {prefix: (module, pages)}
+_FINIX_LOOKUP_PAGES = (
+    "can_view_accounting_reports", "can_view_extended_accounts_reports",
+    "can_view_accounting_integrity", "can_view_finix_dashboard",
+    "can_view_journal_entries", "can_view_zero_touch_entries", "can_view_bank",
+    "can_view_sale", "can_view_purchase", "can_view_accounting_audit_trail",
+    "can_view_gst_portal_sync",
+)
+READ_LOOKUPS = {
+    "/chart-of-accounts": ("finix", _FINIX_LOOKUP_PAGES),
+    "/invoices/orphan-notes": ("finix", ("can_view_finix_dashboard",)),
+    "/compliance/dashboard/summary": ("compliance", ("can_view_compliance_dashboard",)),
+    "/compliance/salary-slips/dashboard-summary": ("compliance", ("can_view_compliance_dashboard",)),
+    "/gst-reconciliation/dashboard-summary": ("compliance", ("can_view_compliance_dashboard",)),
+}
+
+# Module data that used to have no owner at all, so any licensee - even one with
+# no modules - could use it. {prefix: (module, any-of pages)}; all methods.
+PATH_GATES = {
+    "/email/reminders": ("taskosphere", ("can_view_reminders", "can_view_attendance")),
+    "/email/attendance/today-summary": ("taskosphere", ("can_view_attendance",)),
+}
+
+# Staff-activity data read by the Staff Activity page. GET only, because the
+# desktop agent reports through the same prefix. {prefix: core page flag}
+CORE_READ_GATES = {
+    "/desktop/activity": "can_view_staff_activity",
+    "/desktop/browser": "can_view_staff_activity",
+    "/desktop/productivity": "can_view_staff_activity",
+    "/desktop/agents": "can_view_staff_activity",
+    "/desktop/dsc": "can_view_staff_activity",
+}
+
+_SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def _longest_prefix(path: str, table) -> Optional[str]:
+    best = None
+    for prefix in table:
+        if _matches(path, (prefix,)) and (best is None or len(prefix) > len(best)):
+            best = prefix
+    return best
 
 
 def _matches(path: str, prefixes: Tuple[str, ...]) -> bool:
@@ -573,12 +637,17 @@ def feature_for_path(
         # and view/create/edit/delete actions for the tenant's own client data.
         return "records", "can_view_clients_page"
 
+    # The most specific prefix wins, so a page that lives under another page's
+    # prefix (e.g. /compliance/salary-slips under /compliance) keeps its own gate.
+    best = None
+    best_len = -1
     for module, features in FEATURE_PREFIXES.items():
         for flag, prefixes in features.items():
-            if _matches(normalized, prefixes):
-                return module, flag
+            for prefix in prefixes:
+                if (normalized == prefix or normalized.startswith(prefix + "/")) and len(prefix) > best_len:
+                    best, best_len = (module, flag), len(prefix)
 
-    return None
+    return best
 
 
 async def _commercial_license(
@@ -1192,6 +1261,45 @@ async def get_current_user_with_commercial_guard(
         request.method,
     )
 
+    method = str(request.method or "GET").upper()
+
+    gate_prefix = _longest_prefix(normalized_without_api, PATH_GATES)
+    if gate_prefix and not feature:
+        gate_module, gate_pages = PATH_GATES[gate_prefix]
+        if not _licensed_module(gate_module, commercial):
+            raise _deny(
+                request, user,
+                f"This company license does not include the {gate_module} module.",
+                commercial,
+            )
+        if not any(
+            _permission_flag(user, page, commercial, gate_module)
+            and not _matrix_denied_action(user, gate_module, page, request.method, request.url.path)
+            for page in gate_pages
+        ):
+            raise _deny(
+                request, user,
+                f"This company license does not include any page that uses this {gate_module} data.",
+                commercial,
+            )
+
+    core_gate = _longest_prefix(normalized_without_api, CORE_READ_GATES)
+    if core_gate and not feature and method in _SAFE_METHODS and not _is_admin_role(user):
+        core_flag = CORE_READ_GATES[core_gate]
+        permissions = getattr(user, "permissions", None)
+        if hasattr(permissions, "model_dump"):
+            permissions = permissions.model_dump()
+        if not (
+            isinstance(permissions, dict)
+            and permissions.get(core_flag) is True
+            and not _matrix_denied_action(user, "core", core_flag, request.method, request.url.path)
+        ):
+            raise _deny(
+                request, user,
+                "You do not have access to staff activity data.",
+                commercial,
+            )
+
     if feature:
         feature_module, feature_flag = feature
 
@@ -1207,6 +1315,10 @@ async def get_current_user_with_commercial_guard(
             )
 
         any_of_pages = ANY_OF_FEATURES.get((feature_module, feature_flag))
+        if any_of_pages is None and method in _SAFE_METHODS:
+            lookup = _longest_prefix(normalized_without_api, READ_LOOKUPS)
+            if lookup and READ_LOOKUPS[lookup][0] == feature_module:
+                any_of_pages = (feature_flag, *READ_LOOKUPS[lookup][1])
         if any_of_pages is not None and not core_admin_shared:
             granted = any(
                 _permission_flag(user, page, commercial, feature_module)

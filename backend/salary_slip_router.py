@@ -1062,9 +1062,20 @@ async def list_slips(
     return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
+def _salary_summary_user(current_user: User = Depends(get_current_user)) -> User:
+    """Salary Slips page or Compliance Dashboard page (its own summary)."""
+    if getattr(current_user, "role", None) == "admin":
+        return current_user
+    perms = current_user.permissions if isinstance(current_user.permissions, dict) else (
+        current_user.permissions.model_dump() if current_user.permissions else {})
+    if any(perms.get(flag) for flag in ('can_view_salary_slips', 'can_view_compliance_dashboard')):
+        return current_user
+    raise HTTPException(status_code=403, detail="You do not have permission to view this summary.")
+
+
 @router.get("/dashboard-summary")
 async def dashboard_summary(
-    current_user: User = Depends(check_module_permission("salary_slips", "view")),
+    current_user: User = Depends(_salary_summary_user),
 ):
     now = datetime.now(timezone.utc)
     total_employees = await db.salary_employees.count_documents({"status": "active"})
