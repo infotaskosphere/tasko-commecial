@@ -1,9 +1,10 @@
 import os
 import json
 import logging
-import urllib.request
-import urllib.error
+import asyncio
 from typing import Dict, Any, List, Optional
+
+import httpx
 
 logger = logging.getLogger("reasoning_engine")
 
@@ -15,58 +16,100 @@ class ReasoningEngine:
         system_instruction: Optional[str] = None,
         context_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Provider-agnostic interface supporting Gemini via reliable REST API with intelligent fallback."""
+        """Call the configured AI provider asynchronously with a bounded deadline."""
         active_provider = provider or os.getenv("DEFAULT_AI_PROVIDER", "gemini")
-        logger.info(f"Invoking reasoning engine using active provider: {active_provider}")
-        
-        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("REACT_APP_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        
-        # Build comprehensive prompt including contextual workspace data
+        logger.info("Invoking reasoning engine using active provider: %s", active_provider)
+        gemini_key = (
+            os.getenv("GEMINI_API_KEY")
+            or os.getenv("REACT_APP_GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+        )
+
         full_system_prompt = system_instruction or (
-            "You are Taskosphere AI Search & Copilot, an enterprise assistant for accounting, compliance, tasks, and client management. "
-            "Always be clear, factual, helpful, and concise. Format lists with bullets."
+            "You are Taskosphere AI Search & Copilot, an enterprise assistant for accounting, "
+            "compliance, tasks, and client management. Always be clear, factual, helpful, and concise. "
+            "Format lists with bullets."
         )
         if context_data:
             full_system_prompt += f"\n\nLive Workspace Data:\n{json.dumps(context_data, default=str)}"
 
-        if active_provider == "gemini" and gemini_key:
-            # Multi-model fallback chain to ensure maximum availability
-            models_to_try = ["gemini-flash-latest", "gemini-3.1-flash-lite", "gemini-3.8-flash"]
-            for model_name in models_to_try:
-                try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
-                    payload = {
-                        "contents": [{"parts": [{"text": prompt}]}],
-                        "systemInstruction": {"parts": [{"text": full_system_prompt}]}
-                    }
-                    req = urllib.request.Request(
-                        url,
-                        data=json.dumps(payload).encode("utf-8"),
-                        headers={"Content-Type": "application/json"}
-                    )
-                    with urllib.request.urlopen(req, timeout=18) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                        candidates = data.get("candidates", [])
-                        if candidates:
-                            parts = candidates[0].get("content", {}).get("parts", [])
-                            if parts and parts[0].get("text"):
-                                return {
-                                    "text": parts[0]["text"],
-                                    "provider": "gemini",
-                                    "model": model_name,
-                                    "tokens": len(parts[0]["text"]) // 4
-                                }
-                except Exception as e:
-                    logger.warning(f"Gemini API model {model_name} attempt failed: {e}")
-                    continue
+        request_timeout_seconds = max(
+            1.0, float(os.getenv("COPILOT_PROVIDER_TIMEOUT_SECONDS", "12"))
+        )
+        total_timeout_seconds = max(
+            request_timeout_seconds,
+            float(os.getenv("COPILOT_TOTAL_TIMEOUT_SECONDS", "25")),
+        )
 
-        # Smart contextual fallback when Gemini is offline or rate-limited
-        mock_response = ReasoningEngine._generate_fallback_response(prompt, context_data)
+        if active_provider == "gemini" and gemini_key:
+            models_to_try = [
+                "gemini-flash-latest",
+                "gemini-3.1-flash-lite",
+                "gemini-3.8-flash",
+            ]
+
+            async def try_gemini_models() -> Optional[Dict[str, Any]]:
+                timeout = httpx.Timeout(
+                    request_timeout_seconds,
+                    connect=min(4.0, request_timeout_seconds),
+                )
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    for model_name in models_to_try:
+                        url = (
+                            "https://generativelanguage.googleapis.com/v1beta/models/"
+                            f"{model_name}:generateContent"
+                        )
+                        payload = {
+                            "contents": [{"parts": [{"text": prompt}]}],
+                            "systemInstruction": {"parts": [{"text": full_system_prompt}]},
+                        }
+                        try:
+                            response = await client.post(
+                                url,
+                                params={"key": gemini_key},
+                                json=payload,
+                            )
+                            response.raise_for_status()
+                            data = response.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                if parts and parts[0].get("text"):
+                                    answer = parts[0]["text"]
+                                    return {
+                                        "text": answer,
+                                        "provider": "gemini",
+                                        "model": model_name,
+                                        "tokens": len(answer) // 4,
+                                    }
+                            logger.warning("Gemini model %s returned no text candidate", model_name)
+                        except (httpx.TimeoutException, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                            logger.warning("Gemini model %s attempt failed: %s", model_name, exc)
+                        except Exception:
+                            logger.exception("Unexpected Gemini model %s failure", model_name)
+                return None
+
+            try:
+                result = await asyncio.wait_for(
+                    try_gemini_models(),
+                    timeout=total_timeout_seconds,
+                )
+                if result:
+                    return result
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Copilot AI provider fallback chain exceeded %.1f seconds",
+                    total_timeout_seconds,
+                )
+            except Exception:
+                logger.exception("Copilot AI provider request failed; using local fallback")
+
+        fallback = ReasoningEngine._generate_fallback_response(prompt, context_data)
         return {
-            "text": mock_response,
+            "text": fallback,
             "provider": "taskosphere-engine",
             "model": "rule-intelligence-v2",
-            "tokens": len(mock_response) // 4
+            "tokens": len(fallback) // 4,
         }
 
     @staticmethod

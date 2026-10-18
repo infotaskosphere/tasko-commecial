@@ -23,8 +23,8 @@ class CopilotEngine:
     ) -> Dict[str, Any]:
         """Runs the complete Copilot pipeline: Perms -> Tools -> Context -> Prompt -> LLM Reasoning -> Audit."""
         user_id = getattr(user, "id", "system")
-        company_id = getattr(user, "company_id", "default_comp")
-        tenant_id = getattr(user, "tenant_id", "default_tenant")
+        company_id = str(getattr(user, "company_id", None) or "default_comp")
+        tenant_id = str(getattr(user, "tenant_id", None) or "default_tenant")
         
         # 1. Verify general financial permission if querying financials
         if any(w in query.lower() for w in ["balance sheet", "profit", "ledger", "financial", "cash flow"]):
@@ -42,13 +42,13 @@ class CopilotEngine:
             session = await ConversationManager.create_session(user_id, company_id, title=query[:30])
             session_id = session["id"]
         else:
-            session = await ConversationManager.get_session(session_id)
+            session = await ConversationManager.get_session(session_id, user_id, company_id)
             if not session:
                 session = await ConversationManager.create_session(user_id, company_id, title=query[:30])
                 session_id = session["id"]
 
         # Append user message to history
-        await ConversationManager.append_message(session_id, "user", query)
+        await ConversationManager.append_message(session_id, "user", query, user_id, company_id)
 
         # 4. Gather active tenant context details
         context_info = await ContextManager.gather_user_context(company_id, tenant_id)
@@ -67,7 +67,7 @@ class CopilotEngine:
         response_text = reasoning_result["text"]
 
         # Append assistant message to history
-        await ConversationManager.append_message(session_id, "assistant", response_text)
+        await ConversationManager.append_message(session_id, "assistant", response_text, user_id, company_id)
 
         # 7. Immutably log metrics and trace to copilot audit database
         tokens_used = reasoning_result.get("tokens", len(query + response_text) // 4)

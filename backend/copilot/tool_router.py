@@ -91,19 +91,27 @@ class ToolRouter:
         module = tool_info["module"]
         action = tool_info["action"]
         args = tool_info["args"]
-        company_id = args.get("company_id")
-        
+        company_id = str(args.get("company_id") or "").strip()
+        if not company_id or company_id == "default_comp":
+            return {
+                "status": "FAILED",
+                "error": "Select an active company before asking Copilot to query workspace records.",
+            }
+
         try:
             if module == "invoices":
-                # Find unpaid / pending / overdue / partially_paid invoices
-                query = {"status": {"$in": ["unpaid", "pending", "overdue", "partially_paid"]}}
-                if company_id and company_id != "default_comp":
-                    query["company_id"] = company_id
+                query = {
+                    "company_id": company_id,
+                    "status": {"$in": ["unpaid", "pending", "overdue", "partially_paid"]},
+                }
                 invoices = await db.invoices.find(query, {"_id": 0}).sort("due_date", 1).to_list(100)
-                # If nothing found with status filter, also check general open invoices
                 if not invoices:
+                    fallback_query = {
+                        "company_id": company_id,
+                        "status": {"$ne": "paid"},
+                    }
                     invoices = await db.invoices.find(
-                        {"status": {"$ne": "paid"}},
+                        fallback_query,
                         {"_id": 0}
                     ).sort("invoice_date", -1).to_list(100)
                 total_outstanding = sum(
@@ -129,7 +137,10 @@ class ToolRouter:
                 }
 
             elif module == "tasks":
-                query = {"status": {"$ne": "completed"}}
+                query = {
+                    "company_id": company_id,
+                    "status": {"$ne": "completed"},
+                }
                 tasks = await db.tasks.find(query, {"_id": 0}).sort("due_date", 1).to_list(100)
                 return {
                     "status": "SUCCESS",
@@ -149,7 +160,10 @@ class ToolRouter:
                 }
 
             elif module == "clients":
-                clients = await db.clients.find({}, {"_id": 0, "id": 1, "company_name": 1, "contact_person": 1, "phone": 1, "email": 1, "city": 1}).to_list(100)
+                clients = await db.clients.find(
+                    {"company_id": company_id},
+                    {"_id": 0, "id": 1, "company_id": 1, "company_name": 1, "contact_person": 1, "phone": 1, "email": 1, "city": 1},
+                ).to_list(100)
                 return {
                     "status": "SUCCESS",
                     "type": "CLIENT_LIST",
