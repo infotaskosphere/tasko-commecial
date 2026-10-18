@@ -1180,6 +1180,18 @@ def check_module_permission(module,action):
             return current_user
         if not _commercial_permission_allows(current_user, flag):
             raise HTTPException(status_code=403,detail=f"Commercial license does not include: {module}.{action}")
+        # Finix edit/delete must be granted explicitly in Permission Matrix.
+        # Keep the commercial license check above as the hard entitlement cap.
+        if module == "invoicing" and action in {"edit", "delete"}:
+            if current_user.role == "admin":
+                return current_user
+            from backend.finix_action_permissions import has_finix_action_permission
+            if has_finix_action_permission(current_user, "can_view_sale", action):
+                return current_user
+            raise HTTPException(
+                status_code=403,
+                detail=f"Finix {action} permission required; ask your admin to grant it in Permission Matrix.",
+            )
         if current_user.role=="admin":return current_user
         if _get_perm(current_user,flag,False):return current_user
         raise HTTPException(status_code=403,detail=f"Permission required: {module}.{action} (flag: {flag})")
