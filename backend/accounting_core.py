@@ -612,7 +612,6 @@ async def _delete_journal_entry_guarded(entry: dict, current_user: User) -> None
 @router.post("/journal-entries/bulk-delete")
 async def bulk_delete_journal_entries(payload: dict, current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_journal_entries", "delete")
-    require_finix_action(current_user, "can_view_journal_entries", "delete")
     entry_ids = payload.get("entry_ids") or []
     if not isinstance(entry_ids, list) or not entry_ids:
         raise HTTPException(400, "No entry_ids provided.")
@@ -641,7 +640,6 @@ async def delete_all_journal_entries(payload: dict, current_user: User = Depends
     bank matches, AI postings) are never removed here — they belong to their
     source documents — and entries in a locked period are skipped.
     """
-    require_finix_action(current_user, "can_view_journal_entries", "delete")
     require_finix_action(current_user, "can_view_journal_entries", "delete")
     company_id = str((payload or {}).get("company_id") or "").strip()
     if not company_id:
@@ -765,7 +763,6 @@ async def resync_journal_entries(payload: dict, current_user: User = Depends(get
 @router.delete("/journal-entries/{entry_id}")
 async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_journal_entries", "delete")
-    require_finix_action(current_user, "can_view_journal_entries", "delete")
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
@@ -787,7 +784,6 @@ async def update_journal_entry(entry_id: str, payload: JournalEntryCreate, curre
     """Edit an existing manual journal entry. Auto-posted entries (from
     Sale/Purchase/Bank/Payment flows) must be corrected at the source
     document — editing here would drift the ledger away from the invoice."""
-    require_finix_action(current_user, "can_view_journal_entries", "edit")
     require_finix_action(current_user, "can_view_journal_entries", "edit")
     entry = await db.journal_entries.find_one({"id": entry_id})
     if not entry:
