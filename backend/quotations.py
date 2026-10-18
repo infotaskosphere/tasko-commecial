@@ -2075,21 +2075,31 @@ async def create_company(
     if not doc["name"]:
         raise HTTPException(400, "Company name is required")
     if _is_tenant_user(current_user):
-        # Stamp tenant ownership at creation so a licensee company can never
-        # surface in a Platform Owner selector or go missing for its licensee.
-        tenant_customer_id = _norm_id(getattr(current_user, "commercial_customer_id", ""))
-        if not tenant_customer_id:
-            scope_row = await _tenant_raw_db().companies.find_one(
-                {"id": _norm_id(getattr(current_user, "company_id", ""))},
-                {"_id": 0, "commercial_customer_id": 1, "license_id": 1},
-            )
-            tenant_customer_id = _norm_id((scope_row or {}).get("commercial_customer_id"))
-        if tenant_customer_id:
-            doc["commercial_customer_id"] = tenant_customer_id
+        # Use the request's verified commercial identity first. The user model
+        # may have no persisted customer ID on older sessions, so resolve it
+        # through the authenticated customer context/license before insertion.
+        from backend.commercial_tenant_scope import authenticated_customer_id
+
+        tenant_customer_id = (
+            _norm_id(getattr(current_user, "commercial_customer_id", ""))
+            or _norm_id(authenticated_customer_id() or "")
+        )
         tenant_license_id = _norm_id(getattr(current_user, "license_id", ""))
+        if not tenant_customer_id and tenant_license_id:
+            linked_license = await _tenant_raw_db().commercial_licenses.find_one(
+                {"id": tenant_license_id},
+                {"_id": 0, "id": 1, "customer_id": 1},
+            )
+            tenant_customer_id = _norm_id((linked_license or {}).get("customer_id"))
+        if not tenant_customer_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Cannot save company profile without a verified licensee customer",
+            )
+        doc["commercial_customer_id"] = tenant_customer_id
         if tenant_license_id:
             doc["license_id"] = tenant_license_id
-    await db.companies.insert_one(doc)
+    await _tenant_raw_db().companies.insert_one(doc)
     doc.pop("_id", None)
     return doc
 
