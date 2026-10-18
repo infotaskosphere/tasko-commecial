@@ -24,7 +24,7 @@ import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { runVerifyAndFix, describeValidationResult } from '@/lib/verifyAndFixLedger';
 import { currentFinancialYearRange, financialYearStartYear, toLocalISODate } from '@/lib/financialYear';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import { isCommercialTenant, isPlatformOwner } from '@/lib/commercialPermissionMatrix';
+import { isCommercialTenant, isPlatformOwner, canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import FinixAICommandCenter from '@/components/finix/FinixAICommandCenter.jsx';
 import FinixLearningPanel from '@/components/finix/FinixLearningPanel.jsx';
 
@@ -127,6 +127,8 @@ export default function FinixDashboard() {
 function FinixDashboardInner() {
   const isDark = useDark();
   const { user } = useAuth();
+  const canDeleteSale = canPerformFinixAction(user, 'can_view_sale', 'delete');
+  const canDeleteJournal = canPerformFinixAction(user, 'can_view_journal_entries', 'delete');
   const navigate = useNavigate();
 
   const isPlatformOwnerUser = isPlatformOwner(user);
@@ -688,6 +690,7 @@ function FinixDashboardInner() {
   // Credit/debit notes whose invoice was deleted keep posting negative sales and
   // receivables. Listing and deleting them is explicit and confirmed by the user.
   const handleDeleteOrphanNotes = async () => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!companyId || companyId === ALL_COMPANIES_ID) {
       toast.error('Select a single company first.');
       return;
@@ -749,6 +752,7 @@ function FinixDashboardInner() {
   };
 
   const deleteDiagDocument = async (finding) => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     const doc = finding.document;
     if (!doc) return;
     if (!window.confirm(`Delete ${doc.invoice_no || doc.id} (${doc.client_name || 'Customer'}, ${fmtC(doc.grand_total)})?\n\n${finding.reason}`)) return;
@@ -764,6 +768,7 @@ function FinixDashboardInner() {
   };
 
   const deleteDiagEntry = async (finding) => {
+    if (!canDeleteJournal) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Delete this journal entry?\n\n${finding.narration || finding.source} (${fmtC(finding.total)})\n\n${finding.reason}`)) return;
     try {
       await api.delete(`/journal-entries/${finding.entry_id}`);
@@ -1607,7 +1612,7 @@ function FinixDashboardInner() {
                             Find the cause
                           </button>
                         )}
-                        {healthScore.issues.some((i) => i.code === 'ORPHAN_NOTE') && companyId !== ALL_COMPANIES_ID && (
+                        {canDeleteSale && healthScore.issues.some((i) => i.code === 'ORPHAN_NOTE') && companyId !== ALL_COMPANIES_ID && (
                           <button onClick={handleDeleteOrphanNotes} className="block mt-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
                             Review &amp; delete orphan notes
                           </button>
@@ -2131,7 +2136,7 @@ function FinixDashboardInner() {
                   {healthScore.issues.map((issue, i) => (
                     <div key={i} className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[11px] text-amber-800 dark:text-amber-200">
                       {issue.message}
-                      {issue.code === 'ORPHAN_NOTE' && companyId !== ALL_COMPANIES_ID && (
+                      {canDeleteSale && issue.code === 'ORPHAN_NOTE' && companyId !== ALL_COMPANIES_ID && (
                         <button onClick={handleDeleteOrphanNotes} className="block mt-1.5 px-2.5 py-1 rounded-md bg-amber-600 text-white font-semibold hover:bg-amber-700">
                           Review &amp; delete orphan notes
                         </button>
@@ -2199,12 +2204,12 @@ function FinixDashboardInner() {
                     </div>
                     <div className="text-right font-mono font-bold whitespace-nowrap">{fmtC(f.receivables_effect)}</div>
                   </div>
-                  {f.document && f.code !== 'SOURCE_MISSING' && (
+                  {canDeleteSale && f.document && f.code !== 'SOURCE_MISSING' && (
                     <Button size="sm" variant="outline" className="mt-2 h-7 text-xs rounded-lg" onClick={() => deleteDiagDocument(f)}>
                       Delete this document
                     </Button>
                   )}
-                  {f.deletable_entry && (
+                  {canDeleteJournal && f.deletable_entry && (
                     <Button size="sm" variant="outline" className="mt-2 h-7 text-xs rounded-lg" onClick={() => deleteDiagEntry(f)}>
                       Delete this orphaned entry
                     </Button>
