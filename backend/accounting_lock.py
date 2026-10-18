@@ -28,7 +28,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.dependencies import db, get_current_user
+from backend.dependencies import db, client as mongo_client, get_current_user
 from backend.models import User
 from backend import accounting_core as ac
 from backend.accounting_ai.accounting_controls import (
@@ -620,11 +620,13 @@ async def _safe_post_journal_entry(
     # Prefer Mongo transactions. If the deployment is a standalone Mongo
     # server without transaction support, use a compensating rollback so a
     # failed line insert never leaves a header-only journal entry behind.
-    client = getattr(db, "client", None)
+    # `db` is a TenantAwareDatabase: db.client resolves to a collection proxy,
+    # not the underlying Motor client. Use the raw client for sessions/transactions.
+    transaction_client = mongo_client
     transaction_written = False
-    if client is not None and hasattr(client, "start_session"):
+    if transaction_client is not None and hasattr(transaction_client, "start_session"):
         try:
-            session = await client.start_session()
+            session = await transaction_client.start_session()
             try:
                 async with session.start_transaction():
                     await _write(session=session)
