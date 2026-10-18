@@ -5097,6 +5097,9 @@ const InvoiceDetailPanel = ({
   isDark,
   companies // ✅ REQUIRED for DriveUploadBtn
 }) => {
+  const { user } = useAuth();
+  const canEditInvoice = canPerformFinixAction(user, 'can_view_sale', 'edit');
+  const canDeleteInvoice = canPerformFinixAction(user, 'can_view_sale', 'delete');
   const [payments, setPayments] = useState([]);
   const [statusHistory, setStatusHistory] = useState([]);
 
@@ -5284,7 +5287,7 @@ const InvoiceDetailPanel = ({
               : 'border-slate-100 bg-white'
           }`}
         >
-          <Button
+          {canEditInvoice && <Button
             variant="outline"
             size="sm"
             onClick={() => {
@@ -5294,7 +5297,7 @@ const InvoiceDetailPanel = ({
             className="rounded-xl text-xs h-9 gap-1.5"
           >
             <Edit className="h-3.5 w-3.5" /> Edit
-          </Button>
+          </Button>}
 
           <Button
             variant="outline"
@@ -5403,14 +5406,14 @@ const InvoiceDetailPanel = ({
             </Button>
           )}
 
-          <Button
+          {canDeleteInvoice && <Button
             variant="ghost"
             size="sm"
             onClick={() => onDelete?.(invoice)}
             className="rounded-xl text-xs h-9 gap-1.5 text-red-500 hover:bg-red-50 ml-auto"
           >
             <Trash2 className="h-3.5 w-3.5" /> Delete
-          </Button>
+          </Button>}
         </div>
       </DialogContent>
     </Dialog>
@@ -6150,6 +6153,8 @@ function Invoicing() {
 
   // ── hooks from context/router (treat as stable) ──
   const { user } = useAuth();
+  const canEditSale = canPerformFinixAction(user, 'can_view_sale', 'edit');
+  const canDeleteSale = canPerformFinixAction(user, 'can_view_sale', 'delete');
   const isDark = useDark();
   const navigate = useNavigate();
 
@@ -6441,6 +6446,7 @@ const fetchAll = useCallback(async () => {
 
   // handleBulkDelete depends on fetchAll — declared AFTER it ✓
   const handleBulkDelete = useCallback(async () => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!selectedIds.size) return;
     if (!window.confirm(`Permanently delete ${selectedIds.size} invoice${selectedIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkDeleteLoading(true);
@@ -6460,9 +6466,13 @@ const fetchAll = useCallback(async () => {
       toast.error(err?.response?.data?.detail || 'Bulk delete failed. Nothing was changed.');
     }
     setBulkDeleteLoading(false);
-  }, [selectedIds, fetchAll]);
+  }, [selectedIds, fetchAll, canDeleteSale]);
 
-  const handleEdit = useCallback((inv) => { setEditingInv(inv); setFormOpen(true); }, []);
+  const handleEdit = useCallback((inv) => {
+    if (!canEditSale) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
+    setEditingInv(inv);
+    setFormOpen(true);
+  }, [canEditSale]);
 
   // Duplicate: clone the invoice (no id) → opens form in "new" mode pre-filled with cloned data
   const handleDuplicateInv = useCallback((inv) => {
@@ -6501,13 +6511,14 @@ const fetchAll = useCallback(async () => {
   }, []);
 
   const handleDelete = useCallback(async (inv) => {
+    if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Delete invoice ${inv.invoice_no}?`)) return;
     try { await api.delete(`/invoices/${inv.id}`); toast.success('Invoice deleted'); fetchAll(); setDetailOpen(false); }
     catch (err) {
       const detail = err?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Failed to delete', { duration: 9000 });
     }
-  }, [fetchAll]);
+  }, [fetchAll, canDeleteSale]);
 
   // Convert a Proforma Invoice into a real Tax Invoice (new invoice record,
   // proforma stays as-is with a backlink so it shows "Converted").
@@ -6925,11 +6936,11 @@ const fetchAll = useCallback(async () => {
               className={`text-xs font-semibold px-2.5 py-1 rounded-full transition-colors ${isDark ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>
               Select all {enrichedFiltered.length}
             </button>
-            <Button size="sm" variant="ghost" onClick={handleBulkDelete} disabled={bulkDeleteLoading}
+            {canDeleteSale && <Button size="sm" variant="ghost" onClick={handleBulkDelete} disabled={bulkDeleteLoading}
               className="h-7 px-3 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg gap-1.5 font-semibold">
               {bulkDeleteLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
               Delete {selectedIds.size} invoice{selectedIds.size > 1 ? 's' : ''}
-            </Button>
+            </Button>}
             <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-auto flex items-center gap-1">
               <X className="h-3 w-3" /> Clear selection
             </button>
@@ -7119,7 +7130,7 @@ const fetchAll = useCallback(async () => {
                     </td>
                     <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        <button onClick={() => { setEditingInv(inv); setFormOpen(true); }} title="Edit" className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/30' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}><Edit className="h-3.5 w-3.5" /></button>
+                        {canEditSale && <button onClick={() => handleEdit(inv)} title="Edit" className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/30' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}><Edit className="h-3.5 w-3.5" /></button>}
                         <button onClick={() => handleDuplicateInv(inv)} title="Duplicate" className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-purple-400 hover:bg-purple-900/30' : 'text-slate-400 hover:text-purple-600 hover:bg-purple-50'}`}><Copy className="h-3.5 w-3.5" /></button>
                         {inv.invoice_type === 'proforma' && (
                           <button
@@ -7145,7 +7156,7 @@ const fetchAll = useCallback(async () => {
                           }}>
                           <MessageCircle className="h-3.5 w-3.5" />
                         </button>
-                        <button onClick={() => handleDelete(inv)} title="Delete" className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-red-400 hover:bg-red-900/30' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}`}><Trash2 className="h-3.5 w-3.5" /></button>
+                        {canDeleteSale && <button onClick={() => handleDelete(inv)} title="Delete" className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-red-400 hover:bg-red-900/30' : 'text-slate-400 hover:text-red-500 hover:bg-red-50'}`}><Trash2 className="h-3.5 w-3.5" /></button>}
                       </div>
                     </td>
                   </tr>
