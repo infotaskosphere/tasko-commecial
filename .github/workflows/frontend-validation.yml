@@ -15,9 +15,6 @@ permissions:
 jobs:
   frontend-build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
     steps:
       - name: Checkout tested revision
         uses: actions/checkout@v4
@@ -28,7 +25,7 @@ jobs:
           node-version: "20"
 
       - name: Install frontend dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
       - name: Build frontend
-        run: npm run build
+        run: npm run build --workspace=frontend

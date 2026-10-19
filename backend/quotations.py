@@ -1911,17 +1911,43 @@ async def _tenant_company_scope(current_user: User) -> Dict[str, Any]:
             return {"id": "__no_tenant_scope__"}
         return {"$and": [{"id": company_id}, owner_workspace_filter]}
 
-    # Admin Company Profiles are all legal entities attached to this customer.
-    # Keep license ID as a fallback for older rows without customer markers.
+    # Admin Company Profiles include every legal entity registered to this
+    # customer/license plus legacy companies created by users who are verified
+    # members of this same commercial customer. This compatibility path is
+    # bounded by the central users registry; never infer ownership from a
+    # company name, email domain, or an untrusted request parameter.
+    tenant_creator_ids = {uid} if uid else set()
+    try:
+        tenant_users = await raw.users.find(
+            {"commercial_customer_id": customer_id},
+            {"_id": 0, "id": 1},
+        ).to_list(5000)
+        tenant_creator_ids.update(
+            _norm_id(item.get("id"))
+            for item in tenant_users
+            if _norm_id(item.get("id"))
+        )
+    except Exception:
+        # A failure to read the tenant user registry must not broaden scope.
+        # Retain only the currently authenticated user's own legacy records.
+        logging.getLogger(__name__).warning(
+            "Could not resolve tenant user IDs for legacy company visibility",
+            exc_info=True,
+        )
+
+    tenant_creator_ids.discard("")
+    company_ownership_clauses = [
+        {"commercial_customer_id": customer_id},
+        {"id": customer_id},
+    ]
+    if license_id:
+        company_ownership_clauses.append({"license_id": license_id})
+    if tenant_creator_ids:
+        company_ownership_clauses.append({"created_by": {"$in": sorted(tenant_creator_ids)}})
+
     return {
         "$and": [
-            {
-                "$or": [
-                    {"commercial_customer_id": customer_id},
-                    {"id": customer_id},
-                    *([{"license_id": license_id}] if license_id else []),
-                ]
-            },
+            {"$or": company_ownership_clauses},
             owner_workspace_filter,
         ]
     }
