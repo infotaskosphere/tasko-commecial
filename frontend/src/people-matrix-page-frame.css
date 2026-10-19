@@ -1,0 +1,118 @@
+/* People Matrix — shared page language.
+   Recruitment is the visual reference; the frame keeps the same compact,
+   professional blue treatment across Users, Leave, Payroll and HR. */
+.people-matrix-page-frame {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.people-matrix-page-hero {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 14px;
+  min-height: 118px;
+  border-radius: 0;
+  background: linear-gradient(135deg, #0D3B66 0%, #1F6FB2 62%, #2A9BD0 100%);
+  box-shadow: 0 8px 26px rgba(13, 59, 102, 0.18);
+}
+
+.people-matrix-page-hero-content {
+  position: relative;
+  z-index: 2;
+  min-height: 118px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 26px;
+  color: #fff;
+}
+
+.people-matrix-page-hero-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.48);
+  background: rgba(255,255,255,.10);
+  color: #fff;
+}
+
+.people-matrix-page-eyebrow {
+  margin: 0 0 4px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .14em;
+  color: rgba(255,255,255,.64);
+}
+
+.people-matrix-page-hero h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(24px, 2vw, 31px);
+  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -.02em;
+}
+
+.people-matrix-page-hero-content > div:nth-child(2) > p:last-child {
+  margin: 5px 0 0;
+  color: rgba(255,255,255,.76);
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+.people-matrix-page-action { margin-left: auto; }
+.people-matrix-page-action > * { white-space: nowrap; }
+
+.people-matrix-page-hero-glow {
+  position: absolute;
+  z-index: 1;
+  border-radius: 999px;
+  pointer-events: none;
+  background: rgba(255,255,255,.12);
+  filter: blur(1px);
+}
+.people-matrix-page-hero-glow-a { width: 300px; height: 300px; right: -105px; top: -150px; }
+.people-matrix-page-hero-glow-b { width: 180px; height: 180px; left: -90px; bottom: -110px; background: rgba(255,255,255,.07); }
+
+.people-matrix-page-content {
+  min-width: 0;
+}
+
+/* These pages used their own outer padding. Remove the duplicate gutter when
+   they are rendered inside the shared frame so the content lines up exactly
+   with Recruitment and the global People Matrix workspace. */
+.people-matrix-page-content > .p-6 {
+  padding: 0 !important;
+  max-width: none !important;
+}
+.people-matrix-page-content > .max-w-6xl,
+.people-matrix-page-content > .max-w-7xl {
+  max-width: none !important;
+}
+
+/* Users has a legacy large hero + secondary tab strip. The global People
+   Matrix module already supplies the module identity, so keep the directory
+   body but flatten the old header into the new page language. */
+body[data-business-route="/users"] .people-matrix-page-content .people-matrix-legacy-header,
+body[data-business-route="/users"] .people-matrix-page-content [data-people-matrix-legacy-header="true"] {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .people-matrix-page-hero-content { padding: 20px; }
+  .people-matrix-page-action { margin-left: 0; }
+  .people-matrix-page-hero-content { flex-wrap: wrap; }
+}
+
+@media (max-width: 640px) {
+  .people-matrix-page-hero { margin-bottom: 10px; }
+  .people-matrix-page-hero-content { gap: 12px; min-height: 108px; padding: 18px; }
+  .people-matrix-page-hero-icon { width: 42px; height: 42px; flex-basis: 42px; }
+  .people-matrix-page-hero h1 { font-size: 23px; }
+}
