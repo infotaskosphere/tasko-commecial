@@ -39,7 +39,7 @@ export default function PeopleMatrixPageFrame({ page, children, action = null })
   const Icon = meta.icon;
 
   return (
-    <div className="people-matrix-page-frame">
+    <div className="people-matrix-page-frame" data-people-matrix-page={page}>
       <section className="people-matrix-page-hero">
         <div className="people-matrix-page-hero-glow people-matrix-page-hero-glow-a" />
         <div className="people-matrix-page-hero-glow people-matrix-page-hero-glow-b" />
