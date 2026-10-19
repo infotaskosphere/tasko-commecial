@@ -24,6 +24,9 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Upgrade npm dependency resolver
+        run: npm install --global npm@11
+
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
 
