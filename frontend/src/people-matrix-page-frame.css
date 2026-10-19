@@ -96,12 +96,11 @@
   max-width: none !important;
 }
 
-/* Users has a legacy large hero + secondary tab strip. The global People
-   Matrix module already supplies the module identity, so keep the directory
-   body but flatten the old header into the new page language. */
-body[data-business-route="/users"] .people-matrix-page-content .people-matrix-legacy-header,
-body[data-business-route="/users"] .people-matrix-page-content [data-people-matrix-legacy-header="true"] {
-  display: none;
+/* Users previously rendered a second, centered legacy hero inside the shared
+   page shell. The route now supplies the canonical People Matrix hero above;
+   hide only that legacy header and keep every Users tab/content section intact. */
+.people-matrix-page-frame[data-people-matrix-page="users"] #people-matrix-user-header {
+  display: none !important;
 }
 
 @media (max-width: 900px) {
