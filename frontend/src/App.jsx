@@ -22,6 +22,7 @@ import "./module-branding.js";
 import "./header-tabs-canonical.css";
 import "./ui-layout-fixes.css";
 import "./module-switcher-commercial.css";
+import "./people-matrix-page-frame.css";
 
 const BottomLoadingBar = memo(function BottomLoadingBar() {
   const loading = useLoading();
@@ -83,8 +84,6 @@ function RoutePrefetcher() {
       if (!href || !href.startsWith("/")) return;
       prefetchRoute(href.split("?")[0].split("#")[0]);
     };
-    // Load a route chunk only after an explicit interaction, not whenever the
-    // pointer happens to cross a navigation link.
     document.addEventListener("pointerdown", warm, { passive: true });
     document.addEventListener("focusin", warm);
     return () => {
