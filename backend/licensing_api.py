@@ -739,7 +739,7 @@ def module_for_api_path(pathname: str) -> Optional[str]:
         return "TASKS"
     if value.startswith(("invoicing", "invoices")):
         return "INVOICING"
-    if value.startswith(("purchase", "purchase-invoices", "bank-accounts", "bank-transactions", "chart-of-accounts", "journal-entries", "accounting-reports", "zero-touch-entry", "gst-portal-sync", "accounting-integrity", "day-book", "cash-bank-book", "cash-flow", "outstanding-report", "bank-reconciliation", "depreciation", "tds-tcs", "financial-ratios", "comparative-report", "yearly-report", "opening-balances", "accounting-audit-trail", "bulk-import")):
+    if value.startswith(("purchase", "purchase-invoices", "bank-accounts", "bank-transactions", "chart-of-accounts", "journal-entries", "accounting-reports", "zero-touch-entry", "gst-portal-sync", "accounting-integrity", "accounting-books", "day-book", "cash-bank-book", "cash-flow", "outstanding-report", "bank-reconciliation", "depreciation", "tds-tcs", "financial-ratios", "comparative-report", "yearly-report", "opening-balances", "accounting-audit-trail", "bulk-import")):
         return "ACCOUNTING"
     if value.startswith(("leave", "payroll", "hr", "recruitment", "people-matrix", "staff-activity", "users")):
         return "HRMS"

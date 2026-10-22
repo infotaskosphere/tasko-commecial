@@ -494,6 +494,9 @@ async def create_accounting_integrity_indexes():
     # boundary below still performs deterministic idempotency checks.
     await db.journal_entries.create_index([("company_id", 1), ("source", 1), ("source_id", 1)])
     await db.journal_lines.create_index([("company_id", 1), ("entry_id", 1)])
+    # Voucher numbering: one counter per (company, financial year, type), one number per source document.
+    await db.voucher_counters.create_index([("company_id", 1), ("fy", 1), ("kind", 1)], unique=True)
+    await db.voucher_numbers.create_index([("company_id", 1), ("source", 1), ("source_id", 1)], unique=True)
 
 
 # ── Harden the actual ledger boundary ───────────────────────────────────────
@@ -572,7 +575,7 @@ async def _safe_post_journal_entry(
     account_ids = [str(line.get("account_id") or "") for line in lines]
     accounts = await db.chart_of_accounts.find(
         {"company_id": company_id, "id": {"$in": list(set(account_ids))}},
-        {"_id": 0, "id": 1, "name": 1, "is_active": 1, "is_group": 1, "is_postable": 1},
+        {"_id": 0, "id": 1, "name": 1, "is_active": 1, "is_group": 1, "is_postable": 1, "code": 1, "type": 1, "sub_type": 1},
     ).to_list(max(1, len(set(account_ids))))
     by_id = {account.get("id"): account for account in accounts}
     for account_id in account_ids:
@@ -584,6 +587,21 @@ async def _safe_post_journal_entry(
         if account.get("is_group") is True or account.get("is_postable") is False:
             raise ValueError(f"Account {account_id} is a non-postable/group account.")
 
+    # Tally-style voucher type and number. Never allowed to block a posting: an entry without a number is still a
+    # valid entry, and POST /accounting-books/vouchers/backfill numbers any that were missed.
+    voucher_type, voucher_no = "", ""
+    try:
+        from backend.account_classification import classify_account, H_CASH
+        from backend.voucher_numbering import stamp_voucher
+        legs = []
+        for l in lines:
+            acct = by_id[str(l.get("account_id") or "")]
+            is_cash = acct.get("type") == "asset" and classify_account(acct).get("schedule3_head") == H_CASH
+            legs.append((float(l.get("debit") or 0), float(l.get("credit") or 0), is_cash))
+        voucher_type, voucher_no = await stamp_voucher(db, company_id, normalized_source, normalized_source_id, parsed_date, legs)
+    except Exception:
+        logger.warning("Voucher numbering skipped for %s:%s", normalized_source, normalized_source_id, exc_info=True)
+
     now = datetime.now(timezone.utc).isoformat()
     entry_id = str(uuid.uuid4())
     entry_doc = {
@@ -593,6 +611,8 @@ async def _safe_post_journal_entry(
         "narration": str(narration or "").strip(),
         "source": normalized_source,
         "source_id": normalized_source_id,
+        "voucher_type": voucher_type,
+        "voucher_no": voucher_no,
         "total_debit": float(total_debit),
         "total_credit": float(total_credit),
         "created_by": str(created_by or "system"),

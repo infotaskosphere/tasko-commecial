@@ -81,7 +81,14 @@ TENANT_COLLECTIONS = {
     "pending_client_messages", "service_expiries", "password_sheet_links", "reminder_dup_ignores",
     "notification_history", "workflow_audit", "notifications",
     "whatsapp_hub_contacts", "whatsapp_hub_groups", "whatsapp_hub_messages",
-    "zte_processed_documents", "zte_category_rules", "template_library"
+    "zte_processed_documents", "zte_category_rules", "template_library",
+    # Core books: settings, voucher numbering, period-end adjustments, year-end closing
+    "accounting_settings", "voucher_counters", "voucher_numbers", "period_end_adjustments", "fy_closings",
+    # Inventory
+    "stock_items", "stock_movements", "stock_valuations",
+    # Accounting standards and disclosures
+    "fx_revaluations", "provision_register", "contingent_liabilities", "related_parties", "related_party_transactions",
+    "employee_benefit_provisions", "leases", "borrowing_costs", "accounting_policies", "share_capital_register"
 }
 
 COMPANY_REGISTRY_COLLECTION = "companies"

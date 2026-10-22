@@ -58,6 +58,7 @@ const ROUTE_PAGE_PREFIXES = {
     ['can_view_journal_entries', '/journal-entries'],
     ['can_view_zero_touch_entries', '/zero-touch-entry'],
     ['can_view_accounting_reports', '/accounting-reports'],
+    ['can_view_extended_accounts_reports', '/accounting-books'],
     ['can_view_extended_accounts_reports', '/day-book'],
     ['can_view_extended_accounts_reports', '/cash-bank-book'],
     ['can_view_extended_accounts_reports', '/cash-flow'],

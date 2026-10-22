@@ -173,6 +173,11 @@ DEFAULT_ACCOUNTS = [
     ("5800", "Depreciation Expense",           "expense",   "depreciation"),
     ("5950", "Income Tax Expense",             "expense",   "tax_expense"),
     ("5960", "Deferred Tax Expense / (Credit)", "expense",  "tax_expense"),
+    # Period-end adjustments (accruals, prepayments, provisions).
+    ("1150", "Provision for Doubtful Debts",   "asset",     "provision_doubtful_debts"),
+    ("1550", "Accrued Income",                 "asset",     "accrued_income"),
+    ("2350", "Income Received in Advance",     "liability", "current_liability"),
+    ("5970", "Bad Debts & Provision for Doubtful Debts", "expense", "operating_expense"),
     # Suspense — parking account for bank lines that can't be classified at match time.
     # Standard AI-accounting practice (Zoho / QuickBooks / Xero): post to suspense first
     # so the bank balance stays reconciled, then reclassify from the "Suspense Review"
@@ -552,13 +557,15 @@ async def list_journal_entries(
             inv = invoices_by_id[sid]
             e["customer_name"] = inv.get("client_name")
             e["invoice_no"] = inv.get("invoice_no")
-            e["voucher_no"] = inv.get("invoice_no")
+            e["document_no"] = inv.get("invoice_no")
+            e["voucher_no"] = e.get("voucher_no") or inv.get("invoice_no")
             e["reference_no"] = inv.get("reference_no") or None
         elif src == "purchase" and sid in bills_by_id:
             bill = bills_by_id[sid]
             e["vendor_name"] = bill.get("supplier_name")
             e["invoice_no"] = bill.get("invoice_no")
-            e["voucher_no"] = bill.get("invoice_no")
+            e["document_no"] = bill.get("invoice_no")
+            e["voucher_no"] = e.get("voucher_no") or bill.get("invoice_no")
         elif src == "payment" and sid in payments_by_id:
             pay = payments_by_id[sid]
             linked = linked_inv_by_id.get(pay.get("invoice_id"))
@@ -567,7 +574,8 @@ async def list_journal_entries(
             e["payment_mode"] = pay.get("payment_mode")
             e["reference_no"] = pay.get("reference_no") or None
             e["bank_account"] = "Cash in Hand" if str(pay.get("payment_mode") or "").lower() == "cash" else "Bank Accounts"
-            e["voucher_no"] = pay.get("id")
+            e["document_no"] = pay.get("reference_no") or None
+            e["voucher_no"] = e.get("voucher_no") or pay.get("id")
         elif src == "purchase_payment" and sid in purchase_payments_by_id:
             pay = purchase_payments_by_id[sid]
             linked = linked_bill_by_id.get(pay.get("purchase_invoice_id"))
@@ -576,7 +584,8 @@ async def list_journal_entries(
             e["payment_mode"] = pay.get("payment_mode")
             e["reference_no"] = pay.get("reference_no") or None
             e["bank_account"] = "Cash in Hand" if str(pay.get("payment_mode") or "").lower() == "cash" else "Bank Accounts"
-            e["voucher_no"] = pay.get("id")
+            e["document_no"] = pay.get("reference_no") or None
+            e["voucher_no"] = e.get("voucher_no") or pay.get("id")
 
     return {"entries": entries, "total": total, "total_pages": total_pages, "page": page, "page_size": page_size}
 

@@ -120,6 +120,7 @@ MODULE_PREFIXES = {
         "/zero-touch-entry",
         "/gst-portal-sync",
         "/accounting-integrity",
+        "/accounting-books",
         "/day-book",
         "/cash-bank-book",
         "/cash-flow",
@@ -281,7 +282,7 @@ FEATURE_PREFIXES = {
         "can_view_accounting_reports": ("/accounting-reports",),
         "can_view_extended_accounts_reports": (
             "/day-book", "/cash-bank-book", "/cash-flow", "/outstanding-report",
-            "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report",
+            "/accounting-books", "/depreciation", "/tds-tcs", "/financial-ratios", "/comparative-report",
             "/yearly-report", "/opening-balances", "/accounting-audit-trail",
             "/bulk-import", "/due-dates", "/import-invoices",
             "/reports/day-book", "/reports/cash-bank-book",

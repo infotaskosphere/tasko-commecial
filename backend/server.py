@@ -35,6 +35,7 @@ from backend.learning.learning_router import router as learning_router
 from backend.gst_portal_sync import router as gst_portal_sync_router, create_gst_portal_sync_indexes
 from backend.free_gst_api import router as free_gst_api_router
 from backend.accounting_lock import router as accounting_lock_router, create_accounting_integrity_indexes
+from backend.accounting_books import router as accounting_books_router
 from backend.reminders_router import router as reminders_router
 from backend.quotations import router as quotation_router
 from backend.purchases import router as purchases_router
@@ -381,6 +382,7 @@ register_legacy_router_mounts(
         gst_portal_sync_router,
         free_gst_api_router,
         accounting_lock_router,
+        accounting_books_router,
         ai_document_reader_router,
         aiweave_router,
         trademark_portals_router,

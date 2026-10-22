@@ -34,6 +34,7 @@ const PAGE_INSIGHTS = {
   "/bank-accounts": ["TIP", "Review unmatched transactions first when investigating a reconciliation gap."],
   "/journal-entries": ["TIP", "Review debit and credit totals before posting a journal entry."],
   "/accounting-reports": ["TIP", "Select the financial year and reporting period before comparing reports."],
+  "/accounting-books": ["TIP", "Use a Payment, Receipt or Contra for cash and bank, and a Journal for everything else."],
   "/day-book": ["TIP", "Use the day book to trace posting activity in date order."],
   "/cash-bank-book": ["TIP", "Review the transaction date range before exporting a cash or bank book."],
   "/cash-flow": ["FUN FACT", "Cash movement and accounting profit answer different business questions, so both views matter."],
