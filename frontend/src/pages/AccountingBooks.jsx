@@ -9,6 +9,10 @@ import { useDark } from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { PageHeader, ReportCard, Row, EmptyState, fmtC } from '@/components/reports/ReportShared.jsx';
+import { AccountSelect, Labeled, field, labelCls } from './books/ui.jsx';
+import InventoryTab from './books/InventoryTab.jsx';
+import StandardsTab from './books/StandardsTab.jsx';
+import NotesTab from './books/NotesTab.jsx';
 import {
   ENTERABLE, FRAMEWORK_INFO, VOUCHER_LABELS, errText, fyOptions, isCashBank, journalTotals,
   particularAccounts, particularsTotal, sortChecklist, todayIso,
@@ -19,29 +23,11 @@ const TABS = [
   ['period-end', 'Period-end'],
   ['year-end', 'Year-end'],
   ['groups', 'Groups'],
+  ['inventory', 'Inventory'],
+  ['standards', 'Standards'],
+  ['notes', 'Notes'],
   ['settings', 'Settings'],
 ];
-
-const field = (isDark) => `h-9 rounded-lg border px-3 text-sm ${isDark ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-slate-300 text-slate-800'}`;
-const labelCls = (isDark) => `text-xs font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`;
-
-function Labeled({ label, isDark, children, className = '' }) {
-  return (
-    <label className={`flex flex-col gap-1 ${className}`}>
-      <span className={labelCls(isDark)}>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function AccountSelect({ accounts, value, onChange, isDark, placeholder = 'Choose an account', ariaLabel }) {
-  return (
-    <select aria-label={ariaLabel || placeholder} value={value || ''} onChange={(e) => onChange(e.target.value)} className={`${field(isDark)} w-full min-w-0`}>
-      <option value="">{placeholder}</option>
-      {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-    </select>
-  );
-}
 
 /* ═══ Vouchers ═══════════════════════════════════════════════════════════ */
 const blankRow = () => ({ account_id: '', amount: '', memo: '' });
@@ -615,7 +601,7 @@ function AccountingBooksInner() {
     <div className={`min-h-screen ${isDark ? 'bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
       <div className="p-4 md:p-6 space-y-5 max-w-[1200px] mx-auto">
         <PageHeader icon={BookMarked} title="Books & Vouchers" isDark={isDark}
-          subtitle="Payment, receipt, contra and journal vouchers, period-end adjustments, year-end closing and the group trial balance."
+          subtitle="Vouchers, period-end adjustments, year-end closing, inventory, accounting standards (AS and Ind AS) and notes to accounts."
           extra={(
             <select aria-label="Company" value={companyId} onChange={(e) => setCompanyId(e.target.value)} className="h-9 rounded-lg px-3 text-sm bg-white/15 border border-white/30 text-white">
               {companies.map((c) => <option key={c.id} value={c.id} className="text-slate-900">{c.name || c.company_name || c.id}</option>)}
@@ -633,6 +619,9 @@ function AccountingBooksInner() {
             {tab === 'period-end' && <PeriodEndTab companyId={companyId} accounts={accounts} isDark={isDark} />}
             {tab === 'year-end' && <YearEndTab companyId={companyId} isDark={isDark} isAdmin={isAdmin} />}
             {tab === 'groups' && <GroupsTab companyId={companyId} isDark={isDark} />}
+            {tab === 'inventory' && <InventoryTab companyId={companyId} isDark={isDark} />}
+            {tab === 'standards' && <StandardsTab companyId={companyId} accounts={accounts} isDark={isDark} isAdmin={isAdmin} />}
+            {tab === 'notes' && <NotesTab companyId={companyId} isDark={isDark} isAdmin={isAdmin} />}
             {tab === 'settings' && <SettingsTab companyId={companyId} isDark={isDark} isAdmin={isAdmin} />}
           </>
         )}

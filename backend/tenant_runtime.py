@@ -88,7 +88,7 @@ TENANT_COLLECTIONS = {
     "stock_items", "stock_movements", "stock_valuations",
     # Accounting standards and disclosures
     "fx_revaluations", "provision_register", "contingent_liabilities", "related_parties", "related_party_transactions",
-    "employee_benefit_provisions", "leases", "borrowing_costs", "accounting_policies", "share_capital_register"
+    "employee_benefit_provisions", "employee_benefit_roster", "fx_items", "receivable_provisions", "leases", "borrowing_costs", "accounting_policies", "share_capital_register"
 }
 
 COMPANY_REGISTRY_COLLECTION = "companies"

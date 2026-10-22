@@ -50,6 +50,15 @@ ACCOUNT_TYPE_MAP: Dict[str, Tuple[str, str]] = {
     "1550": ("asset", "accrued_income"),                  # Accrued Income
     "2350": ("liability", "current_liability"),           # Income Received in Advance
     "5970": ("expense", "operating_expense"),             # Bad Debts & Provision for Doubtful Debts
+    "1370": ("asset", "fixed_asset"),                     # Right-of-Use Assets
+    "1390": ("asset", "fixed_asset"),                     # Capital Work-in-Progress
+    "1560": ("asset", "current_asset"),                   # Unrealised FX Revaluation (Asset)
+    "2360": ("liability", "current_liability"),           # Unrealised FX Revaluation (Liability)
+    "2410": ("liability", "provision"),                   # Provision for Gratuity
+    "2420": ("liability", "provision"),                   # Provision for Leave Encashment
+    "2650": ("liability", "long_term_liability"),         # Lease Liabilities
+    "5105": ("expense", "operating_expense"),             # Gratuity & Leave Encashment Expense
+    "5980": ("expense", "operating_expense"),             # Provisions & Contingencies
 }
 
 def get_account_classification(code: str) -> Tuple[str, str]:

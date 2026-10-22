@@ -178,6 +178,16 @@ DEFAULT_ACCOUNTS = [
     ("1550", "Accrued Income",                 "asset",     "accrued_income"),
     ("2350", "Income Received in Advance",     "liability", "current_liability"),
     ("5970", "Bad Debts & Provision for Doubtful Debts", "expense", "operating_expense"),
+    # Accounting-standards accounts (leases, foreign currency, employee benefits, contingencies, borrowing costs).
+    ("1370", "Right-of-Use Assets",            "asset",     "fixed_asset"),
+    ("1390", "Capital Work-in-Progress",       "asset",     "fixed_asset"),
+    ("1560", "Unrealised FX Revaluation (Asset)",     "asset",     "current_asset"),
+    ("2360", "Unrealised FX Revaluation (Liability)", "liability", "current_liability"),
+    ("2410", "Provision for Gratuity",         "liability", "provision"),
+    ("2420", "Provision for Leave Encashment", "liability", "provision"),
+    ("2650", "Lease Liabilities",              "liability", "long_term_liability"),
+    ("5105", "Gratuity & Leave Encashment Expense", "expense", "operating_expense"),
+    ("5980", "Provisions & Contingencies",     "expense",   "operating_expense"),
     # Suspense — parking account for bank lines that can't be classified at match time.
     # Standard AI-accounting practice (Zoho / QuickBooks / Xero): post to suspense first
     # so the bank balance stays reconciled, then reclassify from the "Suspense Review"
