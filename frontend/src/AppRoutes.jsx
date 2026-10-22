@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { lazyWithRetry as lazy } from '@/lib/lazyWithRetry.js';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import { firstAccessiblePath, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
+import { firstAccessiblePath, hasModuleAccess, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 import DashboardLayout from '@/components/layout/DashboardLayout.jsx';
 import ModuleGate from '@/components/ModuleGate.jsx';
 import NoModuleAccess from '@/components/NoModuleAccess.jsx';
@@ -95,6 +95,19 @@ function peopleMatrixLanding(user) {
   return canSeePeopleMatrix ? '/people-matrix' : null;
 }
 
+/** Taskosphere is the first module anyone entitled to it lands on, ahead of People Matrix and the rest. */
+function taskosphereLanding(user, isPlatformOwner) {
+  if (!user) return null;
+  if (isPlatformOwner) return '/dashboard';
+  if (user?.role?.toLowerCase() === 'admin' && !user?.company_id) return '/dashboard';
+  if (user?.permissions?.can_access_taskosphere === true) return '/dashboard';
+  if (isCommercialTenant(user) && hasModuleAccess(user, 'taskosphere')) {
+    const path = firstAccessiblePath(user, 'taskosphere');
+    return path && path !== '/login' ? path : null;
+  }
+  return null;
+}
+
 function LicensedDashboardHome() {
   const { user, loading, isPlatformOwner, hasPermission } = useAuth();
   if (loading) return <AuthLoading />;
@@ -103,7 +116,7 @@ function LicensedDashboardHome() {
   if (isInternalAdmin || canAccessTaskosphere) return <Dashboard />;
 
   const peopleMatrixPath = peopleMatrixLanding(user);
-  const destination = peopleMatrixPath || (isCommercialTenant(user)
+  const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixPath || (isCommercialTenant(user)
     ? firstAccessiblePath(user)
     : (['/finix-dashboard', '/compliance-dashboard', '/records-dashboard', '/client-proposals-dashboard', '/people-matrix'].find((path) => {
       const flag = {
@@ -129,10 +142,10 @@ function ProtectedLayout() {
 }
 
 function PublicOnly({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isPlatformOwner } = useAuth();
   if (loading) return <AuthLoading />;
   if (user) {
-    const destination = peopleMatrixLanding(user) || (isCommercialTenant(user) ? firstAccessiblePath(user) : '/dashboard');
+    const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixLanding(user) || (isCommercialTenant(user) ? firstAccessiblePath(user) : '/dashboard');
     if (destination === '/login') return <NoModuleAccess />;
     return <Navigate to={destination} replace />;
   }
