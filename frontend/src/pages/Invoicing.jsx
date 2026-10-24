@@ -1503,7 +1503,7 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={`w-[95vw] max-w-5xl h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 [&>button.absolute]:hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <DialogContent className={`max-w-5xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 [&>button.absolute]:hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <DialogTitle className="sr-only">GST Returns</DialogTitle>
         <DialogDescription className="sr-only">GSTR-1 and GSTR-3B reports</DialogDescription>
 
@@ -5585,7 +5585,7 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={`max-w-5xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <DialogContent className={`w-[95vw] max-w-5xl h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <DialogTitle className="sr-only">Service Catalog</DialogTitle>
         <DialogDescription className="sr-only">Manage your services and products catalog</DialogDescription>
 
