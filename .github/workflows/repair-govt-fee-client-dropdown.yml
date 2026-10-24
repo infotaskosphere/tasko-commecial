@@ -1,29 +1,30 @@
 name: Repair Govt Fee Client Dropdown
 
 on:
-  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
     branches:
       - feature/master-console
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   repair:
-    if: "!contains(github.event.head_commit.message, '[botfix-govt-fee-client-dropdown]')"
+    if: "!contains(github.event.pull_request.head.ref, 'botfix-govt-fee-client-dropdown')"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          ref: feature/master-console
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Patch client loader
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('frontend/src/pages/CompliancePage.jsx')
           source = path.read_text(encoding='utf-8')
@@ -34,11 +35,11 @@ jobs:
           start = source.find(start_marker)
           end = source.find(end_marker, start)
           if start == -1 or end == -1:
-              raise SystemExit('Could not locate the existing Govt Fee client loader block')
+              raise SystemExit('Could not locate the existing Govt Fee client-loader block')
           end += len(end_marker)
 
           replacement = '''    // Govt Fee client selector uses the authoritative client master.
-    // Refresh when the dialog is opened and normalize every supported API envelope.
+    // Refresh whenever the dialog opens and normalize every supported API envelope.
     if (showAdhocDialog || !adhocClients.length) {
       (async () => {
         const PAGE_SIZE = 500;
@@ -66,7 +67,6 @@ jobs:
             });
             const batch = extractClientRows(response?.data);
             all.push(...batch);
-
             if (batch.length < PAGE_SIZE) break;
             page += 1;
           }
@@ -125,4 +125,4 @@ jobs:
           git add frontend/src/pages/CompliancePage.jsx .github/workflows/repair-govt-fee-client-dropdown.yml
           git diff --cached --check
           git commit -m "fix: load company clients in govt fee dropdown [botfix-govt-fee-client-dropdown]"
-          git push origin HEAD:feature/master-console
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
