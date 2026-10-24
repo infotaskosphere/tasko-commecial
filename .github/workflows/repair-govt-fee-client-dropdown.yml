@@ -1,5 +1,7 @@
 name: Repair Govt Fee Client Dropdown
 
+# One-time repair workflow. It removes itself after applying the safe client-loader patch.
+
 on:
   push:
     branches:
