@@ -1,0 +1,292 @@
+name: Apply government fee invoice flow
+
+on:
+  push:
+    branches:
+      - feature/master-console
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/master-console
+          fetch-depth: 0
+
+      - name: Apply government fee invoice workflow
+        env:
+          TARGET_FILE: frontend/src/pages/Invoicing.jsx
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('frontend/src/pages/Invoicing.jsx')
+          text = path.read_text(encoding='utf-8')
+          original = text
+
+          # 1) Remove the existing client-selection auto-invoice population block.
+          auto_re = re.compile(
+              r'\n    // ── Auto-populate pending government fees into invoice items ────────────────.*?\n  \}, \[clients, form\.invoice_date\]\);',
+              re.S,
+          )
+          text, n = auto_re.subn('\n  }, [clients]);', text, count=1)
+          if n != 1:
+              raise SystemExit(f'Expected exactly one automatic government-fee block, found {n}')
+
+          # 2) Add state for the review/selection stage.
+          state_anchor = "  const [dragOverIdx, setDragOverIdx] = useState(null);     // which item is the drop target\n"
+          state_insert = state_anchor + """  const [govtFees, setGovtFees] = useState([]);\n  const [govtFeeSelection, setGovtFeeSelection] = useState(new Set());\n  const [govtFeeLoading, setGovtFeeLoading] = useState(false);\n"""
+          if state_anchor not in text:
+              raise SystemExit('Could not find InvoiceForm drag state anchor')
+          text = text.replace(state_anchor, state_insert, 1)
+
+          # 3) Reset fee selection whenever a different client is selected.
+          client_handler_anchor = "  const handleClientSelect = useCallback(async (client) => {\n"
+          client_handler_insert = client_handler_anchor + "    setGovtFees([]);\n    setGovtFeeSelection(new Set());\n"
+          if client_handler_anchor not in text:
+              raise SystemExit('Could not find handleClientSelect')
+          text = text.replace(client_handler_anchor, client_handler_insert, 1)
+
+          # 4) Add the controlled Government Fee loading + apply logic before tabs.
+          tabs_anchor = "  const tabs = [\n"
+          gov_logic = r'''  const loadGovernmentFees = useCallback(async () => {
+    if (!form.client_id) {
+      setGovtFees([]);
+      setGovtFeeSelection(new Set());
+      return;
+    }
+    setGovtFeeLoading(true);
+    try {
+      const [complianceRes, standaloneRes] = await Promise.all([
+        api.get(`/compliance/by-client/${form.client_id}`, { params: { govt_fees: true } }),
+        api.get('/compliance/standalone-govt-fees', { params: { client_id: form.client_id } }),
+      ]);
+
+      const invoiceCycle = String(form.invoice_date || format(new Date(), 'yyyy-MM-dd')).slice(0, 7);
+      const eligible = (item) => {
+        if (item.govt_fee_invoice_id) return false;
+        if (item.invoice_id || item.invoice_no) return false;
+        if (item.bill_in_next_cycle) {
+          const deferredCycle = String(item.govt_fee_deferred_at || '').slice(0, 7);
+          if (deferredCycle && invoiceCycle <= deferredCycle) return false;
+        }
+        return Number(item.govt_fees_amount ?? item.amount) > 0;
+      };
+
+      const complianceFees = (complianceRes.data?.items || [])
+        .filter(eligible)
+        .map(item => ({
+          id: item.assignment_id || item.id,
+          marker: `compliance_govt_fee:${item.assignment_id}`,
+          source: 'compliance',
+          title: item.name || 'Government Fee',
+          category: item.category || 'OTHER',
+          amount: Number(item.govt_fees_amount) || 0,
+          srn: item.govt_fees_srn || '',
+          payment_date: item.govt_fee_billed_at || item.updated_at || '',
+          notes: item.govt_fees_notes || '',
+        }));
+
+      const standaloneFees = (standaloneRes.data?.items || [])
+        .filter(item => {
+          if (item.govt_fee_invoice_id || item.invoice_id || item.invoice_no) return false;
+          if (item.status && item.status !== 'paid') return false;
+          if (item.bill_in_next_cycle) {
+            const deferredCycle = String(item.govt_fee_deferred_at || '').slice(0, 7);
+            if (deferredCycle && invoiceCycle <= deferredCycle) return false;
+          }
+          return Number(item.amount) > 0;
+        })
+        .map(item => ({
+          id: item.id,
+          marker: `standalone_govt_fee:${item.id}`,
+          source: 'standalone',
+          title: item.title || 'Government Fee',
+          category: item.category || 'OTHER',
+          amount: Number(item.amount) || 0,
+          srn: item.srn || '',
+          payment_date: item.payment_date || '',
+          notes: item.notes || '',
+        }));
+
+      const fees = [...complianceFees, ...standaloneFees];
+      setGovtFees(fees);
+      setGovtFeeSelection(new Set());
+    } catch (err) {
+      console.warn('Could not load government fees for invoice review:', err);
+      setGovtFees([]);
+      setGovtFeeSelection(new Set());
+      toast.error('Could not load Government Fees for this client');
+    } finally {
+      setGovtFeeLoading(false);
+    }
+  }, [form.client_id, form.invoice_date]);
+
+  useEffect(() => {
+    if (activeTab === 'govt_fees' && form.client_id && !editingInv?.id) {
+      loadGovernmentFees();
+    }
+  }, [activeTab, form.client_id, form.invoice_date, editingInv?.id, loadGovernmentFees]);
+
+  const applyGovernmentFees = useCallback((mode) => {
+    const feeItems = mode === 'all'
+      ? govtFees
+      : mode === 'selected'
+        ? govtFees.filter(fee => govtFeeSelection.has(fee.marker))
+        : [];
+
+    const governmentFeeMarkers = new Set(govtFees.map(fee => fee.marker));
+    const nonGovtItems = (form.items || []).filter(item => !governmentFeeMarkers.has(item.product_id) && !String(item.product_id || '').startsWith('compliance_govt_fee:') && !String(item.product_id || '').startsWith('standalone_govt_fee:'));
+
+    const newItems = feeItems.map(item => ({
+      ...emptyItem(),
+      product_id: item.marker,
+      description: item.title || `${item.category} Govt Fees`,
+      unit_price: item.amount,
+      gst_rate: 0,
+      cgst_rate: 0,
+      sgst_rate: 0,
+      igst_rate: 0,
+      item_details: [item.category ? `${item.category} Govt Fees` : 'Government Fee', item.srn ? `SRN: ${item.srn}` : ''].filter(Boolean).join(' | '),
+    }));
+
+    setForm(p => ({ ...p, items: [...nonGovtItems, ...newItems] }));
+    setGovtFeeSelection(new Set(feeItems.map(fee => fee.marker)));
+
+    if (mode === 'all') {
+      toast.success(feeItems.length ? `Added all ${feeItems.length} Government Fees to the invoice` : 'No unbilled Government Fees found');
+    } else if (mode === 'selected') {
+      toast.success(feeItems.length ? `Added ${feeItems.length} selected Government Fee${feeItems.length > 1 ? 's' : ''}` : 'No Government Fees selected');
+    } else {
+      toast.success('Government Fees skipped for this invoice');
+    }
+  }, [govtFees, govtFeeSelection, form.items]);
+
+'''
+          if tabs_anchor not in text:
+              raise SystemExit('Could not find invoice tabs anchor')
+          text = text.replace(tabs_anchor, gov_logic + tabs_anchor, 1)
+
+          # 5) Add the Government Fees tab between Totals and Settings.
+          old_tabs = "    { id: 'totals', label: 'Totals', icon: IndianRupee },\n    { id: 'settings', label: 'Settings', icon: Layers },"
+          new_tabs = "    { id: 'totals', label: 'Totals', icon: IndianRupee },\n    { id: 'govt_fees', label: 'Government Fees', icon: Receipt },\n    { id: 'settings', label: 'Settings', icon: Layers },"
+          if old_tabs not in text:
+              raise SystemExit('Could not find invoice tabs list')
+          text = text.replace(old_tabs, new_tabs, 1)
+
+          # 6) Add the review window as a normal tab inside the existing modal.
+          settings_anchor = "            {activeTab === 'settings' && (\n"
+          govt_ui = r'''            {activeTab === 'govt_fees' && (
+              <div className="space-y-5">
+                <div className={sectionCls}>
+                  <div className="flex items-start justify-between gap-4 mb-4">
+                    <div>
+                      <h3 className={`text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Government Fees</h3>
+                      <p className="text-xs text-slate-400 mt-1">Select fees to recover on this invoice. Nothing is added automatically.</p>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-400">Available</div>
+                      <div className="text-base font-bold" style={{ color: COLORS.mediumBlue }}>{govtFees.length}</div>
+                    </div>
+                  </div>
+
+                  {govtFeeLoading ? (
+                    <div className="min-h-[280px] flex items-center justify-center text-sm text-slate-400"><MiniLoader /> Loading Government Fees…</div>
+                  ) : !form.client_id ? (
+                    <div className="min-h-[280px] flex items-center justify-center text-sm text-slate-400">Select a client first to review Government Fees.</div>
+                  ) : govtFees.length === 0 ? (
+                    <div className={`min-h-[280px] flex flex-col items-center justify-center rounded-xl border border-dashed ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-400'}`}>
+                      <Receipt className="h-8 w-8 mb-2 opacity-40" />
+                      <p className="text-sm font-medium">No unbilled Government Fees</p>
+                      <p className="text-xs mt-1">Fees already billed on an invoice are excluded.</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border overflow-hidden">
+                      <div className={`grid grid-cols-[36px_minmax(0,1.7fr)_minmax(100px,1fr)_100px_110px] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider ${isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                        <span />
+                        <span>Compliance / Fee</span>
+                        <span>SRN</span>
+                        <span>Date</span>
+                        <span className="text-right">Amount</span>
+                      </div>
+                      <div className="max-h-[360px] overflow-y-auto divide-y">
+                        {govtFees.map(fee => {
+                          const checked = govtFeeSelection.has(fee.marker);
+                          return (
+                            <label key={fee.marker} className={`grid grid-cols-[36px_minmax(0,1.7fr)_minmax(100px,1fr)_100px_110px] gap-2 items-center px-4 py-3 cursor-pointer transition-colors ${checked ? (isDark ? 'bg-blue-900/20' : 'bg-blue-50/60') : (isDark ? 'hover:bg-slate-800/70' : 'hover:bg-slate-50')}`}>
+                              <input type="checkbox" checked={checked} onChange={() => setGovtFeeSelection(prev => { const next = new Set(prev); if (next.has(fee.marker)) next.delete(fee.marker); else next.add(fee.marker); return next; })} className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                              <span className="min-w-0">
+                                <span className={`block text-xs font-semibold truncate ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{fee.title}</span>
+                                <span className="block text-[10px] text-slate-400 truncate">{fee.category}{fee.source === 'standalone' ? ' · Standalone' : ''}</span>
+                              </span>
+                              <span className="text-xs font-medium truncate text-slate-500" title={fee.srn}>{fee.srn || '—'}</span>
+                              <span className="text-[11px] text-slate-500">{fee.payment_date ? String(fee.payment_date).slice(0, 10) : '—'}</span>
+                              <span className={`text-xs font-bold text-right ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{fmtC(fee.amount)}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-xs text-slate-500">Selected: <span className="font-bold" style={{ color: COLORS.mediumBlue }}>{fmtC(govtFees.filter(f => govtFeeSelection.has(f.marker)).reduce((s, f) => s + f.amount, 0))}</span></div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" onClick={() => applyGovernmentFees('skip')} className="h-10 px-5 rounded-xl text-xs">Skip</Button>
+                      <Button type="button" variant="outline" onClick={() => applyGovernmentFees('selected')} className="h-10 px-5 rounded-xl text-xs" disabled={govtFeeSelection.size === 0}>Add Selected</Button>
+                      <Button type="button" onClick={() => applyGovernmentFees('all')} className="h-10 px-5 rounded-xl text-xs text-white" style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})` }}>Add All</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+'''
+          if settings_anchor not in text:
+              raise SystemExit('Could not find settings tab render anchor')
+          text = text.replace(settings_anchor, govt_ui + settings_anchor, 1)
+
+          # 7) Keep the invoice modal dimensions fixed throughout every tab.
+          old_modal = 'max-w-5xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl'
+          new_modal = 'w-[95vw] max-w-5xl h-[94vh] overflow-hidden flex flex-col rounded-2xl'
+          if old_modal not in text:
+              raise SystemExit('Could not find invoice modal sizing')
+          text = text.replace(old_modal, new_modal, 1)
+
+          # 8) Add the new tab to Next-button ordering.
+          old_order = "const order = ['details', 'items', 'totals', 'settings', 'design'];"
+          new_order = "const order = ['details', 'items', 'totals', 'govt_fees', 'settings', 'design'];"
+          if old_order not in text:
+              raise SystemExit('Could not find invoice tab order')
+          text = text.replace(old_order, new_order, 1)
+
+          if text == original:
+              raise SystemExit('No source changes were produced')
+
+          path.write_text(text, encoding='utf-8')
+          print('Updated', path)
+          PY
+
+      - name: Syntax checks
+        run: |
+          python -m py_compile backend/compliance.py backend/invoicing.py
+          if command -v node >/dev/null 2>&1; then
+            node --check <(sed -e 's/^import .*//g' -e 's/^export .*//g' frontend/src/pages/Invoicing.jsx) || true
+          fi
+
+      - name: Commit changes and remove migration workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git status --short
+          git add frontend/src/pages/Invoicing.jsx
+          git rm -f .github/workflows/apply-govt-fee-invoice-flow.yml
+          git commit -m "feat: add controlled government fee invoice selection"
+          git push origin feature/master-console
