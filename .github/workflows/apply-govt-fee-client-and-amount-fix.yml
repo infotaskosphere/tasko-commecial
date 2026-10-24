@@ -23,14 +23,9 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
 
-          # CompliancePage: make the Government Fee client selector use a complete,
-          # normalized client master and refresh when the dialog opens.
           p = Path('frontend/src/pages/CompliancePage.jsx')
           s = p.read_text(encoding='utf-8')
-          old = s
-
           start_marker = "    if (!adhocClients.length) {"
           end_marker = "  }, [pageView, refreshKey, user?.id]);"
           start = s.find(start_marker)
@@ -38,7 +33,6 @@ jobs:
           if start == -1 or end == -1:
               raise SystemExit('CompliancePage Govt Fee client-loader markers not found')
           end += len(end_marker)
-
           replacement = '''    // Government Fee client selector uses the authoritative client master.
     // Refresh on dialog open and normalize all supported client API envelopes.
     if (showAdhocDialog || !adhocClients.length) {
@@ -46,44 +40,28 @@ jobs:
         const PAGE_SIZE = 500;
         let page = 1;
         const all = [];
-
         const extractClientRows = payload => {
           if (Array.isArray(payload)) return payload;
           const candidates = [
-            payload?.clients,
-            payload?.items,
-            payload?.results,
-            payload?.data,
-            payload?.data?.clients,
-            payload?.data?.items,
-            payload?.data?.results,
+            payload?.clients, payload?.items, payload?.results, payload?.data,
+            payload?.data?.clients, payload?.data?.items, payload?.data?.results,
           ];
           return candidates.find(Array.isArray) || [];
         };
-
         try {
           while (page <= 50) {
-            const response = await api.get('/clients', {
-              params: { page, page_size: PAGE_SIZE },
-            });
+            const response = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
             const batch = extractClientRows(response?.data);
             if (!batch.length) break;
             all.push(...batch);
             if (batch.length < PAGE_SIZE) break;
             page += 1;
           }
-
           const seen = new Set();
           const normalized = all
             .map(client => ({
               id: client?.id ?? client?._id ?? client?.client_id,
-              name: String(
-                client?.company_name ??
-                client?.name ??
-                client?.client_name ??
-                client?.display_name ??
-                ''
-              ).trim(),
+              name: String(client?.company_name ?? client?.name ?? client?.client_name ?? client?.display_name ?? '').trim(),
             }))
             .filter(client => client.id && client.name)
             .filter(client => {
@@ -93,60 +71,29 @@ jobs:
               return true;
             })
             .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-
           setAdhocClients(normalized);
         } catch (err) {
-          console.error(
-            'Failed to load clients for Govt Fee dialog:',
-            err?.response?.status,
-            err?.response?.data || err
-          );
+          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data || err);
           setAdhocClients([]);
           toast.error('Could not load client list — please refresh and try again');
         }
       })();
     }
   }, [pageView, refreshKey, user?.id, showAdhocDialog]);'''
-          s = s[:start] + replacement + s[end:]
-          if s == old:
-              raise SystemExit('CompliancePage patch produced no change')
-          p.write_text(s, encoding='utf-8')
+          p.write_text(s[:start] + replacement + s[end:], encoding='utf-8')
 
-          # Invoicing: normalize Government Fee amounts before eligibility/filtering and
-          # before creating invoice lines. This supports current and legacy field names.
           p = Path('frontend/src/pages/Invoicing.jsx')
           s = p.read_text(encoding='utf-8')
-          old = s
-
-          old_eligible = "return Number(item.govt_fees_amount ?? item.amount) > 0;"
-          new_eligible = """const rawAmount = item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount;
-          const numericAmount = Number(String(rawAmount ?? '').replace(/,/g, '').trim()) || 0;
-          return numericAmount > 0;"""
-          if old_eligible not in s:
-              raise SystemExit('Invoicing eligibility amount expression not found')
-          s = s.replace(old_eligible, new_eligible, 1)
-
-          old_compliance = "amount: Number(item.govt_fees_amount) || 0,"
-          new_compliance = """amount: Number(String(item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"""
-          if old_compliance not in s:
-              raise SystemExit('Compliance Government Fee amount mapping not found')
-          s = s.replace(old_compliance, new_compliance, 1)
-
-          old_standalone = "return Number(item.amount) > 0;"
-          new_standalone = """const numericAmount = Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0;
-          return numericAmount > 0;"""
-          if old_standalone not in s:
-              raise SystemExit('Standalone Government Fee amount filter not found')
-          s = s.replace(old_standalone, new_standalone, 1)
-
-          old_standalone_map = "amount: Number(item.amount) || 0,"
-          new_standalone_map = """amount: Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"""
-          if old_standalone_map not in s:
-              raise SystemExit('Standalone Government Fee amount mapping not found')
-          s = s.replace(old_standalone_map, new_standalone_map, 1)
-
-          if s == old:
-              raise SystemExit('Invoicing patch produced no change')
+          replacements = [
+            ("return Number(item.govt_fees_amount ?? item.amount) > 0;", "const rawAmount = item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount;\n          const numericAmount = Number(String(rawAmount ?? '').replace(/,/g, '').trim()) || 0;\n          return numericAmount > 0;"),
+            ("amount: Number(item.govt_fees_amount) || 0,", "amount: Number(String(item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"),
+            ("return Number(item.amount) > 0;", "const numericAmount = Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0;\n          return numericAmount > 0;"),
+            ("amount: Number(item.amount) || 0,", "amount: Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"),
+          ]
+          for old, new in replacements:
+            if old not in s:
+              raise SystemExit(f'Expected invoicing expression not found: {old}')
+            s = s.replace(old, new, 1)
           p.write_text(s, encoding='utf-8')
           PY
 
