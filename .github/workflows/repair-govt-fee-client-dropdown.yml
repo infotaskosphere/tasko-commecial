@@ -1,0 +1,124 @@
+name: Repair Govt Fee Client Dropdown
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, '[botfix-govt-fee-client-dropdown]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/master-console
+          fetch-depth: 0
+
+      - name: Patch client loader
+        env:
+          TARGET: frontend/src/pages/CompliancePage.jsx
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          path = Path(os.environ['TARGET'])
+          text = path.read_text(encoding='utf-8')
+
+          old = '''    if (!adhocClients.length) {
+      // Backend caps page_size at 500 (server.py: le=500) — requesting 2000
+      // in one call gets a silent 422 rejection. Page through in chunks of
+      // 500 instead to reliably fetch the full client list.
+      (async () => {
+        const PAGE_SIZE = 500;
+        let page = 1;
+        let all = [];
+        try {
+          while (true) {
+            const r = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
+            const batch = r.data?.clients || r.data || [];
+            all = all.concat(batch);
+            if (batch.length < PAGE_SIZE) break; // last page
+            page += 1;
+          }
+          setAdhocClients(all.map(c => ({ id: c.id, name: c.company_name || c.name })));
+        } catch (err) {
+          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data);
+          toast.error('Could not load client list — please refresh and try again');
+          setAdhocClients([]);
+        }
+      })();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageView, refreshKey, user?.id]);'''
+
+          new = '''    // Load the client master every time the Govt Fee dialog is opened/refreshed.
+    // The clients endpoint has appeared in several response envelopes across
+    // deployments ({clients:[]}, {items:[]}, {results:[]}, {data:[]}). Normalize
+    // all supported shapes here so the dropdown never receives an object instead
+    // of the actual client rows.
+    if (showAdhocDialog || !adhocClients.length) {
+      (async () => {
+        const PAGE_SIZE = 500;
+        let page = 1;
+        let all = [];
+        const extractClientRows = payload => {
+          if (Array.isArray(payload)) return payload;
+          const candidates = [
+            payload?.clients,
+            payload?.items,
+            payload?.results,
+            payload?.data,
+            payload?.data?.clients,
+            payload?.data?.items,
+            payload?.data?.results,
+          ];
+          return candidates.find(Array.isArray) || [];
+        };
+
+        try {
+          while (page <= 50) {
+            const r = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
+            const batch = extractClientRows(r.data);
+            all = all.concat(batch);
+            if (batch.length < PAGE_SIZE) break;
+            page += 1;
+          }
+
+          const normalized = all
+            .map(c => ({
+              id: c?.id || c?._id || c?.client_id,
+              name: c?.company_name || c?.name || c?.client_name || '',
+            }))
+            .filter(c => c.id && c.name);
+
+          setAdhocClients(normalized);
+        } catch (err) {
+          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data);
+          toast.error('Could not load client list — please refresh and try again');
+          setAdhocClients([]);
+        }
+      })();
+    }
+  }, [pageView, refreshKey, user?.id, showAdhocDialog]);'''
+
+          if old not in text:
+              raise SystemExit('Expected Govt Fee client-loader block was not found; refusing to modify the file.')
+
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Remove repair workflow and commit code
+        run: |
+          rm -f .github/workflows/repair-govt-fee-client-dropdown.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/CompliancePage.jsx .github/workflows/repair-govt-fee-client-dropdown.yml
+          git diff --cached --check
+          git commit -m "fix: load clients in govt fee dropdown [botfix-govt-fee-client-dropdown]"
+          git push origin HEAD:feature/master-console
