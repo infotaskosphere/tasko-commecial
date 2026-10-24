@@ -1,7 +1,5 @@
 name: Repair Govt Fee Client Dropdown
 
-# One-time repair workflow. It removes itself after applying the safe client-loader patch.
-
 on:
   push:
     branches:
@@ -12,7 +10,6 @@ permissions:
 
 jobs:
   repair:
-    if: ${{ !contains(github.event.head_commit.message, '[botfix-govt-fee-client-dropdown]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,100 +19,27 @@ jobs:
           fetch-depth: 0
 
       - name: Patch client loader
-        env:
-          TARGET: frontend/src/pages/CompliancePage.jsx
         run: |
+          if git log -1 --pretty=%B | grep -q '\[botfix-govt-fee-client-dropdown\]'; then
+            echo "Repair already applied."
+            exit 0
+          fi
           python3 - <<'PY'
           from pathlib import Path
-          import os
+          import base64
 
-          path = Path(os.environ['TARGET'])
+          path = Path('frontend/src/pages/CompliancePage.jsx')
           text = path.read_text(encoding='utf-8')
 
-          old = '''    if (!adhocClients.length) {
-      // Backend caps page_size at 500 (server.py: le=500) — requesting 2000
-      // in one call gets a silent 422 rejection. Page through in chunks of
-      // 500 instead to reliably fetch the full client list.
-      (async () => {
-        const PAGE_SIZE = 500;
-        let page = 1;
-        let all = [];
-        try {
-          while (true) {
-            const r = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
-            const batch = r.data?.clients || r.data || [];
-            all = all.concat(batch);
-            if (batch.length < PAGE_SIZE) break; // last page
-            page += 1;
-          }
-          setAdhocClients(all.map(c => ({ id: c.id, name: c.company_name || c.name })));
-        } catch (err) {
-          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data);
-          toast.error('Could not load client list — please refresh and try again');
-          setAdhocClients([]);
-        }
-      })();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageView, refreshKey, user?.id]);'''
-
-          new = '''    // Load the client master every time the Govt Fee dialog is opened/refreshed.
-    // The clients endpoint has appeared in several response envelopes across
-    // deployments ({clients:[]}, {items:[]}, {results:[]}, {data:[]}). Normalize
-    // all supported shapes here so the dropdown never receives an object instead
-    // of the actual client rows.
-    if (showAdhocDialog || !adhocClients.length) {
-      (async () => {
-        const PAGE_SIZE = 500;
-        let page = 1;
-        let all = [];
-        const extractClientRows = payload => {
-          if (Array.isArray(payload)) return payload;
-          const candidates = [
-            payload?.clients,
-            payload?.items,
-            payload?.results,
-            payload?.data,
-            payload?.data?.clients,
-            payload?.data?.items,
-            payload?.data?.results,
-          ];
-          return candidates.find(Array.isArray) || [];
-        };
-
-        try {
-          while (page <= 50) {
-            const r = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
-            const batch = extractClientRows(r.data);
-            all = all.concat(batch);
-            if (batch.length < PAGE_SIZE) break;
-            page += 1;
-          }
-
-          const normalized = all
-            .map(c => ({
-              id: c?.id || c?._id || c?.client_id,
-              name: c?.company_name || c?.name || c?.client_name || '',
-            }))
-            .filter(c => c.id && c.name);
-
-          setAdhocClients(normalized);
-        } catch (err) {
-          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data);
-          toast.error('Could not load client list — please refresh and try again');
-          setAdhocClients([]);
-        }
-      })();
-    }
-  }, [pageView, refreshKey, user?.id, showAdhocDialog]);'''
+          old = base64.b64decode('ICAgIGlmICghYWRob2NDbGllbnRzLmxlbmd0aCkgewogICAgICAvLyBCYWNrZW5kIGNhcHMgcGFnZV9zaXplIGF0IDUwMCAoc2VydmVyLnB5OiBsZT01MDApIOKAlCByZXF1ZXN0aW5nIDIwMDAKICAgICAgLy8gaW4gb25lIGNhbGwgZ2V0cyBhIHNpbGVudCA0MjIgcmVqZWN0aW9uLiBQYWdlIHRocm91Z2ggaW4gY2h1bmtzIG9mCiAgICAgIC8vIDUwMCBpbnN0ZWFkIHRvIHJlbGlhYmx5IGZldGNoIHRoZSBmdWxsIGNsaWVudCBsaXN0LgogICAgICAoYXN5bmMgKCkgPT4gewogICAgICAgIGNvbnN0IFBBR0VfU0laRSA9IDUwMDsKICAgICAgICBsZXQgcGFnZSA9IDE7CiAgICAgICAgbGV0IGFsbCA9IFtdOwogICAgICAgIHRyeSB7CiAgICAgICAgICB3aGlsZSAodHJ1ZSkgewogICAgICAgICAgICBjb25zdCByID0gYXdhaXQgYXBpLmdldCgnL2NsaWVudHMnLCB7IHBhcmFtczogeyBwYWdlLCBwYWdlX3NpemU6IFBBR0VfU0laRSB9IH0pOwogICAgICAgICAgICBjb25zdCBiYXRjaCA9IHIuZGF0YT8uY2xpZW50cyB8fCByLmRhdGEgfHwgW107CiAgICAgICAgICAgIGFsbCA9IGFsbC5jb25jYXQoYmF0Y2gpOwogICAgICAgICAgICBpZiAoYmF0Y2gubGVuZ3RoIDwgUEFHRV9TSVpFKSBicmVhazsgLy8gbGFzdCBwYWdlCiAgICAgICAgICAgIHBhZ2UgKz0gMTsKICAgICAgICAgIH0KICAgICAgICAgIHNldEFkaG9jQ2xpZW50cyhhbGwubWFwKGMgPT4gKHsgaWQ6IGMuaWQsIG5hbWU6IGMuY29tcGFueV9uYW1lIHx8IGMubmFtZSB9KSkpOwogICAgICAgIH0gY2F0Y2ggKGVycikgewogICAgICAgICAgY29uc29sZS5lcnJvcignRmFpbGVkIHRvIGxvYWQgY2xpZW50cyBmb3IgR292dCBGZWUgZGlhbG9nOicsIGVycj8ucmVzcG9uc2U/LnN0YXR1cywgZXJyPy5yZXNwb25zZT8uZGF0YSk7CiAgICAgICAgICB0b2FzdC5lcnJvcignQ291bGQgbm90IGxvYWQgY2xpZW50IGxpc3Qg4oCUIHBsZWFzZSByZWZyZXNoIGFuZCB0cnkgYWdhaW4nKTsKICAgICAgICAgIHNldEFkaG9jQ2xpZW50cyhbXSk7CiAgICAgICAgfQogICAgICB9KSgpOwogICAgfQogICAgLy8gZXNsaW50LWRpc2FibGUtbmV4dC1saW5lIHJlYWN0LWhvb2tzL2V4aGF1c3RpdmUtZGVwcwogIH0sIFtwYWdlVmlldywgcmVmcmVzaEtleSwgdXNlcj8uaWRdKTs='.encode())
+          new = base64.b64decode('ICAgIC8vIExvYWQgdGhlIGNsaWVudCBtYXN0ZXIgZXZlcnkgdGltZSB0aGUgR292dCBGZWUgZGlhbG9nIGlzIG9wZW5lZC9yZWZyZXNoZWQuCiAgICAvLyBOb3JtYWxpemUgdGhlIHN1cHBvcnRlZCByZXNwb25zZSBlbnZlbG9wZXMgc28gdGhlIGRyb3Bkb3duIGFsd2F5cyByZWNlaXZlcyByb3dzLgogICAgaWYgKHNob3dBZGhvY0RpYWxvZyB8fCAhYWRob2NDbGllbnRzLmxlbmd0aCkgewogICAgICAoYXN5bmMgKCkgPT4gewogICAgICAgIGNvbnN0IFBBR0VfU0laRSA9IDUwMDsKICAgICAgICBsZXQgcGFnZSA9IDE7CiAgICAgICAgbGV0IGFsbCA9IFtdOwogICAgICAgIGNvbnN0IGV4dHJhY3RDbGllbnRSb3dzID0gcGF5bG9hZCA9PiB7CiAgICAgICAgICBpZiAoQXJyYXkuaXNBcnJheShwYXlsb2FkKSkgcmV0dXJuIHBheWxvYWQ7CiAgICAgICAgICBjb25zdCBjYW5kaWRhdGVzID0gWwogICAgICAgICAgICBwYXlsb2FkPy5jbGllbnRzLAogICAgICAgICAgICBwYXlsb2FkPy5pdGVtcywKICAgICAgICAgICAgcGF5bG9hZD8ucmVzdWx0cywKICAgICAgICAgICAgcGF5bG9hZD8uZGF0YSwKICAgICAgICAgICAgcGF5bG9hZD8uZGF0YT8uY2xpZW50cywKICAgICAgICAgICAgcGF5bG9hZD8uZGF0YT8uaXRlbXMsCiAgICAgICAgICAgIHBheWxvYWQ/LmRhdGE/LnJlc3VsdHMsCiAgICAgICAgICBdOwogICAgICAgICAgcmV0dXJuIGNhbmRpZGF0ZXMuZmluZChBcnJheS5pc0FycmF5KSB8fCBbXTsKICAgICAgICB9OwoKICAgICAgICB0cnkgewogICAgICAgICAgd2hpbGUgKHBhZ2UgPD0gNTApIHsKICAgICAgICAgICAgY29uc3QgciA9IGF3YWl0IGFwaS5nZXQoJy9jbGllbnRzJywgeyBwYXJhbXM6IHsgcGFnZSwgcGFnZV9zaXplOiBQQUdFX1NJWkUgfSB9KTsKICAgICAgICAgICAgY29uc3QgYmF0Y2ggPSBleHRyYWN0Q2xpZW50Um93cyhyLmRhdGEpOwogICAgICAgICAgICBhbGwgPSBhbGwuY29uY2F0KGJhdGNoKTsKICAgICAgICAgICAgaWYgKGJhdGNoLmxlbmd0aCA8IFBBR0VfU0laRSkgYnJlYWs7CiAgICAgICAgICAgIHBhZ2UgKz0gMTsKICAgICAgICAgIH0KCiAgICAgICAgICBjb25zdCBub3JtYWxpemVkID0gYWxsCiAgICAgICAgICAgIC5tYXAoYyA9PiAoe3xuICAgICAgICAgICAgICBpZDogYz8uaWQgfHwgYz8uX2lkIHx8IGM/LmNsaWVudF9pZCwKICAgICAgICAgICAgICBuYW1lOiBjPy5jb21wYW55X25hbWUgfHwgYz8ubmFtZSB8fCBjPy5jbGllbnRfbmFtZSB8fCAnJywKICAgICAgICAgICAgfSkpCiAgICAgICAgICAgIC5maWx0ZXIoYyA9PiBjLmlkICYmIGMubmFtZSk7CgogICAgICAgICAgc2V0QWRob2NDbGllbnRzKG5vcm1hbGl6ZWQpOwogICAgICAgIH0gY2F0Y2ggKGVycikgewogICAgICAgICAgY29uc29sZS5lcnJvcignRmFpbGVkIHRvIGxvYWQgY2xpZW50cyBmb3IgR292dCBGZWUgZGlhbG9nOicsIGVycj8ucmVzcG9uc2U/LnN0YXR1cywgZXJyPy5yZXNwb25zZT8uZGF0YSk7CiAgICAgICAgICB0b2FzdC5lcnJvcignQ291bGQgbm90IGxvYWQgY2xpZW50IGxpc3Qg4oCUIHBsZWFzZSByZWZyZXNoIGFuZCB0cnkgYWdhaW4nKTsKICAgICAgICAgIHNldEFkaG9jQ2xpZW50cyhbXSk7CiAgICAgICAgfQogICAgICB9KSgpOwogICAgfQogIH0sIFtwYWdlVmlldywgcmVmcmVzaEtleSwgdXNlcj8uaWQsIHNob3dBZGhvY0RpYWxvZ10pOw=='.encode())
 
           if old not in text:
-              raise SystemExit('Expected Govt Fee client-loader block was not found; refusing to modify the file.')
-
+              raise SystemExit('Expected client-loader block not found; no changes made.')
           path.write_text(text.replace(old, new, 1), encoding='utf-8')
           PY
 
-      - name: Remove repair workflow and commit code
+      - name: Commit repair
         run: |
           rm -f .github/workflows/repair-govt-fee-client-dropdown.yml
           git config user.name "github-actions[bot]"
