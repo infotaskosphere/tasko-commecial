@@ -1,0 +1,170 @@
+name: Apply Govt Fee client and amount fix
+
+on:
+  push:
+    branches:
+      - feature/master-console
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: feature/master-console
+          fetch-depth: 0
+
+      - name: Patch source safely
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          # CompliancePage: make the Government Fee client selector use a complete,
+          # normalized client master and refresh when the dialog opens.
+          p = Path('frontend/src/pages/CompliancePage.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = s
+
+          start_marker = "    if (!adhocClients.length) {"
+          end_marker = "  }, [pageView, refreshKey, user?.id]);"
+          start = s.find(start_marker)
+          end = s.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('CompliancePage Govt Fee client-loader markers not found')
+          end += len(end_marker)
+
+          replacement = '''    // Government Fee client selector uses the authoritative client master.
+    // Refresh on dialog open and normalize all supported client API envelopes.
+    if (showAdhocDialog || !adhocClients.length) {
+      (async () => {
+        const PAGE_SIZE = 500;
+        let page = 1;
+        const all = [];
+
+        const extractClientRows = payload => {
+          if (Array.isArray(payload)) return payload;
+          const candidates = [
+            payload?.clients,
+            payload?.items,
+            payload?.results,
+            payload?.data,
+            payload?.data?.clients,
+            payload?.data?.items,
+            payload?.data?.results,
+          ];
+          return candidates.find(Array.isArray) || [];
+        };
+
+        try {
+          while (page <= 50) {
+            const response = await api.get('/clients', {
+              params: { page, page_size: PAGE_SIZE },
+            });
+            const batch = extractClientRows(response?.data);
+            if (!batch.length) break;
+            all.push(...batch);
+            if (batch.length < PAGE_SIZE) break;
+            page += 1;
+          }
+
+          const seen = new Set();
+          const normalized = all
+            .map(client => ({
+              id: client?.id ?? client?._id ?? client?.client_id,
+              name: String(
+                client?.company_name ??
+                client?.name ??
+                client?.client_name ??
+                client?.display_name ??
+                ''
+              ).trim(),
+            }))
+            .filter(client => client.id && client.name)
+            .filter(client => {
+              const key = String(client.id);
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+          setAdhocClients(normalized);
+        } catch (err) {
+          console.error(
+            'Failed to load clients for Govt Fee dialog:',
+            err?.response?.status,
+            err?.response?.data || err
+          );
+          setAdhocClients([]);
+          toast.error('Could not load client list — please refresh and try again');
+        }
+      })();
+    }
+  }, [pageView, refreshKey, user?.id, showAdhocDialog]);'''
+          s = s[:start] + replacement + s[end:]
+          if s == old:
+              raise SystemExit('CompliancePage patch produced no change')
+          p.write_text(s, encoding='utf-8')
+
+          # Invoicing: normalize Government Fee amounts before eligibility/filtering and
+          # before creating invoice lines. This supports current and legacy field names.
+          p = Path('frontend/src/pages/Invoicing.jsx')
+          s = p.read_text(encoding='utf-8')
+          old = s
+
+          old_eligible = "return Number(item.govt_fees_amount ?? item.amount) > 0;"
+          new_eligible = """const rawAmount = item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount;
+          const numericAmount = Number(String(rawAmount ?? '').replace(/,/g, '').trim()) || 0;
+          return numericAmount > 0;"""
+          if old_eligible not in s:
+              raise SystemExit('Invoicing eligibility amount expression not found')
+          s = s.replace(old_eligible, new_eligible, 1)
+
+          old_compliance = "amount: Number(item.govt_fees_amount) || 0,"
+          new_compliance = """amount: Number(String(item.govt_fees_amount ?? item.amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"""
+          if old_compliance not in s:
+              raise SystemExit('Compliance Government Fee amount mapping not found')
+          s = s.replace(old_compliance, new_compliance, 1)
+
+          old_standalone = "return Number(item.amount) > 0;"
+          new_standalone = """const numericAmount = Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0;
+          return numericAmount > 0;"""
+          if old_standalone not in s:
+              raise SystemExit('Standalone Government Fee amount filter not found')
+          s = s.replace(old_standalone, new_standalone, 1)
+
+          old_standalone_map = "amount: Number(item.amount) || 0,"
+          new_standalone_map = """amount: Number(String(item.amount ?? item.govt_fees_amount ?? item.govt_fee_amount ?? item.fee_amount ?? '').replace(/,/g, '').trim()) || 0,"""
+          if old_standalone_map not in s:
+              raise SystemExit('Standalone Government Fee amount mapping not found')
+          s = s.replace(old_standalone_map, new_standalone_map, 1)
+
+          if s == old:
+              raise SystemExit('Invoicing patch produced no change')
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Validate
+        run: |
+          git diff --check
+          test -s frontend/src/pages/CompliancePage.jsx
+          test -s frontend/src/pages/Invoicing.jsx
+          grep -q "showAdhocDialog || !adhocClients.length" frontend/src/pages/CompliancePage.jsx
+          grep -q "govt_fee_amount" frontend/src/pages/Invoicing.jsx
+
+      - name: Commit changes and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/pages/CompliancePage.jsx frontend/src/pages/Invoicing.jsx .github/workflows/apply-govt-fee-client-and-amount-fix.yml
+          git diff --cached --check
+          git commit -m "fix: normalize govt fee clients and invoice amounts"
+          git rm .github/workflows/apply-govt-fee-client-and-amount-fix.yml
+          git commit -m "chore: remove one-time govt fee repair workflow"
+          git push origin HEAD:feature/master-console
