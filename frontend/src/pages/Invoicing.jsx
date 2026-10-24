@@ -4431,7 +4431,7 @@ const InvoiceForm = ({ open, onClose, editingInv, companies, clients, leads, onS
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={`max-w-5xl max-h-[96vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 [&>button.absolute]:hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <DialogContent className={`w-[95vw] max-w-5xl h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 [&>button.absolute]:hidden ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <DialogTitle className="sr-only">{editingInv ? 'Edit Invoice' : 'Create Invoice'}</DialogTitle>
         <DialogDescription className="sr-only">Invoice form</DialogDescription>
         <div className="sticky top-0 z-20 flex-shrink-0">
@@ -5585,7 +5585,7 @@ const ProductModal = ({ open, onClose, isDark, onSaved, invoices = [] }) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className={`w-[95vw] max-w-5xl h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <DialogContent className={`max-w-5xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
         <DialogTitle className="sr-only">Service Catalog</DialogTitle>
         <DialogDescription className="sr-only">Manage your services and products catalog</DialogDescription>
 
