@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   repair:
+    if: "!contains(github.event.head_commit.message, '[botfix-govt-fee-client-dropdown]')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,20 +21,30 @@ jobs:
 
       - name: Patch client loader
         run: |
-          if git log -1 --pretty=%B | grep -q '\[botfix-govt-fee-client-dropdown\]'; then exit 0; fi
           python3 - <<'PY'
           from pathlib import Path
           import re
-          p = Path('frontend/src/pages/CompliancePage.jsx')
-          s = p.read_text(encoding='utf-8')
-          pattern = re.compile(r"    if \(!adhocClients\.length\) \{.*?^  \}, \[pageView, refreshKey, user\?\.id\]\);", re.M | re.S)
-          replacement = '''    // Refresh the client master whenever the Govt Fee dialog opens. Normalize
-    // the supported API response envelopes so the selector always receives rows.
+
+          path = Path('frontend/src/pages/CompliancePage.jsx')
+          source = path.read_text(encoding='utf-8')
+
+          start_marker = "    if (!adhocClients.length) {"
+          end_marker = "  }, [pageView, refreshKey, user?.id]);"
+
+          start = source.find(start_marker)
+          end = source.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('Could not locate the existing Govt Fee client loader block')
+          end += len(end_marker)
+
+          replacement = '''    // Govt Fee client selector uses the authoritative client master.
+    // Refresh when the dialog is opened and normalize every supported API envelope.
     if (showAdhocDialog || !adhocClients.length) {
       (async () => {
         const PAGE_SIZE = 500;
         let page = 1;
-        let all = [];
+        const all = [];
+
         const extractClientRows = payload => {
           if (Array.isArray(payload)) return payload;
           const candidates = [
@@ -50,41 +61,68 @@ jobs:
 
         try {
           while (page <= 50) {
-            const r = await api.get('/clients', { params: { page, page_size: PAGE_SIZE } });
-            const batch = extractClientRows(r.data);
-            all = all.concat(batch);
+            const response = await api.get('/clients', {
+              params: { page, page_size: PAGE_SIZE },
+            });
+            const batch = extractClientRows(response?.data);
+            all.push(...batch);
+
             if (batch.length < PAGE_SIZE) break;
             page += 1;
           }
 
+          const seen = new Set();
           const normalized = all
-            .map(c => ({
-              id: c?.id || c?._id || c?.client_id,
-              name: c?.company_name || c?.name || c?.client_name || '',
+            .map(client => ({
+              id: client?.id ?? client?._id ?? client?.client_id,
+              name: String(
+                client?.company_name ??
+                client?.name ??
+                client?.client_name ??
+                client?.display_name ??
+                ''
+              ).trim(),
             }))
-            .filter(c => c.id && c.name);
+            .filter(client => client.id && client.name)
+            .filter(client => {
+              const key = String(client.id);
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            })
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
           setAdhocClients(normalized);
         } catch (err) {
-          console.error('Failed to load clients for Govt Fee dialog:', err?.response?.status, err?.response?.data);
-          toast.error('Could not load client list — please refresh and try again');
+          console.error(
+            'Failed to load clients for Govt Fee dialog:',
+            err?.response?.status,
+            err?.response?.data || err
+          );
           setAdhocClients([]);
+          toast.error('Could not load client list — please refresh and try again');
         }
       })();
     }
   }, [pageView, refreshKey, user?.id, showAdhocDialog]);'''
-          s2, n = pattern.subn(replacement, s, count=1)
-          if n != 1:
-              raise SystemExit(f'Expected exactly one Govt Fee client-loader block, found {n}')
-          p.write_text(s2, encoding='utf-8')
+
+          path.write_text(source[:start] + replacement + source[end:], encoding='utf-8')
+          print('Govt Fee client loader patched successfully')
           PY
 
-      - name: Commit repair
+      - name: Validate source
         run: |
-          rm -f .github/workflows/repair-govt-fee-client-dropdown.yml
+          test -s frontend/src/pages/CompliancePage.jsx
+          grep -q "showAdhocDialog || !adhocClients.length" frontend/src/pages/CompliancePage.jsx
+          grep -q "payload?.items" frontend/src/pages/CompliancePage.jsx
+          grep -q "client?.client_id" frontend/src/pages/CompliancePage.jsx
+          git diff --check
+
+      - name: Commit repair and remove one-time workflow
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add frontend/src/pages/CompliancePage.jsx .github/workflows/repair-govt-fee-client-dropdown.yml
           git diff --cached --check
-          git commit -m "fix: load clients in govt fee dropdown [botfix-govt-fee-client-dropdown]"
+          git commit -m "fix: load company clients in govt fee dropdown [botfix-govt-fee-client-dropdown]"
           git push origin HEAD:feature/master-console
