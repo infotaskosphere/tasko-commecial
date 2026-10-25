@@ -120,14 +120,23 @@ const syncModuleBranding = () => {
   if (!header) return;
 
   const logoLink = header.querySelector('a[href="/dashboard"]') || header.querySelector('a.relative.flex.items-center');
-  const logoImages = logoLink?.querySelectorAll('img') || [];
-  const visibleLogo = Array.from(logoImages).find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
-  if (!logoLink || !visibleLogo) return;
+  if (!logoLink) return;
+
+  let logoImages = Array.from(logoLink.querySelectorAll('img'));
+  let visibleLogo = logoImages.find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
+
+  // Admin/Settings originally render a text wordmark instead of an <img>.
+  // Convert that slot to the same OneNexa logo used by every other workspace.
+  if (!visibleLogo) {
+    visibleLogo = document.createElement('img');
+    visibleLogo.dataset.onenexaShellLogo = 'true';
+    logoLink.querySelectorAll(':scope > span').forEach((node) => { node.style.display = 'none'; });
+    logoLink.appendChild(visibleLogo);
+  }
 
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  let logoSrc = collapsed ? branding.collapsedLogo : branding.lightLogo;
-  if (failedLogos.has(logoSrc) && INLINE_FALLBACK_LOGOS[moduleId]) logoSrc = INLINE_FALLBACK_LOGOS[moduleId];
+  const logoSrc = branding.collapsedLogo;
 
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
@@ -140,10 +149,6 @@ const syncModuleBranding = () => {
       failedLogos.add(failed);
       scheduleSync();
     });
-  }
-  if (visibleLogo.complete && visibleLogo.naturalWidth === 0 && !logoSrc.startsWith('data:') && !failedLogos.has(logoSrc)) {
-    failedLogos.add(logoSrc);
-    scheduleSync();
   }
   visibleLogo.setAttribute('aria-label', branding.alt);
   visibleLogo.style.display = 'block';
