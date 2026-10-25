@@ -2,10 +2,6 @@
  * Shared module branding for the commercial shell.
  * Keeps module identity in one place without coupling dashboard pages to the
  * global header. Navigation remains the source of truth for active module.
- *
- * IMPORTANT: Product labels are intentionally kept here as a single runtime
- * compatibility layer. Internal route names, permission identifiers and API
- * names remain unchanged so existing integrations are not disturbed.
  */
 const MODULE_BRANDING = {
   core: { label: 'Taskosphere', landingPath: '/dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Task-O-Sphere' },
@@ -15,15 +11,11 @@ const MODULE_BRANDING = {
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
   aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
   records: { label: 'ClientSync', landingPath: '/records-dashboard', lightLogo: '/clientsync-logo-light.png', darkLogo: '/clientsync-logo-dark.png', collapsedLogo: '/clientsync-icon-light.png', collapsedLogoDark: '/clientsync-icon-dark.png', alt: 'ClientSync' },
-  // Utility sections have text wordmarks rather than the Taskosphere product logo.
+  engagex: { label: 'EngageX', landingPath: '/engagex', lightLogo: '/engagex/engagex-logo.svg', darkLogo: '/engagex/engagex-logo-dark.svg', collapsedLogo: '/engagex/engagex-icon.svg', alt: 'EngageX' },
   admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true, alt: 'Admin' },
   settings: { label: 'Setting', landingPath: '/settings/general', wordmark: true, alt: 'Setting' },
 };
 
-// Last-resort logo that ships INSIDE the JS bundle. If a static file is missing
-// from a deployment (Vercel rewrites unknown paths to index.html, so a missing
-// image comes back as HTML and shows as a broken picture) the header still gets
-// a real AIWeave logo instead of alt text.
 const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">'
   + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D3B66"/><stop offset=".55" stop-color="#1F6FB2"/><stop offset="1" stop-color="#1FAF5A"/></linearGradient></defs>'
   + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/>'
@@ -32,37 +24,27 @@ const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" 
   + '<circle cx="20" cy="45" r="4" fill="#1F6FB2"/><circle cx="52" cy="27" r="4" fill="#1FAF5A"/><circle cx="58" cy="48" r="4" fill="#0D3B66"/></g>'
   + '<text x="96" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#0D3B66">AI</text>'
   + '<text x="145" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#1FAF5A">Weave</text></svg>';
-const INLINE_FALLBACK_LOGOS = {
-  aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG),
-};
-// Logo URLs that failed to load in this browser session.
+const INLINE_FALLBACK_LOGOS = { aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG) };
 const failedLogos = new Set();
-
 const FALLBACK = MODULE_BRANDING.core;
 let scheduled = false;
 let lastModuleId = '';
 
 const getRouteModuleId = () => {
   const path = window.location.pathname || '';
-  if (
-    path === '/compliance-dashboard' || path === '/compliance' || path.startsWith('/compliance/') ||
-    path === '/gst-reconciliation' || path.startsWith('/gst-reconciliation/') ||
-    path === '/trademark-sphere' || path.startsWith('/trademark-sphere/') ||
-    path === '/roc-sphere' || path.startsWith('/roc-sphere/') ||
-    path === '/mis-report' || path.startsWith('/mis-report/') ||
-    path === '/salary-slips' || path.startsWith('/salary-slips/')
-  ) return 'compliance';
+  if (path === '/engagex' || path.startsWith('/engagex/')) return 'engagex';
+  if (path === '/compliance-dashboard' || path === '/compliance' || path.startsWith('/compliance/') || path === '/gst-reconciliation' || path.startsWith('/gst-reconciliation/') || path === '/trademark-sphere' || path.startsWith('/trademark-sphere/') || path === '/roc-sphere' || path.startsWith('/roc-sphere/') || path === '/mis-report' || path.startsWith('/mis-report/') || path === '/salary-slips' || path.startsWith('/salary-slips/')) return 'compliance';
   if (path === '/client-proposals-dashboard' || path.startsWith('/leads/') || path === '/leads' || path.startsWith('/quotations/') || path === '/quotations' || path.startsWith('/client-discussion/') || path === '/client-discussion') return 'proposals';
   if (path === '/finix-dashboard' || path.startsWith('/invoicing') || path.startsWith('/purchase') || path.startsWith('/bank-accounts') || path.startsWith('/journal-entries') || path === '/chart-of-accounts' || path === '/zero-touch-entry' || path === '/accounting-reports' || path === '/accounting-books' || path === '/day-book') return 'accounts';
   if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
   if (path === '/aiweave' || path.startsWith('/aiweave/')) return 'aiweave';
   if (path === '/records-dashboard' || path === '/dsc' || path === '/documents' || path === '/clients' || path === '/passwords' || path === '/client-approvals') return 'records';
+  if (path === '/admin-dashboard' || path.startsWith('/admin/')) return 'admin';
+  if (path === '/settings' || path.startsWith('/settings/')) return 'settings';
   return null;
 };
 
 const getActiveModuleId = () => {
-  // Route identity is authoritative. This prevents a stale tab class from
-  // leaving the previous module logo visible during client-side navigation.
   const routeModuleId = getRouteModuleId();
   if (routeModuleId) return routeModuleId;
   const activeTab = document.querySelector('#top-module-switcher-bar [id^="nav-tab-"][data-active="true"], #top-module-switcher-bar [id^="nav-tab-"][aria-current="page"], #top-module-switcher-bar [id^="nav-tab-"].font-semibold');
@@ -79,6 +61,18 @@ const setTabLabel = (id, label) => {
   tab.setAttribute('title', label);
 };
 
+const ensureEngageXTab = () => {
+  const bar = document.getElementById('top-module-switcher-bar');
+  if (!bar || document.getElementById('nav-tab-engagex')) return;
+  const anchor = document.createElement('a');
+  anchor.id = 'nav-tab-engagex';
+  anchor.href = '/engagex';
+  anchor.className = 'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium whitespace-nowrap text-slate-600 hover:text-slate-900';
+  anchor.innerHTML = '<img src="/engagex/engagex-icon.svg" alt="" aria-hidden="true" style="width:18px;height:18px;object-fit:contain"/><span>EngageX</span>';
+  anchor.addEventListener('click', () => window.setTimeout(scheduleSync, 0));
+  bar.appendChild(anchor);
+};
+
 const renameNavigation = () => {
   setTabLabel('#nav-tab-core', 'Taskosphere');
   setTabLabel('#nav-tab-accounts', 'Finix');
@@ -87,21 +81,11 @@ const renameNavigation = () => {
   setTabLabel('#nav-tab-records', 'ClientSync');
   setTabLabel('#nav-tab-proposals', 'LeadSense');
   setTabLabel('#nav-tab-people-matrix', 'People Matrix');
+  ensureEngageXTab();
 };
 
-const renameSidebarText = (from, to) => {
-  document.querySelectorAll('aside a, aside button').forEach((node) => {
-    const text = node.querySelector('span:last-child') || node;
-    if (String(text.textContent || '').trim() === from) text.textContent = to;
-  });
-};
-
-const renameSidebarDivider = (from, to) => {
-  Array.from(document.querySelectorAll('aside')).flatMap((aside) => Array.from(aside.querySelectorAll('*'))).forEach((node) => {
-    if (String(node.textContent || '').trim() === from && node.children.length === 0) node.textContent = to;
-  });
-};
-
+const renameSidebarText = (from, to) => { document.querySelectorAll('aside a, aside button').forEach((node) => { const text = node.querySelector('span:last-child') || node; if (String(text.textContent || '').trim() === from) text.textContent = to; }); };
+const renameSidebarDivider = (from, to) => { Array.from(document.querySelectorAll('aside')).flatMap((aside) => Array.from(aside.querySelectorAll('*'))).forEach((node) => { if (String(node.textContent || '').trim() === from && node.children.length === 0) node.textContent = to; }); };
 const isDarkMode = () => document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
 
 const syncModuleBranding = () => {
@@ -109,44 +93,24 @@ const syncModuleBranding = () => {
   renameNavigation();
   const moduleId = getActiveModuleId();
   const branding = MODULE_BRANDING[moduleId] || FALLBACK;
-  // DashboardLayout renders Admin/Setting as React wordmarks. Never fall back
-  // to the Taskosphere image for these routes via this legacy DOM branding shim.
-  if (branding.wordmark) {
-    lastModuleId = moduleId;
-    return;
-  }
+  if (branding.wordmark) { lastModuleId = moduleId; return; }
   const header = document.querySelector('header.fixed');
   if (!header) return;
-
   const logoLink = header.querySelector('a[href="/dashboard"]') || header.querySelector('a.relative.flex.items-center');
-  const logoImages = logoLink?.querySelectorAll('img') || [];
-  const visibleLogo = Array.from(logoImages).find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
-  if (!logoLink || !visibleLogo) return;
-
+  if (!logoLink) return;
+  const logoImages = Array.from(logoLink.querySelectorAll('img'));
+  const visibleLogo = logoImages.find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
+  if (!visibleLogo) return;
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
   let logoSrc = collapsed ? ((isDarkMode() && branding.collapsedLogoDark) || branding.collapsedLogo) : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
   if (failedLogos.has(logoSrc) && INLINE_FALLBACK_LOGOS[moduleId]) logoSrc = INLINE_FALLBACK_LOGOS[moduleId];
-
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
   if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
-  // The previous handler compared the failing src to the very same path it then
-  // "fell back" to, so it never did anything. Record the failure instead and let
-  // the next sync pick the inline fallback (also covers a load that already
-  // failed before this listener was attached).
   if (!visibleLogo.dataset.brandingFallbackBound) {
     visibleLogo.dataset.brandingFallbackBound = 'true';
-    visibleLogo.addEventListener('error', () => {
-      const failed = visibleLogo.getAttribute('src');
-      if (!failed || failed.startsWith('data:') || failedLogos.has(failed)) return;
-      failedLogos.add(failed);
-      scheduleSync();
-    });
-  }
-  if (visibleLogo.complete && visibleLogo.naturalWidth === 0 && !logoSrc.startsWith('data:') && !failedLogos.has(logoSrc)) {
-    failedLogos.add(logoSrc);
-    scheduleSync();
+    visibleLogo.addEventListener('error', () => { const failed = visibleLogo.getAttribute('src'); if (!failed || failed.startsWith('data:') || failedLogos.has(failed)) return; failedLogos.add(failed); scheduleSync(); });
   }
   visibleLogo.setAttribute('aria-label', branding.alt);
   visibleLogo.style.display = 'block';
@@ -156,76 +120,38 @@ const syncModuleBranding = () => {
   visibleLogo.style.maxWidth = '100%';
   visibleLogo.style.margin = '0 auto';
   visibleLogo.style.transform = 'translateY(0)';
+  visibleLogo.style.width = collapsed ? '58px' : '205px';
+  visibleLogo.style.height = collapsed ? '58px' : (moduleId === 'engagex' ? '58px' : '56px');
+  visibleLogo.style.background = '';
+  visibleLogo.style.borderRadius = '';
+  visibleLogo.style.padding = '0';
 
-  if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance') {
-    visibleLogo.style.background = '#ffffff';
-    visibleLogo.style.borderRadius = '8px';
-    visibleLogo.style.padding = '0';
-  } else {
-    visibleLogo.style.background = '';
-    visibleLogo.style.borderRadius = '';
-    visibleLogo.style.padding = '';
+  const headerTitle = header.querySelector('h1');
+  if (headerTitle) {
+    headerTitle.textContent = branding.label;
+    headerTitle.setAttribute('aria-label', branding.label);
+    const modulePill = headerTitle.nextElementSibling;
+    if (modulePill?.querySelectorAll) {
+      const pillSpans = modulePill.querySelectorAll(':scope > span');
+      if (pillSpans.length >= 3) { pillSpans[0].style.display = 'none'; pillSpans[1].style.display = 'none'; }
+    }
   }
 
-  // AIWeave gets the same header slot and footprint as the CompliGenie logo
-  // (top-left brand block), showing the real AIWeave PNG at that size.
-  if (moduleId === 'aiweave') {
-    visibleLogo.style.width = collapsed ? '58px' : '205px';
-    visibleLogo.style.height = collapsed ? '58px' : '60px';
+  if (moduleId === 'engagex') {
+    renameSidebarText('EngageX Dashboard', 'EngageX Dashboard');
+    renameSidebarDivider('EngageX', 'EngageX');
+    document.title = 'EngageX · OneNexa';
   }
-
-  if (moduleId === 'compliance') {
-    visibleLogo.style.width = collapsed ? '58px' : '205px';
-    visibleLogo.style.height = collapsed ? '58px' : '55px';
-  }
-
-  if (moduleId === 'proposals') {
-    const title = header.querySelector('h1');
-    if (title) title.textContent = 'LeadSense';
-    renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard');
-    renameSidebarDivider('Client Proposals', 'LeadSense');
-    document.title = 'LeadSense Dashboard · Task-O-Sphere';
-  }
-
-  if (moduleId === 'records') {
-    renameSidebarText('Records Dashboard', 'ClientSync Dashboard');
-    renameSidebarDivider('Records', 'ClientSync');
-    document.title = 'ClientSync · Task-O-Sphere';
-  }
-
-  if (moduleId === 'compliance') {
-    const title = header.querySelector('h1');
-    if (title) title.textContent = 'CompliGenie';
-    renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard');
-    renameSidebarDivider('Compliance', 'CompliGenie');
-    document.title = 'CompliGenie Dashboard · Task-O-Sphere';
-  }
-
+  if (moduleId === 'proposals') { renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard'); renameSidebarDivider('Client Proposals', 'LeadSense'); document.title = 'LeadSense Dashboard · OneNexa'; }
+  if (moduleId === 'records') { renameSidebarText('Records Dashboard', 'ClientSync Dashboard'); renameSidebarDivider('Records', 'ClientSync'); document.title = 'ClientSync · OneNexa'; }
+  if (moduleId === 'compliance') { renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard'); renameSidebarDivider('Compliance', 'CompliGenie'); document.title = 'CompliGenie Dashboard · OneNexa'; }
   lastModuleId = moduleId;
 };
 
-const scheduleSync = () => {
-  if (scheduled) return;
-  scheduled = true;
-  window.setTimeout(syncModuleBranding, 0);
-};
-
+const scheduleSync = () => { if (scheduled) return; scheduled = true; window.setTimeout(syncModuleBranding, 0); };
 const observer = new MutationObserver(scheduleSync);
-const start = () => {
-  observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'src', 'href'] });
-  scheduleSync();
-};
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-else start();
-
+const start = () => { observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'src', 'href'] }); scheduleSync(); };
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true }); else start();
 window.addEventListener('popstate', scheduleSync);
-document.addEventListener('click', (event) => {
-  if (event.target?.closest?.('#top-module-switcher-bar button, header a[href], aside a, aside button')) scheduleSync();
-}, true);
-// Safety-net only: React/router mutations and navigation events normally
-// trigger syncModuleBranding. Keep a low-frequency fallback for legacy code
-// that changes the active module without emitting a DOM/navigation event.
-window.setInterval(() => {
-  if (lastModuleId !== getActiveModuleId()) scheduleSync();
-}, 2000);
+document.addEventListener('click', (event) => { if (event.target?.closest?.('#top-module-switcher-bar button, #top-module-switcher-bar a, header a[href], aside a, aside button')) scheduleSync(); }, true);
+window.setInterval(() => { if (lastModuleId !== getActiveModuleId()) scheduleSync(); }, 2000);
