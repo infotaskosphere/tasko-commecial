@@ -15,9 +15,6 @@ const ONE_NEXA = { label: 'OneNexa', landingPath: '/dashboard', lightLogo: '/one
 let scheduled = false;
 let lastModule = '';
 
-const normalized = value => String(value || '').trim().toLowerCase().replace(/[-\s]/g, '_');
-const currentUser = () => { try { const raw = sessionStorage.getItem('user') || localStorage.getItem('user'); return raw ? JSON.parse(raw) : null; } catch { return null; } };
-const entitledToEngageX = () => { const user = currentUser(); const modules = [user?.licensed_modules, user?.modules, user?.company?.licensed_modules, user?.license?.modules].find(v => Array.isArray(v)) || []; return modules.some(m => normalized(m) === 'engagex') || user?.permissions?.can_access_engagex === true; };
 const routeModule = () => {
   const p = window.location.pathname || '';
   if (p === '/engagex' || p.startsWith('/engagex/')) return 'engagex';
@@ -32,29 +29,12 @@ const routeModule = () => {
   return 'core';
 };
 const setText = (selector, value) => { const node = document.querySelector(selector); if (node && node.textContent.trim() !== value) node.textContent = value; };
-const ensureEngageXTab = () => {
-  const bar = document.getElementById('top-module-switcher-bar');
-  if (!bar) return;
-  const existing = document.getElementById('nav-tab-engagex');
-  if (!entitledToEngageX()) { existing?.remove(); return; }
-  if (existing) return;
-  const a = document.createElement('a'); a.id = 'nav-tab-engagex'; a.href = '/engagex'; a.className = 'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium whitespace-nowrap text-slate-600 hover:text-slate-900';
-  a.innerHTML = '<img src="/engagex/engagex-icon.svg" alt="" aria-hidden="true" style="width:18px;height:18px;object-fit:contain"><span>EngageX</span>';
-  bar.appendChild(a);
-};
-const ensureEngageXSidebar = active => {
-  const aside = document.querySelector('aside'); if (!aside) return;
-  const old = aside.querySelector('[data-engagex-sidebar="true"]');
-  if (!active) { old?.remove(); aside.querySelectorAll('[data-engagex-hidden="true"]').forEach(n => { n.style.display=''; n.removeAttribute('data-engagex-hidden'); }); return; }
-  aside.querySelectorAll('a[href],button').forEach(n => { const h=n.getAttribute('href')||''; if (!h.startsWith('/engagex') && !n.closest('[data-engagex-sidebar="true"]') && !n.textContent.includes('Collapse Sidebar')) { n.style.display='none'; n.setAttribute('data-engagex-hidden','true'); } });
-  if (old) return;
-  const block=document.createElement('div'); block.dataset.engagexSidebar='true'; block.className='space-y-1 px-2 py-3';
-  block.innerHTML='<div class="mb-2 flex items-center gap-2 rounded-lg bg-slate-800/40 px-3 py-2 text-xs font-bold uppercase tracking-wider text-cyan-200"><img src="/engagex/engagex-icon.svg" alt="" style="width:22px;height:22px"><span>EngageX</span></div><a href="/engagex" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold text-white hover:bg-slate-800">◈<span>Dashboard</span></a><a href="/engagex/whatsapp" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800">◉<span>WhatsApp Hub</span></a><a href="/engagex/mailmaster" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800">✉<span>MailMaster</span></a>';
-  const collapse=Array.from(aside.querySelectorAll('*')).find(n=>n.textContent?.trim()==='Collapse Sidebar'); (collapse?.parentElement||aside).prepend(block);
-};
+// EngageX navigation (module tab + sidebar) is rendered natively by
+// DashboardLayout from NAV_GROUPS/SECTION_META and gated by the permission
+// matrix; it is no longer injected into the DOM here.
 const sync = () => {
-  scheduled=false; ensureEngageXTab();
-  const moduleId=routeModule(); const module=MODULE_BRANDING[moduleId]||MODULE_BRANDING.core; ensureEngageXSidebar(moduleId==='engagex');
+  scheduled=false;
+  const moduleId=routeModule(); const module=MODULE_BRANDING[moduleId]||MODULE_BRANDING.core;
   const header=document.querySelector('header.fixed'); if (!header) return;
   const link=header.querySelector('a[href="/dashboard"]')||header.querySelector('a.relative.flex.items-center'); if (!link) return;
   let img=link.querySelector('img[data-onenexa-shell-logo="true"]')||link.querySelector('img');

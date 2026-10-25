@@ -18,6 +18,7 @@ from backend.commercial_licensee_admin import (
     resolve_license_modules,
     get_all_admin_permissions,
     normalize_license_selected_features,
+    effective_license_module_names,
 )
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
 from backend.commercial_shared_master_data import (
@@ -237,6 +238,9 @@ MODULE_PREFIXES = {
         "/recruitment",
         "/performance",
     ),
+    "engagex": (
+        "/engagex",
+    ),
 }
 
 
@@ -394,6 +398,12 @@ FEATURE_PREFIXES = {
     },
     "aiweave": {
         "can_view_aiweave": ("/ai", "/aiweave", "/ai-reader", "/v2/copilot"),
+    },
+    "engagex": {
+        # Dashboard: KPIs, unified message history and the shared audience picker.
+        "can_view_engagex_dashboard": ("/engagex/overview", "/engagex/history", "/engagex/audience"),
+        "can_view_engagex_whatsapp": ("/engagex/whatsapp",),
+        "can_view_engagex_mailmaster": ("/engagex/mail",),
     },
     "people_matrix": {
         "can_view_people_matrix_dashboard": ("/people-matrix",),
@@ -795,11 +805,9 @@ def _hydrate_tenant_user(user: User, license_doc: dict) -> User:
     data["license_id"] = license_doc.get("id")
     data["license_key"] = license_doc.get("license_key")
 
-    data["licensed_modules"] = list(
-        license_doc.get("modules")
-        or license_doc.get("licensed_modules")
-        or []
-    )
+    # Raw license modules plus compatibility-implied modules (EngageX on
+    # legacy full-suite licenses), so the UI and API agree on entitlement.
+    data["licensed_modules"] = effective_license_module_names(license_doc)
 
     data["selected_features"] = normalize_license_selected_features(license_doc)
 

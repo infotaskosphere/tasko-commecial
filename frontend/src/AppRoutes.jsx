@@ -2,7 +2,7 @@ import React, { Suspense } from 'react';
 import { lazyWithRetry as lazy } from '@/lib/lazyWithRetry.js';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext.jsx';
-import { firstAccessiblePath, hasModuleAccess, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
+import { canAccessPath, firstAccessiblePath, hasModuleAccess, isCommercialTenant } from '@/lib/commercialPermissionMatrix';
 import DashboardLayout from '@/components/layout/DashboardLayout.jsx';
 import ModuleGate from '@/components/ModuleGate.jsx';
 import NoModuleAccess from '@/components/NoModuleAccess.jsx';
@@ -202,12 +202,14 @@ function PlatformOwnerOnly({ children }) {
 }
 
 function EngageXGate({ children }) {
+  // Module ceiling (license) + per-page permission, from the same matrix the
+  // sidebar and the backend module guard use.
   const { user, loading, isPlatformOwner } = useAuth();
+  const location = useLocation();
   if (loading) return <AuthLoading />;
   if (isPlatformOwner) return children;
-  const licensed = Array.isArray(user?.licensed_modules) && user.licensed_modules.some((m) => ['engagex', 'engage_x'].includes(String(m).trim().toLowerCase().replace(/[-\s]/g, '_')));
-  const enabled = user?.permissions?.can_access_engagex === true || user?.permissions?.can_view_engagex_dashboard === true;
-  return licensed || enabled ? children : <Navigate to="/dashboard" replace />;
+  const allowed = hasModuleAccess(user, 'engagex') && canAccessPath(user, location.pathname);
+  return allowed ? children : <Navigate to={firstAccessiblePath(user, 'engagex')} replace />;
 }
 
 export default function AppRoutes() {

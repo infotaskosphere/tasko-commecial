@@ -123,6 +123,12 @@ DEFAULT_ROLE_PERMISSIONS: Dict[str, Dict[str, Any]] = {
           "can_access_people_matrix": True,
           "can_view_client_portal": True,
           "can_reset_client_passwords": True,
+          # EngageX (marketing & communications). Commercial tenants are still
+          # capped by their license in commercial_licensee_admin.
+          "can_access_engagex": True,
+          "can_view_engagex_dashboard": True,
+          "can_view_engagex_whatsapp": True,
+          "can_view_engagex_mailmaster": True,
       },
       "manager": {
           # Manager: SCOPE = OWN + SAME_DEPARTMENT (Own + Team)
@@ -543,6 +549,13 @@ class UserPermissions(BaseModel):
     # AIWeave is deliberately NOT role-granted. Even admins must receive an explicit
     # user-level grant through Permission Matrix / Access Governance.
     can_access_aiweave: bool = False
+    # EngageX: Dashboard, WhatsApp Hub and MailMaster. Without declared fields
+    # these flags were silently dropped by this model (extra="ignore"), so the
+    # module could never be enabled for a tenant.
+    can_access_engagex: bool = False
+    can_view_engagex_dashboard: bool = False
+    can_view_engagex_whatsapp: bool = False
+    can_view_engagex_mailmaster: bool = False
     # Admin is role-gated, not flag-gated (see MODULE_HIERARCHY["admin"] note
     # above) — this flag exists only for uniform module-tree rendering and is
     # never consulted by has_module_access() for real access decisions.

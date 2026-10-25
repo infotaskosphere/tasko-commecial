@@ -25,16 +25,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _call_auth_dependency(request: Request, credentials):
+    """Call the live auth dependency with the parameters it actually declares.
+
+    Several compatibility layers transplant code into ``get_current_user``; the
+    final public dependency is request-aware ``(request, credentials)``, while
+    older inner layers take ``(credentials)``. Passing arguments by the declared
+    positional count keeps the bearer token in ``credentials`` whichever shape
+    is installed.
+    """
+    auth = _dependencies.get_current_user
+    if auth.__code__.co_argcount >= 2:
+        return await auth(request, credentials)
+    return await auth(credentials)
+
+
 async def _activity_current_user(request: Request):
     """Use the same final Request-aware authentication chain as other routes.
 
     HTTPBearer is resolved explicitly because this endpoint needs the Request for
-    diagnostics. ``get_current_user`` itself accepts the resolved credentials,
-    not the Request; passing both caused the production TypeError seen in Render.
+    diagnostics; the auth dependency is then called by parameter name.
     """
     authorization = str(request.headers.get("authorization") or "").strip()
     scheme, _, supplied_token = authorization.partition(" ")
-    logger.warning(
+    logger.debug(
         "Activity auth dependency entered: path=%s authorization_present=%s bearer_scheme=%s bearer_token_present=%s",
         request.url.path,
         bool(authorization),
@@ -43,9 +57,7 @@ async def _activity_current_user(request: Request):
     )
     try:
         credentials = await _dependencies.security(request)
-        # get_current_user(credentials=...) is the canonical dependency signature.
-        # Do not pass Request as a second positional argument.
-        user = await _dependencies.get_current_user(credentials)
+        user = await _call_auth_dependency(request, credentials)
     except HTTPException as exc:
         logger.warning(
             "Activity logger authentication rejected: status=%s detail=%s "

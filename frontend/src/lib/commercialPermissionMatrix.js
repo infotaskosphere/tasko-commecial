@@ -31,6 +31,7 @@ export const MODULES = Object.freeze({
   proposals: { flag: "can_access_proposals", aliases: ["proposals", "client_proposals", "leadsense"], landing: "/client-proposals-dashboard" },
   people_matrix: { flag: "can_access_people_matrix", aliases: ["people_matrix", "hrms", "peoplematrix"], landing: "/people-matrix" },
   aiweave: { flag: "can_access_aiweave", aliases: ["aiweave", "ai-weave"], landing: "/aiweave" },
+  engagex: { flag: "can_access_engagex", aliases: ["engagex", "engage_x", "engage-x"], landing: "/engagex" },
 });
 
 export const COMMERCIAL_ADMIN_GLOBAL_PATHS = Object.freeze([
@@ -71,6 +72,7 @@ export const PAGE_MATRIX = Object.freeze([
   ["records", "can_view_records_dashboard", "/records-dashboard"], ["records", "can_view_all_dsc", "/dsc"], ["records", "can_view_documents", "/documents"], ["records", "can_view_passwords", "/passwords"], ["records", "can_edit_passwords", "/passwords/manage"], ["records", "can_view_clients_page", "/clients"], ["records", "can_view_client_approvals", "/client-approvals"], ["records", "can_edit_clients", "/clients/manage"], ["records", "can_approve_clients", "/clients/approve"], ["records", "can_approve_whatsapp_wishes", "/automation/whatsapp"], ["records", "can_approve_email_wishes", "/automation/email"], ["records", "can_access_whatsapp_hub", "/whatsapp-hub"], ["records", "can_view_automation_approvals", "/automation/approvals"],
   ["proposals", "can_view_proposals_dashboard", "/client-proposals-dashboard"], ["proposals", "can_view_all_leads", "/leads"], ["proposals", "can_view_quotations", "/quotations"], ["proposals", "can_view_client_discussion", "/client-discussion"], ["proposals", "can_manage_client_discussion", "/client-discussion/manage"],
   ["aiweave", "can_view_aiweave", "/aiweave"],
+  ["engagex", "can_view_engagex_dashboard", "/engagex"], ["engagex", "can_view_engagex_whatsapp", "/engagex/whatsapp"], ["engagex", "can_view_engagex_mailmaster", "/engagex/mailmaster"],
   ["people_matrix", "can_view_people_matrix_dashboard", "/people-matrix"], ["people_matrix", "can_view_leave", "/leave"], ["people_matrix", "can_manage_leave", "/leave/manage"], ["people_matrix", "can_view_payroll", "/payroll"], ["people_matrix", "can_manage_payroll", "/payroll/manage"], ["people_matrix", "can_view_hr", "/hr"], ["people_matrix", "can_manage_hr", "/hr/manage"], ["people_matrix", "can_view_recruitment", "/recruitment"], ["people_matrix", "can_manage_recruitment", "/recruitment/manage"], ["people_matrix", "can_view_performance", "/performance"], ["people_matrix", "can_manage_performance", "/performance/manage"],
 ]);
 
@@ -119,7 +121,7 @@ export function normalizeModules(user) {
   return result;
 }
 
-const DASHBOARD_FLAG_BY_MODULE = Object.freeze({ core: "can_access_admin", taskosphere: "can_view_dashboard", finix: "can_view_finix_dashboard", compliance: "can_view_compliance_dashboard", records: "can_view_records_dashboard", proposals: "can_view_proposals_dashboard", people_matrix: "can_view_people_matrix_dashboard" });
+const DASHBOARD_FLAG_BY_MODULE = Object.freeze({ core: "can_access_admin", taskosphere: "can_view_dashboard", finix: "can_view_finix_dashboard", compliance: "can_view_compliance_dashboard", records: "can_view_records_dashboard", proposals: "can_view_proposals_dashboard", people_matrix: "can_view_people_matrix_dashboard", engagex: "can_view_engagex_dashboard" });
 const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
   core: ["can_view_user_page", "can_manage_settings", "can_view_security_sessions", "can_view_master_data", "can_view_roles", "can_manage_permissions", "can_manage_master_data", "can_manage_roles"],
   taskosphere: ["can_view_dashboard","can_view_tasks","can_view_todo_dashboard","can_view_attendance","can_view_reminders","can_view_action_center","can_view_client_visits","can_view_client_portal"],
@@ -129,6 +131,7 @@ const ALL_PAGE_FLAGS_BY_MODULE = Object.freeze({
   proposals: ["can_view_proposals_dashboard","can_view_all_leads","can_view_quotations","can_view_client_discussion"],
   people_matrix: ["can_view_people_matrix_dashboard","can_view_leave","can_view_payroll","can_view_hr","can_view_recruitment"],
   aiweave: ["can_view_aiweave"],
+  engagex: ["can_view_engagex_dashboard", "can_view_engagex_whatsapp", "can_view_engagex_mailmaster"],
 });
 
 const LEGACY_PAGE_SELECTION_ALIASES = Object.freeze({

@@ -46,7 +46,48 @@ LICENSE_MODULE_ALIASES = {
     "leadsense": "proposals",
     "aiweave": "aiweave",
     "ai-weave": "aiweave",
+    "engagex": "engagex",
+    "engage_x": "engagex",
+    "engage-x": "engagex",
 }
+
+# Licenses that carry every operational module issued before EngageX existed
+# are "full suite" licenses. They receive EngageX (all three pages) as an
+# implied module so existing all-access customers are not downgraded by a
+# newly introduced module. The stored license document is never mutated, and
+# an explicit EngageX entry/selection on a license always takes precedence.
+FULL_SUITE_MODULES = frozenset({
+    "taskosphere", "finix", "aiweave", "compliance", "records", "proposals", "people_matrix",
+})
+IMPLIED_FULL_SUITE_MODULES = ("engagex",)
+
+
+def _explicit_license_modules(license_doc: Dict[str, Any]) -> set[str]:
+    resolved: set[str] = set()
+    for raw in license_doc.get("modules") or license_doc.get("licensed_modules") or []:
+        mapped = LICENSE_MODULE_ALIASES.get(str(raw).strip().lower())
+        if mapped:
+            resolved.add(mapped)
+    return resolved
+
+
+def implied_license_modules(license_doc: Optional[Dict[str, Any]]) -> set[str]:
+    """Modules granted by compatibility rather than listed on the license."""
+    if not isinstance(license_doc, dict):
+        return set()
+    explicit = _explicit_license_modules(license_doc)
+    if not FULL_SUITE_MODULES.issubset(explicit):
+        return set()
+    return {module for module in IMPLIED_FULL_SUITE_MODULES if module not in explicit}
+
+
+def effective_license_module_names(license_doc: Optional[Dict[str, Any]]) -> list[str]:
+    """Raw license module names plus implied modules, for user payloads."""
+    if not isinstance(license_doc, dict):
+        return []
+    names = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
+    names.extend(sorted(implied_license_modules(license_doc)))
+    return names
 
 # These legacy permissions are still consumed by older pages/components. They
 # must be reset together with the centralized page flags, otherwise an admin
@@ -104,13 +145,7 @@ def _raw_db():
 
 
 def resolve_license_modules(license_doc: Dict[str, Any]) -> set[str]:
-    resolved: set[str] = set()
-    for raw in license_doc.get("modules") or license_doc.get("licensed_modules") or []:
-        key = str(raw).strip().lower()
-        mapped = LICENSE_MODULE_ALIASES.get(key)
-        if mapped:
-            resolved.add(mapped)
-    return resolved
+    return _explicit_license_modules(license_doc) | implied_license_modules(license_doc)
 
 
 def normalize_license_selected_features(
@@ -140,9 +175,11 @@ def normalize_license_selected_features(
         "proposals": {"proposals", "client_proposals", "client-proposals", "leadsense"},
         "people_matrix": {"people_matrix", "people-matrix", "hrms", "peoplematrix"},
         "aiweave": {"aiweave", "ai-weave"},
+        "engagex": {"engagex", "engage_x", "engage-x"},
     }
 
     normalized: Dict[str, list[str]] = {}
+    implied_modules = implied_license_modules(license_doc)
 
     for module_id in licensed_modules:
         module_def = MODULE_HIERARCHY.get(module_id, {})
@@ -151,6 +188,13 @@ def normalize_license_selected_features(
             for page in module_def.get("pages", []) or []
             if page.get("flag")
         ]
+        if module_id in implied_modules and not any(
+            str(key).strip().lower().replace("-", "_") in {"engagex", "engage_x"} for key in raw
+        ):
+            # Implied full-suite module without an explicit page selection:
+            # the license predates the module, so every page is included.
+            normalized[module_id] = list(all_flags)
+            continue
         hidden_legacy_flags = LEGACY_HIDDEN_LICENSE_FLAGS.get(module_id, set())
         accepted_flags = set(all_flags) | set(hidden_legacy_flags)
         try:
@@ -221,6 +265,7 @@ def normalize_license_selected_features(
                     "proposals": {4},
                     "people_matrix": {11},
                     "aiweave": {1},
+                    "engagex": {3},
                 }
                 normalized[module_id] = list(all_flags) if count in legacy_full_counts.get(module_id, set()) else []
                 continue

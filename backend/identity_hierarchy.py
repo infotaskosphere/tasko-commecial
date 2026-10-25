@@ -384,12 +384,30 @@ async def ensure_platform_owner_identity(db, user: Optional[dict] = None) -> str
     return uid
 
 
+def _identity_database(db):
+    """Return the unscoped database behind a tenant-aware facade.
+
+    ``TenantAwareDatabase.__getattr__`` turns *any* attribute name into a
+    collection, so ``getattr(db, "_raw_db", db)`` silently returned a collection
+    literally named ``_raw_db``; the first ``db[...]`` lookup then raised
+    "'TenantAwareCollection' object is not subscriptable" and failed the first
+    login of every licensee user without an identity UID. Only read real
+    instance attributes here.
+    """
+    attrs = getattr(db, "__dict__", {}) or {}
+    for name in ("_raw_db", "_database"):
+        inner = attrs.get(name)
+        if inner is not None:
+            return inner
+    return db
+
+
 async def enrich_user_identity(db, user: dict) -> dict:
     # Identity repair must be able to resolve a user's license/company link
     # before the tenant-scoped DB wrapper has a trustworthy company_id. Query
     # the raw database only in this identity resolver; normal operational
     # requests continue to use the tenant-scoped database wrapper.
-    db = getattr(db, "_raw_db", db)
+    db = _identity_database(db)
     data = dict(user or {})
 
     # Reserved Platform Owner email identities take precedence over stale

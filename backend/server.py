@@ -315,6 +315,10 @@ app.include_router(roc_forms_dump_router, prefix="/api/roc-sphere")
 for _hr_router in ALL_HR_CORE_ROUTERS:
     app.include_router(_hr_router, prefix="/api")
 
+# EngageX (Dashboard, WhatsApp Hub, MailMaster) + its background delivery worker.
+from backend.engagex import install as _install_engagex
+_install_engagex(app)
+
 # LeadSense Client Discussion collection compatibility.
 # The LeadSense hub requests a collection-level /api/client-discussion feed.
 # The existing client_activity router is intentionally client-scoped, so it
