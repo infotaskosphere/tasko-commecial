@@ -15,15 +15,22 @@ const MODULE_BRANDING = {
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
   aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
   records: { label: 'ClientSync', landingPath: '/records-dashboard', lightLogo: '/clientsync-logo-light.png', darkLogo: '/clientsync-logo-dark.png', collapsedLogo: '/clientsync-icon-light.png', collapsedLogoDark: '/clientsync-icon-dark.png', alt: 'ClientSync' },
-  // Utility sections have text wordmarks rather than the Taskosphere product logo.
   admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true, alt: 'Admin' },
-  settings: { label: 'Setting', landingPath: '/settings/general', wordmark: true, alt: 'Setting' },
+  settings: { label: 'Settings', landingPath: '/settings/general', wordmark: true, alt: 'Settings' },
 };
 
-// Last-resort logo that ships INSIDE the JS bundle. If a static file is missing
-// from a deployment (Vercel rewrites unknown paths to index.html, so a missing
-// image comes back as HTML and shows as a broken picture) the header still gets
-// a real AIWeave logo instead of alt text.
+/* OneNexa is the suite/application brand. Module names remain visible in the
+ * navigation and header, but the global shell logo must never change to a
+ * module-specific logo. */
+const ONE_NEXA_BRAND = {
+  label: 'OneNexa',
+  landingPath: '/dashboard',
+  lightLogo: '/onenexa-logo.svg',
+  darkLogo: '/onenexa-logo.svg',
+  collapsedLogo: '/onenexa-logo.svg',
+  alt: 'OneNexa',
+};
+
 const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">'
   + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D3B66"/><stop offset=".55" stop-color="#1F6FB2"/><stop offset="1" stop-color="#1FAF5A"/></linearGradient></defs>'
   + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/>'
@@ -35,7 +42,6 @@ const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" 
 const INLINE_FALLBACK_LOGOS = {
   aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG),
 };
-// Logo URLs that failed to load in this browser session.
 const failedLogos = new Set();
 
 const FALLBACK = MODULE_BRANDING.core;
@@ -57,12 +63,12 @@ const getRouteModuleId = () => {
   if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
   if (path === '/aiweave' || path.startsWith('/aiweave/')) return 'aiweave';
   if (path === '/records-dashboard' || path === '/dsc' || path === '/documents' || path === '/clients' || path === '/passwords' || path === '/client-approvals') return 'records';
+  if (path === '/admin-dashboard' || path.startsWith('/admin/')) return 'admin';
+  if (path === '/settings' || path.startsWith('/settings/')) return 'settings';
   return null;
 };
 
 const getActiveModuleId = () => {
-  // Route identity is authoritative. This prevents a stale tab class from
-  // leaving the previous module logo visible during client-side navigation.
   const routeModuleId = getRouteModuleId();
   if (routeModuleId) return routeModuleId;
   const activeTab = document.querySelector('#top-module-switcher-bar [id^="nav-tab-"][data-active="true"], #top-module-switcher-bar [id^="nav-tab-"][aria-current="page"], #top-module-switcher-bar [id^="nav-tab-"].font-semibold');
@@ -108,13 +114,8 @@ const syncModuleBranding = () => {
   scheduled = false;
   renameNavigation();
   const moduleId = getActiveModuleId();
-  const branding = MODULE_BRANDING[moduleId] || FALLBACK;
-  // DashboardLayout renders Admin/Setting as React wordmarks. Never fall back
-  // to the Taskosphere image for these routes via this legacy DOM branding shim.
-  if (branding.wordmark) {
-    lastModuleId = moduleId;
-    return;
-  }
+  const moduleBranding = MODULE_BRANDING[moduleId] || FALLBACK;
+  const branding = ONE_NEXA_BRAND;
   const header = document.querySelector('header.fixed');
   if (!header) return;
 
@@ -125,16 +126,12 @@ const syncModuleBranding = () => {
 
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  let logoSrc = collapsed ? ((isDarkMode() && branding.collapsedLogoDark) || branding.collapsedLogo) : (isDarkMode() ? branding.darkLogo : branding.lightLogo);
+  let logoSrc = collapsed ? branding.collapsedLogo : branding.lightLogo;
   if (failedLogos.has(logoSrc) && INLINE_FALLBACK_LOGOS[moduleId]) logoSrc = INLINE_FALLBACK_LOGOS[moduleId];
 
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
   if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
-  // The previous handler compared the failing src to the very same path it then
-  // "fell back" to, so it never did anything. Record the failure instead and let
-  // the next sync pick the inline fallback (also covers a load that already
-  // failed before this listener was attached).
   if (!visibleLogo.dataset.brandingFallbackBound) {
     visibleLogo.dataset.brandingFallbackBound = 'true';
     visibleLogo.addEventListener('error', () => {
@@ -156,49 +153,35 @@ const syncModuleBranding = () => {
   visibleLogo.style.maxWidth = '100%';
   visibleLogo.style.margin = '0 auto';
   visibleLogo.style.transform = 'translateY(0)';
+  visibleLogo.style.width = collapsed ? '58px' : '205px';
+  visibleLogo.style.height = collapsed ? '58px' : '56px';
+  visibleLogo.style.background = 'transparent';
+  visibleLogo.style.borderRadius = '';
+  visibleLogo.style.padding = '0';
+  visibleLogo.style.filter = isDarkMode() ? 'brightness(0) invert(1)' : 'none';
 
-  if (moduleId === 'proposals' || moduleId === 'people-matrix' || moduleId === 'compliance') {
-    visibleLogo.style.background = '#ffffff';
-    visibleLogo.style.borderRadius = '8px';
-    visibleLogo.style.padding = '0';
-  } else {
-    visibleLogo.style.background = '';
-    visibleLogo.style.borderRadius = '';
-    visibleLogo.style.padding = '';
+  const headerTitle = header.querySelector('h1');
+  if (headerTitle) {
+    const moduleLabel = moduleBranding?.label || 'Taskosphere';
+    if (headerTitle.textContent.trim() !== moduleLabel) headerTitle.textContent = moduleLabel;
+    headerTitle.setAttribute('aria-label', moduleLabel);
   }
 
-  // AIWeave gets the same header slot and footprint as the CompliGenie logo
-  // (top-left brand block), showing the real AIWeave PNG at that size.
-  if (moduleId === 'aiweave') {
-    visibleLogo.style.width = collapsed ? '58px' : '205px';
-    visibleLogo.style.height = collapsed ? '58px' : '60px';
-  }
-
-  if (moduleId === 'compliance') {
-    visibleLogo.style.width = collapsed ? '58px' : '205px';
-    visibleLogo.style.height = collapsed ? '58px' : '55px';
-  }
+  document.title = `${moduleBranding?.label || 'Taskosphere'} · OneNexa`;
 
   if (moduleId === 'proposals') {
-    const title = header.querySelector('h1');
-    if (title) title.textContent = 'LeadSense';
     renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard');
     renameSidebarDivider('Client Proposals', 'LeadSense');
-    document.title = 'LeadSense Dashboard · Task-O-Sphere';
   }
 
   if (moduleId === 'records') {
     renameSidebarText('Records Dashboard', 'ClientSync Dashboard');
     renameSidebarDivider('Records', 'ClientSync');
-    document.title = 'ClientSync · Task-O-Sphere';
   }
 
   if (moduleId === 'compliance') {
-    const title = header.querySelector('h1');
-    if (title) title.textContent = 'CompliGenie';
     renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard');
     renameSidebarDivider('Compliance', 'CompliGenie');
-    document.title = 'CompliGenie Dashboard · Task-O-Sphere';
   }
 
   lastModuleId = moduleId;
@@ -223,9 +206,6 @@ window.addEventListener('popstate', scheduleSync);
 document.addEventListener('click', (event) => {
   if (event.target?.closest?.('#top-module-switcher-bar button, header a[href], aside a, aside button')) scheduleSync();
 }, true);
-// Safety-net only: React/router mutations and navigation events normally
-// trigger syncModuleBranding. Keep a low-frequency fallback for legacy code
-// that changes the active module without emitting a DOM/navigation event.
 window.setInterval(() => {
   if (lastModuleId !== getActiveModuleId()) scheduleSync();
 }, 2000);
