@@ -20,6 +20,27 @@ from backend.commercial_licensee_admin import get_all_admin_permissions
 from backend.platform_owner import is_platform_owner
 
 
+ENGAGEX_PAGE_FLAGS = {
+    "can_view_engagex_dashboard",
+    "can_view_engagex_whatsapp",
+    "can_view_engagex_mailmaster",
+}
+
+# Existing licenses that contain every commercial module are legacy "full suite"
+# licenses created before EngageX existed. They should not lose access simply
+# because a new module was introduced after the license was issued. This is a
+# runtime compatibility rule; it does not mutate the stored license document.
+FULL_SUITE_MODULES = {
+    "taskosphere",
+    "finix",
+    "aiweave",
+    "compliance",
+    "records",
+    "proposals",
+    "people_matrix",
+}
+
+
 def _is_admin_role(user: Any) -> bool:
     role = getattr(user, "role", "")
     value = getattr(role, "value", None)
@@ -105,35 +126,49 @@ async def _active_license(customer_id: str, license_id: str | None = None, compa
 def _apply_engagex_entitlement(data: dict[str, Any], license_doc: dict[str, Any]) -> None:
     """Bridge EngageX into the live auth object without weakening other modules.
 
-    The legacy commercial resolver predates EngageX and therefore does not know
-    the new module alias yet. Keep the compatibility isolated here so existing
-    license/module behavior remains unchanged while new EngageX licenses become
-    effective immediately after login.
+    New licenses explicitly containing EngageX use their own selected page
+    flags. Legacy full-suite licenses (all seven existing commercial modules)
+    are treated as having the newly introduced EngageX module as a compatibility
+    entitlement, so an existing all-access customer does not lose the benefit
+    of a module added after the license was issued.
     """
-    raw_modules = license_doc.get("modules") or license_doc.get("licensed_modules") or []
+    raw_modules = list(license_doc.get("modules") or license_doc.get("licensed_modules") or [])
     normalized_modules = {str(item).strip().lower().replace("-", "_") for item in raw_modules}
-    if "engagex" not in normalized_modules:
+
+    engagex_explicit = "engagex" in normalized_modules
+    legacy_full_suite = FULL_SUITE_MODULES.issubset(normalized_modules)
+    if not engagex_explicit and not legacy_full_suite:
         return
+
+    if "engagex" not in normalized_modules:
+        raw_modules.append("engagex")
+        normalized_modules.add("engagex")
+        data["licensed_modules"] = raw_modules
 
     selected = license_doc.get("selected_features") or {}
     selected_flags = set(selected.get("engagex") or []) if isinstance(selected, dict) else set()
-    page_flags = {
-        "can_view_engagex_dashboard",
-        "can_view_engagex_whatsapp",
-        "can_view_engagex_mailmaster",
-    }
-    # Older full-module licenses have no explicit EngageX page list. Treat a
-    # purchased EngageX module with no page selection as full-module access,
-    # while preserving selective access when concrete page flags are present.
     has_explicit_selection = "engagex" in selected
-    allowed_pages = page_flags if not has_explicit_selection else (page_flags & selected_flags)
-    module_allowed = bool(allowed_pages)
+
+    # A newly issued EngageX license can select individual pages. A legacy full
+    # suite has no EngageX entry because the module did not exist at issuance,
+    # therefore all three EngageX pages are enabled by compatibility.
+    if has_explicit_selection:
+        allowed_pages = ENGAGEX_PAGE_FLAGS & selected_flags
+    else:
+        allowed_pages = set(ENGAGEX_PAGE_FLAGS)
 
     permissions = dict(data.get("permissions") or {})
-    permissions["can_access_engagex"] = module_allowed
-    for flag in page_flags:
+    permissions["can_access_engagex"] = bool(allowed_pages)
+    for flag in ENGAGEX_PAGE_FLAGS:
         permissions[flag] = flag in allowed_pages
     data["permissions"] = permissions
+
+    # Also expose the compatibility selection to frontend code that uses the
+    # normalized selected_features object to decide whether a page is visible.
+    effective_selected = dict(data.get("selected_features") or {})
+    if "engagex" not in effective_selected and allowed_pages:
+        effective_selected["engagex"] = sorted(allowed_pages)
+        data["selected_features"] = effective_selected
 
 
 async def _hydrate(user: Any):
@@ -176,7 +211,7 @@ async def _hydrate(user: Any):
         current_perms = dict(data.get("permissions") or {})
         licensed_mods = resolve_license_modules(license_doc)
         raw_module_names = {str(item).strip().lower().replace("-", "_") for item in modules}
-        engagex_allowed = "engagex" in raw_module_names
+        engagex_allowed = "engagex" in raw_module_names or FULL_SUITE_MODULES.issubset(raw_module_names)
         for mod_key, mod_def in MODULE_HIERARCHY.items():
             if mod_key != "admin" and mod_key not in licensed_mods:
                 mod_flag = mod_def.get("flag")
@@ -187,7 +222,8 @@ async def _hydrate(user: Any):
                     if p_flag:
                         current_perms[p_flag] = False
         data["permissions"] = current_perms
-        _apply_engagex_entitlement(data, license_doc) if engagex_allowed else None
+        if engagex_allowed:
+            _apply_engagex_entitlement(data, license_doc)
 
     return type(user).model_validate(data)
 
