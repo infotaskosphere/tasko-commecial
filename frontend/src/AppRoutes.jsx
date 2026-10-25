@@ -83,18 +83,77 @@ const PendingApprovals = lazy(() => import('@/components/PendingApprovalsPanel.j
 const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 const SecuritySessions = lazy(() => import('./pages/SecuritySessions.jsx'));
-const EngageXDashboard = lazy(() => import('./pages/EngageXDashboard.jsx'));
-const EngageXWhatsAppHub = lazy(() => import('./pages/EngageXWhatsAppHub.jsx'));
-const EngageXMailMaster = lazy(() => import('./pages/EngageXMailMaster.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
-function peopleMatrixLanding(user) { const canSeePeopleMatrix = Boolean(user?.permissions?.can_access_people_matrix || user?.permissions?.can_view_people_matrix_dashboard || user?.licensed_modules?.some?.((m) => ['peoplematrix','people_matrix','hrms'].includes(String(m).toLowerCase().replace(/[-\s]/g, '_')))); return canSeePeopleMatrix ? '/people-matrix' : null; }
-function taskosphereLanding(user, isPlatformOwner) { if (!user) return null; if (isPlatformOwner) return '/dashboard'; if (user?.role?.toLowerCase() === 'admin' && !user?.company_id) return '/dashboard'; if (user?.permissions?.can_access_taskosphere === true) return '/dashboard'; if (isCommercialTenant(user) && hasModuleAccess(user, 'taskosphere')) { const path = firstAccessiblePath(user, 'taskosphere'); return path && path !== '/login' ? path : null; } return null; }
-function LicensedDashboardHome() { const { user, loading, isPlatformOwner, hasPermission } = useAuth(); if (loading) return <AuthLoading />; const isInternalAdmin = user?.role?.toLowerCase() === 'admin' && !user?.company_id; const canAccessTaskosphere = Boolean(isPlatformOwner) || Boolean(hasPermission?.('can_access_taskosphere')) || user?.permissions?.can_access_taskosphere === true; if (isInternalAdmin || canAccessTaskosphere) return <Dashboard />; const peopleMatrixPath = peopleMatrixLanding(user); const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixPath || (isCommercialTenant(user) ? firstAccessiblePath(user) : (['/finix-dashboard','/compliance-dashboard','/records-dashboard','/client-proposals-dashboard','/people-matrix'].find((path) => { const flag = {'/finix-dashboard':'can_access_finix','/compliance-dashboard':'can_access_compliance','/records-dashboard':'can_access_records','/client-proposals-dashboard':'can_access_proposals','/people-matrix':'can_access_people_matrix'}[path]; return user?.permissions?.[flag] === true; }) || null)); if (!destination || destination === '/login') return <NoModuleAccess />; return <Navigate to={destination} replace />; }
-function ProtectedLayout() { const { user, loading } = useAuth(); const location = useLocation(); if (loading) return <AuthLoading />; if (!user) return <Navigate to="/login" replace />; return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><Suspense fallback={<div className="w-full min-h-[42vh]"><GifLoader /></div>}><RouteAnimatedOutlet /></Suspense></RouteErrorBoundary></DashboardLayout>; }
-function PublicOnly({ children }) { const { user, loading, isPlatformOwner } = useAuth(); if (loading) return <AuthLoading />; if (user) { const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixLanding(user) || (isCommercialTenant(user) ? firstAccessiblePath(user) : '/dashboard'); if (destination === '/login') return <NoModuleAccess />; return <Navigate to={destination} replace />; } return children; }
+
+function peopleMatrixLanding(user) {
+  const canSeePeopleMatrix = Boolean(
+    user?.permissions?.can_access_people_matrix ||
+    user?.permissions?.can_view_people_matrix_dashboard ||
+    user?.licensed_modules?.some?.((m) => ['peoplematrix', 'people_matrix', 'hrms'].includes(String(m).toLowerCase().replace(/[-\s]/g, '_')))
+  );
+  return canSeePeopleMatrix ? '/people-matrix' : null;
+}
+
+/** Taskosphere is the first module anyone entitled to it lands on, ahead of People Matrix and the rest. */
+function taskosphereLanding(user, isPlatformOwner) {
+  if (!user) return null;
+  if (isPlatformOwner) return '/dashboard';
+  if (user?.role?.toLowerCase() === 'admin' && !user?.company_id) return '/dashboard';
+  if (user?.permissions?.can_access_taskosphere === true) return '/dashboard';
+  if (isCommercialTenant(user) && hasModuleAccess(user, 'taskosphere')) {
+    const path = firstAccessiblePath(user, 'taskosphere');
+    return path && path !== '/login' ? path : null;
+  }
+  return null;
+}
+
+function LicensedDashboardHome() {
+  const { user, loading, isPlatformOwner, hasPermission } = useAuth();
+  if (loading) return <AuthLoading />;
+  const isInternalAdmin = user?.role?.toLowerCase() === 'admin' && !user?.company_id;
+  const canAccessTaskosphere = Boolean(isPlatformOwner) || Boolean(hasPermission?.('can_access_taskosphere')) || user?.permissions?.can_access_taskosphere === true;
+  if (isInternalAdmin || canAccessTaskosphere) return <Dashboard />;
+
+  const peopleMatrixPath = peopleMatrixLanding(user);
+  const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixPath || (isCommercialTenant(user)
+    ? firstAccessiblePath(user)
+    : (['/finix-dashboard', '/compliance-dashboard', '/records-dashboard', '/client-proposals-dashboard', '/people-matrix'].find((path) => {
+      const flag = {
+        '/finix-dashboard': 'can_access_finix',
+        '/compliance-dashboard': 'can_access_compliance',
+        '/records-dashboard': 'can_access_records',
+        '/client-proposals-dashboard': 'can_access_proposals',
+        '/people-matrix': 'can_access_people_matrix',
+      }[path];
+      return user?.permissions?.[flag] === true;
+    }) || null));
+
+  if (!destination || destination === '/login') return <NoModuleAccess />;
+  return <Navigate to={destination} replace />;
+}
+
+function ProtectedLayout() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <AuthLoading />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <DashboardLayout><RouteErrorBoundary resetKey={location.pathname}><Suspense fallback={<div className="w-full min-h-[42vh]"><GifLoader /></div>}><RouteAnimatedOutlet /></Suspense></RouteErrorBoundary></DashboardLayout>;
+}
+
+function PublicOnly({ children }) {
+  const { user, loading, isPlatformOwner } = useAuth();
+  if (loading) return <AuthLoading />;
+  if (user) {
+    const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixLanding(user) || (isCommercialTenant(user) ? firstAccessiblePath(user) : '/dashboard');
+    if (destination === '/login') return <NoModuleAccess />;
+    return <Navigate to={destination} replace />;
+  }
+  return children;
+}
+
 function AdminOnly({ children }) { const { user } = useAuth(); if (user?.role?.toLowerCase() !== 'admin') return <Navigate to="/dashboard" replace />; return children; }
-function SettingsAdminGate({ children }) { const { user, loading, isPlatformOwner } = useAuth(); if (loading) return <AuthLoading />; if (!user) return <Navigate to="/login" replace />; const role = String(user?.role?.value || user?.role?.name || user?.role || '').trim().toLowerCase().replace(/[-\s]+/g, '_'); const isAdmin = ['admin','licensee_admin','tenant_admin'].includes(role) || role.endsWith('.admin') || String(user?.identity_type || '').trim().toLowerCase() === 'licensee_admin'; if (isPlatformOwner || isAdmin) return children; return <Navigate to="/dashboard" replace />; }
+function SettingsAdminGate({ children }) { const { user, loading, isPlatformOwner } = useAuth(); if (loading) return <AuthLoading />; if (!user) return <Navigate to="/login" replace />; const role = String(user?.role?.value || user?.role?.name || user?.role || '').trim().toLowerCase().replace(/[-\s]+/g, '_'); const isAdmin = ['admin', 'licensee_admin', 'tenant_admin'].includes(role) || role.endsWith('.admin') || String(user?.identity_type || '').trim().toLowerCase() === 'licensee_admin'; if (isPlatformOwner || isAdmin) return children; return <Navigate to="/dashboard" replace />; }
 function LinkedAdminPageGate({ module, page, children }) { const { user, isPlatformOwner } = useAuth(); if (!user) return <Navigate to="/login" replace />; if (isPlatformOwner || !isCommercialTenant(user)) return children; if (!hasModuleAccess(user, module) || !hasEffectivePermission(user, page)) return <Navigate to={firstAccessiblePath(user)} replace />; return children; }
 function BackupPermission({ children }) { const { user } = useAuth(); const isAdmin = user?.role?.toLowerCase() === 'admin'; if (isAdmin || user?.permissions?.can_view_backup_restore === true) return children; return <Navigate to="/dashboard" replace />; }
 function PlatformOwnerOnly({ children }) { const { loading, isPlatformOwner } = useAuth(); if (loading) return <AuthLoading />; if (!isPlatformOwner) return <Navigate to="/dashboard" replace />; return children; }
@@ -108,6 +167,5 @@ export default function AppRoutes() { return <Suspense fallback={<AuthLoading />
 <Route path="/client-proposals-dashboard" element={<ModuleGate module="proposals"><ClientProposalsDashboard /></ModuleGate>} /><Route path="/leads" element={<ModuleGate module="proposals"><LeadsPage /></ModuleGate>} /><Route path="/quotations" element={<ModuleGate module="proposals"><Quotations /></ModuleGate>} />
 <Route path="/finix-dashboard" element={<ModuleGate module="finix"><FinixDashboard /></ModuleGate>} /><Route path="/finix-ai-workspace" element={<Navigate to="/finix-dashboard" replace />} /><Route path="/invoicing" element={<ModuleGate module="finix"><Invoicing /></ModuleGate>} /><Route path="/purchase" element={<ModuleGate module="finix"><Purchase /></ModuleGate>} /><Route path="/bank-accounts" element={<ModuleGate module="finix"><BankAccounts /></ModuleGate>} /><Route path="/chart-of-accounts" element={<ModuleGate module="finix"><ChartOfAccounts /></ModuleGate>} /><Route path="/journal-entries" element={<ModuleGate module="finix"><JournalEntries /></ModuleGate>} /><Route path="/accounting-reports" element={<ModuleGate module="finix"><AccountingReports /></ModuleGate>} /><Route path="/accounting-books" element={<ModuleGate module="finix"><AccountingBooks/></ModuleGate>} /><Route path="/zero-touch-entry" element={<Navigate to="/purchase" replace />} /><Route path="/gst-portal-sync" element={<ModuleGate module="finix"><GSTPortalSync /></ModuleGate>} /><Route path="/accounting-integrity" element={<ModuleGate module="finix"><AccountingIntegrity /></ModuleGate>} /><Route path="/day-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/cash-bank-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/cash-flow" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/outstanding-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/bank-reconciliation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/depreciation" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/tds-tcs" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/financial-ratios" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/comparative-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/yearly-report" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/opening-balances" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/accounting-audit-trail" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/bulk-import" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} /><Route path="/due-dates" element={<ModuleGate module="finix"><DueDates /></ModuleGate>} /><Route path="/import-invoices" element={<ModuleGate module="finix"><ImportInvoices /></ModuleGate>} />
 <Route path="/people-matrix" element={<ModuleGate module="peopleMatrix"><PeopleMatrixDashboard /></ModuleGate>} /><Route path="/reports" element={<AdminOnly><LinkedAdminPageGate module="taskosphere" page="can_view_reports"><Reports /></LinkedAdminPageGate></AdminOnly>} /><Route path="/task-audit" element={<AdminOnly><LinkedAdminPageGate module="taskosphere" page="can_view_audit_logs"><TaskAudit /></LinkedAdminPageGate></AdminOnly>} /><Route path="/users" element={<AdminOnly><PeopleMatrixPageFrame page="users"><Users /></PeopleMatrixPageFrame></AdminOnly>} /><Route path="/staff-activity" element={<AdminOnly><LinkedAdminPageGate module="taskosphere" page="can_view_staff_activity"><StaffActivity /></LinkedAdminPageGate></AdminOnly>} /><Route path="/whatsapp-hub" element={<AdminOnly><LinkedAdminPageGate module="records" page="can_access_whatsapp_hub"><WhatsAppHub /></LinkedAdminPageGate></AdminOnly>} /><Route path="/leave" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_leave"><PeopleMatrixPageFrame page="leave"><Leave /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} /><Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><PeopleMatrixPageFrame page="payroll"><Payroll /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} /><Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><PeopleMatrixPageFrame page="hr"><HR /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} /><Route path="/recruitment" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_recruitment"><Recruitment /></PageGuard></ModuleGate>} /><Route path="/client-discussion" element={<ModuleGate module="proposals"><PageGuard module="proposals" page="can_view_client_discussion"><ClientDiscussion /></PageGuard></ModuleGate>} />
-<Route path="/engagex" element={<EngageXDashboard />} /><Route path="/engagex/whatsapp" element={<EngageXWhatsAppHub />} /><Route path="/engagex/mailmaster" element={<EngageXMailMaster />} />
 <Route path="/admin-dashboard" element={<AdminOnly><AdminDashboard /></AdminOnly>} /><Route path="/permission-matrix" element={<AdminOnly><PermissionMatrix /></AdminOnly>} /><Route path="/master-data" element={<AdminOnly><PageGuard module="admin" page="can_view_master_data"><MasterData /></PageGuard></AdminOnly>} /><Route path="/roles" element={<AdminOnly><PageGuard module="admin" page="can_view_roles"><Roles /></PageGuard></AdminOnly>} /><Route path="/contact-details" element={<AdminOnly><ContactDetails /></AdminOnly>} /><Route path="/master-console" element={<PlatformOwnerOnly><MasterConsole /></PlatformOwnerOnly>} /><Route path="/master-console/website" element={<PlatformOwnerOnly><WebsiteBuilder /></PlatformOwnerOnly>} /><Route path="/website-studio" element={<PlatformOwnerOnly><WebsiteBuilder /></PlatformOwnerOnly>} /><Route path="/website-builder" element={<PlatformOwnerOnly><WebsiteBuilder /></PlatformOwnerOnly>} /><Route path="/security/sessions" element={<SecuritySessions />} /><Route path="/settings" element={<Navigate to="/settings/general" replace />} /><Route path="/settings/general" element={<GeneralSettings />} /><Route path="/admin/backup-restore" element={<AdminOnly><BackupPermission><BackupRestore /></BackupPermission></AdminOnly>} /><Route path="/settings/backup" element={<Navigate to="/admin/backup-restore" replace />} /><Route path="/settings/email" element={<SettingsAdminGate><EmailSettings /></SettingsAdminGate>} /><Route path="/settings/whatsapp" element={<SettingsAdminGate><WhatsAppSettings /></SettingsAdminGate>} /><Route path="/settings/automation" element={<Navigate to="/settings/whatsapp" replace />} /><Route path="/automation/approvals" element={<AdminOnly><LinkedAdminPageGate module="records" page="can_view_automation_approvals"><PendingApprovals /></LinkedAdminPageGate></AdminOnly>} />
 </Route><Route path="*" element={<Navigate to="/" replace />} /></Routes></Suspense>}
