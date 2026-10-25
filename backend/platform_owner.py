@@ -51,6 +51,18 @@ def _install_owner_auth_compat() -> None:
     except Exception:
         pass
 
+    try:
+        # Tenant-admin control-plane permissions are independent of purchased
+        # operational pages. Install this lazily to avoid an authentication
+        # import cycle while ensuring the commercial admin receives the full
+        # Admin/Settings governance surface.
+        from backend import admin_control_plane_compat
+        admin_control_plane_compat.install()
+    except Exception:
+        # This compatibility layer must never prevent authentication. The
+        # underlying commercial permission guard remains fail-closed.
+        pass
+
 
 def is_platform_owner(user) -> bool:
     if not user:
