@@ -134,6 +134,8 @@ if (typeof window !== "undefined") {
 import "./lib/permissionRequestGuard.js";
 import "./lib/commercialStaffGuard.js";
 import "./lib/profileUpdateCompat.js";
+// OneNexa shell/module branding and EngageX module navigation.
+import "./module-branding.js";
 
 /**
  * Taskosphere - Main Entry Point
