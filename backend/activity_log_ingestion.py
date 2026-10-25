@@ -25,14 +25,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-
 async def _activity_current_user(request: Request):
-    """Use and diagnose the same final Request-aware authentication chain as other routes.
+    """Use the same final Request-aware authentication chain as other routes.
 
-    Resolve HTTPBearer inside this function so a missing/malformed Authorization
-    header is logged too. With Depends(security) in this signature, FastAPI can
-    reject the request before this function runs, leaving only an unexplained
-    Uvicorn 403 line. Authentication rules are unchanged.
+    HTTPBearer is resolved explicitly because this endpoint needs the Request for
+    diagnostics. ``get_current_user`` itself accepts the resolved credentials,
+    not the Request; passing both caused the production TypeError seen in Render.
     """
     authorization = str(request.headers.get("authorization") or "").strip()
     scheme, _, supplied_token = authorization.partition(" ")
@@ -45,7 +43,9 @@ async def _activity_current_user(request: Request):
     )
     try:
         credentials = await _dependencies.security(request)
-        user = await _dependencies.get_current_user(request, credentials)
+        # get_current_user(credentials=...) is the canonical dependency signature.
+        # Do not pass Request as a second positional argument.
+        user = await _dependencies.get_current_user(credentials)
     except HTTPException as exc:
         logger.warning(
             "Activity logger authentication rejected: status=%s detail=%s "
@@ -99,7 +99,6 @@ async def log_browser_activity(
     if raw_url:
         try:
             parts = urlsplit(raw_url)
-            # Query strings and fragments can contain session or customer data.
             safe_url = urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
         except Exception:
             safe_url = ""
@@ -122,12 +121,6 @@ async def log_browser_activity(
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # Authentication establishes this request-local context before the
-    # handler executes. Hierarchical identity fields can be dropped by legacy
-    # Pydantic User projections, so re-checking only the projected user may
-    # misclassify the same authenticated Platform Owner as a tenant. Either
-    # signal is sufficient here because this path only writes owner telemetry
-    # to its dedicated collection; it never grants access to operational data.
     owner_identity = is_platform_owner(current_user)
     owner_context = in_platform_owner_context()
     if owner_identity or owner_context:
@@ -137,8 +130,6 @@ async def log_browser_activity(
                 "after user projection (user_id=%s)",
                 actor_id,
             )
-        # Platform Owner telemetry is separate from licensee operational data.
-        # Never invent or borrow a licensee company_id to satisfy tenant guards.
         entry["identity_type"] = "platform_owner"
         try:
             await _raw_db.platform_activity_logs.insert_one(entry)
@@ -152,9 +143,6 @@ async def log_browser_activity(
 
     company_id = str(getattr(current_user, "company_id", "") or "").strip()
     if not company_id:
-        # Some legacy SaaS-session identities have a license/customer link but
-        # lack company_id on the session user. Resolve only a unique company
-        # linked explicitly to that identity; never infer from another tenant.
         try:
             resolved_company_id = await _resolve_licensed_company_id(current_user)
             company_id = str(resolved_company_id or "").strip()
