@@ -2,15 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="/onenexa-logo.svg" />
+    <link rel="alternate icon" href="/onenexa-logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="An all-in-one compliance, accounting, and task management platform with dynamic license-gated module navigation." />
-    <meta property="og:title" content="Taskosphere" />
-    <meta property="og:description" content="An all-in-one compliance, accounting, and task management platform with dynamic license-gated module navigation." />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="OneNexa — an all-in-one suite for compliance, accounting, tasks, client management, sales and people operations." />
+    <meta property="og:title" content="OneNexa" />
+    <meta property="og:description" content="OneNexa — an all-in-one suite for compliance, accounting, tasks, client management, sales and people operations." />
     <link rel="stylesheet" href="/suite-top-card.css" />
     <style id="task-management-header-ui">
-      /* Scoped to the Tasks route only. Structural selectors avoid Tailwind-colon escaping. */
       html.task-management-route h1[data-task-header-title="true"] {
         white-space: nowrap !important;
         overflow: visible !important;
@@ -30,9 +30,7 @@
         justify-content: center !important;
         white-space: nowrap !important;
       }
-      html.task-management-route [data-task-header-actions="true"] > .task-header-divider {
-        display: none !important;
-      }
+      html.task-management-route [data-task-header-actions="true"] > .task-header-divider,
       html.task-management-route [data-task-header-actions="true"] > .task-header-notification {
         display: none !important;
       }
@@ -57,7 +55,7 @@
         }
       }
     </style>
-    <title>Taskosphere</title>
+    <title>OneNexa</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -171,20 +169,6 @@
     </script>
     <script>
       (() => {
-        /* The reference design changes only the top card. Mark the existing
-           first dashboard card rather than replacing any dashboard markup.
-
-           FIX (2026-09-16): '/dashboard' (Taskosphere) used to map to
-           'taskosphere' here, which asynchronously (via MutationObserver +
-           setTimeout) added the .suite-top-hero class and forced the hero
-           into suite-top-card.css's white-background/navy-text look — on
-           top of the hero's own inline blue gradient + white text. Because
-           this ran a tick after first paint, the hero visibly flashed from
-           blue to white on every load, and the forced navy text fought
-           with taskosphere-header-colors.css over the same element.
-           Taskosphere's hero keeps its own deliberate blue design, so it
-           is no longer included here. Finix and People Matrix are
-           unaffected and keep the light-card treatment as before. */
         let scheduled = false;
         const moduleForPath = () => {
           const path = location.pathname;
@@ -218,8 +202,6 @@
     </script>
     <script>
       (() => {
-        /* People Matrix greeting follows the user's current local time and
-           refreshes automatically without changing the rest of the card. */
         let scheduled = false;
         const greeting = () => {
           const hour = new Date().getHours();
