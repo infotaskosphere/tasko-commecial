@@ -18,10 +18,7 @@ const MODULE_BRANDING = {
 
 const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">'
   + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D3B66"/><stop offset=".55" stop-color="#1F6FB2"/><stop offset="1" stop-color="#1FAF5A"/></linearGradient></defs>'
-  + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/>'
-  + '<path d="M21 45c7-18 18-25 31-18 7 4 11 11 7 20-4 10-16 14-27 8" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"/>'
-  + '<path d="M25 29c6 9 15 12 28 8M27 56c7-7 15-11 28-10" fill="none" stroke="#1FAF5A" stroke-width="4" stroke-linecap="round"/>'
-  + '<circle cx="20" cy="45" r="4" fill="#1F6FB2"/><circle cx="52" cy="27" r="4" fill="#1FAF5A"/><circle cx="58" cy="48" r="4" fill="#0D3B66"/></g>'
+  + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/><path d="M21 45c7-18 18-25 31-18 7 4 11 11 7 20-4 10-16 14-27 8" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"/><path d="M25 29c6 9 15 12 28 8M27 56c7-7 15-11 28-10" fill="none" stroke="#1FAF5A" stroke-width="4" stroke-linecap="round"/><circle cx="20" cy="45" r="4" fill="#1F6FB2"/><circle cx="52" cy="27" r="4" fill="#1FAF5A"/><circle cx="58" cy="48" r="4" fill="#0D3B66"/></g>'
   + '<text x="96" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#0D3B66">AI</text>'
   + '<text x="145" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#1FAF5A">Weave</text></svg>';
 const INLINE_FALLBACK_LOGOS = { aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG) };
@@ -73,6 +70,45 @@ const ensureEngageXTab = () => {
   bar.appendChild(anchor);
 };
 
+const ensureEngageXSidebar = (active) => {
+  const aside = document.querySelector('aside');
+  if (!aside) return;
+  const existing = aside.querySelector('[data-engagex-sidebar="true"]');
+  if (!active) {
+    existing?.remove();
+    aside.querySelectorAll('[data-engagex-hidden="true"]').forEach((node) => { node.style.display = ''; node.removeAttribute('data-engagex-hidden'); });
+    return;
+  }
+
+  const engagePaths = new Set(['/engagex', '/engagex/whatsapp', '/engagex/mailmaster']);
+  aside.querySelectorAll('a[href], button').forEach((node) => {
+    const href = node.getAttribute('href') || '';
+    const isEngage = href && Array.from(engagePaths).some((path) => href === path || href.startsWith(`${path}/`));
+    if (!isEngage && !node.closest('[data-engagex-sidebar="true"]') && !node.closest('[data-onenexa-shell]')) {
+      if (node.textContent.trim() && !node.textContent.includes('Collapse Sidebar')) {
+        node.style.display = 'none';
+        node.setAttribute('data-engagex-hidden', 'true');
+      }
+    }
+  });
+
+  if (existing) return;
+  const block = document.createElement('div');
+  block.dataset.engagexSidebar = 'true';
+  block.className = 'space-y-1 px-2 py-3';
+  block.innerHTML = `
+    <div class="mb-2 flex items-center gap-2 rounded-lg bg-slate-800/40 px-3 py-2 text-xs font-bold uppercase tracking-wider text-cyan-200">
+      <img src="/engagex/engagex-icon.svg" alt="" style="width:22px;height:22px;object-fit:contain" />
+      <span>EngageX</span>
+    </div>
+    <a href="/engagex" class="flex items-center gap-3 rounded-lg bg-slate-800 px-3 py-3 text-sm font-semibold text-white hover:bg-slate-700"><span>◈</span><span>Dashboard</span></a>
+    <a href="/engagex/whatsapp" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800"><span>◉</span><span>WhatsApp Hub</span></a>
+    <a href="/engagex/mailmaster" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800"><span>✉</span><span>MailMaster</span></a>
+  `;
+  const collapse = Array.from(aside.querySelectorAll('*')).find((node) => node.textContent?.trim() === 'Collapse Sidebar');
+  (collapse?.parentElement || aside).prepend(block);
+};
+
 const renameNavigation = () => {
   setTabLabel('#nav-tab-core', 'Taskosphere');
   setTabLabel('#nav-tab-accounts', 'Finix');
@@ -93,6 +129,7 @@ const syncModuleBranding = () => {
   renameNavigation();
   const moduleId = getActiveModuleId();
   const branding = MODULE_BRANDING[moduleId] || FALLBACK;
+  ensureEngageXSidebar(moduleId === 'engagex');
   if (branding.wordmark) { lastModuleId = moduleId; return; }
   const header = document.querySelector('header.fixed');
   if (!header) return;
@@ -137,11 +174,7 @@ const syncModuleBranding = () => {
     }
   }
 
-  if (moduleId === 'engagex') {
-    renameSidebarText('EngageX Dashboard', 'EngageX Dashboard');
-    renameSidebarDivider('EngageX', 'EngageX');
-    document.title = 'EngageX · OneNexa';
-  }
+  if (moduleId === 'engagex') document.title = 'EngageX · OneNexa';
   if (moduleId === 'proposals') { renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard'); renameSidebarDivider('Client Proposals', 'LeadSense'); document.title = 'LeadSense Dashboard · OneNexa'; }
   if (moduleId === 'records') { renameSidebarText('Records Dashboard', 'ClientSync Dashboard'); renameSidebarDivider('Records', 'ClientSync'); document.title = 'ClientSync · OneNexa'; }
   if (moduleId === 'compliance') { renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard'); renameSidebarDivider('Compliance', 'CompliGenie'); document.title = 'CompliGenie Dashboard · OneNexa'; }
