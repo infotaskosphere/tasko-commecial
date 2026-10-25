@@ -98,6 +98,16 @@ MODULE_HIERARCHY = {
             {"flag": "can_view_performance", "label": "Performance", "actions": ["view", "create", "edit", "export"]},
         ],
     },
+    "engagex": {
+        "flag": "can_access_engagex",
+        "label": "EngageX",
+        "description": "EngageX Dashboard, WhatsApp Hub and MailMaster for tenant-scoped marketing communications.",
+        "pages": [
+            {"flag": "can_view_engagex_dashboard", "label": "EngageX Dashboard", "actions": ["view"]},
+            {"flag": "can_view_engagex_whatsapp", "label": "WhatsApp Hub", "actions": ["view", "create", "edit"]},
+            {"flag": "can_view_engagex_mailmaster", "label": "MailMaster", "actions": ["view", "create", "edit"]},
+        ],
+    },
     "admin": {
         "flag": "can_access_admin",
         "label": "Admin",
@@ -121,69 +131,19 @@ MODULE_HIERARCHY = {
 # Existing licenses store some old combined dashboard/page flags and
 # non-sidebar feature flags. Convert selections forward without revoking access.
 LEGACY_PAGE_SELECTION_ALIASES = {
-    "taskosphere": {
-        "can_reset_client_passwords": ["can_view_client_portal"],
-    },
-    "finix": {
-        "can_view_accounting_reports": ["can_view_finix_dashboard"],
-        "can_view_depreciation": ["can_view_extended_accounts_reports"],
-        "can_view_tds_tcs": ["can_view_extended_accounts_reports"],
-        "can_view_financial_ratios": ["can_view_extended_accounts_reports"],
-        "can_view_comparative_report": ["can_view_extended_accounts_reports"],
-        "can_view_yearly_report": ["can_view_extended_accounts_reports"],
-        "can_view_opening_balances": ["can_view_extended_accounts_reports"],
-        "can_view_accounting_audit_trail": ["can_view_extended_accounts_reports"],
-        "can_view_bulk_import": ["can_view_extended_accounts_reports"],
-        "can_view_due_dates": ["can_view_extended_accounts_reports"],
-        "can_view_import_invoices": ["can_view_sale"],
-        "can_manage_chart_of_accounts": ["can_view_chart_of_accounts"],
-        "can_post_journal_entries": ["can_view_journal_entries"],
-        "can_match_bank": ["can_view_bank"],
-        "can_view_finix_ai": ["can_view_finix_dashboard"],
-    },
-    "compliance": {
-        "can_view_compliance": ["can_view_compliance_dashboard"],
-        "can_manage_compliance": ["can_view_compliance"],
-        "can_manage_mis_report": ["can_view_mis_report"],
-        "can_manage_salary_slips": ["can_view_salary_slips"],
-        "can_manage_roc_sphere": ["can_view_roc_sphere"],
-    },
-    "records": {
-        "can_view_documents": ["can_view_records_dashboard"],
-        "can_view_all_clients": ["can_view_clients_page"],
-        "can_view_clients": ["can_view_clients_page"],
-        "can_approve_clients": ["can_view_client_approvals"],
-        "can_edit_clients": ["can_view_all_clients"],
-        "can_edit_passwords": ["can_view_passwords"],
-        "can_access_whatsapp_hub": ["can_view_records_dashboard"],
-        "can_view_automation_approvals": ["can_view_records_dashboard"],
-        "can_approve_whatsapp_wishes": ["can_view_records_dashboard"],
-        "can_approve_email_wishes": ["can_view_records_dashboard"],
-    },
-    "proposals": {
-        "can_view_all_leads": ["can_view_proposals_dashboard"],
-        "can_create_quotations": ["can_view_quotations"],
-        "can_manage_client_discussion": ["can_view_client_discussion"],
-    },
-    "people_matrix": {
-        "can_view_people_matrix": ["can_view_people_matrix_dashboard"],
-        "can_view_user_page": ["can_view_people_matrix_dashboard"],
-        "can_manage_leave": ["can_view_leave"],
-        "can_manage_payroll": ["can_view_payroll"],
-        "can_manage_hr": ["can_view_hr"],
-        "can_manage_recruitment": ["can_view_recruitment"],
-        "can_view_performance": ["can_view_people_matrix_dashboard"],
-        "can_manage_performance": ["can_view_people_matrix_dashboard"],
-    },
+    "taskosphere": {"can_reset_client_passwords": ["can_view_client_portal"]},
+    "finix": {"can_view_accounting_reports": ["can_view_finix_dashboard"], "can_view_depreciation": ["can_view_extended_accounts_reports"], "can_view_tds_tcs": ["can_view_extended_accounts_reports"], "can_view_financial_ratios": ["can_view_extended_accounts_reports"], "can_view_comparative_report": ["can_view_extended_accounts_reports"], "can_view_yearly_report": ["can_view_extended_accounts_reports"], "can_view_opening_balances": ["can_view_extended_accounts_reports"], "can_view_accounting_audit_trail": ["can_view_extended_accounts_reports"], "can_view_bulk_import": ["can_view_extended_accounts_reports"], "can_view_due_dates": ["can_view_extended_accounts_reports"], "can_view_import_invoices": ["can_view_sale"], "can_manage_chart_of_accounts": ["can_view_chart_of_accounts"], "can_post_journal_entries": ["can_view_journal_entries"], "can_match_bank": ["can_view_bank"], "can_view_finix_ai": ["can_view_finix_dashboard"]},
+    "compliance": {"can_view_compliance": ["can_view_compliance_dashboard"], "can_manage_compliance": ["can_view_compliance"], "can_manage_mis_report": ["can_view_mis_report"], "can_manage_salary_slips": ["can_view_salary_slips"], "can_manage_roc_sphere": ["can_view_roc_sphere"]},
+    "records": {"can_view_documents": ["can_view_records_dashboard"], "can_view_all_clients": ["can_view_clients_page"], "can_view_clients": ["can_view_clients_page"], "can_approve_clients": ["can_view_client_approvals"], "can_edit_clients": ["can_view_all_clients"], "can_edit_passwords": ["can_view_passwords"], "can_access_whatsapp_hub": ["can_view_records_dashboard"], "can_view_automation_approvals": ["can_view_records_dashboard"], "can_approve_whatsapp_wishes": ["can_view_records_dashboard"], "can_approve_email_wishes": ["can_view_records_dashboard"]},
+    "proposals": {"can_view_all_leads": ["can_view_proposals_dashboard"], "can_create_quotations": ["can_view_quotations"], "can_manage_client_discussion": ["can_view_client_discussion"]},
+    "people_matrix": {"can_view_people_matrix": ["can_view_people_matrix_dashboard"], "can_view_user_page": ["can_view_people_matrix_dashboard"], "can_manage_leave": ["can_view_leave"], "can_manage_payroll": ["can_view_payroll"], "can_manage_hr": ["can_view_hr"], "can_manage_recruitment": ["can_view_recruitment"], "can_view_performance": ["can_view_people_matrix_dashboard"], "can_manage_performance": ["can_view_people_matrix_dashboard"]},
 }
 
-# Legacy flags still checked by older endpoints, but no longer independent
-# Commercial Console selections. Existing selected_features may retain them.
 LEGACY_HIDDEN_LICENSE_FLAGS = {
     "taskosphere": {"can_reset_client_passwords", "can_view_staff_activity", "can_view_reports", "can_download_reports", "can_view_audit_logs"},
     "finix": {"can_manage_chart_of_accounts", "can_post_journal_entries", "can_match_bank", "can_view_depreciation", "can_view_tds_tcs", "can_view_financial_ratios", "can_view_comparative_report", "can_view_yearly_report", "can_view_opening_balances", "can_view_accounting_audit_trail", "can_view_bulk_import", "can_view_due_dates", "can_view_import_invoices", "can_view_finix_ai"},
     "compliance": {"can_manage_compliance", "can_manage_mis_report", "can_manage_salary_slips", "can_manage_roc_sphere"},
     "records": {"can_view_clients", "can_edit_clients", "can_approve_clients", "can_edit_passwords", "can_access_whatsapp_hub", "can_view_automation_approvals", "can_approve_whatsapp_wishes", "can_approve_email_wishes"},
     "proposals": {"can_create_quotations", "can_manage_client_discussion"},
-    "people_matrix": {"can_view_people_matrix", "can_view_user_page", "can_manage_leave", "can_manage_payroll", "can_manage_hr", "can_manage_recruitment", "can_view_performance", "can_manage_performance"},
+    "people_matrix": {"can_view_people_matrix", "can_manage_leave", "can_manage_payroll", "can_manage_hr", "can_manage_recruitment", "can_view_performance", "can_manage_performance"},
 }
