@@ -1,7 +1,7 @@
 """Compatibility bootstrap for commercial deployments.
 
 Normalize admin role values and preserve the commercial identity fields that
-older Pydantic User models do not declare.  Those fields are required by the
+older Pydantic User models do not declare. Those fields are required by the
 license/customer resolvers to recover the company for a licensee account even
 when a legacy user document has no company_id yet.
 """
@@ -17,6 +17,7 @@ _MODULE_FLAGS = (
     "can_access_proposals",
     "can_access_people_matrix",
     "can_access_aiweave",
+    "can_access_engagex",
 )
 _COMMERCIAL_IDENTITY_FIELDS = (
     "commercial_customer_id",
@@ -42,9 +43,6 @@ def _normalized_user_init(self, **data):
             stored = {}
 
         canonical = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
-        # A commercial admin is identified by company_id or a commercial
-        # identity field. Preserve the module flags so the live license
-        # entitlement layer can cap them on every authenticated request.
         is_commercial_admin = bool(data.get("company_id")) or any(
             data.get(field) not in (None, "", [], {}) for field in _COMMERCIAL_IDENTITY_FIELDS
         )
@@ -52,12 +50,8 @@ def _normalized_user_init(self, **data):
             for flag in _MODULE_FLAGS:
                 if flag in stored:
                     canonical[flag] = bool(stored[flag])
-
         data["permissions"] = canonical
 
-    # Pydantic's User model intentionally ignores unknown legacy/commercial
-    # fields. Keep a runtime copy on the model instance so the authentication
-    # and tenant resolvers can use them without changing the public User schema.
     identity = {field: data.get(field) for field in _COMMERCIAL_IDENTITY_FIELDS}
     _original_user_init(self, **data)
     for field, value in identity.items():

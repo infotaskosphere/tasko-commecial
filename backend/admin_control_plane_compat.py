@@ -35,8 +35,6 @@ def _restore_control_plane_permissions(permission_map):
     result = dict(permission_map or {})
     defaults = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}) or {})
     for flag in CONTROL_PLANE_FLAGS:
-        # Preserve the established admin template value when present; otherwise
-        # the control-plane flag is intentionally available to a tenant admin.
         result[flag] = bool(defaults.get(flag, True))
     return result
 
@@ -61,7 +59,5 @@ def install():
     get_all_admin_permissions_with_control_plane._original = original
 
     commercial_licensee_admin.get_all_admin_permissions = get_all_admin_permissions_with_control_plane
-    # commercial_module_guard imported this symbol directly, so update that
-    # module's bound reference as well.
     commercial_module_guard.get_all_admin_permissions = get_all_admin_permissions_with_control_plane
     _installed = True

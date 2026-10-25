@@ -1,227 +1,70 @@
-/*
- * Shared module branding for the commercial shell.
- * Keeps module identity in one place without coupling dashboard pages to the
- * global header. Navigation remains the source of truth for active module.
- *
- * IMPORTANT: Product labels are intentionally kept here as a single runtime
- * compatibility layer. Internal route names, permission identifiers and API
- * names remain unchanged so existing integrations are not disturbed.
- */
+/* OneNexa shell branding + active module identity. */
 const MODULE_BRANDING = {
-  core: { label: 'Taskosphere', landingPath: '/dashboard', lightLogo: '/logo-lite.png', darkLogo: '/logo-dark.png', collapsedLogo: '/icon-192.png', alt: 'Task-O-Sphere' },
-  accounts: { label: 'Finix', landingPath: '/finix-dashboard', lightLogo: '/finix-logo.png', darkLogo: '/finix-logo.png', collapsedLogo: '/finix-icon.png', alt: 'Finix AI Accounting' },
-  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard', lightLogo: '/compligenie-logo.png', darkLogo: '/compligenie-logo.png', collapsedLogo: '/compligenie-icon.svg', alt: 'CompliGenie' },
-  proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard', lightLogo: '/leadsense-logo.png', darkLogo: '/leadsense-logo.png', collapsedLogo: '/leadsense-logo.png', alt: 'LeadSense' },
-  'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix', lightLogo: '/people-matrix-logo.png', darkLogo: '/people-matrix-logo.png', collapsedLogo: '/people-matrix-logo.png', alt: 'People Matrix' },
-  aiweave: { label: 'AIWeave', landingPath: '/aiweave', lightLogo: '/aiweave-logo-lite.png', darkLogo: '/aiweave-logo-dark.png', collapsedLogo: '/aiweave-icon.png', alt: 'AIWeave' },
-  records: { label: 'ClientSync', landingPath: '/records-dashboard', lightLogo: '/clientsync-logo-light.png', darkLogo: '/clientsync-logo-dark.png', collapsedLogo: '/clientsync-icon-light.png', collapsedLogoDark: '/clientsync-icon-dark.png', alt: 'ClientSync' },
-  admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true, alt: 'Admin' },
-  settings: { label: 'Settings', landingPath: '/settings/general', wordmark: true, alt: 'Settings' },
+  core: { label: 'Taskosphere', landingPath: '/dashboard' },
+  accounts: { label: 'Finix', landingPath: '/finix-dashboard' },
+  compliance: { label: 'CompliGenie', landingPath: '/compliance-dashboard' },
+  proposals: { label: 'LeadSense', landingPath: '/client-proposals-dashboard' },
+  'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix' },
+  aiweave: { label: 'AIWeave', landingPath: '/aiweave' },
+  records: { label: 'ClientSync', landingPath: '/records-dashboard' },
+  engagex: { label: 'EngageX', landingPath: '/engagex', lightLogo: '/engagex/engagex-logo.svg', darkLogo: '/engagex/engagex-logo-dark.svg', collapsedLogo: '/engagex/engagex-icon.svg' },
+  admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true },
+  settings: { label: 'Settings', landingPath: '/settings/general', wordmark: true },
 };
-
-/* OneNexa is the suite/application brand. Module names remain visible in the
- * navigation and header, but the global shell logo must never change to a
- * module-specific logo. */
-const ONE_NEXA_BRAND = {
-  label: 'OneNexa',
-  landingPath: '/dashboard',
-  lightLogo: '/onenexa-logo.svg',
-  darkLogo: '/onenexa-logo.svg',
-  collapsedLogo: '/onenexa-icon.svg',
-  alt: 'OneNexa',
-};
-
-const AIWEAVE_INLINE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="96" viewBox="0 0 420 96">'
-  + '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0D3B66"/><stop offset=".55" stop-color="#1F6FB2"/><stop offset="1" stop-color="#1FAF5A"/></linearGradient></defs>'
-  + '<g transform="translate(8 8)"><circle cx="40" cy="40" r="34" fill="#fff" stroke="url(#g)" stroke-width="5"/>'
-  + '<path d="M21 45c7-18 18-25 31-18 7 4 11 11 7 20-4 10-16 14-27 8" fill="none" stroke="url(#g)" stroke-width="5" stroke-linecap="round"/>'
-  + '<path d="M25 29c6 9 15 12 28 8M27 56c7-7 15-11 28-10" fill="none" stroke="#1FAF5A" stroke-width="4" stroke-linecap="round"/>'
-  + '<circle cx="20" cy="45" r="4" fill="#1F6FB2"/><circle cx="52" cy="27" r="4" fill="#1FAF5A"/><circle cx="58" cy="48" r="4" fill="#0D3B66"/></g>'
-  + '<text x="96" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#0D3B66">AI</text>'
-  + '<text x="145" y="61" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="42" font-weight="700" fill="#1FAF5A">Weave</text></svg>';
-const INLINE_FALLBACK_LOGOS = {
-  aiweave: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(AIWEAVE_INLINE_SVG),
-};
-const failedLogos = new Set();
-
-const FALLBACK = MODULE_BRANDING.core;
+const ONE_NEXA = { label: 'OneNexa', landingPath: '/dashboard', lightLogo: '/onenexa-logo.svg', darkLogo: '/onenexa-logo.svg', collapsedLogo: '/onenexa-icon.svg' };
 let scheduled = false;
-let lastModuleId = '';
+let lastModule = '';
 
-const getRouteModuleId = () => {
-  const path = window.location.pathname || '';
-  if (
-    path === '/compliance-dashboard' || path === '/compliance' || path.startsWith('/compliance/') ||
-    path === '/gst-reconciliation' || path.startsWith('/gst-reconciliation/') ||
-    path === '/trademark-sphere' || path.startsWith('/trademark-sphere/') ||
-    path === '/roc-sphere' || path.startsWith('/roc-sphere/') ||
-    path === '/mis-report' || path.startsWith('/mis-report/') ||
-    path === '/salary-slips' || path.startsWith('/salary-slips/')
-  ) return 'compliance';
-  if (path === '/client-proposals-dashboard' || path.startsWith('/leads/') || path === '/leads' || path.startsWith('/quotations/') || path === '/quotations' || path.startsWith('/client-discussion/') || path === '/client-discussion') return 'proposals';
-  if (path === '/finix-dashboard' || path.startsWith('/invoicing') || path.startsWith('/purchase') || path.startsWith('/bank-accounts') || path.startsWith('/journal-entries') || path === '/chart-of-accounts' || path === '/zero-touch-entry' || path === '/accounting-reports' || path === '/accounting-books' || path === '/day-book') return 'accounts';
-  if (path === '/people-matrix' || path.startsWith('/users') || path.startsWith('/leave') || path.startsWith('/payroll') || path.startsWith('/hr') || path.startsWith('/recruitment')) return 'people-matrix';
-  if (path === '/aiweave' || path.startsWith('/aiweave/')) return 'aiweave';
-  if (path === '/records-dashboard' || path === '/dsc' || path === '/documents' || path === '/clients' || path === '/passwords' || path === '/client-approvals') return 'records';
-  if (path === '/admin-dashboard' || path.startsWith('/admin/')) return 'admin';
-  if (path === '/settings' || path.startsWith('/settings/')) return 'settings';
-  return null;
+const normalized = value => String(value || '').trim().toLowerCase().replace(/[-\s]/g, '_');
+const currentUser = () => { try { const raw = sessionStorage.getItem('user') || localStorage.getItem('user'); return raw ? JSON.parse(raw) : null; } catch { return null; } };
+const entitledToEngageX = () => { const user = currentUser(); const modules = [user?.licensed_modules, user?.modules, user?.company?.licensed_modules, user?.license?.modules].find(v => Array.isArray(v)) || []; return modules.some(m => normalized(m) === 'engagex') || user?.permissions?.can_access_engagex === true; };
+const routeModule = () => {
+  const p = window.location.pathname || '';
+  if (p === '/engagex' || p.startsWith('/engagex/')) return 'engagex';
+  if (/^\/(compliance-dashboard|compliance|gst-reconciliation|trademark-sphere|roc-sphere|mis-report|salary-slips)(\/|$)/.test(p)) return 'compliance';
+  if (/^\/(client-proposals-dashboard|leads|quotations|client-discussion)(\/|$)/.test(p)) return 'proposals';
+  if (/^\/(finix-dashboard|invoicing|purchase|bank-accounts|chart-of-accounts|journal-entries|accounting-reports|accounting-books|day-book|cash-bank-book|cash-flow|outstanding-report|bank-reconciliation|depreciation|tds-tcs|financial-ratios|comparative-report|yearly-report|opening-balances|accounting-audit-trail|bulk-import|due-dates|import-invoices)(\/|$)/.test(p)) return 'accounts';
+  if (/^\/(people-matrix|users|leave|payroll|hr|recruitment)(\/|$)/.test(p)) return 'people-matrix';
+  if (/^\/aiweave(\/|$)/.test(p)) return 'aiweave';
+  if (/^\/(records-dashboard|dsc|documents|clients|passwords|client-approvals)(\/|$)/.test(p)) return 'records';
+  if (/^\/admin-dashboard|^\/admin\//.test(p)) return 'admin';
+  if (/^\/settings(\/|$)/.test(p)) return 'settings';
+  return 'core';
 };
-
-const getActiveModuleId = () => {
-  const routeModuleId = getRouteModuleId();
-  if (routeModuleId) return routeModuleId;
-  const activeTab = document.querySelector('#top-module-switcher-bar [id^="nav-tab-"][data-active="true"], #top-module-switcher-bar [id^="nav-tab-"][aria-current="page"], #top-module-switcher-bar [id^="nav-tab-"].font-semibold');
-  const moduleId = (activeTab?.id || '').replace(/^nav-tab-/, '');
-  return MODULE_BRANDING[moduleId] ? moduleId : 'core';
+const setText = (selector, value) => { const node = document.querySelector(selector); if (node && node.textContent.trim() !== value) node.textContent = value; };
+const ensureEngageXTab = () => {
+  const bar = document.getElementById('top-module-switcher-bar');
+  if (!bar) return;
+  const existing = document.getElementById('nav-tab-engagex');
+  if (!entitledToEngageX()) { existing?.remove(); return; }
+  if (existing) return;
+  const a = document.createElement('a'); a.id = 'nav-tab-engagex'; a.href = '/engagex'; a.className = 'inline-flex items-center gap-2 px-3 py-2 text-sm font-medium whitespace-nowrap text-slate-600 hover:text-slate-900';
+  a.innerHTML = '<img src="/engagex/engagex-icon.svg" alt="" aria-hidden="true" style="width:18px;height:18px;object-fit:contain"><span>EngageX</span>';
+  bar.appendChild(a);
 };
-
-const setTabLabel = (id, label) => {
-  const tab = document.querySelector(id);
-  if (!tab) return;
-  const labelNode = tab.querySelector('span');
-  if (labelNode && labelNode.textContent !== label) labelNode.textContent = label;
-  tab.setAttribute('aria-label', label);
-  tab.setAttribute('title', label);
+const ensureEngageXSidebar = active => {
+  const aside = document.querySelector('aside'); if (!aside) return;
+  const old = aside.querySelector('[data-engagex-sidebar="true"]');
+  if (!active) { old?.remove(); aside.querySelectorAll('[data-engagex-hidden="true"]').forEach(n => { n.style.display=''; n.removeAttribute('data-engagex-hidden'); }); return; }
+  aside.querySelectorAll('a[href],button').forEach(n => { const h=n.getAttribute('href')||''; if (!h.startsWith('/engagex') && !n.closest('[data-engagex-sidebar="true"]') && !n.textContent.includes('Collapse Sidebar')) { n.style.display='none'; n.setAttribute('data-engagex-hidden','true'); } });
+  if (old) return;
+  const block=document.createElement('div'); block.dataset.engagexSidebar='true'; block.className='space-y-1 px-2 py-3';
+  block.innerHTML='<div class="mb-2 flex items-center gap-2 rounded-lg bg-slate-800/40 px-3 py-2 text-xs font-bold uppercase tracking-wider text-cyan-200"><img src="/engagex/engagex-icon.svg" alt="" style="width:22px;height:22px"><span>EngageX</span></div><a href="/engagex" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold text-white hover:bg-slate-800">◈<span>Dashboard</span></a><a href="/engagex/whatsapp" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800">◉<span>WhatsApp Hub</span></a><a href="/engagex/mailmaster" class="flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-slate-200 hover:bg-slate-800">✉<span>MailMaster</span></a>';
+  const collapse=Array.from(aside.querySelectorAll('*')).find(n=>n.textContent?.trim()==='Collapse Sidebar'); (collapse?.parentElement||aside).prepend(block);
 };
-
-const renameNavigation = () => {
-  setTabLabel('#nav-tab-core', 'Taskosphere');
-  setTabLabel('#nav-tab-accounts', 'Finix');
-  setTabLabel('#nav-tab-aiweave', 'AIWeave');
-  setTabLabel('#nav-tab-compliance', 'CompliGenie');
-  setTabLabel('#nav-tab-records', 'ClientSync');
-  setTabLabel('#nav-tab-proposals', 'LeadSense');
-  setTabLabel('#nav-tab-people-matrix', 'People Matrix');
+const sync = () => {
+  scheduled=false; ensureEngageXTab();
+  const moduleId=routeModule(); const module=MODULE_BRANDING[moduleId]||MODULE_BRANDING.core; ensureEngageXSidebar(moduleId==='engagex');
+  const header=document.querySelector('header.fixed'); if (!header) return;
+  const link=header.querySelector('a[href="/dashboard"]')||header.querySelector('a.relative.flex.items-center'); if (!link) return;
+  let img=link.querySelector('img[data-onenexa-shell-logo="true"]')||link.querySelector('img');
+  if (!img) { img=document.createElement('img'); img.dataset.onenexaShellLogo='true'; link.querySelectorAll(':scope > span').forEach(n=>n.style.display='none'); link.appendChild(img); }
+  const collapsed=Boolean(header.firstElementChild && header.firstElementChild.getBoundingClientRect().width<=100);
+  const src=collapsed?ONE_NEXA.collapsedLogo:ONE_NEXA.lightLogo; if(img.src!==new URL(src,location.origin).href) img.src=src; img.alt=ONE_NEXA.label; img.style.display='block'; img.style.objectFit='contain'; img.style.width=collapsed?'58px':'205px'; img.style.height=collapsed?'58px':'56px'; img.style.margin='0 auto'; img.style.filter=document.documentElement.classList.contains('dark')?'brightness(0) invert(1)':'none';
+  const title=header.querySelector('h1'); if(title){title.textContent=module.label; title.setAttribute('aria-label',module.label);}
+  document.title=`${module.label} · OneNexa`; lastModule=moduleId;
 };
-
-const renameSidebarText = (from, to) => {
-  document.querySelectorAll('aside a, aside button').forEach((node) => {
-    const text = node.querySelector('span:last-child') || node;
-    if (String(text.textContent || '').trim() === from) text.textContent = to;
-  });
-};
-
-const renameSidebarDivider = (from, to) => {
-  Array.from(document.querySelectorAll('aside')).flatMap((aside) => Array.from(aside.querySelectorAll('*'))).forEach((node) => {
-    if (String(node.textContent || '').trim() === from && node.children.length === 0) node.textContent = to;
-  });
-};
-
-const isDarkMode = () => document.documentElement.classList.contains('dark') || document.body.classList.contains('dark');
-
-const syncModuleBranding = () => {
-  scheduled = false;
-  renameNavigation();
-  const moduleId = getActiveModuleId();
-  const moduleBranding = MODULE_BRANDING[moduleId] || FALLBACK;
-  const branding = ONE_NEXA_BRAND;
-  const header = document.querySelector('header.fixed');
-  if (!header) return;
-
-  const logoLink = header.querySelector('a[href="/dashboard"]') || header.querySelector('a.relative.flex.items-center');
-  if (!logoLink) return;
-
-  const logoImages = Array.from(logoLink.querySelectorAll('img'));
-  let visibleLogo = logoImages.find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
-
-  // Admin/Settings originally render a text wordmark instead of an <img>.
-  // Convert that slot to the same OneNexa logo used by every other workspace.
-  if (!visibleLogo) {
-    visibleLogo = document.createElement('img');
-    visibleLogo.dataset.onenexaShellLogo = 'true';
-    logoLink.querySelectorAll(':scope > span').forEach((node) => { node.style.display = 'none'; });
-    logoLink.appendChild(visibleLogo);
-  }
-
-  const brandColumn = header.firstElementChild;
-  const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  const logoSrc = collapsed ? branding.collapsedLogo : branding.lightLogo;
-
-  if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
-  if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
-  if (visibleLogo.getAttribute('alt') !== branding.alt) visibleLogo.setAttribute('alt', branding.alt);
-  if (!visibleLogo.dataset.brandingFallbackBound) {
-    visibleLogo.dataset.brandingFallbackBound = 'true';
-    visibleLogo.addEventListener('error', () => {
-      const failed = visibleLogo.getAttribute('src');
-      if (!failed || failed.startsWith('data:') || failedLogos.has(failed)) return;
-      failedLogos.add(failed);
-      scheduleSync();
-    });
-  }
-  visibleLogo.setAttribute('aria-label', branding.alt);
-  visibleLogo.style.display = 'block';
-  visibleLogo.style.objectFit = 'contain';
-  visibleLogo.style.objectPosition = 'center center';
-  visibleLogo.style.flexShrink = '0';
-  visibleLogo.style.maxWidth = '100%';
-  visibleLogo.style.margin = '0 auto';
-  visibleLogo.style.transform = 'translateY(0)';
-  visibleLogo.style.width = collapsed ? '58px' : '205px';
-  visibleLogo.style.height = collapsed ? '58px' : '56px';
-  visibleLogo.style.background = 'transparent';
-  visibleLogo.style.borderRadius = '';
-  visibleLogo.style.padding = '0';
-  visibleLogo.style.filter = isDarkMode() ? 'brightness(0) invert(1)' : 'none';
-
-  const headerTitle = header.querySelector('h1');
-  if (headerTitle) {
-    const moduleLabel = moduleBranding?.label || 'Taskosphere';
-    if (headerTitle.textContent.trim() !== moduleLabel) headerTitle.textContent = moduleLabel;
-    headerTitle.setAttribute('aria-label', moduleLabel);
-
-    // The existing pill already contains the module label. Keep only its
-    // functional tagline so the header reads: OneNexa | Module | Tagline.
-    const modulePill = headerTitle.nextElementSibling;
-    if (modulePill?.querySelectorAll) {
-      const pillSpans = modulePill.querySelectorAll(':scope > span');
-      if (pillSpans.length >= 3) {
-        pillSpans[0].style.display = 'none';
-        pillSpans[1].style.display = 'none';
-      }
-    }
-  }
-
-  document.title = `${moduleBranding?.label || 'Taskosphere'} · OneNexa`;
-
-  if (moduleId === 'proposals') {
-    renameSidebarText('Client Proposals Dashboard', 'LeadSense Dashboard');
-    renameSidebarDivider('Client Proposals', 'LeadSense');
-  }
-
-  if (moduleId === 'records') {
-    renameSidebarText('Records Dashboard', 'ClientSync Dashboard');
-    renameSidebarDivider('Records', 'ClientSync');
-  }
-
-  if (moduleId === 'compliance') {
-    renameSidebarText('Compliance Dashboard', 'CompliGenie Dashboard');
-    renameSidebarDivider('Compliance', 'CompliGenie');
-  }
-
-  lastModuleId = moduleId;
-};
-
-const scheduleSync = () => {
-  if (scheduled) return;
-  scheduled = true;
-  window.setTimeout(syncModuleBranding, 0);
-};
-
-const observer = new MutationObserver(scheduleSync);
-const start = () => {
-  observer.observe(document.getElementById('root') || document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'src', 'href'] });
-  scheduleSync();
-};
-
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
-else start();
-
-window.addEventListener('popstate', scheduleSync);
-document.addEventListener('click', (event) => {
-  if (event.target?.closest?.('#top-module-switcher-bar button, header a[href], aside a, aside button')) scheduleSync();
-}, true);
-window.setInterval(() => {
-  if (lastModuleId !== getActiveModuleId()) scheduleSync();
-}, 2000);
+const schedule=()=>{if(scheduled)return;scheduled=true;window.setTimeout(sync,0);};
+const observer=new MutationObserver(schedule); const start=()=>{observer.observe(document.getElementById('root')||document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','href']});schedule();};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+window.addEventListener('popstate',schedule); document.addEventListener('click',e=>{if(e.target?.closest?.('#top-module-switcher-bar a,#top-module-switcher-bar button,header a[href],aside a,aside button'))schedule();},true); window.setInterval(()=>{if(lastModule!==routeModule())schedule();},2000);
