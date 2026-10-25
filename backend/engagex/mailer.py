@@ -46,8 +46,9 @@ class ResolvedSender:
     from_name: str
     from_email: str
     reply_to: Optional[str]
-    kind: str  # "platform" | "smtp"
+    kind: str  # "platform" | "smtp" | "google"
     smtp: dict = field(default_factory=dict)
+    oauth: dict = field(default_factory=dict)
 
 
 # ── HTML helpers ─────────────────────────────────────────────────────────────
@@ -138,6 +139,16 @@ async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedS
     doc = await raw_db()[SENDERS].find_one({"id": sender_id, "company_id": company_id, "deleted": {"$ne": True}})
     if not doc:
         raise HTTPException(status_code=404, detail="Email sender account not found.")
+    if doc.get("kind") == "google":
+        return ResolvedSender(
+            id=doc["id"],
+            label=doc.get("label") or doc.get("from_email"),
+            from_name=doc.get("from_name") or "",
+            from_email=doc.get("from_email") or "",
+            reply_to=normalize_email(doc.get("reply_to")) or None,
+            kind="google",
+            oauth={"refresh_token": decrypt_secret(doc.get("refresh_token_enc") or "")},
+        )
     return ResolvedSender(
         id=doc["id"],
         label=doc.get("label") or doc.get("from_email"),
@@ -204,6 +215,17 @@ class SmtpSession:
 
     async def close(self) -> None:
         await asyncio.to_thread(self.close_sync)
+
+
+def open_session(sender: ResolvedSender):
+    """Delivery session for a sender: SMTP connection, Gmail API, or None (platform)."""
+    if sender.kind == "smtp":
+        return SmtpSession(sender.smtp)
+    if sender.kind == "google":
+        from .google_sender import GmailSession
+
+        return GmailSession(sender.oauth.get("refresh_token") or "")
+    return None
 
 
 def build_mime(*, sender: ResolvedSender, to_email: str, subject: str, html_body: str, text_body: str,

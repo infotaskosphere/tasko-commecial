@@ -68,6 +68,9 @@ export const engagexApi = {
   updateSender: (id, body) => data(api.put(`${BASE}/mail/senders/${id}`, body)),
   deleteSender: (id) => data(api.delete(`${BASE}/mail/senders/${id}`)),
   setDefaultSender: (id) => data(api.post(`${BASE}/mail/senders/${id}/default`)),
+  /** "Continue with Google": returns { auth_url } for the Google account chooser. */
+  startGoogleSender: (returnPath = '/engagex/mailmaster?tab=senders') => data(api.post(`${BASE}/mail/senders/google/start`, { return_path: returnPath }, TIMEOUT)),
+  updateSenderProfile: (id, body) => data(api.patch(`${BASE}/mail/senders/${id}`, body)),
   testSend: (body) => data(api.post(`${BASE}/mail/test-send`, body, UPLOAD_TIMEOUT)),
   /** Upload a banner/inline image (public URL returned) or a private attachment. */
   uploadMailFile: async (file, purpose) => data(api.post(`${BASE}/mail/uploads`, {

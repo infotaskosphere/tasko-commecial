@@ -127,9 +127,8 @@ const SECTION_BRANDING = {
   settings: { label: 'Setting', landing: '/settings/general', wordmark: true, icon: Settings },
   accounts: { label: 'Finix', landing: '/finix-dashboard', light: '/finix-logo.png', dark: '/finix-logo.png', icon: '/finix-icon.png', darkInvert: true, iconInvert: true, flatLight: false },
   aiweave: { label: 'AIWeave', landing: '/aiweave', light: '/aiweave-logo-lite.png', dark: '/aiweave-logo-lite.png', icon: '/aiweave-icon.png', darkInvert: true, iconInvert: true, flatLight: true },
-  // Official EngageX artwork: drop PNGs with these exact names into frontend/public/engagex/.
-  // Until they exist, the *Fallback SVGs are shown automatically (see the <img> onError below).
-  engagex: { label: 'EngageX', landing: '/engagex', light: '/engagex/engagex-logo-light.png', dark: '/engagex/engagex-logo-dark.png', icon: '/engagex/engagex-icon.png', lightFallback: '/engagex/engagex-logo.svg', darkFallback: '/engagex/engagex-logo-dark.svg', iconFallback: '/engagex/engagex-icon.svg', darkInvert: false, iconInvert: false, flatLight: true, transparent: true },
+  // Official EngageX artwork (transparent PNGs in frontend/public/engagex/).
+  engagex: { label: 'EngageX', landing: '/engagex', light: '/engagex/engagex-logo-light.png', dark: '/engagex/engagex-logo-dark.png', icon: '/engagex/engagex-icon.png', darkInvert: false, iconInvert: false, flatLight: true, transparent: true },
   compliance: { label: 'CompliGenie', landing: '/compliance-dashboard', light: '/compligenie-logo.png', dark: '/compligenie-logo.png', icon: '/compligenie-icon.svg', darkInvert: true, iconInvert: false, flatLight: false },
   proposals: { label: 'LeadSense', landing: '/client-proposals-dashboard', light: '/leadsense-logo.png', dark: '/leadsense-logo.png', icon: '/leadsense-logo.png', darkInvert: true, iconInvert: true, flatLight: false, crop: { nw: 2048, nh: 682, x: 0.04, y: 0.16, w: 0.34, h: 0.71 } },
   'people-matrix': { label: 'People Matrix', landing: '/people-matrix', light: '/people-matrix-logo.png', dark: '/people-matrix-logo.png', icon: '/people-matrix-logo.png', darkInvert: true, iconInvert: true, flatLight: false, crop: { nw: 1774, nh: 887, x: 0.07, y: 0.16, w: 0.325, h: 0.65 } },

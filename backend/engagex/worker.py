@@ -262,7 +262,7 @@ class _MailChannel:
         self.attachments: list = []
 
     async def open(self) -> Optional[str]:
-        from .mailer import SmtpSession, resolve_sender
+        from .mailer import resolve_sender
 
         try:
             self.sender = await resolve_sender(self.campaign["company_id"], self.settings.get("sender_id"))
@@ -274,9 +274,10 @@ class _MailChannel:
             self.attachments = await load_attachments(self.campaign["company_id"], self.content.get("attachments"))
         except Exception as exc:
             return str(getattr(exc, "detail", exc))
-        if self.sender.kind == "smtp":
-            self.session = SmtpSession(self.sender.smtp)
-        elif not self.sender.from_email:
+        from .mailer import open_session
+
+        self.session = open_session(self.sender)
+        if self.sender.kind == "platform" and not self.sender.from_email:
             return "The platform email service has no From address configured in the Commercial Console."
         return None
 

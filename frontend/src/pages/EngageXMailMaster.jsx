@@ -29,7 +29,6 @@ const PLATFORM = 'platform';
 // Senders
 // ═════════════════════════════════════════════════════════════════════════════
 const PROVIDERS = {
-  gmail: { label: 'Gmail / Google Workspace', host: 'smtp.gmail.com', port: 587, security: 'starttls', help: 'Turn on 2-Step Verification, then create an App Password (Google Account → Security → App passwords) and paste it below.' },
   outlook: { label: 'Outlook / Microsoft 365', host: 'smtp.office365.com', port: 587, security: 'starttls', help: 'Authenticated SMTP must be enabled for the mailbox in the Microsoft 365 admin centre.' },
   zoho: { label: 'Zoho Mail (India)', host: 'smtp.zoho.in', port: 465, security: 'ssl', help: 'Use smtp.zoho.com for non-India accounts. An app-specific password is recommended.' },
   yahoo: { label: 'Yahoo Mail', host: 'smtp.mail.yahoo.com', port: 465, security: 'ssl', help: 'Generate an app password in Yahoo account security settings.' },
@@ -41,7 +40,7 @@ const PROVIDERS = {
   custom: { label: 'Other SMTP server', host: '', port: 587, security: 'starttls', help: 'Enter the SMTP details from your email provider.' },
 };
 
-const emptySender = { provider: 'gmail', label: '', from_name: '', from_email: '', reply_to: '', smtp_host: PROVIDERS.gmail.host, smtp_port: 587, security: 'starttls', username: '', password: '' };
+const emptySender = { provider: 'outlook', label: '', from_name: '', from_email: '', reply_to: '', smtp_host: PROVIDERS.outlook.host, smtp_port: 587, security: 'starttls', username: '', password: '' };
 
 function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
   const [form, setForm] = useState(emptySender);
@@ -79,8 +78,8 @@ function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{editing ? 'Edit sender' : 'Add an email account'}</DialogTitle>
-          <DialogDescription>Send campaigns from your own mailbox or domain. We verify the login before saving; the password is stored encrypted.</DialogDescription>
+          <DialogTitle>{editing ? 'Edit sender' : 'Connect another email provider'}</DialogTitle>
+          <DialogDescription>For Outlook, Zoho or a domain mailbox. Using Gmail? Close this and choose “Continue with Google” — no password needed.</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           {!editing && (
@@ -119,51 +118,126 @@ function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
   );
 }
 
+/** Official multi-colour Google "G" mark for the sign-in button. */
+export function GoogleMark({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z" />
+      <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z" />
+      <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z" />
+      <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z" />
+    </svg>
+  );
+}
+
+/** Starts Google sign-in: the browser goes to Google's account chooser and comes back connected. */
+export function useGoogleConnect() {
+  const [connecting, setConnecting] = useState(false);
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      const { auth_url: url } = await engagexApi.startGoogleSender('/engagex/mailmaster?tab=senders');
+      window.location.assign(url);
+    } catch (error) {
+      toast.error(engagexError(error));
+      setConnecting(false);
+    }
+  };
+  return { connect, connecting };
+}
+
+export function GoogleButton({ onClick, busy, children = 'Continue with Google', className = '' }) {
+  return (
+    <button type="button" onClick={onClick} disabled={busy}
+      className={`inline-flex items-center justify-center gap-3 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:shadow disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 ${className}`}>
+      {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <GoogleMark />}
+      {busy ? 'Opening Google…' : children}
+    </button>
+  );
+}
+
+function SenderNameDialog({ sender, onOpenChange, onSaved }) {
+  const [fromName, setFromName] = useState('');
+  const [replyTo, setReplyTo] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { if (sender) { setFromName(sender.from_name || ''); setReplyTo(sender.reply_to || ''); } }, [sender]);
+  const save = async () => {
+    setSaving(true);
+    try { await engagexApi.updateSenderProfile(sender.id, { from_name: fromName, reply_to: replyTo || null }); toast.success('Sender updated'); onSaved(); onOpenChange(false); }
+    catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
+  };
+  return (
+    <Dialog open={!!sender} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle>Sender details</DialogTitle><DialogDescription>{sender?.from_email}</DialogDescription></DialogHeader>
+        <label className="text-xs font-semibold text-slate-500">Name recipients see<Input className="mt-1" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your company name" /></label>
+        <label className="text-xs font-semibold text-slate-500">Reply-To (optional)<Input className="mt-1" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="Replies go to the mailbox itself when empty" /></label>
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={saving || !fromName.trim()}>{saving ? 'Saving…' : 'Save'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SendersPanel({ senders, canManage, companyName, reload }) {
   const [editing, setEditing] = useState(null);
+  const [naming, setNaming] = useState(null);
   const [testing, setTesting] = useState(null);
   const { user } = useAuth();
   const [testTo, setTestTo] = useState(user?.email || '');
+  const { connect, connecting } = useGoogleConnect();
 
   const act = async (fn, ok) => { try { await fn(); toast.success(ok); reload(); } catch (error) { toast.error(engagexError(error)); } };
   const sendTest = async () => {
     try { await engagexApi.testSend({ to: testTo, sender_id: testing.id, subject: 'MailMaster sender test', html: '<p>Hi {{first_name|there}},</p><p>Your MailMaster sender is working. 🎉</p>' }); toast.success(`Test email sent to ${testTo}`); setTesting(null); }
     catch (error) { toast.error(engagexError(error)); }
   };
+  const icon = (s) => (s.kind === PLATFORM ? <Server className="h-4 w-4" /> : s.kind === 'google' ? <GoogleMark className="h-4 w-4" /> : <AtSign className="h-4 w-4" />);
+  const subtitle = (s) => (s.kind === PLATFORM ? 'Commercial Console email service' : s.kind === 'google' ? 'Connected with Google' : `${s.smtp_host}:${s.smtp_port}`);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <GuidanceNote icon={ShieldCheck} className="flex-1">By default MailMaster sends through the platform email service, showing <b>your company name</b> as the sender and <b>your company email</b> as Reply-To. Add your own mailbox to send from your domain instead.</GuidanceNote>
-        {canManage && <Button size="sm" onClick={() => setEditing({})}><Plus className="h-4 w-4 mr-1" />Add email account</Button>}
-      </div>
+      {canManage && (
+        <div className="flex flex-col items-start gap-4 rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-indigo-50/60 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-slate-700 dark:from-slate-900 dark:to-indigo-500/10">
+          <div>
+            <p className="text-base font-bold text-slate-800 dark:text-slate-100">Send from your own Gmail or Google Workspace address</p>
+            <p className="mt-1 max-w-xl text-sm text-slate-500">Choose your Google account, allow sending, and you’re done — no passwords or app passwords. MailMaster can only send email; it can never read your inbox.</p>
+          </div>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <GoogleButton onClick={connect} busy={connecting} className="px-5 py-3" />
+            <button type="button" onClick={() => setEditing({})} className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:hover:text-slate-200">Use Outlook, Zoho or a domain mailbox instead</button>
+          </div>
+        </div>
+      )}
+      <GuidanceNote icon={ShieldCheck}>Without a connected account, MailMaster sends through the platform email service with <b>your company name</b> as the sender and <b>your company email</b> as Reply-To.</GuidanceNote>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {senders.map((s) => (
           <div key={s.id} className={`rounded-xl border p-4 ${s.is_default ? 'border-teal-400 ring-1 ring-teal-400/40' : 'border-slate-200 dark:border-slate-700'}`}>
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className={`rounded-lg p-2 ${s.kind === PLATFORM ? 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'}`}>{s.kind === PLATFORM ? <Server className="h-4 w-4" /> : <AtSign className="h-4 w-4" />}</div>
-                <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{s.label}</p><p className="truncate text-[11px] text-slate-500">{s.kind === PLATFORM ? 'Commercial Console email service' : `${s.smtp_host}:${s.smtp_port}`}</p></div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className={`rounded-lg p-2 ${s.kind === PLATFORM ? 'bg-teal-50 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300' : s.kind === 'google' ? 'bg-white ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700' : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'}`}>{icon(s)}</div>
+                <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{s.kind === 'google' ? s.from_email : s.label}</p><p className="truncate text-[11px] text-slate-500">{subtitle(s)}</p></div>
               </div>
               {s.is_default && <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700 dark:bg-teal-500/15 dark:text-teal-300">DEFAULT</span>}
             </div>
             <dl className="mt-3 space-y-1 text-xs">
-              <div className="flex justify-between gap-2"><dt className="text-slate-500">From</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.from_name} &lt;{s.from_email || 'not configured'}&gt;</dd></div>
-              <div className="flex justify-between gap-2"><dt className="text-slate-500">Reply-To</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.reply_to || '—'}</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-slate-500">From</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.from_name} &lt;{s.from_email || 'not configured'}&gt;</dd></div>
+              <div className="flex justify-between gap-2"><dt className="shrink-0 text-slate-500">Reply-To</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.reply_to || (s.kind === 'google' ? 'Same mailbox' : '—')}</dd></div>
             </dl>
-            {s.kind === PLATFORM && !s.enabled && <p className="mt-2 text-[11px] text-amber-600">The platform service is not configured yet — ask the platform administrator, or add your own account.</p>}
+            {s.kind === PLATFORM && !s.enabled && <p className="mt-2 text-[11px] text-amber-600">The platform service is not configured yet — connect your Google account above.</p>}
             {s.last_error && <p className="mt-2 text-[11px] text-rose-600">{s.last_error}</p>}
             <div className="mt-3 flex flex-wrap gap-1.5">
               <Button size="sm" variant="outline" onClick={() => setTesting(s)}><Send className="h-3.5 w-3.5 mr-1" />Test</Button>
               {canManage && !s.is_default && <Button size="sm" variant="outline" onClick={() => act(() => engagexApi.setDefaultSender(s.id), 'Default sender updated')}><Star className="h-3.5 w-3.5 mr-1" />Make default</Button>}
-              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(s)}><Pencil className="h-4 w-4" /></Button>}
-              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => { if (window.confirm(`Remove ${s.from_email}?`)) act(() => engagexApi.deleteSender(s.id), 'Sender removed'); }}><Trash2 className="h-4 w-4" /></Button>}
+              {canManage && s.kind === 'google' && s.last_error && <Button size="sm" variant="outline" onClick={connect}><RefreshCw className="h-3.5 w-3.5 mr-1" />Reconnect</Button>}
+              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => (s.kind === 'google' ? setNaming(s) : setEditing(s))}><Pencil className="h-4 w-4" /></Button>}
+              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" title="Remove" onClick={() => { if (window.confirm(`Disconnect ${s.from_email}?`)) act(() => engagexApi.deleteSender(s.id), 'Sender removed'); }}><Trash2 className="h-4 w-4" /></Button>}
             </div>
           </div>
         ))}
       </div>
-      {!canManage && <p className="text-xs text-slate-500">Only administrators can add or change sender accounts.</p>}
+      {!canManage && <p className="text-xs text-slate-500">Only administrators can connect or change sender accounts.</p>}
       <SenderDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} initial={editing} companyName={companyName} onSaved={reload} />
+      <SenderNameDialog sender={naming} onOpenChange={(o) => !o && setNaming(null)} onSaved={reload} />
       <Dialog open={!!testing} onOpenChange={(o) => !o && setTesting(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Send a test email</DialogTitle><DialogDescription>From {testing?.from_name} &lt;{testing?.from_email}&gt;</DialogDescription></DialogHeader>
@@ -479,6 +553,16 @@ function AttachmentPicker({ attachments, onChange }) {
   );
 }
 
+function ConnectGmailInline() {
+  const { connect, connecting } = useGoogleConnect();
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3">
+      <GoogleButton onClick={connect} busy={connecting}>Send from my Gmail</GoogleButton>
+      <span className="text-xs text-slate-500">Save your draft first — you’ll come back to MailMaster after choosing your Google account.</span>
+    </div>
+  );
+}
+
 function ChecklistRow({ done, title, summary, children }) {
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-700">
@@ -596,7 +680,8 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
           <SelectTrigger className="max-w-md"><SelectValue /></SelectTrigger>
           <SelectContent>{senders.map((s) => <SelectItem key={s.id} value={s.id}>{s.label} — {s.from_email || 'not configured'}</SelectItem>)}</SelectContent>
         </Select>
-        {sender?.kind === PLATFORM && !sender.enabled && <p className="mt-2 text-xs text-amber-600">The platform email service isn’t configured. Add your own email account in the Senders tab.</p>}
+        {sender?.kind === PLATFORM && !sender.enabled && <p className="mt-2 text-xs text-amber-600">The platform email service isn’t configured. Connect your Gmail account to send.</p>}
+        {!senders.some((s) => s.kind === 'google') && <ConnectGmailInline />}
       </ChecklistRow>
 
       <ChecklistRow done={ready.subject} title="Subject" summary={c.subject ? renderMergePreview(c.subject, vars) : 'What is this email about?'}>
@@ -656,7 +741,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
           </DialogHeader>
           <dl className="space-y-1.5 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Recipients</dt><dd className="font-semibold">≈ {fmtNumber(audienceCount)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">From</dt><dd className="truncate font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd></div>
+            <div className="flex justify-between gap-3"><dt className="shrink-0 text-slate-500">From</dt><dd className="truncate font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Subject</dt><dd className="truncate font-semibold">{c.subject}</dd></div>
             {c.attachments.length > 0 && <div className="flex justify-between gap-3"><dt className="text-slate-500">Attachments</dt><dd className="font-semibold">{c.attachments.length} file{c.attachments.length > 1 ? 's' : ''}</dd></div>}
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Estimated time</dt><dd className="font-semibold">{fmtDuration(etaSeconds)}</dd></div>
@@ -707,6 +792,24 @@ export default function EngageXMailMaster() {
   useEffect(() => { loadAll(); }, [loadAll]);
 
   useEffect(() => { const id = params.get('campaign'); if (id) setOpenId(id); }, [params]);
+
+  // Back from Google's account chooser (see backend/engagex/google_sender.py).
+  useEffect(() => {
+    const google = params.get('google');
+    const tabParam = params.get('tab');
+    if (!google && !tabParam) return;
+    if (tabParam) setTab(tabParam);
+    if (google === 'connected') {
+      toast.success(`${params.get('email') || 'Your Google account'} is connected`, { description: 'Choose it as the sender when you create a campaign, or make it the default.' });
+      setTab('senders');
+      loadSenders().catch(() => {});
+    } else if (google) {
+      toast.error(params.get('reason') || 'Google sign-in did not complete.');
+      setTab('senders');
+    }
+    ['google', 'email', 'reason', 'tab'].forEach((k) => params.delete(k));
+    setParams(params, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const companyName = senders.find((s) => s.id === PLATFORM)?.from_name || user?.company_name || 'Your company';
   const platform = senders.find((s) => s.id === PLATFORM);

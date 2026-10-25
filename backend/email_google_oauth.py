@@ -132,6 +132,12 @@ async def _redirect_result(return_url: str, result: str, reason: Optional[str] =
 
 @router.get("/callback")
 async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Query(None), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
+    # EngageX MailMaster "Continue with Google" reuses this registered redirect
+    # URI; its states are namespaced so the Email module flow is unaffected.
+    if state and state.startswith("exg."):
+        from backend.engagex.google_sender import handle_callback
+
+        return await handle_callback(request, code=code, state=state, error=error)
     return_url = "/settings/email"
     try:
         if not state:

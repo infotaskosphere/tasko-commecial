@@ -7,7 +7,7 @@ const MODULE_BRANDING = {
   'people-matrix': { label: 'People Matrix', landingPath: '/people-matrix' },
   aiweave: { label: 'AIWeave', landingPath: '/aiweave' },
   records: { label: 'ClientSync', landingPath: '/records-dashboard' },
-  engagex: { label: 'EngageX', landingPath: '/engagex', lightLogo: '/engagex/engagex-logo.svg', darkLogo: '/engagex/engagex-logo-dark.svg', collapsedLogo: '/engagex/engagex-icon.svg' },
+  engagex: { label: 'EngageX', landingPath: '/engagex', lightLogo: '/engagex/engagex-logo-light.png', darkLogo: '/engagex/engagex-logo-dark.png', collapsedLogo: '/engagex/engagex-icon.png' },
   admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true },
   settings: { label: 'Settings', landingPath: '/settings/general', wordmark: true },
 };

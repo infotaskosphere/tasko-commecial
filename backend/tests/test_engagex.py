@@ -207,3 +207,101 @@ def test_banner_and_attachments_in_email():
     files = {p.get_filename(): p.get_payload(decode=True) for p in msg.walk() if p.get_filename()}
     assert files == {"Brochure.pdf": b"%PDF"}
     assert any(p.get_content_type() == "text/html" for p in msg.walk())
+
+
+# ── "Continue with Google" senders ───────────────────────────────────────────
+def _mongomock(monkeypatch):
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    from backend import dependencies as dep
+    from backend.tenant_runtime import TenantAwareDatabase
+
+    client = mongomock_motor.AsyncMongoMockClient()
+    raw = client["engagex_google_test"]
+    monkeypatch.setattr(dep, "_raw_db", raw)
+    monkeypatch.setattr(dep, "db", TenantAwareDatabase(raw, mongo_client=client))
+    return raw
+
+
+def test_google_start_requests_send_only_scope_and_reuses_registered_callback(monkeypatch):
+    from types import SimpleNamespace
+    from urllib.parse import parse_qs, urlparse
+    from backend.engagex import google_sender
+
+    raw = _mongomock(monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid.apps.googleusercontent.com")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("FRONTEND_URL", "https://app.test")
+    monkeypatch.delenv("GOOGLE_EMAIL_REDIRECT_URI", raising=False)
+    request = SimpleNamespace(headers={"host": "api.test", "x-forwarded-proto": "https"})
+    url = asyncio.run(google_sender.start(request, SimpleNamespace(id="u1"), "c1", "/engagex/mailmaster?tab=senders"))
+    q = parse_qs(urlparse(url).query)
+    assert q["redirect_uri"] == ["https://api.test/api/email/oauth/google/callback"]
+    assert set(q["scope"][0].split()) == set(google_sender.SCOPES)
+    assert "gmail.readonly" not in q["scope"][0] and q["access_type"] == ["offline"]
+    state_doc = asyncio.run(raw[google_sender.STATES].find_one({"state": q["state"][0]}))
+    assert state_doc["company_id"] == "c1" and state_doc["state"].startswith("exg.")
+    assert state_doc["return_url"] == "https://app.test/engagex/mailmaster?tab=senders"
+
+
+def test_google_callback_via_existing_email_route_creates_encrypted_sender(monkeypatch):
+    from types import SimpleNamespace
+    from fastapi.testclient import TestClient
+    from backend.engagex import google_sender
+
+    raw = _mongomock(monkeypatch)
+    monkeypatch.setenv("JWT_SECRET", "x" * 40)
+
+    class FakeFlow:
+        code_verifier = None
+        credentials = SimpleNamespace(refresh_token="rt-123", token="at-1", scopes=google_sender.SCOPES)
+
+        def fetch_token(self, code):
+            assert code == "auth-code"
+
+    async def fake_email(token):
+        return "info.prodigist@gmail.com"
+
+    monkeypatch.setattr(google_sender, "_flow", lambda redirect_uri, state: FakeFlow())
+    monkeypatch.setattr(google_sender, "_fetch_email", fake_email)
+    asyncio.run(raw[google_sender.STATES].insert_one({
+        "state": "exg.abc", "company_id": "c1", "user_id": "u1", "redirect_uri": "https://api.test/cb",
+        "return_url": "https://app.test/engagex/mailmaster", "expires_at": "9999-01-01T00:00:00+00:00"}))
+    asyncio.run(raw.companies.insert_one({"id": "c1", "name": "Prodigist Ventures"}))
+    client = TestClient(backend.server.app, raise_server_exceptions=False)
+    res = client.get("/api/email/oauth/google/callback", params={"state": "exg.abc", "code": "auth-code"}, follow_redirects=False)
+    assert res.status_code == 302
+    assert res.headers["location"].startswith("https://app.test/engagex/mailmaster?google=connected")
+    sender = asyncio.run(raw[common.SENDERS].find_one({"company_id": "c1", "kind": "google"}))
+    assert sender["from_email"] == "info.prodigist@gmail.com" and sender["from_name"] == "Prodigist Ventures"
+    assert "rt-123" not in str(sender) and common.decrypt_secret(sender["refresh_token_enc"]) == "rt-123"
+    # The state is single-use.
+    again = client.get("/api/email/oauth/google/callback", params={"state": "exg.abc", "code": "auth-code"}, follow_redirects=False)
+    assert "google=error" in again.headers["location"]
+
+
+def test_gmail_session_refreshes_retries_and_reports_revocation(monkeypatch):
+    import httpx
+    from backend.engagex.google_sender import GmailSession, GoogleAccessRevoked
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+    calls = {"token": 0, "send": 0}
+
+    def handler(request: httpx.Request):
+        if request.url.host == "oauth2.googleapis.com":
+            calls["token"] += 1
+            return httpx.Response(200, json={"access_token": f"at-{calls['token']}", "expires_in": 3600})
+        calls["send"] += 1
+        assert request.headers["content-type"] == "message/rfc822"
+        assert b"Subject: Hi" in request.content
+        if request.headers["authorization"] == "Bearer at-1":
+            return httpx.Response(401, json={"error": {"message": "expired"}})
+        return httpx.Response(200, json={"id": "m1"})
+
+    session = GmailSession("rt", transport=httpx.MockTransport(handler))
+    asyncio.run(session.send("a@gmail.com", "b@x.test", "Subject: Hi\r\n\r\nbody"))
+    assert calls == {"token": 2, "send": 2}
+
+    revoked = GmailSession("rt", transport=httpx.MockTransport(lambda r: httpx.Response(400, json={"error": "invalid_grant"})))
+    with pytest.raises(GoogleAccessRevoked):
+        asyncio.run(revoked.send("a@gmail.com", "b@x.test", "Subject: Hi\r\n\r\nbody"))

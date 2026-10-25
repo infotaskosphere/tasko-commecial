@@ -916,7 +916,7 @@ async def create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Request, c
 def _public_sender(doc: dict) -> dict:
     return {
         "id": doc["id"],
-        "kind": "smtp",
+        "kind": doc.get("kind") or "smtp",
         "label": doc.get("label"),
         "from_name": doc.get("from_name"),
         "from_email": doc.get("from_email"),
@@ -1012,6 +1012,8 @@ async def update_sender(sender_id: str, body: SenderIn, current_user: User = Dep
     from .mailer import verify_smtp
 
     existing = await _sender_doc(company_id, sender_id)
+    if existing.get("kind") == "google":
+        raise HTTPException(status_code=400, detail="Google accounts are managed by Google sign-in. Reconnect instead.")
     password = body.password or decrypt_secret(existing.get("password_enc") or "")
     username = (body.username or body.from_email).strip()
     cfg = {"host": body.smtp_host.strip(), "port": body.smtp_port, "security": body.security, "username": username, "password": password}
@@ -1039,8 +1041,46 @@ async def delete_sender(sender_id: str, current_user: User = Depends(get_current
     in_use = await raw_db()[CAMPAIGNS].count_documents(scoped(company_id, {"settings.sender_id": sender_id, "status": {"$in": ["queued", "scheduled", "running", "paused"]}}))
     if in_use:
         raise HTTPException(status_code=409, detail="This sender is used by an active campaign. Cancel or finish it first.")
-    await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": {"deleted": True, "is_default": False, "password_enc": None, "updated_at": iso()}})
+    await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": {
+        "deleted": True, "is_default": False, "password_enc": None, "refresh_token_enc": None, "updated_at": iso()}})
     return {"deleted": True}
+
+
+class GoogleStartIn(BaseModel):
+    return_path: str = Field("/engagex/mailmaster", max_length=300)
+
+
+class SenderProfileIn(BaseModel):
+    from_name: str = Field(..., min_length=1, max_length=120)
+    reply_to: Optional[str] = None
+    label: Optional[str] = Field(None, max_length=120)
+
+
+@router.post("/mail/senders/google/start")
+async def start_google_sender(body: GoogleStartIn, request: Request, current_user: User = Depends(get_current_user)):
+    """Begin "Continue with Google": returns the Google account-chooser URL."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    company_id = workspace_company_id(current_user)
+    from .google_sender import start
+
+    return {"auth_url": await start(request, current_user, company_id, body.return_path)}
+
+
+@router.patch("/mail/senders/{sender_id}")
+async def update_sender_profile(sender_id: str, body: SenderProfileIn, current_user: User = Depends(get_current_user)):
+    """Change the display name / Reply-To of any connected sender (Google or SMTP)."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    company_id = workspace_company_id(current_user)
+    existing = await _sender_doc(company_id, sender_id)
+    if body.reply_to and not normalize_email(body.reply_to):
+        raise HTTPException(status_code=400, detail="Enter a valid Reply-To email address.")
+    updates = {"from_name": clean_text(body.from_name, 120), "reply_to": normalize_email(body.reply_to), "updated_at": iso()}
+    if body.label:
+        updates["label"] = clean_text(body.label, 120)
+    await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": updates})
+    return _public_sender({**existing, **updates})
 
 
 @router.post("/mail/senders/{sender_id}/default")
@@ -1061,7 +1101,7 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     require_page(current_user, PAGE_MAIL)
     company_id = workspace_company_id(current_user)
     from .common import merge_variables, render_merge
-    from .mailer import SmtpSession, build_email_html, html_to_text, resolve_sender, send_one
+    from .mailer import build_email_html, html_to_text, open_session, resolve_sender, send_one
 
     to = normalize_email(body.to)
     if not to:
@@ -1077,7 +1117,7 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     attachments_payload = [a.model_dump() for a in body.attachments]
     await _check_attachments(company_id, attachments_payload)
     attachments = await load_attachments(company_id, attachments_payload)
-    session = SmtpSession(sender.smtp) if sender.kind == "smtp" else None
+    session = open_session(sender)
     try:
         await send_one(sender=sender, session=session, to_email=to, subject="[TEST] " + render_merge(body.subject, variables),
                        html_body=html_body, text_body=html_to_text(content), related_user_id=str(current_user.id),
@@ -1086,7 +1126,7 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     except HTTPException:
         raise
     except Exception as exc:
-        if sender.kind == "smtp":
+        if sender.kind in ("smtp", "google"):
             await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender.id}), {"$set": {"last_error": str(exc)[:300]}})
         raise HTTPException(status_code=400, detail=f"Test email failed: {exc}")
     finally:
