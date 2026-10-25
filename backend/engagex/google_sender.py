@@ -82,6 +82,15 @@ async def start(request: Request, user: Any, company_id: str, return_path: Optio
     from backend.email_google_oauth import _redirect_uri
 
     redirect_uri = _redirect_uri(request)
+    this_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].split(":")[0].strip().lower()
+    redirect_host = (urlparse(redirect_uri).hostname or "").lower()
+    if this_host and redirect_host and redirect_host != this_host:
+        # A mistyped GOOGLE_EMAIL_REDIRECT_URI sends Google's reply to another
+        # host (seen in production: tasko-commecial-backend vs tasko-commercial-backend).
+        logger.warning(
+            "EngageX Google sign-in: GOOGLE_EMAIL_REDIRECT_URI host %s differs from this server %s; "
+            "Google will return users to %s. Expected https://%s/api/email/oauth/google/callback",
+            redirect_host, this_host, redirect_uri, this_host)
     state = STATE_PREFIX + secrets.token_urlsafe(32)
     flow = _flow(redirect_uri, state)
     auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="false",

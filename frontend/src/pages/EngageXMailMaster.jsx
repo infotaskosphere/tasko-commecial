@@ -185,6 +185,9 @@ function SendersPanel({ senders, canManage, companyName, reload }) {
   const { user } = useAuth();
   const [testTo, setTestTo] = useState(user?.email || '');
   const { connect, connecting } = useGoogleConnect();
+  const [setup, setSetup] = useState(null);
+  useEffect(() => { if (canManage) engagexApi.googleSetup().then(setSetup).catch(() => {}); }, [canManage]);
+  const copy = (text) => { navigator.clipboard?.writeText(text).then(() => toast.success('Copied')).catch(() => {}); };
 
   const act = async (fn, ok) => { try { await fn(); toast.success(ok); reload(); } catch (error) { toast.error(engagexError(error)); } };
   const sendTest = async () => {
@@ -206,6 +209,22 @@ function SendersPanel({ senders, canManage, companyName, reload }) {
             <GoogleButton onClick={connect} busy={connecting} className="px-5 py-3" />
             <button type="button" onClick={() => setEditing({})} className="text-xs font-medium text-slate-500 underline-offset-2 hover:text-slate-800 hover:underline dark:hover:text-slate-200">Use Outlook, Zoho or a domain mailbox instead</button>
           </div>
+        </div>
+      )}
+      {setup && (setup.host_mismatch || !setup.client_configured) && (
+        <div className="space-y-2 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <p className="flex items-center gap-2 font-bold"><AlertTriangle className="h-4 w-4" />Google sign-in needs a settings fix before it can finish</p>
+          {!setup.client_configured && <p>GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET are not set on the backend.</p>}
+          {setup.host_mismatch && (
+            <>
+              <p>Google is being told to return to <code className="break-all rounded bg-white/70 px-1 dark:bg-black/30">{setup.redirect_uri}</code>, which is not this server, so the last step shows “Not Found”.</p>
+              <p>1. On the backend host (Render → Environment), set <b>GOOGLE_EMAIL_REDIRECT_URI</b> to the URL below — or delete it so it is detected automatically.<br />2. In Google Cloud Console → APIs &amp; Services → Credentials → your OAuth client, add the same URL under <b>Authorised redirect URIs</b>.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <code className="break-all rounded bg-white px-2 py-1 text-xs dark:bg-black/40">{setup.expected_redirect_uri}</code>
+                <Button size="sm" variant="outline" onClick={() => copy(setup.expected_redirect_uri)}>Copy</Button>
+              </div>
+            </>
+          )}
         </div>
       )}
       <GuidanceNote icon={ShieldCheck}>Without a connected account, MailMaster sends through the platform email service with <b>your company name</b> as the sender and <b>your company email</b> as Reply-To.</GuidanceNote>

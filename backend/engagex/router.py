@@ -1067,6 +1067,30 @@ async def start_google_sender(body: GoogleStartIn, request: Request, current_use
     return {"auth_url": await start(request, current_user, company_id, body.return_path)}
 
 
+@router.get("/mail/senders/google/setup")
+async def google_sender_setup(request: Request, current_user: User = Depends(get_current_user)):
+    """Diagnostics for admins: the exact redirect URI Google must have registered."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    import os
+    from urllib.parse import urlparse
+    from backend.email_google_oauth import _redirect_uri
+
+    configured = bool((os.getenv("GOOGLE_EMAIL_REDIRECT_URI") or "").strip())
+    redirect_uri = _redirect_uri(request)
+    this_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip().lower()
+    redirect_host = (urlparse(redirect_uri).hostname or "").lower()
+    expected = f"https://{this_host}/api/email/oauth/google/callback" if this_host else None
+    return {
+        "redirect_uri": redirect_uri,
+        "expected_redirect_uri": expected,
+        "redirect_uri_from_env": configured,
+        "host_mismatch": bool(this_host and redirect_host and redirect_host != this_host.split(":")[0]),
+        "client_configured": bool((os.getenv("GOOGLE_CLIENT_ID") or "").strip() and (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()),
+        "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/gmail.send"],
+    }
+
+
 @router.patch("/mail/senders/{sender_id}")
 async def update_sender_profile(sender_id: str, body: SenderProfileIn, current_user: User = Depends(get_current_user)):
     """Change the display name / Reply-To of any connected sender (Google or SMTP)."""
