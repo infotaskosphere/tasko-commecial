@@ -187,3 +187,23 @@ def test_worker_delivers_whatsapp_campaign_once_per_recipient(monkeypatch):
     assert [p["to"] for p in sent] == ["919800000001"]
     assert sent[0]["message"] == "Hi Ravi — Acme"
     assert {h["status"] for h in history} == {"sent", "failed"}
+
+
+def test_banner_and_attachments_in_email():
+    import base64 as b64
+    import email as email_lib
+
+    html = build_email_html(body_html="<p>x</p>", preview_text="", footer_company="Acme", footer_address="", unsubscribe_url="",
+                            open_pixel_url="", banner={"url": "https://cdn.test/b.png", "link": "https://acme.test", "alt": "Offer"})
+    assert '<a href="https://acme.test" target="_blank"><img src="https://cdn.test/b.png" alt="Offer"' in html
+    # Non-http(s) banner URLs are ignored (no javascript:/data: injection).
+    assert "javascript" not in build_email_html(body_html="", preview_text="", footer_company="A", footer_address="",
+                                                unsubscribe_url="", open_pixel_url="", banner={"url": "javascript:alert(1)"})
+    sender = ResolvedSender(id="s", label="s", from_name="Acme", from_email="news@acme.test", reply_to=None, kind="smtp")
+    raw = build_mime(sender=sender, to_email="r@x.test", subject="S", html_body=html, text_body="t",
+                     attachments=[{"name": "Brochure.pdf", "content": b64.b64encode(b"%PDF").decode(), "type": "application/pdf"}])
+    msg = email_lib.message_from_string(raw)
+    assert msg.get_content_type() == "multipart/mixed"
+    files = {p.get_filename(): p.get_payload(decode=True) for p in msg.walk() if p.get_filename()}
+    assert files == {"Brochure.pdf": b"%PDF"}
+    assert any(p.get_content_type() == "text/html" for p in msg.walk())

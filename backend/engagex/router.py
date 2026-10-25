@@ -72,6 +72,11 @@ router = APIRouter(prefix="/engagex", tags=["engagex"])
 
 MAX_RECIPIENTS = 10_000
 MAX_MEDIA_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_BYTES = 3 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+MAX_EMAIL_ATTACHMENTS = 5
+MAX_EMAIL_ATTACHMENTS_TOTAL = 10 * 1024 * 1024
+PUBLIC_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 CHANNELS = {"whatsapp": PAGE_WHATSAPP, "email": PAGE_MAIL}
 
 
@@ -106,6 +111,27 @@ class WhatsAppCampaignIn(BaseModel):
     scheduled_at: Optional[datetime] = None
 
 
+class BannerIn(BaseModel):
+    url: str = Field(..., max_length=1000)
+    link: str = Field("", max_length=1000)
+    alt: str = Field("", max_length=200)
+    media_id: Optional[str] = None
+
+
+class AttachmentRef(BaseModel):
+    id: str
+    filename: str = ""
+    size: int = 0
+    mime_type: str = ""
+
+
+class UploadIn(BaseModel):
+    filename: str = Field(..., min_length=1, max_length=200)
+    mime_type: str = Field("application/octet-stream", max_length=120)
+    base64: str
+    purpose: Literal["banner", "image", "attachment"] = "attachment"
+
+
 class MailAudienceIn(BaseModel):
     list_ids: list[str] = Field(default_factory=list)
     recipients: list[RecipientIn] = Field(default_factory=list)
@@ -122,6 +148,8 @@ class MailCampaignIn(BaseModel):
     track_opens: bool = True
     footer_address: str = Field("", max_length=300)
     template_id: Optional[str] = None
+    banner: Optional[BannerIn] = None
+    attachments: list[AttachmentRef] = Field(default_factory=list, max_length=MAX_EMAIL_ATTACHMENTS)
 
 
 class LaunchIn(BaseModel):
@@ -156,6 +184,8 @@ class TestSendIn(BaseModel):
     subject: str = Field("Test email from MailMaster", max_length=300)
     html: str = Field("<p>This is a test email from MailMaster.</p>", max_length=500_000)
     preview_text: str = ""
+    banner: Optional[BannerIn] = None
+    attachments: list[AttachmentRef] = Field(default_factory=list, max_length=MAX_EMAIL_ATTACHMENTS)
 
 
 class ListIn(BaseModel):
@@ -1040,12 +1070,19 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     variables = merge_variables({"name": getattr(current_user, "full_name", "") or "", "email": to}, sender.from_name)
     content = render_merge(body.html, variables, escape_html=True)
     html_body = build_email_html(body_html=content, preview_text=render_merge(body.preview_text, variables),
-                                 footer_company=sender.from_name, footer_address="", unsubscribe_url="", open_pixel_url="")
+                                 footer_company=sender.from_name, footer_address="", unsubscribe_url="", open_pixel_url="",
+                                 banner=body.banner.model_dump() if body.banner else None)
+    from .mailer import load_attachments
+
+    attachments_payload = [a.model_dump() for a in body.attachments]
+    await _check_attachments(company_id, attachments_payload)
+    attachments = await load_attachments(company_id, attachments_payload)
     session = SmtpSession(sender.smtp) if sender.kind == "smtp" else None
     try:
         await send_one(sender=sender, session=session, to_email=to, subject="[TEST] " + render_merge(body.subject, variables),
                        html_body=html_body, text_body=html_to_text(content), related_user_id=str(current_user.id),
-                       related_licensee_id=str(getattr(current_user, "commercial_customer_id", "") or "") or None)
+                       related_licensee_id=str(getattr(current_user, "commercial_customer_id", "") or "") or None,
+                       attachments=attachments)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1056,6 +1093,53 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
         if session is not None:
             await session.close()
     return {"sent": True, "to": to}
+
+
+async def _check_attachments(company_id: str, items: Optional[list]) -> None:
+    """Attachments must belong to this company and stay within email size limits."""
+    ids = [str(a.get("id")) for a in (items or []) if isinstance(a, dict) and a.get("id")]
+    if not ids:
+        return
+    docs = await raw_db()[MEDIA].find(scoped(company_id, {"id": {"$in": ids}, "purpose": "attachment"}), {"_id": 0, "id": 1, "size": 1}).to_list(len(ids))
+    if len(docs) != len(set(ids)):
+        raise HTTPException(status_code=400, detail="An email attachment is no longer available. Remove it and attach it again.")
+    if sum(int(d.get("size") or 0) for d in docs) > MAX_EMAIL_ATTACHMENTS_TOTAL:
+        raise HTTPException(status_code=400, detail="Attachments may total at most 10 MB per email.")
+
+
+@router.post("/mail/uploads")
+async def upload_mail_file(body: UploadIn, request: Request, current_user: User = Depends(get_current_user)):
+    """Store a banner/inline image (served publicly for email clients) or an attachment (private)."""
+    require_page(current_user, PAGE_MAIL)
+    company_id = workspace_company_id(current_user)
+    try:
+        raw = base64.b64decode(body.base64.split(",")[-1], validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="The file could not be read.")
+    if not raw:
+        raise HTTPException(status_code=400, detail="The file is empty.")
+    mime = (body.mime_type or "application/octet-stream").split(";")[0].strip().lower()
+    filename = re.sub(r"[^\w.\- ()]+", "_", body.filename).strip() or "file"
+    public = body.purpose in ("banner", "image")
+    if public:
+        if mime not in PUBLIC_IMAGE_TYPES:
+            raise HTTPException(status_code=400, detail="Use a PNG, JPG, GIF or WebP image.")
+        if len(raw) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=400, detail="Images must be 3 MB or smaller.")
+    elif len(raw) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=400, detail="Attachments must be 8 MB or smaller.")
+    doc = {
+        "id": new_id("exm"), "company_id": company_id, "purpose": body.purpose, "filename": filename[:180],
+        "mime_type": mime, "base64": base64.b64encode(raw).decode(), "size": len(raw),
+        "public_token": new_token() if public else None, "created_by": str(current_user.id), "created_at": iso(),
+    }
+    await raw_db()[MEDIA].insert_one(dict(doc))
+    url = None
+    if public:
+        from urllib.parse import quote
+
+        url = f"{public_base_url(request)}/api/engagex-public/a/{doc['public_token']}/{quote(doc['filename'])}"
+    return {"id": doc["id"], "filename": doc["filename"], "mime_type": mime, "size": len(raw), "url": url, "purpose": body.purpose}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1200,6 +1284,8 @@ def _mail_fields(body: MailCampaignIn) -> dict:
             "html": body.html,
             "template_id": body.template_id,
             "merge_tags": merge_tags_in(body.subject, body.preview_text, body.html),
+            "banner": body.banner.model_dump() if body.banner and body.banner.url.strip() else None,
+            "attachments": [a.model_dump() for a in body.attachments],
         },
         "audience": {
             "list_ids": list(dict.fromkeys(body.audience.list_ids))[:50],
@@ -1237,6 +1323,7 @@ async def _launch_mail(campaign: dict, action: str, scheduled_at: Optional[datet
     sender = await resolve_sender(campaign["company_id"], campaign["settings"].get("sender_id"))
     if sender.kind == "platform" and not sender.from_email:
         raise HTTPException(status_code=400, detail="The platform email service has no From address. Configure it in the Commercial Console or add your own sender.")
+    await _check_attachments(campaign["company_id"], (campaign.get("content") or {}).get("attachments"))
     status, when = _launch_status(action, scheduled_at)
     rows, summary = await _expand_mail_audience(campaign["company_id"], campaign.get("audience") or {})
     if not any(not r["suppressed"] for r in rows):

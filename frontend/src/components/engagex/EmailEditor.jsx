@@ -1,8 +1,9 @@
 // MailMaster email editor: visual (contentEditable) + HTML modes with a live,
 // sandboxed desktop/mobile preview. Content is merged server-side per recipient.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import {
-  AlignCenter, AlignLeft, Bold, Code2, Eye, Heading1, Heading2, ImageIcon, Italic, Link2, List, ListOrdered,
+  AlignCenter, AlignLeft, Bold, Code2, Eye, Heading1, Heading2, ImageIcon, ImagePlus, Italic, Link2, List, ListOrdered, Loader2,
   Minus, Monitor, MousePointerClick, Pilcrow, RemoveFormatting, Smartphone, Underline,
 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
@@ -67,10 +68,16 @@ const BUTTON_HTML = (text, url) =>
 const escapeAttr = (v) => String(v || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 /** Client-side approximation of backend build_email_html, for preview only. */
-export function previewDocument(html, { previewText = '', footerCompany = '', footerAddress = '' } = {}) {
+const bannerPreview = (banner) => {
+  if (!banner?.url) return '';
+  const img = `<img src="${escapeAttr(banner.url)}" alt="${escapeAttr(banner.alt || '')}" style="display:block;width:100%;height:auto;border:0" />`;
+  return `<div style="line-height:0">${banner.link ? `<a href="${escapeAttr(banner.link)}">${img}</a>` : img}</div>`;
+};
+
+export function previewDocument(html, { previewText = '', footerCompany = '', footerAddress = '', banner = null } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{margin:0;background:#f1f5f9;font:15px/1.65 Arial,Helvetica,sans-serif;color:#0f172a}a{color:#0E9F8A}img{max-width:100%;height:auto}</style></head>
-<body><div style="display:none">${previewText}</div><div style="padding:20px 10px"><div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;padding:32px">${html || '<p style="color:#94a3b8">Your content will appear here.</p>'}</div>
+<body><div style="display:none">${previewText}</div><div style="padding:20px 10px"><div style="max-width:640px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden">${bannerPreview(banner)}<div style="padding:32px">${html || '<p style="color:#94a3b8">Your content will appear here.</p>'}</div></div>
 <div style="max-width:640px;margin:0 auto;padding:18px 12px;text-align:center;font-size:12px;color:#64748b">Sent by ${footerCompany}${footerAddress ? `<br>${footerAddress}` : ''}<br>You received this email because you are in contact with ${footerCompany}.<br><u>Unsubscribe</u></div></div></body></html>`;
 }
 
@@ -83,8 +90,11 @@ function ToolButton({ icon: Icon, label, onClick, active }) {
   );
 }
 
-export default function EmailEditor({ value, onChange, previewVars = {}, previewText = '', footerCompany = '', footerAddress = '', height = 420 }) {
+export default function EmailEditor({ value, onChange, previewVars = {}, previewText = '', footerCompany = '', footerAddress = '', height = 420, banner = null, onUploadImage = null }) {
   const [mode, setMode] = useState('visual');
+  const [uploading, setUploading] = useState(false);
+  const imageInputRef = useRef(null);
+  const savedRange = useRef(null);
   const [device, setDevice] = useState('desktop');
   const editorRef = useRef(null);
   const lastEmitted = useRef(null);
@@ -112,6 +122,30 @@ export default function EmailEditor({ value, onChange, previewVars = {}, preview
 
   const insertHtml = (html) => exec('insertHTML', html);
 
+  // Remember the caret so an uploaded image lands where the user clicked.
+  const saveSelection = () => {
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount && editorRef.current?.contains(sel.anchorNode)) savedRange.current = sel.getRangeAt(0).cloneRange();
+  };
+  const restoreSelection = () => {
+    const sel = window.getSelection();
+    editorRef.current?.focus();
+    if (savedRange.current && sel) { sel.removeAllRanges(); sel.addRange(savedRange.current); }
+  };
+  const uploadImage = async (file) => {
+    if (!file || !onUploadImage) return;
+    setUploading(true);
+    try {
+      const url = await onUploadImage(file);
+      restoreSelection();
+      insertHtml(`<p><img src="${escapeAttr(url)}" alt="" style="max-width:100%;height:auto;border-radius:8px" /></p>`);
+    } catch (error) {
+      toast.error(error?.message || 'Image upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const actions = [
     { icon: Bold, label: 'Bold', run: () => exec('bold') },
     { icon: Italic, label: 'Italic', run: () => exec('italic') },
@@ -137,8 +171,9 @@ export default function EmailEditor({ value, onChange, previewVars = {}, preview
         if (url) insertHtml(BUTTON_HTML(escapeAttr(text), escapeAttr(/^(https?:|mailto:|tel:)/i.test(url) ? url : `https://${url}`)));
       },
     },
+    ...(onUploadImage ? [{ icon: uploading ? Loader2 : ImagePlus, label: 'Upload image', run: () => { saveSelection(); imageInputRef.current?.click(); } }] : []),
     {
-      icon: ImageIcon, label: 'Image', run: () => {
+      icon: ImageIcon, label: 'Image from URL', run: () => {
         const url = window.prompt('Image URL (https://…) — use a publicly hosted image');
         if (url && /^https?:\/\//i.test(url)) insertHtml(`<p><img src="${escapeAttr(url)}" alt="" style="max-width:100%;height:auto;border-radius:8px" /></p>`);
       },
@@ -149,11 +184,12 @@ export default function EmailEditor({ value, onChange, previewVars = {}, preview
 
   const srcDoc = useMemo(() => previewDocument(
     renderMergePreview(value, previewVars),
-    { previewText: renderMergePreview(previewText, previewVars), footerCompany, footerAddress },
-  ), [value, previewVars, previewText, footerCompany, footerAddress]);
+    { previewText: renderMergePreview(previewText, previewVars), footerCompany, footerAddress, banner },
+  ), [value, previewVars, previewText, footerCompany, footerAddress, banner]);
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
+      <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => { uploadImage(e.target.files?.[0]); e.target.value = ''; }} />
       <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
         <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-800/60">
           <div className="mr-1 flex rounded-md border border-slate-200 bg-white p-0.5 dark:border-slate-600 dark:bg-slate-800">

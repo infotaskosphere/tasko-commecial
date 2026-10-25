@@ -79,6 +79,12 @@ async def ensure_indexes() -> None:
         (TEMPLATES, [("company_id", ASCENDING), ("channel", ASCENDING)], {}),
         (SUPPRESSIONS, [("company_id", ASCENDING), ("channel", ASCENDING), ("address", ASCENDING)], {"unique": True}),
         (MEDIA, [("id", ASCENDING)], {"unique": True}),
+        (MEDIA, [("public_token", ASCENDING)], {"sparse": True}),
+        # Existing history collections read by the EngageX dashboard/history.
+        ("whatsapp_messages", [("company_id", ASCENDING), ("sent_at", DESCENDING)], {}),
+        ("whatsapp_messages", [("batch_id", ASCENDING)], {}),
+        ("email_delivery_logs", [("related_user_id", ASCENDING), ("created_at", DESCENDING)], {}),
+        ("email_delivery_logs", [("related_licensee_id", ASCENDING), ("created_at", DESCENDING)], {}),
     ]
     for name, keys, options in specs:
         try:
@@ -253,6 +259,7 @@ class _MailChannel:
         self.content = campaign.get("content") or {}
         self.sender = None
         self.session = None
+        self.attachments: list = []
 
     async def open(self) -> Optional[str]:
         from .mailer import SmtpSession, resolve_sender
@@ -261,6 +268,12 @@ class _MailChannel:
             self.sender = await resolve_sender(self.campaign["company_id"], self.settings.get("sender_id"))
         except Exception as exc:
             return f"Email sender is unavailable: {getattr(exc, 'detail', exc)}"
+        try:
+            from .mailer import load_attachments
+
+            self.attachments = await load_attachments(self.campaign["company_id"], self.content.get("attachments"))
+        except Exception as exc:
+            return str(getattr(exc, "detail", exc))
         if self.sender.kind == "smtp":
             self.session = SmtpSession(self.sender.smtp)
         elif not self.sender.from_email:
@@ -286,6 +299,7 @@ class _MailChannel:
             footer_address=self.settings.get("footer_address") or "",
             unsubscribe_url=unsubscribe_url,
             open_pixel_url=pixel_url,
+            banner=self.content.get("banner"),
         )
         text_body = html_to_text(body)
         if unsubscribe_url:
@@ -301,6 +315,7 @@ class _MailChannel:
             campaign_id=self.campaign["id"],
             related_user_id=self.campaign.get("created_by"),
             related_licensee_id=self.campaign.get("tenant", {}).get("customer_id"),
+            attachments=self.attachments,
         )
         recipient["_subject"] = subject
 

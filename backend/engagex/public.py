@@ -13,8 +13,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from .common import CONTACTS, RECIPIENTS, SUPPRESSIONS, iso, raw_db
-from .common import CAMPAIGNS
+from .common import CAMPAIGNS, CONTACTS, MEDIA, RECIPIENTS, SUPPRESSIONS, iso, raw_db
 
 logger = logging.getLogger("engagex.public")
 router = APIRouter(prefix="/engagex-public", tags=["engagex-public"])
@@ -100,3 +99,28 @@ async def open_pixel(token: str):
     except Exception:  # tracking must never break image rendering
         logger.debug("EngageX open tracking failed", exc_info=True)
     return Response(content=_PIXEL, media_type="image/gif", headers=_NO_STORE)
+
+
+_PUBLIC_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+
+@router.get("/a/{token}/{filename}")
+async def public_asset(token: str, filename: str):
+    """Serve MailMaster banner/inline images to email clients.
+
+    Only raster image types uploaded as public email assets are served (never
+    HTML/SVG), so the endpoint cannot be used to host active content.
+    """
+    doc = None
+    if token and len(token) <= 64:
+        doc = await raw_db()[MEDIA].find_one(
+            {"public_token": token, "purpose": {"$in": ["banner", "image"]}},
+            {"_id": 0, "base64": 1, "mime_type": 1},
+        )
+    if not doc or doc.get("mime_type") not in _PUBLIC_IMAGE_TYPES:
+        return Response(status_code=404, headers=_NO_STORE)
+    return Response(
+        content=base64.b64decode(doc["base64"]),
+        media_type=doc["mime_type"],
+        headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"},
+    )

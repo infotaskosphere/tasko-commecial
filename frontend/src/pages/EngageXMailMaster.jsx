@@ -3,8 +3,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  AtSign, CalendarClock, CheckCircle2, ChevronLeft, Circle, Contact, FileText, Inbox, KeyRound, Loader2, Mail,
-  Megaphone, Pencil, Plus, Send, Server, ShieldCheck, ShieldOff, Star, Trash2, Users, X,
+  AlertTriangle, AtSign, CalendarClock, CheckCircle2, ChevronLeft, Circle, Contact, FileText, ImageIcon, Inbox, KeyRound, Loader2, Mail,
+  Megaphone, Paperclip, Pencil, Plus, RefreshCw, Send, Server, ShieldCheck, ShieldOff, Star, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { EmptyState, GuidanceNote, LoadingState, PageBanner, PageShell } from '@/components/ui/PageKit';
+import { EmptyState, GuidanceNote, LoadingState, PageBanner } from '@/components/ui/PageKit';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
 import AudienceBuilder from '@/components/engagex/AudienceBuilder';
@@ -302,7 +302,8 @@ function TemplateEditorDialog({ open, onOpenChange, initial, companyName, onSave
           <Input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Default subject" />
           <Input value={form.preview_text} onChange={(e) => setForm((f) => ({ ...f, preview_text: e.target.value }))} placeholder="Preview text" />
         </div>
-        <EmailEditor value={form.html} onChange={(html) => setForm((f) => ({ ...f, html }))} previewVars={vars} previewText={form.preview_text} footerCompany={companyName} height={380} />
+        <EmailEditor value={form.html} onChange={(html) => setForm((f) => ({ ...f, html }))} previewVars={vars} previewText={form.preview_text} footerCompany={companyName} height={380}
+          onUploadImage={async (file) => (await uploadEmailImage(file, 'image')).url} />
         <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save template'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
@@ -346,6 +347,7 @@ function TemplatesPanel({ templates, companyName, reload, onUse }) {
 const blankCampaign = (senders) => ({
   id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || PLATFORM, subject: '', preview_text: '',
   html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, track_opens: true, footer_address: '', template_id: null,
+  banner: null, attachments: [],
 });
 
 export const campaignFromDoc = (doc, senders) => ({
@@ -361,7 +363,121 @@ export const campaignFromDoc = (doc, senders) => ({
   per_minute: doc.settings?.per_minute || 30,
   track_opens: doc.settings?.track_opens !== false,
   footer_address: doc.settings?.footer_address || '',
+  banner: doc.content?.banner || null,
+  attachments: doc.content?.attachments || [],
 });
+
+const MAX_ATTACHMENTS = 5;
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENTS_TOTAL = 10 * 1024 * 1024;
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const fmtBytes = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Upload an image for use in an email (returns its public URL). */
+export async function uploadEmailImage(file, purpose = 'image') {
+  if (!IMAGE_TYPES.includes(file.type)) throw new Error('Use a PNG, JPG, GIF or WebP image.');
+  if (file.size > 3 * 1024 * 1024) throw new Error('Images must be 3 MB or smaller.');
+  try {
+    const res = await engagexApi.uploadMailFile(file, purpose);
+    return res;
+  } catch (error) {
+    throw new Error(engagexError(error));
+  }
+}
+
+function BannerPicker({ banner, onChange }) {
+  const ref = React.useRef(null);
+  const [busy, setBusy] = useState(false);
+  const pick = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const res = await uploadEmailImage(file, 'banner');
+      onChange({ url: res.url, media_id: res.id, link: banner?.link || '', alt: banner?.alt || file.name.replace(/\.[^.]+$/, '') });
+    } catch (error) { toast.error(error.message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-3">
+      <input ref={ref} type="file" accept={IMAGE_TYPES.join(',')} className="hidden" onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ''; }} />
+      {banner?.url ? (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
+            <img src={banner.url} alt={banner.alt || 'Banner'} className="block h-auto w-full" style={{ maxWidth: '100%' }} />
+          </div>
+          <div className="space-y-2">
+            <label className="block text-xs font-semibold text-slate-500">Banner link (optional)
+              <Input className="mt-1" value={banner.link || ''} onChange={(e) => onChange({ ...banner, link: e.target.value })} placeholder="https://yourwebsite.com/offer" />
+            </label>
+            <label className="block text-xs font-semibold text-slate-500">Alt text (shown if images are blocked)
+              <Input className="mt-1" value={banner.alt || ''} onChange={(e) => onChange({ ...banner, alt: e.target.value })} placeholder="Diwali offer from Acme" maxLength={200} />
+            </label>
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" variant="outline" onClick={() => ref.current?.click()} disabled={busy}><RefreshCw className="h-4 w-4 mr-1.5" />Replace</Button>
+              <Button size="sm" variant="ghost" className="text-rose-600" onClick={() => onChange(null)}><Trash2 className="h-4 w-4 mr-1.5" />Remove</Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => ref.current?.click()} disabled={busy}
+          className="flex w-full flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 py-8 text-slate-500 hover:border-indigo-400 hover:text-indigo-700 dark:border-slate-600 dark:hover:text-indigo-300">
+          {busy ? <Loader2 className="h-6 w-6 animate-spin" /> : <ImageIcon className="h-6 w-6" />}
+          <span className="text-sm font-semibold">{busy ? 'Uploading…' : 'Upload a banner image'}</span>
+          <span className="text-xs">Shown full-width at the top of the email · 1200 × 400 px recommended · PNG, JPG, GIF or WebP up to 3 MB</span>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function AttachmentPicker({ attachments, onChange }) {
+  const ref = React.useRef(null);
+  const [busy, setBusy] = useState(false);
+  const total = attachments.reduce((n, a) => n + (a.size || 0), 0);
+  const pick = async (files) => {
+    const list = Array.from(files || []);
+    if (!list.length) return;
+    if (attachments.length + list.length > MAX_ATTACHMENTS) return toast.error(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+    let running = total;
+    for (const f of list) {
+      if (f.size > MAX_ATTACHMENT_BYTES) return toast.error(`${f.name} is larger than 8 MB.`);
+      running += f.size;
+    }
+    if (running > MAX_ATTACHMENTS_TOTAL) return toast.error('Attachments may total at most 10 MB per email.');
+    setBusy(true);
+    try {
+      const uploaded = [];
+      for (const f of list) {
+        const res = await engagexApi.uploadMailFile(f, 'attachment');
+        uploaded.push({ id: res.id, filename: res.filename, size: res.size, mime_type: res.mime_type });
+      }
+      onChange([...attachments, ...uploaded]);
+      toast.success(`${uploaded.length} file${uploaded.length > 1 ? 's' : ''} attached`);
+    } catch (error) { toast.error(engagexError(error)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="space-y-2">
+      <input ref={ref} type="file" multiple className="hidden"
+        accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.zip"
+        onChange={(e) => { pick(e.target.files); e.target.value = ''; }} />
+      {attachments.length > 0 && (
+        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
+          {attachments.map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-2 px-3 py-2">
+              <span className="flex min-w-0 items-center gap-2 text-sm"><Paperclip className="h-4 w-4 shrink-0 text-slate-400" /><span className="truncate text-slate-700 dark:text-slate-200">{a.filename}</span><span className="shrink-0 text-xs text-slate-400">{fmtBytes(a.size || 0)}</span></span>
+              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onChange(attachments.filter((x) => x.id !== a.id))} aria-label={`Remove ${a.filename}`}><X className="h-4 w-4" /></Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="outline" onClick={() => ref.current?.click()} disabled={busy || attachments.length >= MAX_ATTACHMENTS}>
+          {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}{busy ? 'Uploading…' : 'Attach files'}
+        </Button>
+        <span className="text-xs text-slate-500">Images, PDF, Word, Excel, PowerPoint… up to {MAX_ATTACHMENTS} files, 10 MB in total{attachments.length ? ` · ${fmtBytes(total)} used` : ''}.</span>
+      </div>
+    </div>
+  );
+}
 
 function ChecklistRow({ done, title, summary, children }) {
   return (
@@ -395,6 +511,8 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
   const body = () => ({
     name: c.name.trim() || c.subject.trim() || 'Untitled campaign', sender_id: c.sender_id, subject: c.subject, preview_text: c.preview_text, html: c.html,
     audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), track_opens: c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
+    banner: c.banner?.url ? { url: c.banner.url, link: c.banner.link || '', alt: c.banner.alt || '', media_id: c.banner.media_id || null } : null,
+    attachments: c.attachments.map(({ id, filename, size, mime_type }) => ({ id, filename, size, mime_type })),
   });
 
   const saveDraft = async (quiet = false) => {
@@ -426,7 +544,8 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
 
   const sendTest = async () => {
     try {
-      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text });
+      const b = body();
+      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text, banner: b.banner, attachments: b.attachments });
       toast.success(`Test sent to ${testTo}`); setTestOpen(false);
     } catch (error) { toast.error(engagexError(error)); }
   };
@@ -488,6 +607,10 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
         </div>
       </ChecklistRow>
 
+      <ChecklistRow done={!!c.banner?.url} title="Banner image (optional)" summary={c.banner?.url ? 'A full-width image appears at the top of the email' : 'Add a header image or promotional banner'}>
+        <BannerPicker banner={c.banner} onChange={(banner) => set({ banner })} />
+      </ChecklistRow>
+
       <ChecklistRow done={ready.content} title="Content" summary="Design your email. Personalisation tags are filled in for each recipient.">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold text-slate-500">Start from:</span>
@@ -496,7 +619,12 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
               className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-400 hover:text-indigo-700 dark:border-slate-600 dark:text-slate-300">{t.name}</button>
           ))}
         </div>
-        <EmailEditor value={c.html} onChange={(html) => set({ html })} previewVars={vars} previewText={c.preview_text} footerCompany={sender?.from_name || companyName} footerAddress={c.footer_address} />
+        <EmailEditor value={c.html} onChange={(html) => set({ html })} previewVars={vars} previewText={c.preview_text} footerCompany={sender?.from_name || companyName} footerAddress={c.footer_address}
+          banner={c.banner} onUploadImage={async (file) => (await uploadEmailImage(file, 'image')).url} />
+      </ChecklistRow>
+
+      <ChecklistRow done={c.attachments.length > 0} title="Attachments (optional)" summary={c.attachments.length ? `${c.attachments.length} file${c.attachments.length > 1 ? 's' : ''} attached to every email` : 'Attach brochures, invoices, images or documents'}>
+        <AttachmentPicker attachments={c.attachments} onChange={(attachments) => set({ attachments })} />
       </ChecklistRow>
 
       <ChecklistRow done title="Settings" summary={`${c.per_minute} emails per minute · open tracking ${c.track_opens ? 'on' : 'off'}`}>
@@ -530,6 +658,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Recipients</dt><dd className="font-semibold">≈ {fmtNumber(audienceCount)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">From</dt><dd className="truncate font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Subject</dt><dd className="truncate font-semibold">{c.subject}</dd></div>
+            {c.attachments.length > 0 && <div className="flex justify-between gap-3"><dt className="text-slate-500">Attachments</dt><dd className="font-semibold">{c.attachments.length} file{c.attachments.length > 1 ? 's' : ''}</dd></div>}
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Estimated time</dt><dd className="font-semibold">{fmtDuration(etaSeconds)}</dd></div>
           </dl>
           {confirm === 'schedule' && <Input type="datetime-local" value={scheduleAt} min={localDateTimeValue(Date.now() + 2 * 60 * 1000)} onChange={(e) => setScheduleAt(e.target.value)} />}
@@ -555,6 +684,7 @@ export default function EngageXMailMaster() {
   const [lists, setLists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [builder, setBuilder] = useState(null);
   const [openId, setOpenId] = useState(params.get('campaign'));
   const [refreshKey, setRefreshKey] = useState(0);
@@ -563,16 +693,18 @@ export default function EngageXMailMaster() {
   const loadLists = useCallback(async () => { const d = await engagexApi.lists(); setLists(d.items || []); }, []);
   const loadTemplates = useCallback(async () => { const d = await engagexApi.templates('email'); setTemplates((d.items || []).map((t) => ({ ...t, starter: false }))); }, []);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const loaded = await loadSenders();
-        await Promise.all([loadLists(), loadTemplates()]);
-        if (params.get('new')) { setBuilder(blankCampaign(loaded)); params.delete('new'); setParams(params, { replace: true }); }
-      } catch (error) { toast.error(engagexError(error)); }
-      finally { setLoading(false); }
-    })();
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const loaded = await loadSenders();
+      await Promise.all([loadLists(), loadTemplates()]);
+      if (params.get('new')) { setBuilder(blankCampaign(loaded)); params.delete('new'); setParams(params, { replace: true }); }
+    } catch (error) { setLoadError(engagexError(error)); }
+    finally { setLoading(false); }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   useEffect(() => { const id = params.get('campaign'); if (id) setOpenId(id); }, [params]);
 
@@ -582,7 +714,7 @@ export default function EngageXMailMaster() {
   const closeSheet = (open) => { if (open) return; setOpenId(null); if (params.get('campaign')) { params.delete('campaign'); setParams(params, { replace: true }); } };
 
   return (
-    <PageShell className="text-slate-800 dark:text-slate-100">
+    <div className="space-y-5 sm:space-y-6 w-full min-w-0 text-slate-800 dark:text-slate-100">
       <PageBanner
         icon={Mail}
         eyebrow="EngageX · MailMaster"
@@ -595,6 +727,12 @@ export default function EngageXMailMaster() {
         ]}
       />
 
+      {loadError && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />Couldn’t load MailMaster: {loadError}</span>
+          <Button size="sm" variant="outline" onClick={loadAll}><RefreshCw className="h-4 w-4 mr-1.5" />Retry</Button>
+        </div>
+      )}
       {loading ? <LoadingState /> : builder ? (
         <ExCard icon={Megaphone} title={builder.id ? 'Edit campaign' : 'New email campaign'} color={BRAND.email}>
           <CampaignBuilder
@@ -652,6 +790,6 @@ export default function EngageXMailMaster() {
           catch (error) { toast.error(engagexError(error)); }
         }}
       />
-    </PageShell>
+    </div>
   );
 }

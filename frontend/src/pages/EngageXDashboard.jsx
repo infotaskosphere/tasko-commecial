@@ -6,7 +6,7 @@ import {
   Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 import {
-  ArrowRight, ChevronLeft, ChevronRight, Download, History, Mail, MailOpen, Megaphone, MessageCircle,
+  AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Download, History, Mail, MailOpen, Megaphone, MessageCircle,
   RefreshCw, Search, Send, ShieldOff, TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { EmptyState, LoadingState, PageBanner, PageShell, StatRow } from '@/components/ui/PageKit';
+import { EmptyState, LoadingState, PageBanner, StatRow } from '@/components/ui/PageKit';
 import useDark from '@/hooks/useDark';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
 import { BRAND, ExCard, DeliveryBar, StatusBadge, fmtAgo, fmtDateTime, fmtNumber, fmtPct, isActive, usePolling } from '@/components/engagex/shared';
@@ -205,13 +205,15 @@ export default function EngageXDashboard() {
   const [days, setDays] = useState(30);
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       setOverview(await engagexApi.overview(days));
-    } catch (error) {
-      if (!silent) toast.error(engagexError(error));
+      setError('');
+    } catch (err) {
+      if (!silent) setError(engagexError(err));
     } finally {
       setLoading(false);
     }
@@ -224,7 +226,7 @@ export default function EngageXDashboard() {
   const openCampaign = (c) => navigate(`/engagex/${c.channel === 'whatsapp' ? 'whatsapp' : 'mailmaster'}?campaign=${encodeURIComponent(c.id)}`);
 
   return (
-    <PageShell className="text-slate-800 dark:text-slate-100">
+    <div className="space-y-5 sm:space-y-6 w-full min-w-0 text-slate-800 dark:text-slate-100">
       <PageBanner
         icon={Megaphone}
         eyebrow="EngageX"
@@ -253,6 +255,13 @@ export default function EngageXDashboard() {
         </div>
       </div>
 
+      {error && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 shrink-0" />Couldn’t load EngageX data: {error}</span>
+          <Button size="sm" variant="outline" onClick={() => load()}><RefreshCw className="h-4 w-4 mr-1.5" />Retry</Button>
+        </div>
+      )}
+
       <StatRow items={[
         { icon: MessageCircle, label: `WhatsApp delivered · ${fmtPct(k.whatsapp_delivery_rate)}`, value: fmtNumber(k.whatsapp_sent), color: BRAND.whatsapp, loading },
         { icon: Mail, label: `Emails delivered · ${fmtPct(k.email_delivery_rate)}`, value: fmtNumber(k.email_sent), color: BRAND.email, loading },
@@ -262,14 +271,14 @@ export default function EngageXDashboard() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <ExCard icon={TrendingUp} title="Delivery trend" description={`Messages sent per day over the last ${days} days.`} color={BRAND.teal}>
-          {loading && !overview ? <LoadingState /> : <TrendChart data={overview?.trend || []} isDark={isDark} />}
+          {loading && !overview && !error ? <LoadingState /> : <TrendChart data={overview?.trend || []} isDark={isDark} />}
         </ExCard>
         <ExCard icon={Megaphone} title="Recent campaigns" badge={k.campaigns_total ? fmtNumber(k.campaigns_total) : undefined} color={BRAND.teal}>
-          {loading && !overview ? <LoadingState /> : <RecentCampaigns campaigns={overview?.recent_campaigns || []} onOpen={openCampaign} />}
+          {loading && !overview && !error ? <LoadingState /> : <RecentCampaigns campaigns={overview?.recent_campaigns || []} onOpen={openCampaign} />}
         </ExCard>
       </div>
 
       <HistoryTable onCampaign={openCampaign} />
-    </PageShell>
+    </div>
   );
 }

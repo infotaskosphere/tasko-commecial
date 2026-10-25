@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { EmptyState, GuidanceNote, LoadingState, PageBanner, PageShell } from '@/components/ui/PageKit';
+import { EmptyState, GuidanceNote, LoadingState, PageBanner } from '@/components/ui/PageKit';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
 import AudienceBuilder from '@/components/engagex/AudienceBuilder';
@@ -54,7 +54,9 @@ function PhonePreview({ message, recipient, senderCompany, attachment }) {
       <div className="min-h-[300px] rounded-b-[1.5rem] bg-[#ECE5DD] p-3 dark:bg-[#0B141A]">
         {(message || attachment) ? (
           <div className="ml-auto w-fit max-w-[92%] rounded-lg rounded-tr-none bg-[#DCF8C6] px-2.5 py-1.5 text-[13px] leading-snug text-slate-900 shadow-sm dark:bg-[#005C4B] dark:text-slate-50">
-            {attachment && <div className="mb-1.5 flex items-center gap-2 rounded-md bg-black/5 px-2 py-1.5 text-xs dark:bg-white/10"><FileText className="h-4 w-4" /><span className="truncate">{attachment.name}</span></div>}
+            {attachment && (attachment.type?.startsWith('image/')
+              ? <img src={`data:${attachment.type};base64,${attachment.base64}`} alt="" className="mb-1.5 max-h-48 w-full rounded-md object-cover" />
+              : <div className="mb-1.5 flex items-center gap-2 rounded-md bg-black/5 px-2 py-1.5 text-xs dark:bg-white/10"><FileText className="h-4 w-4" /><span className="truncate">{attachment.name}</span></div>)}
             <div className="whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: waFormat(text) }} />
             <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-300">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<Check className="h-3 w-3" /></div>
           </div>
@@ -255,11 +257,15 @@ function BroadcastWizard({ sessions, sessionsLoading, senderCompany, draft, setD
               <input ref={fileRef} type="file" className="hidden" accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,video/mp4" onChange={(e) => { attach(e.target.files?.[0]); e.target.value = ''; }} />
               {draft.attachment ? (
                 <div className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-700">
-                  <span className="flex min-w-0 items-center gap-2 text-sm"><Paperclip className="h-4 w-4 text-slate-500" /><span className="truncate">{draft.attachment.name}</span><span className="text-xs text-slate-400">{(draft.attachment.size / 1024).toFixed(0)} KB</span></span>
+                  <span className="flex min-w-0 items-center gap-2 text-sm">{draft.attachment.type?.startsWith('image/') ? <img src={`data:${draft.attachment.type};base64,${draft.attachment.base64}`} alt="" className="h-10 w-10 rounded object-cover" /> : <Paperclip className="h-4 w-4 text-slate-500" />}<span className="truncate">{draft.attachment.name}</span><span className="text-xs text-slate-400">{(draft.attachment.size / 1024).toFixed(0)} KB</span></span>
                   <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => set({ attachment: null })}><X className="h-4 w-4" /></Button>
                 </div>
               ) : (
-                <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}><Paperclip className="h-4 w-4 mr-1.5" />Attach image or document (max {MAX_MEDIA_MB} MB)</Button>
+                <button type="button" onClick={() => fileRef.current?.click()}
+                  className="flex w-full items-center gap-3 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 text-left text-slate-500 hover:border-emerald-400 hover:text-emerald-700 dark:border-slate-600 dark:hover:text-emerald-300">
+                  <span className="rounded-lg bg-emerald-50 p-2 text-emerald-600 dark:bg-emerald-500/15"><Paperclip className="h-5 w-5" /></span>
+                  <span><span className="block text-sm font-semibold">Attach an image or document</span><span className="block text-xs">Photo, poster, PDF, Word, Excel, PowerPoint or short video · up to {MAX_MEDIA_MB} MB</span></span>
+                </button>
               )}
               {draft.attachment && <p className="mt-1 text-[11px] text-slate-500">The message is sent as the attachment's caption.</p>}
             </div>
@@ -400,7 +406,7 @@ export default function EngageXWhatsAppHub() {
   };
 
   return (
-    <PageShell className="text-slate-800 dark:text-slate-100">
+    <div className="space-y-5 sm:space-y-6 w-full min-w-0 text-slate-800 dark:text-slate-100">
       <PageBanner
         icon={MessageCircle}
         eyebrow="EngageX · WhatsApp Hub"
@@ -445,6 +451,6 @@ export default function EngageXWhatsAppHub() {
       </Tabs>
 
       <CampaignSheet channel="whatsapp" campaignId={openId} open={!!openId} onOpenChange={closeSheet} onChanged={() => setRefreshKey((k) => k + 1)} />
-    </PageShell>
+    </div>
   );
 }

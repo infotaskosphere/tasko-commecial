@@ -1,6 +1,6 @@
 // AudienceBuilder — pick recipients from Clients, pasted text, or a CSV/Excel file.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Building2, ClipboardPaste, FileSpreadsheet, Loader2, Search, Trash2, Upload, Users, X } from 'lucide-react';
+import { Building2, ClipboardPaste, FileSpreadsheet, Loader2, Plus, Search, Trash2, Upload, UserPlus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
-import { addressKey, dedupeRecipients, detectColumns, parsePasted, parseSpreadsheet, rowsToRecipients } from './shared';
+import { addressKey, dedupeRecipients, detectColumns, normalizeAddress, parsePasted, parseSpreadsheet, rowsToRecipients } from './shared';
 
 const NONE = '__none__';
 
@@ -205,6 +205,43 @@ function ImportTab({ channel, onAdd }) {
   );
 }
 
+/** Type one recipient directly: name + mobile number / email. */
+function QuickAdd({ channel, onAdd }) {
+  const key = addressKey(channel);
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [company, setCompany] = useState('');
+  const valid = !!normalizeAddress(channel, address);
+  const submit = (e) => {
+    e?.preventDefault();
+    if (!valid) {
+      toast.error(channel === 'whatsapp' ? 'Enter a valid mobile number (10 digits, or with country code).' : 'Enter a valid email address.');
+      return;
+    }
+    onAdd([{ name: name.trim(), [key]: address.trim(), company: company.trim() }], 'manual entry');
+    setName(''); setAddress(''); setCompany('');
+  };
+  return (
+    <form onSubmit={submit} className="rounded-xl border border-dashed border-teal-300 bg-teal-50/40 p-3 dark:border-teal-500/40 dark:bg-teal-500/5">
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-teal-800 dark:text-teal-200"><UserPlus className="h-3.5 w-3.5" />Add {channel === 'whatsapp' ? 'a mobile number' : 'an email address'} directly</p>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto]">
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" aria-label="Name" />
+        <Input
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          type={channel === 'whatsapp' ? 'tel' : 'email'}
+          inputMode={channel === 'whatsapp' ? 'tel' : 'email'}
+          placeholder={channel === 'whatsapp' ? 'Mobile, e.g. 98765 43210' : 'Email, e.g. ravi@example.com'}
+          aria-label={channel === 'whatsapp' ? 'Mobile number' : 'Email address'}
+          className={address && !valid ? 'border-rose-400 focus-visible:ring-rose-300' : ''}
+        />
+        <Input value={company} onChange={(e) => setCompany(e.target.value)} placeholder="Company (optional)" aria-label="Company" />
+        <Button type="submit" disabled={!address.trim()}><Plus className="h-4 w-4 mr-1" />Add</Button>
+      </div>
+    </form>
+  );
+}
+
 /**
  * Controlled audience editor.
  * @param {'whatsapp'|'email'} channel
@@ -232,6 +269,8 @@ export default function AudienceBuilder({ channel, value, onChange, showClients 
   }, [value, filter, key]);
 
   return (
+    <div className="space-y-4">
+    <QuickAdd channel={channel} onAdd={add} />
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
       <Tabs defaultValue={showClients ? 'clients' : 'paste'} className="min-w-0">
         <TabsList className="mb-3 h-auto">
@@ -275,6 +314,7 @@ export default function AudienceBuilder({ channel, value, onChange, showClients 
           )}
         </div>
       </div>
+    </div>
     </div>
   );
 }
