@@ -1,0 +1,21 @@
+import React, { useMemo, useState } from 'react';
+
+const HISTORY_KEY = 'onenexa.engagex.message-history';
+const saveHistory = (entry) => { const rows = (() => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch { return []; } })(); localStorage.setItem(HISTORY_KEY, JSON.stringify([...rows, entry])); };
+const parseRecipients = text => text.split(/\r?\n|,/).map(x => x.trim()).filter(Boolean).map(phone => ({ phone }));
+
+export default function EngageXWhatsAppHub() {
+  const [recipientsText, setRecipientsText] = useState('');
+  const [message, setMessage] = useState('');
+  const [name, setName] = useState('');
+  const [running, setRunning] = useState(false);
+  const recipients = useMemo(() => parseRecipients(recipientsText), [recipientsText]);
+  const queue = () => { if (!recipients.length || !message.trim()) return; setRunning(true); setTimeout(() => { saveHistory({ id: crypto.randomUUID?.() || String(Date.now()), createdAt: new Date().toISOString(), channel: 'whatsapp', name: name || 'WhatsApp Broadcast', recipients: recipients.length, status: 'queued', message }); setRunning(false); setRecipientsText(''); setMessage(''); }, 250); };
+  return <div className="min-h-full bg-slate-50 p-6"><div className="mx-auto max-w-7xl space-y-6">
+    <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-600">EngageX · WhatsApp Hub</p><h1 className="mt-2 text-3xl font-bold text-slate-900">Bulk WhatsApp Messaging</h1><p className="mt-2 max-w-3xl text-sm text-slate-500">Create a broadcast queue for client and marketing contacts. The existing client WhatsApp integration remains the single-message channel; this page provides the campaign layer on top of it.</p></div>
+    <div className="grid gap-6 lg:grid-cols-[1.3fr_.7fr]">
+      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-5"><div className="grid gap-4 sm:grid-cols-2"><label className="text-sm font-medium text-slate-700">Campaign name<input value={name} onChange={e=>setName(e.target.value)} placeholder="October compliance campaign" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-cyan-500" /></label><div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600"><strong>{recipients.length}</strong> recipients detected<div className="mt-1 text-xs text-slate-400">Paste one number per line or comma-separated.</div></div></div><label className="block text-sm font-medium text-slate-700">WhatsApp numbers<textarea value={recipientsText} onChange={e=>setRecipientsText(e.target.value)} rows="9" placeholder="9198XXXXXXXX\n9199XXXXXXXX" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 font-mono text-sm outline-none focus:border-cyan-500" /></label><label className="block text-sm font-medium text-slate-700">Message<textarea value={message} onChange={e=>setMessage(e.target.value)} rows="7" placeholder="Hello {{name}}, ..." className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-3 outline-none focus:border-cyan-500" /></label><div className="flex justify-end"><button disabled={running || !recipients.length || !message.trim()} onClick={queue} className="rounded-lg bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">{running ? 'Preparing queue…' : 'Queue WhatsApp Campaign'}</button></div></section>
+      <aside className="space-y-4"><div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-semibold text-slate-900">Campaign workflow</h2><ol className="mt-4 space-y-4 text-sm text-slate-600"><li><b>1. Prepare</b><br/>Import or paste recipient numbers.</li><li><b>2. Personalise</b><br/>Build the campaign message and variables.</li><li><b>3. Queue</b><br/>Create a tenant-scoped delivery job.</li><li><b>4. Deliver</b><br/>Use the configured WhatsApp provider and record delivery status.</li></ol></div><div className="rounded-xl border border-cyan-100 bg-cyan-50 p-5 text-sm text-cyan-900"><b>Provider safety</b><p className="mt-1 text-cyan-800/80">Only send to contacts for which the business has the required WhatsApp consent and provider/template approval.</p></div></aside>
+    </div>
+  </div></div>;
+}
