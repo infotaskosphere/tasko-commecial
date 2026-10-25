@@ -27,7 +27,7 @@ const ONE_NEXA_BRAND = {
   landingPath: '/dashboard',
   lightLogo: '/onenexa-logo.svg',
   darkLogo: '/onenexa-logo.svg',
-  collapsedLogo: '/onenexa-logo.svg',
+  collapsedLogo: '/onenexa-icon.svg',
   alt: 'OneNexa',
 };
 
@@ -122,7 +122,7 @@ const syncModuleBranding = () => {
   const logoLink = header.querySelector('a[href="/dashboard"]') || header.querySelector('a.relative.flex.items-center');
   if (!logoLink) return;
 
-  let logoImages = Array.from(logoLink.querySelectorAll('img'));
+  const logoImages = Array.from(logoLink.querySelectorAll('img'));
   let visibleLogo = logoImages.find((img) => getComputedStyle(img).display !== 'none') || logoImages[logoImages.length - 1];
 
   // Admin/Settings originally render a text wordmark instead of an <img>.
@@ -136,7 +136,7 @@ const syncModuleBranding = () => {
 
   const brandColumn = header.firstElementChild;
   const collapsed = Boolean(brandColumn && brandColumn.getBoundingClientRect().width <= 100);
-  const logoSrc = branding.collapsedLogo;
+  const logoSrc = collapsed ? branding.collapsedLogo : branding.lightLogo;
 
   if (logoLink.getAttribute('href') !== branding.landingPath) logoLink.setAttribute('href', branding.landingPath);
   if (visibleLogo.getAttribute('src') !== logoSrc) visibleLogo.setAttribute('src', logoSrc);
@@ -170,6 +170,17 @@ const syncModuleBranding = () => {
     const moduleLabel = moduleBranding?.label || 'Taskosphere';
     if (headerTitle.textContent.trim() !== moduleLabel) headerTitle.textContent = moduleLabel;
     headerTitle.setAttribute('aria-label', moduleLabel);
+
+    // The existing pill already contains the module label. Keep only its
+    // functional tagline so the header reads: OneNexa | Module | Tagline.
+    const modulePill = headerTitle.nextElementSibling;
+    if (modulePill?.querySelectorAll) {
+      const pillSpans = modulePill.querySelectorAll(':scope > span');
+      if (pillSpans.length >= 3) {
+        pillSpans[0].style.display = 'none';
+        pillSpans[1].style.display = 'none';
+      }
+    }
   }
 
   document.title = `${moduleBranding?.label || 'Taskosphere'} · OneNexa`;
