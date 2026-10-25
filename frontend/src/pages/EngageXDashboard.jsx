@@ -1,0 +1,21 @@
+import React, { useEffect, useMemo, useState } from 'react';
+
+const STORAGE_KEY = 'onenexa.engagex.message-history';
+const readHistory = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; } };
+
+export default function EngageXDashboard() {
+  const [history, setHistory] = useState(readHistory);
+  const [filter, setFilter] = useState('all');
+  useEffect(() => { const onStorage = () => setHistory(readHistory()); window.addEventListener('storage', onStorage); return () => window.removeEventListener('storage', onStorage); }, []);
+  const filtered = useMemo(() => filter === 'all' ? history : history.filter(x => x.channel === filter), [history, filter]);
+  const whatsapp = history.filter(x => x.channel === 'whatsapp');
+  const email = history.filter(x => x.channel === 'email');
+  const sent = history.filter(x => x.status === 'sent');
+  const failed = history.filter(x => x.status === 'failed');
+  const stats = [['Total Sent', sent.length, 'Messages delivered from EngageX'], ['WhatsApp', whatsapp.length, 'WhatsApp campaigns and messages'], ['Email', email.length, 'Email campaigns and broadcasts'], ['Failed', failed.length, 'Items requiring attention']];
+  return <div className="min-h-full bg-slate-50 p-6"><div className="mx-auto max-w-7xl space-y-6">
+    <div className="rounded-2xl bg-gradient-to-r from-blue-700 via-cyan-600 to-violet-600 p-7 text-white shadow-lg"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-100">EngageX</p><h1 className="mt-2 text-3xl font-bold">Marketing & Communications</h1><p className="mt-2 max-w-2xl text-sm text-white/80">One workspace for WhatsApp and email campaigns, delivery history and engagement operations.</p></div><div className="rounded-xl bg-white/10 px-5 py-3 text-right"><div className="text-2xl font-bold">{history.length}</div><div className="text-xs text-white/70">recorded activities</div></div></div></div>
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label,value,sub]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm font-medium text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-slate-900">{value}</p><p className="mt-1 text-xs text-slate-400">{sub}</p></div>)}</div>
+    <div className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-5"><div><h2 className="text-lg font-semibold text-slate-900">Campaign & Message History</h2><p className="text-sm text-slate-500">A consolidated record of EngageX activity.</p></div><div className="flex gap-2">{['all','whatsapp','email'].map(x => <button key={x} onClick={() => setFilter(x)} className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize ${filter === x ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}>{x}</button>)}</div></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Date</th><th className="px-5 py-3">Campaign / Message</th><th className="px-5 py-3">Channel</th><th className="px-5 py-3">Recipients</th><th className="px-5 py-3">Status</th></tr></thead><tbody>{filtered.length ? filtered.slice().reverse().map((row,i) => <tr key={row.id || i} className="border-t border-slate-100"><td className="px-5 py-3 text-slate-500">{row.createdAt ? new Date(row.createdAt).toLocaleString() : '-'}</td><td className="px-5 py-3 font-medium text-slate-900">{row.name || row.subject || 'Message'}</td><td className="px-5 py-3 capitalize">{row.channel}</td><td className="px-5 py-3">{row.recipients ?? 0}</td><td className="px-5 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${row.status === 'sent' ? 'bg-emerald-100 text-emerald-700' : row.status === 'failed' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{row.status || 'queued'}</span></td></tr>) : <tr><td colSpan="5" className="px-5 py-12 text-center text-slate-400">No EngageX activity recorded yet. Launch a WhatsApp or email campaign to build your history.</td></tr>}</tbody></table></div></div>
+  </div></div>;
+}
