@@ -72,6 +72,12 @@ router = APIRouter(prefix="/engagex", tags=["engagex"])
 
 MAX_RECIPIENTS = 10_000
 MAX_MEDIA_BYTES = 5 * 1024 * 1024
+MAX_WA_ATTACHMENTS = 5
+MAX_WA_ATTACHMENT_TOTAL = 16 * 1024 * 1024
+# Files WhatsApp recipients should never be sent from a broadcast.
+BLOCKED_ATTACHMENT_EXTENSIONS = {
+    "exe", "msi", "bat", "cmd", "com", "scr", "ps1", "vbs", "js", "jar", "apk", "dll", "sh", "reg", "lnk",
+}
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
 MAX_EMAIL_ATTACHMENTS = 5
@@ -103,11 +109,16 @@ class WhatsAppCampaignIn(BaseModel):
     session_id: str
     message: str = Field("", max_length=4096)
     media: Optional[MediaIn] = None
+    # Several files of any mix of types (images, PDFs, Office files, video,
+    # audio) delivered together as one message per recipient.
+    attachments: list[MediaIn] = Field(default_factory=list, max_length=MAX_WA_ATTACHMENTS)
     recipients: list[RecipientIn] = Field(default_factory=list)
     min_delay_sec: float = Field(6, ge=2, le=300)
     max_delay_sec: float = Field(12, ge=2, le=600)
     pause_every: int = Field(25, ge=0, le=1000)
     pause_sec: float = Field(60, ge=0, le=3600)
+    # Gap between the parts (text, then each file) sent to one recipient.
+    part_gap_sec: float = Field(2, ge=0, le=30)
     scheduled_at: Optional[datetime] = None
 
 
@@ -833,11 +844,13 @@ async def whatsapp_sessions(current_user: User = Depends(get_current_user)):
     labels = {d.get("session_id"): d for d in owned}
     owner = is_platform_owner(current_user)
     items = []
+    seen = set()
     for s in bridge:
         sid = s.get("sessionId")
         record = labels.get(sid)
         if not owner and not record:
             continue
+        seen.add(sid)
         items.append({
             "session_id": sid,
             "label": (record or {}).get("label") or s.get("displayName") or s.get("phoneNumber") or sid,
@@ -845,7 +858,19 @@ async def whatsapp_sessions(current_user: User = Depends(get_current_user)):
             "status": s.get("status"),
             "connected": s.get("status") == "connected",
         })
-    return {"sessions": items, "bridge_error": bridge_error}
+    # Numbers the company added that the bridge no longer has (bridge restart,
+    # logged out on the phone): list them so they can be reconnected or removed.
+    if not bridge_error:
+        for sid, record in labels.items():
+            if sid and sid not in seen:
+                items.append({
+                    "session_id": sid,
+                    "label": record.get("label") or sid,
+                    "phone": record.get("phone_number"),
+                    "status": "disconnected",
+                    "connected": False,
+                })
+    return {"sessions": items, "bridge_error": bridge_error, "can_manage": current_user.role == "admin"}
 
 
 @router.post("/whatsapp/campaigns")
@@ -859,28 +884,44 @@ async def create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Request, c
     session_id = await resolve_sendable_session(current_user, body.session_id)
     if not session_id:
         raise HTTPException(status_code=400, detail="Connect a WhatsApp number before sending a campaign.")
-    if not body.message.strip() and not body.media:
+    files = ([body.media] if body.media else []) + list(body.attachments)
+    if len(files) > MAX_WA_ATTACHMENTS:
+        raise HTTPException(status_code=400, detail=f"Attach at most {MAX_WA_ATTACHMENTS} files to one broadcast.")
+    if not body.message.strip() and not files:
         raise HTTPException(status_code=400, detail="Write a message or attach a file.")
     if body.max_delay_sec < body.min_delay_sec:
         raise HTTPException(status_code=400, detail="Maximum delay must be greater than or equal to the minimum delay.")
+    decoded = []
+    total = 0
+    for item in files:
+        filename = clean_text(item.filename, 180) or "attachment"
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext in BLOCKED_ATTACHMENT_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"{filename}: this file type cannot be sent.")
+        try:
+            raw = base64.b64decode(item.base64.split(",")[-1], validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=400, detail=f"{filename} could not be read.")
+        if not raw:
+            raise HTTPException(status_code=400, detail=f"{filename} is empty.")
+        if len(raw) > MAX_MEDIA_BYTES:
+            raise HTTPException(status_code=400, detail=f"{filename} is larger than 5 MB.")
+        total += len(raw)
+        decoded.append((filename, clean_text(item.mime_type, 100) or "application/octet-stream", raw))
+    if total > MAX_WA_ATTACHMENT_TOTAL:
+        raise HTTPException(status_code=400, detail="Attachments together must be 16 MB or smaller.")
     rows, summary = await _build_recipients(company_id, "whatsapp", body.recipients)
     if not any(not r["suppressed"] for r in rows):
         raise HTTPException(status_code=400, detail="Add at least one valid WhatsApp number that has not opted out.")
 
-    media_id = None
-    if body.media:
-        try:
-            raw = base64.b64decode(body.media.base64.split(",")[-1], validate=True)
-        except (binascii.Error, ValueError):
-            raise HTTPException(status_code=400, detail="The attachment could not be read.")
-        if len(raw) > MAX_MEDIA_BYTES:
-            raise HTTPException(status_code=400, detail="Attachments must be 5 MB or smaller.")
+    media_items = []
+    for filename, mime_type, raw in decoded:
         media_id = new_id("exm")
         await raw_db()[MEDIA].insert_one({
-            "id": media_id, "company_id": company_id, "filename": clean_text(body.media.filename, 180) or "attachment",
-            "mime_type": clean_text(body.media.mime_type, 100) or "application/octet-stream",
+            "id": media_id, "company_id": company_id, "filename": filename, "mime_type": mime_type,
             "base64": base64.b64encode(raw).decode(), "size": len(raw), "created_at": iso(),
         })
+        media_items.append({"id": media_id, "filename": filename, "mime_type": mime_type, "size": len(raw)})
 
     status, scheduled_at = _launch_status("schedule" if body.scheduled_at else "send", body.scheduled_at)
     company = await company_profile(company_id)
@@ -894,11 +935,15 @@ async def create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Request, c
             "max_delay_sec": body.max_delay_sec,
             "pause_every": body.pause_every,
             "pause_sec": body.pause_sec,
+            "part_gap_sec": body.part_gap_sec,
         },
         "content": {
             "message": body.message,
-            "media_id": media_id,
-            "media_name": body.media.filename if body.media else None,
+            # media_id/media_name kept for campaigns and screens that predate
+            # multiple attachments; "attachments" is the full list.
+            "media_id": media_items[0]["id"] if media_items else None,
+            "media_name": media_items[0]["filename"] if media_items else None,
+            "attachments": media_items,
             "merge_tags": merge_tags_in(body.message),
         },
         "audience_summary": summary,

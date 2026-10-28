@@ -178,7 +178,7 @@ class _WhatsAppChannel:
         self.campaign = campaign
         self.settings = campaign.get("settings") or {}
         self.content = campaign.get("content") or {}
-        self.media: Optional[dict] = None
+        self.media: list[dict] = []
 
     async def open(self) -> Optional[str]:
         from backend.whatsapp_integration import _get_cached_sessions
@@ -191,12 +191,26 @@ class _WhatsAppChannel:
         connected = {s.get("sessionId") for s in sessions if s.get("status") == "connected"}
         if session_id not in connected:
             return "The selected WhatsApp number is not connected. Reconnect it and resume the campaign."
-        media_id = self.content.get("media_id")
-        if media_id:
-            self.media = await raw_db()[MEDIA].find_one({"id": media_id, "company_id": self.campaign["company_id"]}, {"_id": 0})
-            if not self.media:
-                return "The campaign attachment is missing."
+        # Campaigns created before multiple attachments carry only media_id.
+        refs = self.content.get("attachments") or (
+            [{"id": self.content["media_id"]}] if self.content.get("media_id") else []
+        )
+        ids = [r.get("id") for r in refs if r.get("id")]
+        if ids:
+            docs = await raw_db()[MEDIA].find(
+                {"id": {"$in": ids}, "company_id": self.campaign["company_id"]}, {"_id": 0}
+            ).to_list(len(ids))
+            by_id = {d["id"]: d for d in docs}
+            missing = [i for i in ids if i not in by_id]
+            if missing:
+                return "A campaign attachment is missing." if len(ids) > 1 else "The campaign attachment is missing."
+            self.media = [by_id[i] for i in ids]
         return None
+
+    @staticmethod
+    def _takes_caption(media: dict) -> bool:
+        # The bridge sends audio as a voice/audio note, which has no caption.
+        return not str(media.get("mime_type") or "").startswith("audio/")
 
     async def send(self, recipient: dict) -> None:
         from backend.whatsapp_integration import _bridge_post, _bridge_post_large
@@ -204,20 +218,41 @@ class _WhatsAppChannel:
         variables = merge_variables(recipient, self.campaign.get("sender_company") or "")
         text = render_merge(self.content.get("message") or "", variables)
         session_id = self.settings.get("session_id")
-        if self.media:
-            await _bridge_post_large("/send-media-base64", {
-                "to": recipient["phone"],
-                "sessionId": session_id,
-                "caption": text,
-                "base64": self.media["base64"],
-                "mimeType": self.media["mime_type"],
-                "filename": self.media["filename"],
-            })
-            logged = f"[{self.media['filename']}] {text}"
-        else:
+        gap = max(0.0, float(self.settings.get("part_gap_sec") if self.settings.get("part_gap_sec") is not None else 2))
+
+        # One file that can carry a caption: send it as a single message, as
+        # before. Otherwise the text goes first, then each file in order.
+        caption_on_file = len(self.media) == 1 and self._takes_caption(self.media[0])
+        parts_sent = 0
+        if text.strip() and not caption_on_file:
             await _bridge_post("/send", {"to": recipient["phone"], "message": text, "sessionId": session_id})
-            logged = text
-        recipient["_rendered"] = logged
+            parts_sent += 1
+        for index, media in enumerate(self.media):
+            if parts_sent and gap:
+                await asyncio.sleep(gap)
+            # A file can take up to 90 s to upload; keep the lease (60 s) so
+            # another worker does not take over the campaign mid-recipient.
+            await _renew(self.campaign["id"])
+            try:
+                await _bridge_post_large("/send-media-base64", {
+                    "to": recipient["phone"],
+                    "sessionId": session_id,
+                    "caption": text if caption_on_file else "",
+                    "base64": media["base64"],
+                    "mimeType": media["mime_type"],
+                    "filename": media["filename"],
+                })
+            except Exception as exc:
+                if parts_sent:
+                    detail = getattr(exc, "detail", None) or str(exc)
+                    raise RuntimeError(
+                        f"Sent {parts_sent} of {len(self.media) + (0 if caption_on_file or not text.strip() else 1)} parts; "
+                        f"{media['filename']} failed: {detail}"
+                    ) from exc
+                raise
+            parts_sent += 1
+        names = ", ".join(m["filename"] for m in self.media)
+        recipient["_rendered"] = f"[{names}] {text}".strip() if self.media else text
 
     async def record(self, recipient: dict, status: str, error: Optional[str]) -> None:
         """Mirror into whatsapp_messages so the existing WhatsApp History shows it."""

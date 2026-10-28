@@ -1,6 +1,6 @@
 // Campaign list + live detail drawer, shared by WhatsApp Hub and MailMaster.
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Copy, Loader2, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Copy, Loader2, Paperclip, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -160,6 +160,17 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
                 {channel === 'email' ? `${campaign.content?.subject || 'No subject'}${campaign.sender_from ? ` · from ${campaign.sender_from}` : ''}` : (campaign.content?.message || '').slice(0, 140)}
               </SheetDescription>
             </SheetHeader>
+
+            {channel === 'whatsapp' && (() => {
+              const files = campaign.content?.attachments?.length ? campaign.content.attachments : (campaign.content?.media_name ? [{ id: 'legacy', filename: campaign.content.media_name }] : []);
+              const st = campaign.settings || {};
+              return (
+                <div className="space-y-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                  {files.length ? <div className="flex flex-wrap items-center gap-1.5"><Paperclip className="h-3.5 w-3.5" />{files.map((f) => <span key={f.id} className="rounded bg-slate-100 px-1.5 py-0.5 dark:bg-slate-800">{f.filename}</span>)}</div> : null}
+                  {st.min_delay_sec ? <p>Interval {st.min_delay_sec === st.max_delay_sec ? `${st.min_delay_sec}s` : `${st.min_delay_sec}–${st.max_delay_sec}s`} between recipients{st.pause_every ? ` · ${st.pause_sec}s pause every ${st.pause_every}` : ''}{files.length > 1 || (files.length && campaign.content?.message) ? ` · ${st.part_gap_sec ?? 2}s between parts` : ''}</p> : null}
+                </div>
+              );
+            })()}
 
             {campaign.last_error && ['paused', 'failed', 'draft'].includes(campaign.status) && (
               <div className="flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">

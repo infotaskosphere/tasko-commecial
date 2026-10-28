@@ -709,6 +709,7 @@ async function startSession(sessionId, webhookOnConnect = true, pairingPhone = n
   if (pairingPhone && !state.creds?.registered) {
     setTimeout(async () => {
       try {
+        if (sessions[sessionId]?.socket !== sock) return; // replaced or deleted meanwhile
         if (sessions[sessionId]?.status === "connected") return;
         const code = await sock.requestPairingCode(pairingPhone);
         sessions[sessionId].pairCode = code;
@@ -722,6 +723,10 @@ async function startSession(sessionId, webhookOnConnect = true, pairingPhone = n
   }
 
   sock.ev.on("connection.update", async (update) => {
+    // Ignore events from a socket that was replaced (manual reconnect) or whose
+    // session was deleted: acting on them used to throw on the deleted session
+    // or start a second, competing login loop.
+    if (sessions[sessionId]?.socket !== sock) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       try {
@@ -766,7 +771,13 @@ async function startSession(sessionId, webhookOnConnect = true, pairingPhone = n
       if (should && sessions[sessionId].retryCount < 5) {
         sessions[sessionId].retryCount++;
         const delay = Math.min(8000 * sessions[sessionId].retryCount, 60000);
-        setTimeout(() => startSession(sessionId, false), delay);
+        setTimeout(() => {
+          // Skip if the session was deleted or manually restarted meanwhile.
+          if (sessions[sessionId] && !sessions[sessionId].socket) startSession(sessionId, false);
+        }, delay);
+      } else if (should) {
+        // Out of automatic retries: report it plainly so the user can reconnect.
+        sessions[sessionId].status = "disconnected";
       } else if (!should) {
         try { fs.rmSync(path.join(SESSIONS_DIR, sessionId), { recursive: true, force: true }); } catch (_) {}
         delete sessions[sessionId];
@@ -891,6 +902,15 @@ app.post("/sessions", async (req, res) => {
   const pairingPhone = req.body.pairingPhone || null;
   if (sessions[sessionId]?.status === "connected")
     return res.status(409).json({ error: "Session already connected" });
+  // Manual (re)connect: drop any half-open login for this id first.
+  const previous = sessions[sessionId];
+  if (previous) {
+    const old = previous.socket;
+    previous.socket = null;
+    previous.retryCount = 0;
+    previous.error = null;
+    try { if (old) old.end(undefined); } catch (_) {}
+  }
   try {
     await startSession(sessionId, true, pairingPhone);
     res.json({ sessionId, status: "connecting" });
@@ -923,7 +943,9 @@ app.get("/sessions/:id/pair-code", (req, res) => {
 app.delete("/sessions/:id", async (req, res) => {
   const s = sessions[req.params.id];
   if (!s) return res.status(404).json({ error: "Session not found" });
-  try { if (s.socket) await s.socket.logout(); } catch (_) {}
+  const sock = s.socket;
+  s.socket = null; // its close event is now ignored
+  try { if (sock) await sock.logout(); } catch (_) {}
   try { fs.rmSync(path.join(SESSIONS_DIR, req.params.id), { recursive: true, force: true }); } catch (_) {}
   delete sessions[req.params.id];
   delete historyCache[req.params.id];

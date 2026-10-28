@@ -500,17 +500,57 @@ async def get_session_pair_code(session_id: str, current_user: User = Depends(re
     return await _bridge_get(f"/sessions/{session_id}/pair-code")
 
 
-@router.delete("/sessions/{session_id}")
-async def remove_session(session_id: str, current_user: User = Depends(require_admin())):
-    query = {"session_id": session_id}
+async def _owned_session_record(current_user: User, session_id: str) -> Optional[dict]:
+    """The company's own record for a session (any record for the owner)."""
+    query: Dict[str, Any] = {"session_id": session_id}
     if not is_platform_owner(current_user):
         query = {"$and": [await _whatsapp_session_scope_query(current_user), query]}
-    await _bridge_delete(f"/sessions/{session_id}")
-    result = await _db()["whatsapp_sessions"].delete_one(query)
-    if result.deleted_count == 0:
+    return await _db()["whatsapp_sessions"].find_one(query)
+
+
+@router.delete("/sessions/{session_id}")
+async def remove_session(session_id: str, current_user: User = Depends(require_admin())):
+    # Check ownership BEFORE touching the bridge: the bridge logout used to run
+    # first, so an admin of one company could log out another company's number
+    # (the request then 404'd, but the number was already disconnected).
+    record = await _owned_session_record(current_user, session_id)
+    if not record and not is_platform_owner(current_user):
         raise HTTPException(404, "WhatsApp session not found")
+    try:
+        await _bridge_delete(f"/sessions/{session_id}")
+    except HTTPException as exc:
+        # The bridge forgets sessions on restart; a record it no longer knows
+        # must still be removable from the page.
+        if "404" not in str(exc.detail):
+            raise
+    if record:
+        await _db()["whatsapp_sessions"].delete_one({"_id": record["_id"]})
     _invalidate_sessions_cache()
     return {"message": f"Session {session_id} removed"}
+
+
+@router.post("/sessions/{session_id}/reconnect")
+async def reconnect_session(session_id: str, body: Optional[WASessionCreate] = None, current_user: User = Depends(require_admin())):
+    """Start a fresh QR / pairing-code login for an existing, disconnected number,
+    keeping its label and history."""
+    record = await _owned_session_record(current_user, session_id)
+    if not record:
+        raise HTTPException(404, "WhatsApp session not found")
+    bridge_payload: Dict[str, Any] = {"sessionId": session_id}
+    pairing_phone = "".join(c for c in ((body.pairing_phone if body else None) or "") if c.isdigit())
+    if pairing_phone:
+        bridge_payload["pairingPhone"] = pairing_phone
+    try:
+        await _bridge_post("/sessions", bridge_payload, retries=1)
+    except HTTPException as exc:
+        if "409" in str(exc.detail):
+            raise HTTPException(409, "This number is already connected.")
+        raise
+    await _db()["whatsapp_sessions"].update_one(
+        {"_id": record["_id"]}, {"$set": {"status": "connecting", "reconnected_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    _invalidate_sessions_cache()
+    return {"sessionId": session_id, "label": record.get("label"), "mode": "pair-code" if pairing_phone else "qr"}
 
 
 @router.patch("/sessions/{session_id}/label")
@@ -518,7 +558,10 @@ async def update_session_label(session_id: str, body: WASessionCreate, current_u
     query = {"session_id": session_id}
     if not is_platform_owner(current_user):
         query = {"$and": [await _whatsapp_session_scope_query(current_user), query]}
-    result = await _db()["whatsapp_sessions"].update_one(query, {"$set": {"label": body.label}})
+    label = " ".join(str(body.label or "").split())[:60]
+    if not label:
+        raise HTTPException(400, "Enter a name for this number.")
+    result = await _db()["whatsapp_sessions"].update_one(query, {"$set": {"label": label}})
     if result.matched_count == 0:
         raise HTTPException(404, "WhatsApp session not found")
     _invalidate_sessions_cache()
