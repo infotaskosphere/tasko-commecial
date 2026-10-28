@@ -80,3 +80,6 @@ android-sdk/
 # Auto-update signing private key: never commit
 update-signing-private.pem
 *.private.pem
+
+# Local-only file store used with the in-memory development database
+backend/uploads/_dev_file_store/

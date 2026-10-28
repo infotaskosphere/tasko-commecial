@@ -1465,8 +1465,11 @@ function AttendanceProofModal({ onClose, onSave, isDark, existingProof = null })
               </div>
               <div className="p-3 text-sm" style={{ color: isDark ? D.muted : '#475569' }}>
                 {existingProof.note && <p className="mb-1">📝 {existingProof.note}</p>}
-                {existingProof.photos?.length > 0 && <p>📷 {existingProof.photos.length} photo(s)</p>}
-                {existingProof.documents?.length > 0 && <p>📄 {existingProof.documents.length} document(s)</p>}
+                {[...(existingProof.photos || []).map(n => ['📷', n]), ...(existingProof.documents || []).map(n => ['📄', n])].map(([icon, name]) => (
+                  <button key={name} type="button" onClick={() => openProofFile(name)} className="block max-w-full truncate text-left text-emerald-700 hover:underline dark:text-emerald-400">
+                    {icon} {proofDisplayName(name)}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -1904,6 +1907,22 @@ function EditAttendanceModal({ record, isOpen, status, setStatus, note, setNote,
       </motion.div>
     </AnimatePresence>
   );
+}
+
+// Proof files are served by the backend with the user's login, so open them
+// through an authenticated request rather than a bare link.
+const proofDisplayName = (name) => String(name || '').replace(/^.*?_(?:photo|doc)_[0-9a-f]{8}_/, '') || name;
+async function openProofFile(name) {
+  const win = window.open('', '_blank');
+  try {
+    const res = await api.get(`/attendance/proof/file/${encodeURIComponent(name)}`, { responseType: 'blob' });
+    const url = URL.createObjectURL(res.data);
+    if (win) win.location.href = url; else window.location.assign(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) {
+    if (win) win.close();
+    toast.error(err?.response?.status === 404 ? 'This file is no longer available.' : 'Could not open the file.');
+  }
 }
 
 export default function Attendance() {

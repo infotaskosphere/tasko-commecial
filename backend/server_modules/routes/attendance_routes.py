@@ -36,6 +36,8 @@ from zoneinfo import ZoneInfo
 import calendar
 import re
 import uuid
+
+from backend import file_store as _file_store
 from backend.server import IST, PROOF_UPLOAD_DIR, api_router, logger  # created in backend/server.py before route modules load
 
 def get_real_client_ip(request: Request):
@@ -1266,7 +1268,8 @@ async def auto_punch_out(data: dict, current_user: User = Depends(get_current_us
 # NEW: POST /attendance/proof
 # Upload photos, documents, and a note as attendance proof.
 # Example: "Visited client → upload photo".
-# Files are saved to uploads/attendance_proof/ on the server.
+# Files are stored in MongoDB GridFS (backend/file_store.py); the server disk is
+# wiped on every deploy, so files written to uploads/ used to be lost.
 # The proof dict is embedded inside the attendance document.
 # =============================================================
 ALLOWED_PHOTO_TYPES = {
@@ -1287,6 +1290,7 @@ ALLOWED_DOC_TYPES = {
 }
 MAX_FILE_SIZE_MB = 10
 MAX_FILES_PER_UPLOAD = 5
+PROOF_FILE_KIND = "attendance_proof"
 
 
 @api_router.post("/attendance/proof")
@@ -1342,9 +1346,11 @@ async def upload_attendance_proof(
         filename = (
             f"{current_user.id}_{today_str}_photo_{uuid.uuid4().hex[:8]}_{safe_name}"
         )
-        file_path = PROOF_UPLOAD_DIR / filename
-        with open(file_path, "wb") as f:
-            f.write(contents)
+        await _file_store.put_file(
+            contents, name=filename, content_type=photo.content_type or "application/octet-stream",
+            company_id=getattr(current_user, "company_id", None), kind=PROOF_FILE_KIND,
+            user_id=current_user.id, date=today_str,
+        )
         saved_photos.append(filename)
         await photo.seek(0)  # reset for any downstream use
 
@@ -1370,9 +1376,11 @@ async def upload_attendance_proof(
         filename = (
             f"{current_user.id}_{today_str}_doc_{uuid.uuid4().hex[:8]}_{safe_name}"
         )
-        file_path = PROOF_UPLOAD_DIR / filename
-        with open(file_path, "wb") as f:
-            f.write(contents)
+        await _file_store.put_file(
+            contents, name=filename, content_type=doc.content_type or "application/octet-stream",
+            company_id=getattr(current_user, "company_id", None), kind=PROOF_FILE_KIND,
+            user_id=current_user.id, date=today_str,
+        )
         saved_docs.append(filename)
         await doc.seek(0)
 
@@ -1420,4 +1428,55 @@ async def upload_attendance_proof(
         "total_documents": len(merged_docs),
         "date": today_str,
     }
+
+
+async def _can_view_attendance_of(current_user: User, user_id: str) -> bool:
+    if user_id == current_user.id or current_user.role == "admin":
+        return True
+    if current_user.role != "manager":
+        return False
+    perms = get_user_permissions(current_user)
+    if not perms.get("can_view_attendance", False):
+        return False
+    team_ids = await get_team_user_ids(current_user.id)
+    return user_id in set((perms.get("view_other_attendance", []) or []) + team_ids)
+
+
+@api_router.get("/attendance/proof/file/{filename}")
+async def download_attendance_proof(filename: str, current_user: User = Depends(get_current_user)):
+    """Download one proof photo/document. Allowed for the employee, admins and
+    managers who may view that employee's attendance."""
+    if not filename or "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=404, detail="File not found")
+    record = await db.attendance.find_one(
+        {"$or": [{"proof.photos": filename}, {"proof.documents": filename}]},
+        {"_id": 0, "user_id": 1, "company_id": 1},
+    )
+    if not record or not await _can_view_attendance_of(current_user, record.get("user_id")):
+        raise HTTPException(status_code=404, detail="File not found")
+    company_id = record.get("company_id") or getattr(current_user, "company_id", None)
+    found = await _file_store.get_file(filename, company_id=company_id, kind=PROOF_FILE_KIND)
+    if found:
+        data, meta = found
+        content_type = meta.get("content_type") or "application/octet-stream"
+    else:
+        # Files uploaded before the move to GridFS, if this server still has them.
+        legacy = PROOF_UPLOAD_DIR / filename
+        if legacy.resolve().parent != PROOF_UPLOAD_DIR.resolve() or not legacy.is_file():
+            raise HTTPException(status_code=404, detail="This file is no longer available.")
+        data = legacy.read_bytes()
+        import mimetypes
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    # Never inline SVG or other active types.
+    inline = content_type in {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
+    original = re.sub(r"^.*?_(?:photo|doc)_[0-9a-f]{8}_", "", filename) or filename
+    return StreamingResponse(
+        BytesIO(data),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'{"inline" if inline else "attachment"}; filename="{original}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
