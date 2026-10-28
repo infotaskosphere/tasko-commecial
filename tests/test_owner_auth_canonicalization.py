@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend import commercial_auth_bootstrap_compat as compat
+from backend import dependencies as _deps
 from backend.tenant_runtime import (
     authenticated_company_id,
     in_platform_owner_context,
@@ -44,15 +44,15 @@ async def test_saas_owner_session_runs_canonical_company_scope_resolver(monkeypa
         })
         return user
 
-    monkeypatch.setattr(compat._dependencies, "_get_saas_session_user", get_saas_user)
-    monkeypatch.setattr(compat._dependencies, "_canonicalize_platform_owner_company", canonicalize)
+    monkeypatch.setattr(_deps, "_get_saas_session_user", get_saas_user)
+    monkeypatch.setattr(_deps, "_canonicalize_platform_owner_company", canonicalize)
 
     company_token = set_authenticated_company("previous-company")
     owner_token = set_platform_owner(False)
     ids_token = set_platform_owner_company_ids([])
     aliases_token = set_platform_owner_company_aliases({})
     try:
-        result = await compat._raw_get_current_user(
+        result = await _deps.resolve_token_user(
             SimpleNamespace(credentials="opaque-session-token")
         )
 
@@ -93,8 +93,8 @@ async def test_saas_licensee_session_clears_owner_scope(monkeypatch):
         set_platform_owner_company_aliases({})
         return user
 
-    monkeypatch.setattr(compat._dependencies, "_get_saas_session_user", get_saas_user)
-    monkeypatch.setattr(compat._dependencies, "_canonicalize_platform_owner_company", canonicalize)
+    monkeypatch.setattr(_deps, "_get_saas_session_user", get_saas_user)
+    monkeypatch.setattr(_deps, "_canonicalize_platform_owner_company", canonicalize)
 
     company_token = set_authenticated_company("previous-owner-company")
     owner_token = set_platform_owner(True)
@@ -103,7 +103,7 @@ async def test_saas_licensee_session_clears_owner_scope(monkeypatch):
         "legacy-owner-id": "previous-owner-company"
     })
     try:
-        result = await compat._raw_get_current_user(
+        result = await _deps.resolve_token_user(
             SimpleNamespace(credentials="opaque-licensee-token")
         )
 

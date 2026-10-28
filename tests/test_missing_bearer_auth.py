@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from backend.commercial_auth_bootstrap_compat import _raw_get_current_user
+from backend.dependencies import resolve_token_user as _raw_get_current_user
 
 
 @pytest.mark.parametrize(

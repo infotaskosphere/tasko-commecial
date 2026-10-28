@@ -802,178 +802,109 @@ async def _canonicalize_platform_owner_company(user):
     return resolved_user
 
 
-async def get_current_user(credentials=Depends(security)):
-    unauthorized=HTTPException(status_code=401,detail="Could not validate credentials",headers={"WWW-Authenticate":"Bearer"})
-    if credentials is None or not getattr(credentials, "credentials", None):
+def _auth_normalise_user(document: dict, user_id: str) -> User:
+    data = dict(document or {})
+    data.pop("_id", None)
+    if not data.get("id"):
+        data["id"] = str(user_id)
+    for key, value in list(data.items()):
+        if value == "":
+            data[key] = None
+    return User(**_normalize_permissions(data))
+
+
+async def get_current_user(credentials=Depends(security)) -> User:
+    """Resolve the authenticated user from the raw (unscoped) database.
+
+    This is the innermost authentication step; the tenant, license and
+    session guards wrap it (see commercial_tenant_scope and the guards that
+    build on it). It must read the raw database because the users collection
+    is company-scoped and no company context exists yet.
+    (Formerly commercial_auth_bootstrap_compat._raw_get_current_user, which
+    replaced this function at import time.)
+    """
+    unauthorized = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    # HTTPBearer(auto_error=False) returns None when the header is absent;
+    # that is an ordinary 401, not a 500.
+    token = getattr(credentials, "credentials", None)
+    if not isinstance(token, str) or not token.strip():
         raise unauthorized
-    token=credentials.credentials
-    saas_user=await _get_saas_session_user(token)
+    token = token.strip()
+
+    # Opaque SaaS session path. Still canonicalise the Platform Owner company
+    # so the owner's request-local company allow-list is built.
+    saas_user = await _get_saas_session_user(token)
     if saas_user is not None:
         saas_user = await _canonicalize_platform_owner_company(saas_user)
         owner_context = is_platform_owner(saas_user)
-        if not owner_context:
-            set_platform_owner_company_ids([])
-            set_platform_owner_company_aliases({})
-        set_authenticated_company(saas_user.company_id)
+        company_id = str(getattr(saas_user, "company_id", "") or "").strip()
+        if not company_id:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Platform Owner has no valid operational company context"
+                    if owner_context
+                    else "Authenticated user is not associated with a company"
+                ),
+            )
+        set_authenticated_company(company_id)
         set_platform_owner(owner_context)
         return saas_user
+
     try:
-        payload=jwt.decode(token,JWT_SECRET,algorithms=[ALGORITHM]);user_id=payload.get("sub")
-        if user_id is None:raise unauthorized
-    except jwt.PyJWTError:raise unauthorized
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise unauthorized
+    except jwt.InvalidTokenError:
+        raise unauthorized
+
+    raw_db = globals().get("_raw_db", db)
     user_query = {"id": user_id}
-    if ObjectId.is_valid(user_id):
-        user_query = {"$or": [{"id": user_id}, {"_id": ObjectId(user_id)}]}
-    d=await db.users.find_one(user_query)
-    if d is None:raise HTTPException(status_code=401,detail="User not found")
-    if "pwd_ver" in payload and d.get("password_version"):
-        try:
-            if int(payload["pwd_ver"]) != int(d.get("password_version")):
-                raise HTTPException(status_code=401, detail="Session expired due to password change. Please sign in again.")
-        except HTTPException:
-            raise
-        except Exception:
-            pass
-    if "id" not in d or not d.get("id"):
-        d["id"] = str(d.get("_id") or user_id)
-    d.pop("_id",None)
-    for key,value in list(d.items()):
-        if value=="":d[key]=None
-    d=_normalize_permissions(d)
-    try:
-        from backend.identity_hierarchy import enrich_user_identity
-        d = await enrich_user_identity(db, d)
-    except Exception as identity_err:
-        logger.warning("JWT identity hydration warning: %s", identity_err)
-    try:user=User(**d)
-    except Exception as e:logger.error("User validation failed for %s: %s",user_id,e);raise HTTPException(status_code=500,detail="User profile data is corrupted")
-    # Accounts that are pending approval, rejected, suspended or deleted must
-    # not authenticate, whoever they are (Platform Owner addresses included).
-    _account_status = str(d.get("status") or "").strip().lower()
-    if _account_status and _account_status != "active":
-        raise HTTPException(status_code=403, detail="ACCOUNT_NOT_ACTIVE", headers={"WWW-Authenticate":"Bearer"})
-    # Every JWT must be bound to a live server-side session. The Platform Owner
-    # is no exception: an owner-looking token without a session (for example
-    # one minted by a public sign-up) is rejected.
-    if True:
-        sid = str(payload.get("sid") or "").strip()
-        if not sid:
-            raise HTTPException(status_code=401, detail="SESSION_NOT_BOUND", headers={"WWW-Authenticate":"Bearer"})
-        raw_db = globals().get("_raw_db", db)
-        bound_session = await raw_db.session_manager.find_one({
-            "session_token": sid,
-            "user_id": str(user.id),
-            "status": "active",
-        })
-        if not bound_session:
-            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-            bound_session = await raw_db.sessions.find_one({
-                "$or": [{"session_token": sid}, {"token_hash": token_hash}],
-                "user_id": str(user.id),
-                "status": "active",
-            })
-        if not bound_session:
-            raise HTTPException(status_code=401, detail="SESSION_INVALIDATED", headers={"WWW-Authenticate":"Bearer"})
-        session_expires = bound_session.get("expires_at")
-        if session_expires:
-            if isinstance(session_expires, datetime):
-                expiry_dt = session_expires if session_expires.tzinfo else session_expires.replace(tzinfo=timezone.utc)
-            else:
-                try:
-                    expiry_dt = datetime.fromisoformat(str(session_expires).replace("Z","+00:00"))
-                    if expiry_dt.tzinfo is None:
-                        expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
-                except Exception:
-                    expiry_dt = None
-            if expiry_dt is not None and expiry_dt <= datetime.now(timezone.utc):
-                raise HTTPException(status_code=401, detail="SESSION_EXPIRED", headers={"WWW-Authenticate":"Bearer"})
-        session_company_id = str(bound_session.get("company_id") or "").strip()
-        user_company_id = str(user.company_id or "").strip()
-        if session_company_id and user_company_id and session_company_id != user_company_id:
-            raise HTTPException(status_code=401, detail="SESSION_INVALIDATED", headers={"WWW-Authenticate":"Bearer"})
+    if ObjectId.is_valid(str(user_id)):
+        user_query = {"$or": [{"id": str(user_id)}, {"_id": ObjectId(str(user_id))}]}
+
+    # Not `db`: its users collection needs an authenticated company id.
+    document = await raw_db.users.find_one(user_query)
+    if document is None:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    user = _auth_normalise_user(document, str(user_id))
+    if is_platform_owner(user):
+        user = await _canonicalize_platform_owner_company(user)
+        company_id = str(getattr(user, "company_id", "") or "").strip()
+        if not company_id:
+            raise HTTPException(status_code=403, detail="Platform Owner has no valid operational company context")
+        set_authenticated_company(company_id)
+        set_platform_owner(True)
+        return user
+
+    company_id = str(getattr(user, "company_id", "") or "").strip()
+    if not company_id:
+        company_id = await _resolve_licensed_company_id(user) or ""
+    if not company_id:
+        raise HTTPException(status_code=403, detail="Authenticated user is not associated with a company")
+
+    data = user.model_dump()
+    data["company_id"] = company_id
+    user = User.model_validate(data)
+    # Clear any inherited Platform Owner company/alias scope for non-owners.
     user = await _canonicalize_platform_owner_company(user)
-    company_id=getattr(user,"company_id",None)
-    if not company_id or not str(company_id).strip():
-        if is_platform_owner(user):
-            # The canonical resolver normally fills this. If it could not, do
-            # not guess from a licensee company or bypass isolation.
-            owner_ids = sorted(platform_owner_company_ids())
-            if len(owner_ids) == 1:
-                owner_comp_id = owner_ids[0]
-            else:
-                owner_comp_id = "comp-platform-owner"
-            user_data = user.model_dump()
-            user_data["company_id"] = owner_comp_id
-            user = User.model_validate(user_data)
-            set_authenticated_company(owner_comp_id)
-            set_platform_owner(True)
-            return user
-        company_id=await _resolve_licensed_company_id(user)
-        if company_id:
-            user_data=user.model_dump()
-            user_data["company_id"]=company_id
-            user=User.model_validate(user_data)
-        else:
-            raise HTTPException(status_code=403,detail="Authenticated user is not associated with a company")
-    owner_context = is_platform_owner(user)
-    if not owner_context:
-        set_platform_owner_company_ids([])
-        set_platform_owner_company_aliases({})
-    set_authenticated_company(company_id)
-    set_platform_owner(owner_context)
-    if not owner_context and company_id:
-        try:
-            cust_id = getattr(user, "commercial_customer_id", None) or company_id
-            explicit_license_id = str(getattr(user, "license_id", "") or "").strip()
-            lic = None
-            if explicit_license_id:
-                lic = await db.commercial_licenses.find_one(
-                    {"id": explicit_license_id, "status": {"$in": ["active", "trial"]}},
-                    {"_id": 0},
-                )
-            if not lic:
-                lic = await db.commercial_licenses.find_one(
-                    {
-                        "$or": [
-                            {"customer_id": cust_id},
-                            {"company_id": company_id},
-                        ],
-                        "status": {"$in": ["active", "trial"]},
-                    },
-                    {"_id": 0},
-                    sort=[("issued_at", -1)],
-                )
-            if not lic and not explicit_license_id:
-                lic = await db.commercial_licenses.find_one(
-                    {
-                        "$or": [
-                            {"customer_id": cust_id},
-                            {"company_id": company_id},
-                        ]
-                    },
-                    {"_id": 0},
-                    sort=[("issued_at", -1)],
-                )
-            if lic:
-                u_data = user.model_dump()
-                u_data["licensed_modules"] = list(lic.get("modules") or lic.get("licensed_modules") or [])
-                try:
-                    from backend.commercial_licensee_admin import normalize_license_selected_features
-                    u_data["selected_features"] = normalize_license_selected_features(lic)
-                except Exception:
-                    logger.exception("Could not normalize selected commercial page flags.")
-                    u_data["selected_features"] = lic.get("selected_features") or {}
-                u_data["license_id"] = lic.get("id")
-                u_data["commercial_customer_id"] = lic.get("customer_id") or cust_id
-                # Re-run the centralized commercial entitlement normalization
-                # AFTER the active license has been hydrated. The first
-                # normalization happens before license lookup and therefore
-                # cannot know the current Platform Owner page selections.
-                u_data = _normalize_permissions(u_data)
-                user = User.model_validate(u_data)
-        except Exception as e:
-            logger.warning(f"Could not hydrate license modules in get_current_user: {e}")
+    set_authenticated_company(str(getattr(user, "company_id", "") or company_id))
+    set_platform_owner(False)
     return user
+
+
+# get_current_user is later replaced on this module by the guards that wrap it
+# (tenant scope, license, control plane, session). This name always refers to
+# the innermost step itself.
+resolve_token_user = get_current_user
+
+
 
 def _commercial_permission_allows(user, permission):
     """Return whether the active commercial license grants this permission.
