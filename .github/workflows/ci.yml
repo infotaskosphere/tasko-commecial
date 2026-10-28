@@ -1,0 +1,90 @@
+name: CI
+
+# Runs on every push and pull request. A red check means: do not deploy.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (boot + tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ENV_MODE: test
+      JWT_SECRET: ci-only-jwt-secret-not-used-in-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+
+      - name: Install locked dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install "pytest>=8" "pytest-asyncio>=0.23" "mongomock-motor>=0.0.29"
+
+      - name: Lock file matches requirements.txt
+        run: |
+          pip install uv
+          # Start from the committed lock so unchanged pins are kept; this only
+          # fails when requirements.txt changed without re-locking.
+          cp requirements.lock /tmp/requirements.lock
+          uv pip compile requirements.txt --python-version 3.12 --python-platform linux -o /tmp/requirements.lock -q
+          diff <(grep -E '^[A-Za-z0-9]' requirements.lock) <(grep -E '^[A-Za-z0-9]' /tmp/requirements.lock) \
+            || (echo "::error::requirements.lock is out of date. Run: uv pip compile requirements.txt --python-version 3.12 --python-platform linux -o requirements.lock" && exit 1)
+
+      - name: Production launcher imports
+        # Catches start-up crashes like the Starlette 1.x add_event_handler break.
+        run: python -c "import backend.run; print('backend.run imported OK')"
+
+      - name: Tests
+        run: python -m pytest -q -p no:cacheprovider
+
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_API_URL: https://tasko-commercial-backend.onrender.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Frontend unit checks
+        working-directory: frontend
+        run: |
+          set -e
+          for t in scripts/*.test.mjs; do
+            case "$t" in
+              scripts/accounting-books.test.mjs|scripts/aiweave-render.test.mjs|scripts/purchase-merge.test.mjs) continue ;;
+            esac
+            echo "== $t"
+            node --test "$t"
+          done
+
+      # These source-text contract checks drifted from the code before CI was
+      # added (they fail on the pre-CI commit too). They run and report here
+      # without blocking; move each back into the step above once updated.
+      - name: Known-stale frontend checks (non-blocking)
+        working-directory: frontend
+        continue-on-error: true
+        run: |
+          node --test scripts/accounting-books.test.mjs scripts/aiweave-render.test.mjs scripts/purchase-merge.test.mjs

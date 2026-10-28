@@ -30,7 +30,8 @@ class RouterMigrationAdapterTests(unittest.TestCase):
             RouterBinding("taskosphere", "attendance", lambda: APIRouter()),
         )
         register_router_bindings(app, bindings)
-        paths = {route.path for route in app.routes}
+        from backend.route_inventory import route_paths
+        paths = route_paths(app)
         self.assertTrue(paths)
 
 if __name__ == "__main__":

@@ -7,7 +7,8 @@ os.environ["JWT_SECRET"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 
 def test_commercial_console_api_routes():
     from backend.commercial_console_api import router
-    paths = [r.path for r in router.routes]
+    from backend.route_inventory import route_paths
+    paths = route_paths(router)
     assert "/api/commercial-console/system-health" in paths
     assert "/api/commercial-console/analytics" in paths
     assert "/api/commercial-console/activity" in paths

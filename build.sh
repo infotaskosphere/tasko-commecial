@@ -16,9 +16,11 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 echo "==> Installing Python dependencies..."
-# The repository-root requirements.txt is the single source of truth;
-# backend/requirements.txt only includes it.
-pip install -r requirements.txt
+# requirements.txt lists what we depend on; requirements.lock pins every
+# package (including indirect ones) so each deploy installs the same versions.
+# After editing requirements.txt, re-lock with:
+#   uv pip compile requirements.txt --python-version 3.12 --python-platform linux -o requirements.lock
+pip install -r requirements.lock
 
 echo "==> Installing Playwright browser binary..."
 playwright install chromium

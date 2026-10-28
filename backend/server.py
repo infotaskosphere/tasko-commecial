@@ -319,31 +319,10 @@ for _hr_router in ALL_HR_CORE_ROUTERS:
 from backend.engagex import install as _install_engagex
 _install_engagex(app)
 
-# LeadSense Client Discussion collection compatibility.
-# The LeadSense hub requests a collection-level /api/client-discussion feed.
-# The existing client_activity router is intentionally client-scoped, so it
-# cannot satisfy that collection endpoint. Expose a read-only aggregate feed
-# from the same client_activities collection without changing the existing
-# client activity APIs.
-async def _leadsense_client_discussion_feed(current_user=Depends(get_current_user)):
-    items = await db.client_activities.find(
-        {},
-        {"_id": 0},
-    ).sort("created_at", -1).limit(500).to_list(500)
-    return items
+# LeadSense collection-level discussion feed (see the module docstring).
+from backend.server_modules.client_discussion_feed import register_client_discussion_feed
 
-app.add_api_route(
-    "/api/client-discussion",
-    _leadsense_client_discussion_feed,
-    methods=["GET"],
-    include_in_schema=False,
-)
-app.add_api_route(
-    "/api/client-discussion/",
-    _leadsense_client_discussion_feed,
-    methods=["GET"],
-    include_in_schema=False,
-)
+register_client_discussion_feed(app)
 
 
 from backend.legacy_router_mounts import register_legacy_router_mounts

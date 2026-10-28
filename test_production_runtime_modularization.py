@@ -35,11 +35,9 @@ class ProductionRuntimeTests(unittest.TestCase):
         )
 
     def test_application_runtime_registered_core_endpoints(self):
-        paths = {
-            route.path
-            for route in self.server.app.routes
-            if getattr(route, "path", "").startswith("/api/")
-        }
+        from backend.route_inventory import route_paths
+
+        paths = {path for path in route_paths(self.server.app) if path.startswith("/api/")}
         self.assertIn("/api/auth/me", paths)
         self.assertTrue(any(path.startswith("/api/clients/") for path in paths))
 

@@ -27,10 +27,12 @@ class Phase2RuntimeImportTests(unittest.TestCase):
         self.assertTrue(hasattr(self.server, "api_router"))
 
     def test_extracted_route_registration_reached_fastapi(self):
+        from backend.route_inventory import iter_routes
+
         api_routes = [
             route
-            for route in self.server.app.routes
-            if getattr(route, "path", "").startswith("/api/")
+            for route in iter_routes(self.server.app)
+            if str(route.path).startswith("/api/")
         ]
 
         self.assertGreater(len(api_routes), 20)
