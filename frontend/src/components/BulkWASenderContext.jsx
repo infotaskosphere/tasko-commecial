@@ -12,7 +12,7 @@ const Ctx = createContext(null);
 const initialState = {
   active: false, minimized: false, visible: false, batchId: null, batchName: '',
   sessionId: null, total: 0, done: 0, results: [], pauseCountdown: null,
-  startedAt: null, finishedAt: null,
+  scheduledAt: null, startedAt: null, finishedAt: null,
 };
 
 function newBatchId() {
@@ -48,6 +48,7 @@ export function BulkWASenderProvider({ children }) {
     messageType = 'bulk_client',
     minDelaySec = 0,
     maxDelaySec = 0,
+    scheduledAt = null,
   }) => {
     if (runningRef.current) return toast.error('A WhatsApp batch is already running. Please wait or cancel it.');
 
@@ -58,11 +59,35 @@ export function BulkWASenderProvider({ children }) {
     const name = (batchName || '').trim() || `Batch ${new Date().toLocaleString('en-IN')}`;
     const lo = Math.max(0, Number(minDelaySec) || 0);
     const hi = Math.max(lo, Number(maxDelaySec) || lo);
+    const targetTime = scheduledAt ? new Date(scheduledAt).getTime() : 0;
+    if (scheduledAt && (!Number.isFinite(targetTime) || targetTime <= Date.now())) {
+      return toast.error('Please choose a future schedule time.');
+    }
 
     runningRef.current = true;
     cancelRef.current = false;
-    setState({ ...initialState, active: true, visible: true, minimized: true, batchId, batchName: name, sessionId, total: list.length, startedAt: new Date().toISOString() });
-    toast.success(`Batch "${name}" started — ${list.length} recipients. Sending in background.`);
+    setState({ ...initialState, active: true, visible: true, minimized: true, batchId, batchName: name, sessionId, total: list.length, scheduledAt: scheduledAt || null, startedAt: targetTime ? null : new Date().toISOString() });
+
+    if (targetTime) {
+      toast.success(`Campaign "${name}" scheduled for ${new Date(targetTime).toLocaleString('en-IN')}.`);
+      let remaining = targetTime - Date.now();
+      while (remaining > 0 && !cancelRef.current) {
+        const slice = Math.min(remaining, 1000);
+        await sleep(slice);
+        remaining = targetTime - Date.now();
+      }
+      if (cancelRef.current) {
+        runningRef.current = false;
+        cancelRef.current = false;
+        setState(s => ({ ...s, active: false, pauseCountdown: null, finishedAt: new Date().toISOString() }));
+        toast.warning(`Scheduled batch "${name}" cancelled.`);
+        return;
+      }
+      setState(s => ({ ...s, scheduledAt: scheduledAt || null, startedAt: new Date().toISOString() }));
+      toast.success(`Scheduled batch "${name}" is now sending.`);
+    } else {
+      toast.success(`Batch "${name}" started — ${list.length} recipients. Sending in background.`);
+    }
 
     const results = [];
     for (let i = 0; i < list.length; i++) {
