@@ -44,7 +44,7 @@ TENANT_COLLECTIONS = {
     "clients", "client_activities", "client_drive_visibility", "client_discussions",
     "client_portal_users", "client_portal_activity",
     # Invoicing, Banking, & Accounting
-    "invoices", "payments", "purchase_invoices", "purchase_payments", "purchases",
+    "invoices", "payments", "purchase_invoices", "purchase_payments", "purchase_returns", "purchases",
     "bank_accounts", "bank_transactions", "bank_rules", "bank_reconciliation",
     "bank_reconciliation_matches", "bank_reconciliation_audit", "bank_statistics",
     "bank_transaction_history", "bank_learning", "bank_statement_templates", "cashflow_history",

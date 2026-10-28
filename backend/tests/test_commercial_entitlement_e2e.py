@@ -848,21 +848,15 @@ def test_trademark_root_routes_need_the_trademark_page(client, env):
             assert client.get(path, headers=_auth(env, f"tmk-{role}")).status_code != 403, path
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "OPEN PRODUCT DECISION: licence hydration grants staff can_view_staff_activity "
-        "by default, so staff can read their OWN activity. This test expects staff to "
-        "need an explicit grant. Remove this marker once the default is decided."
-    ),
-)
 def test_reminders_and_staff_activity_reads_need_their_module(client, env):
     for role in ("admin", "staff"):
         assert client.get("/api/email/reminders", headers=_auth(env, f"only_finix-{role}")).status_code == 403
         assert client.get("/api/email/reminders", headers=_auth(env, f"only_taskosphere-{role}")).status_code != 403
-    # staff activity: admins read it, staff need the page flag
+    # staff activity (decided 28 Oct 2026): admins read everyone's; staff see
+    # their OWN activity by default (the licence grants the page flag), and an
+    # admin can still revoke it per user in the Permission Matrix.
     assert client.get("/api/desktop/activity", headers=_auth(env, "only_taskosphere-admin")).status_code != 403
-    assert client.get("/api/desktop/activity", headers=_auth(env, "only_taskosphere-staff")).status_code == 403
+    assert client.get("/api/desktop/activity", headers=_auth(env, "only_taskosphere-staff")).status_code != 403
 
 
 def test_a_manager_cannot_change_permissions_of_a_user_in_another_company(client, env, monkeypatch):

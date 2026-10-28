@@ -4281,10 +4281,15 @@ async def update_purchase_invoice(invoice_id: str, data: PurchaseInvoiceUpdate, 
 
     # If the grand total changed, amount_due should move with it (unless the
     # invoice was already fully paid - don't silently reopen a paid bill).
+    if "grand_total" in update_data:
+        from backend.purchase_returns import returned_total
+        _returned = await returned_total(invoice_id)
+        if float(update_data["grand_total"] or 0) + 0.005 < _returned:
+            raise HTTPException(400, f"The bill total cannot be less than the {_returned:,.2f} already returned against it.")
     if "grand_total" in update_data and existing.get("status") != "paid":
         new_total = float(update_data["grand_total"] or 0)
         paid_so_far = float(existing.get("amount_paid") or 0)
-        update_data["amount_due"] = round(max(new_total - paid_so_far, 0), 2)
+        update_data["amount_due"] = round(max(new_total - paid_so_far - _returned, 0), 2)
 
     override = (data.expense_ledger_code or "").strip()
     if override and override != existing.get("expense_ledger_code"):
@@ -4351,6 +4356,10 @@ async def delete_purchase_invoice(invoice_id: str, current_user: User = Depends(
         raise HTTPException(
             409, f"Cannot delete bill {existing.get('invoice_no') or invoice_id}: {len(payments)} payment(s) totalling "
                  f"{total:,.2f} are recorded against it. Delete the payments first, or cancel the bill instead.")
+    from backend.purchase_returns import returns_for_bill
+    if await returns_for_bill(invoice_id):
+        raise HTTPException(409, f"Cannot delete bill {existing.get('invoice_no') or invoice_id}: purchase returns are "
+                                 "recorded against it. Delete the returns first.")
     await _assert_ledger_changeable(str(existing.get("company_id") or ""), [existing.get("invoice_date")],
                                     [("purchase", invoice_id)], "delete this purchase bill")
     await audit_ledger_event(str(existing.get("company_id") or ""), "PURCHASE_BILL_DELETED", current_user, {
@@ -4404,7 +4413,10 @@ async def update_purchase_invoice_status(
     _assert_purchase_access(inv, current_user)
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    grand_total = float(inv.get("grand_total") or 0)
+    from backend.purchase_returns import returned_total, recalculate_purchase_outstanding
+    already_returned = await returned_total(invoice_id)
+    # Purchase returns reduce what is owed on the bill, exactly like payments.
+    grand_total = round(float(inv.get("grand_total") or 0) - already_returned, 2)
     already_paid = float(inv.get("amount_paid") or 0)
 
     if new_status in ("paid", "partially_paid"):
@@ -4435,15 +4447,12 @@ async def update_purchase_invoice_status(
         await db.purchase_payments.insert_one(dict(payment_doc))
         await sync_purchase_payment_journal_entry(payment_doc["id"])
 
-        all_payments = await db.purchase_payments.find({"purchase_invoice_id": invoice_id}, {"_id": 0}).to_list(500)
-        total_paid = round(sum(float(p.get("amount", 0)) for p in all_payments), 2)
-        amount_due = round(max(grand_total - total_paid, 0), 2)
-        final_status = "paid" if amount_due <= 0 else "partially_paid"
-        await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": {
-            "amount_paid": total_paid, "amount_due": amount_due, "status": final_status, "updated_at": now_iso,
-        }})
-        return {"id": invoice_id, "status": final_status, "amount_paid": total_paid, "amount_due": amount_due,
-                "payment_id": payment_doc["id"]}
+        updated = await recalculate_purchase_outstanding(invoice_id) or {}
+        return {"id": invoice_id, "status": updated.get("status"), "amount_paid": updated.get("amount_paid"),
+                "amount_due": updated.get("amount_due"), "payment_id": payment_doc["id"]}
+
+    if new_status == "cancelled" and already_returned > 0:
+        raise HTTPException(409, "This bill has purchase returns recorded against it. Delete the returns before cancelling the bill.")
 
     if (new_status == "cancelled") != (inv.get("status") == "cancelled"):
         await _assert_ledger_changeable(str(inv.get("company_id") or ""), [inv.get("invoice_date")],
@@ -4507,17 +4516,8 @@ async def delete_purchase_payment(payment_id: str, current_user: User = Depends(
     await sync_purchase_payment_journal_entry(payment_id)  # cleans up its journal entry (payment doc is gone)
 
     if invoice_id:
-        inv = await db.purchase_invoices.find_one({"id": invoice_id})
-        if inv:
-            all_payments = await db.purchase_payments.find({"purchase_invoice_id": invoice_id}, {"_id": 0}).to_list(500)
-            total_paid = round(sum(float(p.get("amount", 0)) for p in all_payments), 2)
-            grand_total = float(inv.get("grand_total") or 0)
-            amount_due = round(max(grand_total - total_paid, 0), 2)
-            new_status = "paid" if amount_due <= 0 else ("partially_paid" if total_paid > 0 else "outstanding")
-            await db.purchase_invoices.update_one({"id": invoice_id}, {"$set": {
-                "amount_paid": total_paid, "amount_due": amount_due, "status": new_status,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            }})
+        from backend.purchase_returns import recalculate_purchase_outstanding
+        await recalculate_purchase_outstanding(invoice_id)
 
     return {"message": f"Payment {payment_id} deleted"}
 
@@ -7386,3 +7386,8 @@ async def delete_unprepared_income(income_id: str, current_user: User = Depends(
         
     await db.unprepared_incomes.delete_one({"id": income_id})
     return {"success": True}
+
+
+# Purchase Returns (supplier returns) post their own reversing entries.
+from backend.purchase_returns import router as _purchase_returns_router  # noqa: E402
+router.include_router(_purchase_returns_router)

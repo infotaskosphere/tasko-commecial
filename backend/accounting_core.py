@@ -1508,8 +1508,9 @@ async def _compute_party_ledger(
             ]
         }
         payments = await db.purchase_payments.find(pay_q, {"_id": 0, "id": 1}).to_list(20000)
-        source_ids = bill_ids + [p["id"] for p in payments]
-        sources = ["purchase", "purchase_payment"]
+        returns = await db.purchase_returns.find({"purchase_invoice_id": {"$in": bill_ids}}, {"_id": 0, "id": 1}).to_list(20000)
+        source_ids = bill_ids + [p["id"] for p in payments] + [r["id"] for r in returns]
+        sources = ["purchase", "purchase_payment", "purchase_return"]
         control_code = "2000"  # Accounts Payable
     else:
         doc_q = {**base_q, "client_name": name_q}
