@@ -93,12 +93,8 @@ from backend.ai_document_reader import router as _ai_document_reader_router
 from backend.ai.workspace_router import router as _ai_workspace_router
 _ai_document_reader_router.include_router(_ai_workspace_router)
 
-# Compatibility shims must load before backend.server imports its routers.
-# The user projection shim prevents legacy HR/attendance handlers from losing
-# the UUID `id` field in narrow Mongo projections. The WhatsApp SSE shim lets
-# EventSource authenticate commercial opaque SaaS session tokens as well as
-# legacy JWT tokens.
-import backend.user_projection_compat  # noqa: F401
+# Must load before backend.server imports its routers: lets EventSource
+# authenticate opaque SaaS session tokens as well as JWTs.
 import backend.whatsapp_sse_compat as _whatsapp_sse_compat
 _whatsapp_sse_compat.install()
 

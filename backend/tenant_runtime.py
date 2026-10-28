@@ -406,7 +406,6 @@ ISOLATION_PLUMBING_MODULES = frozenset({
     "backend.commercial_user_company_scope",
     "backend.commercial_license_user_limit",
     "backend.commercial_company_registry_visibility",
-    "backend.user_projection_compat",
 })
 
 

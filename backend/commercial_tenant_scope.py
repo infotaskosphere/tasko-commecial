@@ -153,6 +153,43 @@ async def _single_device_login_check(collection, query, update):
     return _NoOpResult()
 
 
+def _fix_user_projection(collection, args, kwargs):
+    """Drop an explicit ``id: 0`` from a users projection: handlers read the
+    application-level id afterwards. (Never add ``id: 1``; MongoDB rejects
+    mixing inclusion and exclusion.) Formerly user_projection_compat."""
+    if collection._name != "users":
+        return args, kwargs
+    updated_args = list(args)
+    projection = None
+    projection_in_args = bool(updated_args and isinstance(updated_args[0], dict))
+    if projection_in_args:
+        projection = dict(updated_args[0])
+    elif isinstance(kwargs.get("projection"), dict):
+        projection = dict(kwargs["projection"])
+    if projection is None or "id" not in projection:
+        return args, kwargs
+    if projection.get("id") == 0:
+        projection.pop("id", None)
+        if projection_in_args:
+            updated_args[0] = projection
+        else:
+            kwargs = dict(kwargs)
+            kwargs["projection"] = projection
+    return tuple(updated_args), kwargs
+
+
+def _legacy_object_id_query(query):
+    """Older commercial-admin users are addressed by their Mongo ObjectId in
+    the browser; ``{"id": <oid>}`` falls back to ``{"_id": ObjectId(oid)}``."""
+    if not isinstance(query, dict) or set(query) != {"id"}:
+        return None
+    raw_id = query.get("id")
+    try:
+        return {"_id": ObjectId(str(raw_id))}
+    except Exception:
+        return None
+
+
 def _licensee_companies(collection) -> bool:
     """A companies read by a licensee: answered by _company_scope_query alone."""
     return collection._name == "companies" and bool(authenticated_customer_id()) and not in_platform_owner_context()
@@ -806,18 +843,29 @@ def _install_collection_overrides() -> None:
         return original_registry_enabled(self)
 
     def find(self, query=None, *args, **kwargs):
+        args, kwargs = _fix_user_projection(self, args, kwargs)
         if _licensee_companies(self):
             return self._collection.find(_company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return original_find(self, query, *args, **kwargs)
 
-    async def find_one(self, query=None, *args, **kwargs):
+    async def _scoped_find_one(self, query=None, *args, **kwargs):
         if _licensee_companies(self):
             return await self._collection.find_one(_company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return await original_find_one(self, query, *args, **kwargs)
+
+    async def find_one(self, query=None, *args, **kwargs):
+        args, kwargs = _fix_user_projection(self, args, kwargs)
+        result = await _scoped_find_one(self, query, *args, **kwargs)
+        if result is not None or self._name != "users":
+            return result
+        fallback_query = _legacy_object_id_query(query)
+        if fallback_query is None:
+            return result
+        return await _scoped_find_one(self, fallback_query, *args, **kwargs)
 
     async def count_documents(self, query=None, *args, **kwargs):
         if _licensee_companies(self):
@@ -843,7 +891,7 @@ def _install_collection_overrides() -> None:
             documents = [_customer_insert(self._name, document) for document in documents]
         return await original_insert_many(self, documents, *args, **kwargs)
 
-    async def update_one(self, query, update, *args, **kwargs):
+    async def _scoped_update_one(self, query, update, *args, **kwargs):
         refused_or_noop = await _single_device_login_check(self, query, update)
         if refused_or_noop is not None:
             return refused_or_noop
@@ -851,6 +899,15 @@ def _install_collection_overrides() -> None:
             query = _customer_query(self._name, query)
             update = _customer_update(self._name, update)
         return await original_update_one(self, query, update, *args, **kwargs)
+
+    async def update_one(self, query, update, *args, **kwargs):
+        result = await _scoped_update_one(self, query, update, *args, **kwargs)
+        if result.matched_count > 0 or kwargs.get("upsert", False) or self._name != "users":
+            return result
+        fallback_query = _legacy_object_id_query(query)
+        if fallback_query is None:
+            return result
+        return await _scoped_update_one(self, fallback_query, update, *args, **kwargs)
 
     async def update_many(self, query, update, *args, **kwargs):
         if _customer_scoped_collection(self._name):
