@@ -70,7 +70,6 @@ import backend.commercial_license_user_limit  # noqa: F401
 # Legacy company records are also license-linked. Patch the user-seat validator
 # after the core license-wide limit is installed so adding a user to a legacy
 # legal company still consumes the customer's shared license seat.
-import backend.commercial_legacy_user_limit_compat  # noqa: F401
 
 # Final user-data boundary: user records are always company-scoped at request
 # time. This is intentionally after the customer-level compatibility layers so

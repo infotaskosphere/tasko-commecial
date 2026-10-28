@@ -49,9 +49,16 @@ async def _active_license(customer_id: str) -> dict[str, Any]:
 
 
 async def _customer_company_ids(customer_id: str) -> list[str]:
+    """Companies of this customer, including legacy records linked only by
+    the active license id (formerly commercial_legacy_user_limit_compat)."""
     raw_db = _raw_db()
+    license_doc = await _active_license(customer_id)
+    license_id = str(license_doc.get("id") or "").strip()
+    clauses = [{"commercial_customer_id": customer_id}]
+    if license_id:
+        clauses.append({"license_id": license_id})
     rows = await raw_db.companies.find(
-        {"commercial_customer_id": customer_id}, {"_id": 0, "id": 1}
+        {"$or": clauses}, {"_id": 0, "id": 1}
     ).to_list(5000)
     return [str(row.get("id")) for row in rows if row.get("id")]
 
@@ -72,14 +79,34 @@ async def _validate_user_company(customer_id: str, document: dict[str, Any]) -> 
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A licensed customer user must belong to a legal company.",
         )
+
     raw_db = _raw_db()
+    license_doc = await _active_license(customer_id)
+    license_id = str(license_doc.get("id") or "").strip()
+    clauses = [{"commercial_customer_id": customer_id}]
+    if license_id:
+        clauses.append({"license_id": license_id})
+
     company = await raw_db.companies.find_one(
-        {"id": company_id, "commercial_customer_id": customer_id}, {"_id": 0, "id": 1}
+        {"id": company_id, "$or": clauses},
+        {"_id": 0, "id": 1, "commercial_customer_id": 1, "license_id": 1},
     )
     if not company:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User company does not belong to this licensed customer.",
+        )
+
+    # A legacy company linked only by license id: once ownership is proven
+    # from the active license, record the canonical customer relationship.
+    if str(company.get("commercial_customer_id") or "") != customer_id:
+        await raw_db.companies.update_one(
+            {"id": company_id, "$or": clauses},
+            {"$set": {
+                "commercial_customer_id": customer_id,
+                "license_id": license_id or company.get("license_id"),
+                "source": company.get("source") or "commercial-license",
+            }},
         )
 
 
