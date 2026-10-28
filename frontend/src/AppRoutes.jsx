@@ -294,8 +294,8 @@ export default function AppRoutes() {
           <Route path="/staff-activity" element={<AdminOnly><LinkedAdminPageGate module="taskosphere" page="can_view_staff_activity"><StaffActivity /></LinkedAdminPageGate></AdminOnly>} />
           <Route path="/whatsapp-hub" element={<AdminOnly><LinkedAdminPageGate module="records" page="can_access_whatsapp_hub"><WhatsAppHub /></LinkedAdminPageGate></AdminOnly>} />
           <Route path="/leave" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_leave"><PeopleMatrixPageFrame page="leave"><Leave /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
-          <Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><PeopleMatrixPageFrame page="payroll"><Payroll /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
-          <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><PeopleMatrixPageFrame page="hr"><HR /></PeopleMatrixPageFrame></ModuleGate>} />
+          <Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><PeopleMatrixPageFrame page="payroll"><Payroll /></PeopleMatrixPageFrame></ModuleGate>} />
+          <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><PeopleMatrixPageFrame page="hr"><HR /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
           <Route path="/recruitment" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_recruitment"><Recruitment /></PageGuard></ModuleGate>} />
           <Route path="/client-discussion" element={<ModuleGate module="proposals"><PageGuard module="proposals" page="can_view_client_discussion"><ClientDiscussion /></PageGuard></ModuleGate>} />
 
