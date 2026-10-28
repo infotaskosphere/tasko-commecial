@@ -18,12 +18,6 @@ import backend.commercial_tenant_scope  # noqa: F401
 # to the authenticated customer's active license and normalize them when used.
 import backend.commercial_legacy_company_scope_compat  # noqa: F401
 
-# Commercial administrator accounts created before feature-level licensing may
-# not have the current module/page flags persisted. Hydrate them from the
-# active commercial license before installing the API entitlement guard.
-import backend.commercial_admin_permission_compat as _commercial_admin_permission_compat
-_commercial_admin_permission_compat.install()
-
 # Resolve the final commercial admin permissions from the customer's ONE active
 # license. This is customer-level, not legal-company-level, so all companies
 # under the same license inherit the purchased modules while other licensees
@@ -55,12 +49,6 @@ _commercial_guard_request_compat.install()
 # protect historically dependency-free AI/Finix/v2 routes before route modules
 # capture get_current_user. This is additive and preserves existing handlers.
 import backend.production_hardening as _production_hardening  # noqa: F401
-
-# Bank Accounts compatibility: older Finix frontend builds request up to 2000
-# purchase invoices. Keep that legacy read compatible with the canonical
-# purchase-invoice endpoint without weakening authentication or permissions.
-import backend.purchase_invoice_query_compat as _purchase_invoice_query_compat
-_purchase_invoice_query_compat.install()
 
 # Enforce the separate Commercial Control Plane boundary AFTER the Request
 # compatibility wrapper so this remains the final authentication dependency

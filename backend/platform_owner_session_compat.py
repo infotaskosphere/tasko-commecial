@@ -540,3 +540,16 @@ def install_server_session_patch(server_module: Any) -> None:
     _auth_routes = _sys.modules.get("backend.server_modules.routes.auth_routes")
     if _auth_routes is not None and hasattr(_auth_routes, "_create_saas_session"):
         _auth_routes._create_saas_session = _owner_aware_create_saas_session
+
+
+def bootstrap_server(module_name: str) -> None:
+    """Install session/licence compatibility on the composed backend.server module.
+
+    (Formerly backend/startup_compat.py.) Commercial entitlement hydration is
+    installed once by backend/__init__.py inside the auth chain, before route
+    modules capture get_current_user; it is deliberately NOT re-installed here.
+    """
+    import sys
+
+    install()
+    install_server_session_patch(sys.modules[module_name])

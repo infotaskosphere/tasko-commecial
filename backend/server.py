@@ -319,7 +319,7 @@ for _hr_router in ALL_HR_CORE_ROUTERS:
 from backend.engagex import install as _install_engagex
 _install_engagex(app)
 
-# LeadSense collection-level discussion feed (see the module docstring).
+# LeadSense discussion feed (see module docstring).
 from backend.server_modules.client_discussion_feed import register_client_discussion_feed
 
 register_client_discussion_feed(app)
@@ -386,5 +386,5 @@ register_legacy_router_mounts(
 from backend.activity_route_diagnostic import log_activity_route_registry
 log_activity_route_registry(app)
 
-from backend.startup_compat import bootstrap_server
+from backend.platform_owner_session_compat import bootstrap_server
 bootstrap_server(__name__)

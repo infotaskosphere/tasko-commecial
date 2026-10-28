@@ -13,12 +13,6 @@ import backend.commercial_tenant_scope  # noqa: F401
 # to the authenticated customer's active license and normalize them when used.
 import backend.commercial_legacy_company_scope_compat  # noqa: F401
 
-# Commercial administrator accounts created before feature-level licensing may
-# not have the current module/page flags persisted. Hydrate them from the
-# active commercial license before installing the API entitlement guard.
-import backend.commercial_admin_permission_compat as _commercial_admin_permission_compat
-_commercial_admin_permission_compat.install()
-
 # Resolve the final commercial admin permissions from the customer's ONE active
 # license. This is customer-level, not legal-company-level, so all companies
 # under the same license inherit the purchased modules while other licensees

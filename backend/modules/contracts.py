@@ -151,7 +151,6 @@ PEOPLE_MATRIX = _contract(
         "backend/roles_admin.py",
         "backend/governance_core.py",
         "backend/governed_modules.py",
-        "backend/commercial_admin_permission_compat.py",
     ),
 )
 
