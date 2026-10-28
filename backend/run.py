@@ -26,8 +26,11 @@ app = server_module.app
 # the startup orchestration in backend.server_modules.application_runtime, but
 # it was not attached to FastAPI in the production launcher. Without this,
 # index/bootstrap/scheduler initialization silently never runs on fresh workers.
-if not any(getattr(handler, "__name__", "") == "startup_event" for handler in getattr(app.router, "on_startup", [])):
-    app.add_event_handler("startup", server_module.startup_event)
+# Starlette 1.x removed add_event_handler/on_startup; FastAPI still supports
+# on_event (deprecated) on both old and new versions, so register through it.
+if not getattr(app.state, "_taskosphere_startup_registered", False):
+    app.on_event("startup")(server_module.startup_event)
+    app.state._taskosphere_startup_registered = True
 
 # Performance layer is deliberately installed after the application has loaded
 # all routes, but before Uvicorn starts accepting traffic. It does not alter
@@ -46,7 +49,7 @@ _owner_session_compat.install_server_session_patch(server_module)
 
 # Licensing is a normal FastAPI router; there is no second Node server.
 # Avoid duplicate registration if server.py also registers it.
-if not any(route.path == "/api/licensing/state" for route in app.routes):
+if not any(getattr(route, "path", None) == "/api/licensing/state" for route in app.routes):
     app.include_router(licensing_router, prefix="/api")
 
 

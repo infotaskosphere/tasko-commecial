@@ -1,3 +1,4 @@
+import re
 import asyncio
 from datetime import datetime, timezone, timedelta
 import logging
@@ -572,7 +573,7 @@ class CentralEmailService:
         if status and status.upper() != "ALL":
             query["status"] = status.upper()
         if recipient and recipient.strip():
-            query["recipient"] = {"$regex": recipient.strip(), "$options": "i"}
+            query["recipient"] = {"$regex": re.escape(recipient.strip()), "$options": "i"}
 
         total = await db.email_delivery_logs.count_documents(query)
         items = (

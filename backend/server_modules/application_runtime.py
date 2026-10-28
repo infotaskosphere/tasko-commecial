@@ -90,10 +90,10 @@ _IS_PRODUCTION = str(os.getenv("ENV_MODE") or "").strip().lower() == "production
 # browsers must originate from one of the explicit production allowlist entries
 # above, or an origin deliberately added through CORS_ALLOWED_ORIGINS.
 CORS_ORIGIN_REGEX = None if _IS_PRODUCTION else (
-    r"^https://[a-zA-Z0-9-]+\\.vercel\\.app$"
-    r"|^https://[a-zA-Z0-9-]+\\.onrender\\.com$"
+    r"^https://[a-zA-Z0-9-]+\.vercel\.app$"
+    r"|^https://[a-zA-Z0-9-]+\.onrender\.com$"
     r"|^http://localhost(?::[0-9]+)?$"
-    r"|^http://127\\.0\\.0\\.1(?::[0-9]+)?$"
+    r"|^http://127\.0\.0\.1(?::[0-9]+)?$"
 )
 
 
@@ -498,18 +498,23 @@ async def universal_exception_handler(request: Request, exc: Exception):
     import re as _re
 
     origin = request.headers.get("origin", "")
-    is_allowed = (origin in CORS_ALLOWED_ORIGINS) or bool(
-        _re.match(CORS_ORIGIN_REGEX, origin)
+    # CORS_ORIGIN_REGEX is None in production: re.match(None, ...) raised
+    # TypeError and crashed this handler for any unlisted origin.
+    is_allowed = bool(origin) and (
+        origin in CORS_ALLOWED_ORIGINS
+        or bool(CORS_ORIGIN_REGEX and _re.match(CORS_ORIGIN_REGEX, origin))
     )
-    cors_origin = (
-        origin if is_allowed else "https://final-taskosphere-frontend.onrender.com"
-    )
-    headers = {
-        "Access-Control-Allow-Origin": cors_origin,
-        "Access-Control-Allow-Credentials": "true",
+    headers = {}
+    if is_allowed:
+        headers.update({
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        })
+    headers.update({
         "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With, Cache-Control",
-    }
+    })
     return JSONResponse(
         status_code=500,
         content={

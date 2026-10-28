@@ -1491,9 +1491,9 @@ async def list_trademarks(
 
     if search:
         flt["$or"] = [
-            {"application_number": {"$regex": search, "$options": "i"}},
-            {"word_mark":          {"$regex": search, "$options": "i"}},
-            {"proprietor":         {"$regex": search, "$options": "i"}},
+            {"application_number": {"$regex": re.escape(search), "$options": "i"}},
+            {"word_mark":          {"$regex": re.escape(search), "$options": "i"}},
+            {"proprietor":         {"$regex": re.escape(search), "$options": "i"}},
         ]
     if tm_status:
         flt["tm_status"] = tm_status

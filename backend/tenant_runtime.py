@@ -738,10 +738,114 @@ def _scope_replacement(replacement: Any, query: Any = None) -> Any:
 from backend import report_cache as _report_cache  # noqa: E402
 
 
+# ── Platform Owner identity write guard ─────────────────────────────────────
+# is_platform_owner() recognises the owner from fields stored on the user
+# record (reserved email, owner role strings, owner identity markers). If a
+# licensee admin, a staff member or an anonymous sign-up could WRITE those
+# values, they would become the Platform Owner. Every write to the users
+# collection that goes through this facade is therefore checked: outside the
+# Platform Owner's own session (or an explicit system_context()), owner
+# identity values may only be written onto a record that is already the owner.
+OWNER_ROLE_VALUES = frozenset({"platform_owner", "superadmin", "saas_admin"})
+_OWNER_UID_FIELDS = ("platform_owner_uid", "identity_org_uid", "user_uid")
+_LICENSEE_MARKER_FIELDS = ("licensee_uid", "commercial_customer_id", "license_id")
+
+
+def _owner_email_set() -> frozenset[str]:
+    from backend.platform_owner import platform_owner_emails
+    return frozenset(str(e).strip().lower() for e in platform_owner_emails() if str(e).strip())
+
+
+def _owner_identity_values(values: Mapping[str, Any] | None) -> list[str]:
+    """Return the owner-identity fields present in ``values`` (a document or $set)."""
+    if not isinstance(values, Mapping):
+        return []
+    found: list[str] = []
+    owner_emails = _owner_email_set()
+    for key in ("email", "email_normalized"):
+        value = values.get(key)
+        if isinstance(value, str) and value.strip().lower() in owner_emails:
+            found.append(key)
+    role = values.get("role")
+    role_text = str(getattr(role, "value", role) or "").strip().lower().rsplit(".", 1)[-1]
+    if role_text in OWNER_ROLE_VALUES:
+        found.append("role")
+    if values.get("is_platform_owner") or values.get("isPlatformOwner"):
+        found.append("is_platform_owner")
+    if str(values.get("identity_type") or "").strip().lower().startswith("platform_owner"):
+        found.append("identity_type")
+    for key in _OWNER_UID_FIELDS:
+        if str(values.get(key) or "").strip().upper().startswith("PO-"):
+            found.append(key)
+    if str(values.get(COMPANY_FIELD) or "").strip().lower().startswith("platform-owner-"):
+        found.append(COMPANY_FIELD)
+    return found
+
+
+def _is_established_owner_record(doc: Mapping[str, Any] | None) -> bool:
+    """True for a user record that already IS the Platform Owner.
+
+    Deliberately stricter than is_platform_owner(): a record carrying licensee
+    markers is never accepted, whatever email or role it has.
+    """
+    if not isinstance(doc, Mapping):
+        return False
+    if any(str(doc.get(key) or "").strip() for key in _LICENSEE_MARKER_FIELDS):
+        return False
+    if str(doc.get("identity_type") or "").strip().lower().startswith("licensee"):
+        return False
+    if doc.get("is_platform_owner") is True:
+        return True
+    email = str(doc.get("email") or "").strip().lower()
+    return bool(email and email in _owner_email_set())
+
+
+def _owner_write_denied(fields: list[str]) -> HTTPException:
+    logger.warning("Blocked write of Platform Owner identity fields %s outside the owner context", fields)
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="This email address or role is reserved and cannot be assigned to this account.",
+    )
+
+
+def _owner_guard_active() -> bool:
+    return not in_platform_owner_context() and not in_system_context()
+
+
+def _guard_owner_identity_insert(documents: list[Any]) -> None:
+    if not _owner_guard_active():
+        return
+    for document in documents:
+        fields = _owner_identity_values(document)
+        if fields:
+            raise _owner_write_denied(fields)
+
+
+async def _guard_owner_identity_update(raw_collection: Any, query: Any, update: Any, *, replacement: bool = False) -> None:
+    if not _owner_guard_active():
+        return
+    if replacement:
+        fields = _owner_identity_values(update)
+    elif isinstance(update, Mapping):
+        fields = _owner_identity_values(update.get("$set")) + _owner_identity_values(update.get("$setOnInsert"))
+    else:
+        # Aggregation-pipeline updates cannot be inspected safely.
+        fields = ["pipeline-update"] if isinstance(update, list) else []
+    if not fields:
+        return
+    targets = await raw_collection.find(query or {}, {"_id": 0}).limit(5).to_list(5)
+    if not targets or not all(_is_established_owner_record(doc) for doc in targets):
+        raise _owner_write_denied(fields)
+
+
 class TenantAwareCollection:
     def __init__(self, collection: Any, name: str):
         self._collection = collection
         self._name = name
+
+    @property
+    def _owner_guarded(self) -> bool:
+        return self._name == "users"
 
     def _enabled(self) -> bool:
         return self._name in TENANT_COLLECTIONS and authenticated_company_id() is not None and not in_system_context()
@@ -772,6 +876,7 @@ class TenantAwareCollection:
     async def insert_one(self, document, *args, **kwargs):
         if self._enabled(): document = _scope_replacement(document)
         elif self._company_registry_enabled(): document = _scope_company_registry_insert(document)
+        if self._owner_guarded: _guard_owner_identity_insert([document])
         result = await self._collection.insert_one(document, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -779,6 +884,7 @@ class TenantAwareCollection:
     async def insert_many(self, documents, *args, **kwargs):
         if self._enabled(): documents = [_scope_replacement(document) for document in documents]
         elif self._company_registry_enabled(): documents = [_scope_company_registry_insert(document) for document in documents]
+        if self._owner_guarded: _guard_owner_identity_insert(list(documents))
         result = await self._collection.insert_many(documents, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -789,6 +895,7 @@ class TenantAwareCollection:
             query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
+        if self._owner_guarded: await _guard_owner_identity_update(self._collection, query, update)
         result = await self._collection.update_one(query, update, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -799,6 +906,7 @@ class TenantAwareCollection:
             query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
+        if self._owner_guarded: await _guard_owner_identity_update(self._collection, query, update)
         result = await self._collection.update_many(query, update, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -811,6 +919,7 @@ class TenantAwareCollection:
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
+        if self._owner_guarded: await _guard_owner_identity_update(self._collection, query, replacement, replacement=True)
         result = await self._collection.replace_one(query, replacement, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -821,6 +930,7 @@ class TenantAwareCollection:
             query = _scope_query(query, self._name)
             update = _scope_update(update, query)
         elif registry: query, update = _scope_company_registry_query(query), _scope_company_registry_update(update)
+        if self._owner_guarded: await _guard_owner_identity_update(self._collection, query, update)
         result = await self._collection.find_one_and_update(query, update, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -833,6 +943,7 @@ class TenantAwareCollection:
         elif registry:
             query = _scope_company_registry_query(query)
             replacement = _scope_company_registry_insert(replacement)
+        if self._owner_guarded: await _guard_owner_identity_update(self._collection, query, replacement, replacement=True)
         result = await self._collection.find_one_and_replace(query, replacement, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
@@ -893,6 +1004,8 @@ class TenantAwareCollection:
         return self._collection.aggregate(pipeline, *args, **kwargs)
 
     async def bulk_write(self, requests, *args, **kwargs):
+        if self._owner_guarded and _owner_guard_active():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bulk writes are not permitted on the users collection")
         if not self._enabled(): return await self._collection.bulk_write(requests, *args, **kwargs)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bulk writes are not permitted on tenant collections")
 

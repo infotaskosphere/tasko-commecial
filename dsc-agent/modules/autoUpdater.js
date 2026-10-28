@@ -126,40 +126,50 @@ function checkForUpdate() {
 
 // ── Download update ──────────────────────────────────────────────────────────
 
-function downloadUpdate(downloadUrl, destPath) {
+function downloadUpdate(downloadUrl, destPath, redirectsLeft = 5) {
   return new Promise((resolve, reject) => {
     if (!downloadUrl) {
       reject(new Error('No download URL'));
       return;
     }
 
-    const url    = new URL(downloadUrl);
-    const isHttps = url.protocol === 'https:';
-    const file   = fs.createWriteStream(destPath);
+    let url;
+    try { url = new URL(downloadUrl); } catch { reject(new Error('Invalid download URL')); return; }
+    // Installers are executed with the user's rights: never fetch them over
+    // plain HTTP, where anyone on the network path could swap the file.
+    if (url.protocol !== 'https:') {
+      reject(new Error('Refusing non-HTTPS update download: ' + url.protocol));
+      return;
+    }
 
     const options = {
       hostname: url.hostname,
-      port:     url.port || (isHttps ? 443 : 80),
-      path:     url.pathname,
+      port:     url.port || 443,
+      path:     url.pathname + url.search,
       method:   'GET',
     };
 
-    const req = (isHttps ? https : http).request(options, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        // Follow redirect
-        downloadUpdate(res.headers.location, destPath).then(resolve).catch(reject);
+    const req = https.request(options, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode)) {
+        res.resume();
+        if (redirectsLeft <= 0) { reject(new Error('Too many redirects')); return; }
+        const next = new URL(res.headers.location || '', url).toString();
+        downloadUpdate(next, destPath, redirectsLeft - 1).then(resolve).catch(reject);
         return;
       }
 
       if (res.statusCode !== 200) {
+        res.resume();
         reject(new Error(`Download failed: HTTP ${res.statusCode}`));
         return;
       }
 
+      const file = fs.createWriteStream(destPath);
       res.pipe(file);
       file.on('finish', () => {
         file.close(() => resolve(destPath));
       });
+      file.on('error', (err) => { fs.unlink(destPath, () => {}); reject(err); });
     });
 
     req.on('error', (err) => {
@@ -178,17 +188,54 @@ function downloadUpdate(downloadUrl, destPath) {
 }
 
 // ── Verify signature ─────────────────────────────────────────────────────────
+//
+// An update is executed only if it is PROVEN to come from the publisher:
+//   1. Ed25519: the release `signature` (base64) must verify over the
+//      installer bytes against the public key pinned on this machine
+//      (TASKOSPHERE_UPDATE_PUBKEY env var, or config.UPDATE_PUBLIC_KEY), PEM.
+//      Sign releases with: node scripts/sign-update.js <installer.exe>
+//   2. Otherwise, on Windows, the installer must carry a valid Authenticode
+//      (code-signing certificate) signature.
+// Anything else is refused. A bare SHA-256 sent by the same server that sends
+// the download URL proves nothing and is no longer accepted.
 
-function verifySignature(filePath, expectedSignature) {
-  if (!expectedSignature) return true; // skip if no signature provided
+function updatePublicKey() {
+  const pem = String(process.env.TASKOSPHERE_UPDATE_PUBKEY || config.UPDATE_PUBLIC_KEY || '').trim();
+  return pem ? pem.replace(/\\n/g, '\n') : '';
+}
 
+function verifyEd25519(filePath, signatureB64, publicKeyPem) {
   try {
-    const fileBuffer = fs.readFileSync(filePath);
-    const hash       = crypto.createHash('sha256').update(fileBuffer).digest('hex');
-    return hash === expectedSignature;
-  } catch {
+    const key = crypto.createPublicKey(publicKeyPem);
+    return crypto.verify(null, fs.readFileSync(filePath), key, Buffer.from(String(signatureB64), 'base64'));
+  } catch (e) {
+    console.error('[updater] Ed25519 verification error:', e.message);
     return false;
   }
+}
+
+function verifyAuthenticode(filePath) {
+  if (process.platform !== 'win32') return false;
+  try {
+    const escaped = filePath.replace(/'/g, "''");
+    const status = execSync(
+      `powershell -NoProfile -NonInteractive -Command "(Get-AuthenticodeSignature -LiteralPath '${escaped}').Status"`,
+      { timeout: 30000, windowsHide: true },
+    ).toString().trim();
+    return status === 'Valid';
+  } catch (e) {
+    console.error('[updater] Authenticode check failed:', e.message);
+    return false;
+  }
+}
+
+function verifySignature(filePath, signature) {
+  const publicKey = updatePublicKey();
+  if (publicKey) {
+    if (!signature) return false;
+    return verifyEd25519(filePath, signature, publicKey);
+  }
+  return verifyAuthenticode(filePath);
 }
 
 // ── Apply update (Windows NSIS installer) ────────────────────────────────────

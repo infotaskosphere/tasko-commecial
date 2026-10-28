@@ -2495,8 +2495,8 @@ async def list_products(search: Optional[str] = None, current_user: User = Depen
     q: dict = {}
     if current_user.role != "admin": q["created_by"] = current_user.id
     if search:
-        q["$or"] = [{"name": {"$regex": search, "$options": "i"}},
-                    {"description": {"$regex": search, "$options": "i"}}]
+        q["$or"] = [{"name": {"$regex": re.escape(search), "$options": "i"}},
+                    {"description": {"$regex": re.escape(search), "$options": "i"}}]
     return await db.products.find(q, {"_id": 0}).sort("name", 1).to_list(500)
 
 
@@ -4687,8 +4687,8 @@ async def list_invoices(
         q["status"] = status
     if search:
         q["$or"] = [
-            {"client_name": {"$regex": search, "$options": "i"}},
-            {"invoice_no": {"$regex": search, "$options": "i"}},
+            {"client_name": {"$regex": re.escape(search), "$options": "i"}},
+            {"invoice_no": {"$regex": re.escape(search), "$options": "i"}},
         ]
     total = await db.invoices.count_documents(q)
     skip = (page - 1) * page_size

@@ -17,6 +17,7 @@ All endpoints are under /api/desktop/ prefix.
 Admin-only for GET (viewing); agents push via POST with their own JWT.
 """
 
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -676,9 +677,9 @@ async def get_connected_agents(
     if search:
         search_query = {
             "$or": [
-                {"machine_name": {"$regex": search, "$options": "i"}},
-                {"hostname": {"$regex": search, "$options": "i"}},
-                {"agent_id": {"$regex": search, "$options": "i"}},
+                {"machine_name": {"$regex": re.escape(search), "$options": "i"}},
+                {"hostname": {"$regex": re.escape(search), "$options": "i"}},
+                {"agent_id": {"$regex": re.escape(search), "$options": "i"}},
             ]
         }
         query = {"$and": [query, search_query]}
@@ -736,6 +737,17 @@ async def get_activity_reports(
     role = current_user.role
     role_str = role.value if hasattr(role, "value") else str(role)
     own_id = str(getattr(current_user, "id", "") or getattr(current_user, "_id", ""))
+
+    if role_str != "admin":
+        # Staff Activity is a licensed, permissioned page: non-admins need the
+        # page flag even to read their own reports.
+        perms = getattr(current_user, "permissions", None)
+        allowed = (
+            perms.get("can_view_staff_activity") if isinstance(perms, dict)
+            else getattr(perms, "can_view_staff_activity", False)
+        )
+        if not allowed:
+            raise HTTPException(status_code=403, detail="Permission required: can_view_staff_activity")
 
     query = await _desktop_scope_query(current_user)
 

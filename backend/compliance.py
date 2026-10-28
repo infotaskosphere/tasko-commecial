@@ -1,3 +1,4 @@
+import re
 import io
 import uuid
 import logging
@@ -614,7 +615,7 @@ async def list_assignments(
     if status and status != "all":
         query["status"] = status
     if search:
-        query["client_name"] = {"$regex": search.strip(), "$options": "i"}
+        query["client_name"] = {"$regex": re.escape(search.strip()), "$options": "i"}
 
     total = await db.compliance_assignments.count_documents(query)
     skip  = (page - 1) * limit

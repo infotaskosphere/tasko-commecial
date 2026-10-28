@@ -226,12 +226,30 @@ async function processOfflineQueue() {
 const app = express();
 app.use(express.json());
 
+// Exact allowlist. A wildcard such as *.onrender.com lets ANY site hosted on
+// that platform read DSC/activity data from this machine and replace the
+// agent's auth token, so only the real Taskosphere frontends are accepted.
+// Extra origins: TASKOSPHERE_AGENT_ALLOWED_ORIGINS=https://a.com,https://b.com
+const AGENT_ALLOWED_ORIGINS = new Set([
+  'https://taskosphere.com',
+  'https://www.taskosphere.com',
+  'https://tasko-commercial-frontend.vercel.app',
+  'https://tasko-commecial-frontend.vercel.app',
+  'https://final-taskosphere-frontend.onrender.com',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  ...String(process.env.TASKOSPHERE_AGENT_ALLOWED_ORIGINS || '')
+    .split(',').map((o) => o.trim()).filter(Boolean),
+]);
+
 app.use(cors({
   origin: (origin, callback) => {
+    // No Origin header = a local process (not a web page); browsers always
+    // send Origin on cross-origin requests.
     if (!origin) return callback(null, true);
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
-    if (origin === 'https://final-taskosphere-frontend.onrender.com') return callback(null, true);
-    if (/^https:\/\/.*\.onrender\.com$/.test(origin)) return callback(null, true);
+    if (AGENT_ALLOWED_ORIGINS.has(origin)) return callback(null, true);
     callback(new Error('CORS: origin not allowed: ' + origin));
   },
   methods: ['GET', 'POST', 'OPTIONS'],

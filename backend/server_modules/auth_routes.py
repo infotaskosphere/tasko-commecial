@@ -721,7 +721,9 @@ async def self_register(user_data: UserCreate, request: Request):
     }
 
     await db.users.insert_one(new_user)
-    access_token = create_access_token({"sub": user_id})
+    # Pending accounts get no usable credential until an admin approves them
+    # and the user signs in normally (which binds a server-side session).
+    access_token = ""
     new_user.pop("password", None)
     new_user.pop("_id", None)
 
@@ -819,7 +821,8 @@ async def login(credentials: UserLogin, request: Request):
 
     user_status = user.get("status")
     from backend.platform_owner import is_platform_owner
-    if not is_platform_owner(user) and user_status is not None and user_status != "active":
+    # Applies to every account, Platform Owner addresses included.
+    if user_status not in (None, "", "active"):
         raise HTTPException(
             status_code=403,
             detail=f"Your account is {user_status}. Awaiting admin approval.",

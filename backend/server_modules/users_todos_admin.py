@@ -681,6 +681,13 @@ async def update_user(
         if key in user_data:
             val = user_data[key]
             update_payload[key] = val if val != "" else None
+    if "role" in update_payload:
+        _role_value = str(update_payload.get("role") or "").strip().lower()
+        if _role_value not in ("admin", "manager", "staff"):
+            raise HTTPException(status_code=400, detail="Role must be admin, manager or staff.")
+        update_payload["role"] = _role_value
+    if "email" in update_payload and update_payload["email"] is not None:
+        update_payload["email"] = str(update_payload["email"]).strip().lower()
     if "monthly_salary" in update_payload and update_payload["monthly_salary"] is not None:
         try:
             update_payload["monthly_salary"] = float(update_payload["monthly_salary"])

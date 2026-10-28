@@ -1,6 +1,10 @@
 import axios from "axios";
 import api, { getToken, BASE_URL } from "@/lib/api";
-import { handleMockRoute } from "@/lib/mockBackend";
+// Mock licensing data is for local development only: in a production build an
+// unreachable server must never look like a valid licence (going offline would
+// otherwise unlock the app). mockBackend is loaded lazily so it is not bundled
+// into the production licence path.
+const loadMock = () => import("@/lib/mockBackend").then((m) => m.handleMockRoute);
 
 export const DEFAULT_PACKAGES = [
   { id: "essential", code: "TSO-ESSENTIAL", name: "Taskosphere Essential", description: "Legacy Task Management + Invoicing", modules: ["TASKS", "INVOICING"], max_users: 10, max_installations: 1, validity_days: 365, price: 0, active: true },
@@ -9,8 +13,8 @@ export const DEFAULT_PACKAGES = [
 ];
 
 const licensingApi = axios.create({ baseURL: BASE_URL, timeout: 30000, headers: { "Content-Type": "application/json" } });
-licensingApi.interceptors.request.use((config) => { const token = getToken(); if (token) { config.headers = config.headers || {}; config.headers.Authorization = `Bearer ${token}`; } if (!import.meta.env.VITE_API_URL) { config.adapter = async (cfg) => { const method = (cfg.method || "get").toLowerCase(); const rawUrl = cfg.url || ""; let bodyData = cfg.data; if (typeof bodyData === "string") { try { bodyData = JSON.parse(bodyData); } catch {} } const mockRes = handleMockRoute(method, rawUrl, bodyData); if (mockRes) return { data: mockRes.data, status: mockRes.status || 200, statusText: "OK", headers: {}, config: cfg }; return { data: method === "get" ? [] : { success: true }, status: 200, statusText: "OK", headers: {}, config: cfg }; }; } return config; });
-licensingApi.interceptors.response.use((res) => res, (error) => { const isOffline = !error.response || error.code === "ERR_NETWORK" || error.message === "Network Error" || (!import.meta.env.VITE_API_URL && [404, 502, 503, 504].includes(error.response?.status)); if (isOffline) { try { const method = (error.config?.method || "get").toLowerCase(); const rawUrl = error.config?.url || ""; let bodyData = error.config?.data; if (typeof bodyData === "string") { try { bodyData = JSON.parse(bodyData); } catch {} } const mockRes = handleMockRoute(method, rawUrl, bodyData); if (mockRes) return Promise.resolve({ data: mockRes.data, status: mockRes.status || 200, statusText: "OK", headers: {}, config: error.config }); } catch (err) { console.warn("[MockBackend] Licensing fallback error:", err); } } return Promise.reject(error); });
+licensingApi.interceptors.request.use((config) => { const token = getToken(); if (token) { config.headers = config.headers || {}; config.headers.Authorization = `Bearer ${token}`; } if (!import.meta.env.PROD && !import.meta.env.VITE_API_URL) { config.adapter = async (cfg) => { const handleMockRoute = await loadMock(); const method = (cfg.method || "get").toLowerCase(); const rawUrl = cfg.url || ""; let bodyData = cfg.data; if (typeof bodyData === "string") { try { bodyData = JSON.parse(bodyData); } catch {} } const mockRes = handleMockRoute(method, rawUrl, bodyData); if (mockRes) return { data: mockRes.data, status: mockRes.status || 200, statusText: "OK", headers: {}, config: cfg }; return { data: method === "get" ? [] : { success: true }, status: 200, statusText: "OK", headers: {}, config: cfg }; }; } return config; });
+licensingApi.interceptors.response.use((res) => res, async (error) => { const isOffline = !import.meta.env.PROD && (!error.response || error.code === "ERR_NETWORK" || error.message === "Network Error" || (!import.meta.env.VITE_API_URL && [404, 502, 503, 504].includes(error.response?.status))); if (isOffline) { try { const handleMockRoute = await loadMock(); const method = (error.config?.method || "get").toLowerCase(); const rawUrl = error.config?.url || ""; let bodyData = error.config?.data; if (typeof bodyData === "string") { try { bodyData = JSON.parse(bodyData); } catch {} } const mockRes = handleMockRoute(method, rawUrl, bodyData); if (mockRes) return Promise.resolve({ data: mockRes.data, status: mockRes.status || 200, statusText: "OK", headers: {}, config: error.config }); } catch (err) { console.warn("[MockBackend] Licensing fallback error:", err); } } return Promise.reject(error); });
 
 export const getLicenseState = async () => (await licensingApi.get("/licensing/state")).data;
 export const createLicense = async (input) => (await licensingApi.post("/licensing/licenses", input)).data;

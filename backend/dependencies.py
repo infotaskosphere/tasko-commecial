@@ -106,14 +106,26 @@ class MockMongoClient:
     def __init__(self,*a,**k):self._db=MockDatabase()
     def __getitem__(self,name):return self._db
     def __getattr__(self,name):return self._db
+def _in_memory_db_allowed() -> bool:
+    """The in-memory mock database is for local development and tests only.
+
+    It used to be used whenever ENV_MODE was not exactly "production", so a
+    typo such as "Production" or a missing variable silently ran production on
+    a throwaway database and lost every write on restart.
+    """
+    import sys as _sys
+    mode = str(os.getenv("ENV_MODE") or "").strip().lower()
+    return mode in {"development", "dev", "local", "test", "testing"} or "pytest" in _sys.modules
 if not MONGO_URL:
+    if not _in_memory_db_allowed():
+        raise RuntimeError("MONGO_URL/MONGODB_URI is not set. Set it, or set ENV_MODE=development to use the in-memory development database.")
     if os.getenv("ENV_MODE") == "production":
         raise RuntimeError("MONGO_URL/MONGODB_URI environment variable is not set. Refusing to start in production without a valid database connection.")
     print("[AI Studio] MONGO_URL/MONGODB_URI not provided. Using fallback in-memory MongoDB client.");client=MockMongoClient();db=client[DB_NAME]
 else:
     try:client=AsyncIOMotorClient(MONGO_URL);db=client[DB_NAME]
     except Exception as e:
-        if os.getenv("ENV_MODE") == "production":
+        if not _in_memory_db_allowed() or os.getenv("ENV_MODE") == "production":
             raise RuntimeError(f"Failed to connect to MongoDB in production: {e}")
         print(f"[AI Studio] Failed to connect to MongoDB, falling back to mock: {e}");client=MockMongoClient();db=client[DB_NAME]
 def _resolve_jwt_secret():
@@ -835,7 +847,15 @@ async def get_current_user(credentials=Depends(security)):
         logger.warning("JWT identity hydration warning: %s", identity_err)
     try:user=User(**d)
     except Exception as e:logger.error("User validation failed for %s: %s",user_id,e);raise HTTPException(status_code=500,detail="User profile data is corrupted")
-    if not is_platform_owner(user):
+    # Accounts that are pending approval, rejected, suspended or deleted must
+    # not authenticate, whoever they are (Platform Owner addresses included).
+    _account_status = str(d.get("status") or "").strip().lower()
+    if _account_status and _account_status != "active":
+        raise HTTPException(status_code=403, detail="ACCOUNT_NOT_ACTIVE", headers={"WWW-Authenticate":"Bearer"})
+    # Every JWT must be bound to a live server-side session. The Platform Owner
+    # is no exception: an owner-looking token without a session (for example
+    # one minted by a public sign-up) is rejected.
+    if True:
         sid = str(payload.get("sid") or "").strip()
         if not sid:
             raise HTTPException(status_code=401, detail="SESSION_NOT_BOUND", headers={"WWW-Authenticate":"Bearer"})

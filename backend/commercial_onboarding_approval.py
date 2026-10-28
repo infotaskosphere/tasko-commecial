@@ -228,12 +228,12 @@ async def list_submissions(
     if search and search.strip():
         term = re.escape(search.strip())
         search_terms = [
-            {"application_id": {"$regex": term, "$options": "i"}},
-            {"legal_name": {"$regex": term, "$options": "i"}},
-            {"trade_name": {"$regex": term, "$options": "i"}},
-            {"email": {"$regex": term, "$options": "i"}},
-            {"pan": {"$regex": term, "$options": "i"}},
-            {"external_reference": {"$regex": term, "$options": "i"}},
+            {"application_id": {"$regex": re.escape(term), "$options": "i"}},
+            {"legal_name": {"$regex": re.escape(term), "$options": "i"}},
+            {"trade_name": {"$regex": re.escape(term), "$options": "i"}},
+            {"email": {"$regex": re.escape(term), "$options": "i"}},
+            {"pan": {"$regex": re.escape(term), "$options": "i"}},
+            {"external_reference": {"$regex": re.escape(term), "$options": "i"}},
         ]
         if status_filter:
             query = {"$and": [query, {"$or": search_terms}]}

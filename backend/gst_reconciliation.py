@@ -1324,7 +1324,7 @@ async def get_history(
     if client_id:
         query["client_id"] = client_id
     elif client_name:
-        query["client_name"] = {"$regex": client_name.strip(), "$options": "i"}
+        query["client_name"] = {"$regex": re.escape(client_name.strip()), "$options": "i"}
     sessions = await db.gst_reconciliation_sessions.find(
         query, {"_id": 0, "full_result": 0}   # exclude full_result for listing (large)
     ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)

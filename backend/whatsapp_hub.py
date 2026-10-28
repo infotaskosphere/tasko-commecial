@@ -8,6 +8,7 @@ whatsapp_hub.py — v3.0 (media support + SSE real-time + full history)
 """
 
 from __future__ import annotations
+import re
 
 import asyncio
 import json
@@ -1135,7 +1136,7 @@ async def hub_conversation_search(
     if not q.strip():
         return {"messages": []}
     db  = _db()
-    pat = {"$regex": q.strip(), "$options": "i"}
+    pat = {"$regex": re.escape(q.strip()), "$options": "i"}
     msgs = await db["whatsapp_hub_messages"].find({"jid": contact_jid, "body": pat}) \
         .sort("timestamp", -1).limit(limit).to_list(limit)
     return {"messages": [{
@@ -1234,7 +1235,7 @@ async def hub_global_search(
     if not q.strip():
         return {"contacts": [], "messages": []}
     db      = _db()
-    pattern = {"$regex": q.strip(), "$options": "i"}
+    pattern = {"$regex": re.escape(q.strip()), "$options": "i"}
 
     contacts = await db["whatsapp_hub_contacts"].find({
         "$or": [{"display_name": pattern}, {"phone": pattern}]

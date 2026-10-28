@@ -44,6 +44,13 @@ def env(monkeypatch):
     _counter["n"] += 1
     cid = f"co{_counter['n']}"
     asyncio.run(ac.ensure_default_chart_of_accounts(cid, "u1"))
+
+    # Deletes now authorise the invoice's legal company before anything else.
+    # The test admin owns this test company, so let the delete-safety rules
+    # (credit notes, payments, locked periods, audit) be what is exercised.
+    async def _visible(_user):
+        return {cid}
+    monkeypatch.setattr(inv, "_invoice_delete_visible_company_ids", _visible)
     return types.SimpleNamespace(db=new, ac=ac, lk=lk, inv=inv, fm=fm, cid=cid)
 
 

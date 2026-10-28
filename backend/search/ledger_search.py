@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -37,6 +38,6 @@ class LedgerSearch:
             query["amount"] = amount_query
             
         if search_query:
-            query["narration"] = {"$regex": search_query, "$options": "i"}
+            query["narration"] = {"$regex": re.escape(search_query), "$options": "i"}
             
         return await db.journals.find(query).sort("created_at", -1).to_list(1000)

@@ -16,12 +16,9 @@ if command -v apt-get >/dev/null 2>&1; then
 fi
 
 echo "==> Installing Python dependencies..."
-pip install -r backend/requirements.txt
-# Keep the root requirements file as a deployment fallback, but avoid
-# installing the same dependency set twice when both files are identical.
-if [ -f requirements.txt ] && ! cmp -s requirements.txt backend/requirements.txt; then
-  pip install -r requirements.txt
-fi
+# The repository-root requirements.txt is the single source of truth;
+# backend/requirements.txt only includes it.
+pip install -r requirements.txt
 
 echo "==> Installing Playwright browser binary..."
 playwright install chromium

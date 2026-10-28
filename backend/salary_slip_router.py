@@ -616,7 +616,7 @@ async def list_employees(
     if status and status != "all":
         query["status"] = status
     if search and search.strip():
-        query["name"] = {"$regex": search.strip(), "$options": "i"}
+        query["name"] = {"$regex": re.escape(search.strip()), "$options": "i"}
     items = await db.salary_employees.find(query, {"_id": 0}).sort("name", 1).to_list(2000)
     return items
 
@@ -1045,9 +1045,9 @@ async def list_slips(
     if status and status != "all": query["status"] = status
     if search and search.strip():
         query["$or"] = [
-            {"employee_name": {"$regex": search.strip(), "$options": "i"}},
-            {"company_name":  {"$regex": search.strip(), "$options": "i"}},
-            {"slip_no":       {"$regex": search.strip(), "$options": "i"}},
+            {"employee_name": {"$regex": re.escape(search.strip()), "$options": "i"}},
+            {"company_name":  {"$regex": re.escape(search.strip()), "$options": "i"}},
+            {"slip_no":       {"$regex": re.escape(search.strip()), "$options": "i"}},
         ]
 
     total = await db.salary_slips.count_documents(query)

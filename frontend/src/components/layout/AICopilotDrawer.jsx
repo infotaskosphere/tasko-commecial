@@ -76,7 +76,15 @@ function FormattedText({ text, isDark }) {
 // Convert **bold** to <strong>
 function renderInlineMarkdown(str) {
   if (!str) return '';
-  return str.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-slate-100">$1</strong>');
+  // Escape first: the text can come from an AI reply, and this string is
+  // rendered with dangerouslySetInnerHTML (an injected <img onerror> would run).
+  const escaped = String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return escaped.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-slate-100">$1</strong>');
 }
 
 export default function AICopilotDrawer({ isOpen, onClose, isDark, user }) {

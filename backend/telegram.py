@@ -1224,8 +1224,12 @@ async def _tg_natural_language_handler(chat_id: int, text: str, message: dict) -
 async def telegram_webhook(request: Request):  # noqa: C901  (complex but intentional)
     try:
         # ── Security ─────────────────────────────────────────────
-        secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
-        if secret_token != os.getenv("TELEGRAM_WEBHOOK_SECRET"):
+        # Fail closed: with TELEGRAM_WEBHOOK_SECRET unset, a request without the
+        # header used to match (None == None) and was processed.
+        import secrets as _secrets
+        expected_secret = str(os.getenv("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+        secret_token = str(request.headers.get("X-Telegram-Bot-Api-Secret-Token") or "").strip()
+        if not expected_secret or not secret_token or not _secrets.compare_digest(secret_token, expected_secret):
             return {"status": "unauthorized"}
 
         payload = await request.json()
@@ -1863,7 +1867,7 @@ async def telegram_webhook(request: Request):  # noqa: C901  (complex but intent
             inv_no  = parts[1].strip() if len(parts) > 1 else ""
             if inv_no:
                 inv = await db.invoices.find_one(
-                    {"invoice_no": {"$regex": inv_no, "$options": "i"}}, {"_id": 0}
+                    {"invoice_no": {"$regex": re.escape(inv_no), "$options": "i"}}, {"_id": 0}
                 )
                 if inv:
                     return await _send_invoice_pdf_by_id(chat_id, inv["id"])
@@ -1879,7 +1883,7 @@ async def telegram_webhook(request: Request):  # noqa: C901  (complex but intent
             inv_no = parts[1].strip() if len(parts) > 1 else ""
             if inv_no:
                 inv = await db.invoices.find_one(
-                    {"invoice_no": {"$regex": inv_no, "$options": "i"}}, {"_id": 0}
+                    {"invoice_no": {"$regex": re.escape(inv_no), "$options": "i"}}, {"_id": 0}
                 )
                 if inv:
                     return await _send_invoice_email_by_id(chat_id, inv["id"])

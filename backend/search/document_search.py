@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import List, Dict, Any, Optional
 from backend.dependencies import db
@@ -16,7 +17,7 @@ class DocumentSearch:
         query = {"company_id": company_id}
         
         if vendor_name:
-            query["vendor_name"] = {"$regex": vendor_name, "$options": "i"}
+            query["vendor_name"] = {"$regex": re.escape(vendor_name), "$options": "i"}
         if doc_type:
             query["document_type"] = doc_type
         if raw_text_regex:

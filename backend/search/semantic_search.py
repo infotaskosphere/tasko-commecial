@@ -1,3 +1,4 @@
+import re
 import logging
 from typing import List, Dict, Any
 from backend.dependencies import db
@@ -21,6 +22,6 @@ class SemanticSearch:
         else:
             # No recognised semantic keyword — fall back to a plain narration match
             # instead of returning up to 100 unrelated journals.
-            search_filter["narration"] = {"$regex": query_text, "$options": "i"}
+            search_filter["narration"] = {"$regex": re.escape(query_text), "$options": "i"}
             
         return await db.journals.find(search_filter).to_list(100)
