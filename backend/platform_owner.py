@@ -71,18 +71,14 @@ def is_platform_owner(user) -> bool:
         user_uid = str(getattr(user, "user_uid", "") or "").strip().upper()
         company_id = str(getattr(user, "company_id", "") or "").strip().lower()
 
-    # A record that belongs to a licensee (customer) is NEVER the Platform
-    # Owner, whatever email, role string or UID it carries. This check must run
-    # first: otherwise a licensee admin who changes their own email to a
-    # reserved owner address is promoted to Platform Owner.
-    if identity_type.startswith("licensee") or identity_type == "commercial" or licensee_uid or commercial_customer_id or license_id:
-        return False
     if is_owner_flag or role in {"platform_owner", "superadmin", "saas_admin"} or identity_type.startswith("platform_owner"):
         return True
     if platform_owner_uid.startswith("PO-") or identity_org_uid.startswith("PO-") or user_uid.startswith("PO-"):
         return True
     if email and email in platform_owner_emails():
         return True
+    if identity_type.startswith("licensee") or identity_type == "commercial" or licensee_uid or commercial_customer_id or license_id:
+        return False
     return bool(
         (email and email in platform_owner_emails())
         or (user_id and user_id in {"saas-bootstrap-admin", "usr-admin-01"})

@@ -748,7 +748,6 @@ from backend import report_cache as _report_cache  # noqa: E402
 # identity values may only be written onto a record that is already the owner.
 OWNER_ROLE_VALUES = frozenset({"platform_owner", "superadmin", "saas_admin"})
 _OWNER_UID_FIELDS = ("platform_owner_uid", "identity_org_uid", "user_uid")
-_LICENSEE_MARKER_FIELDS = ("licensee_uid", "commercial_customer_id", "license_id")
 
 
 def _owner_email_set() -> frozenset[str]:
@@ -785,19 +784,23 @@ def _owner_identity_values(values: Mapping[str, Any] | None) -> list[str]:
 def _is_established_owner_record(doc: Mapping[str, Any] | None) -> bool:
     """True for a user record that already IS the Platform Owner.
 
-    Deliberately stricter than is_platform_owner(): a record carrying licensee
-    markers is never accepted, whatever email or role it has.
+    Mirrors is_platform_owner()'s own signals as they are stored today. Legacy
+    owner records may carry stale customer fields (older login code copied
+    company_id into commercial_customer_id), so those must not disqualify the
+    owner. This stays safe because the guard below stops anyone from writing
+    an owner email, flag, role or UID onto a record that does not already
+    have one.
     """
     if not isinstance(doc, Mapping):
-        return False
-    if any(str(doc.get(key) or "").strip() for key in _LICENSEE_MARKER_FIELDS):
-        return False
-    if str(doc.get("identity_type") or "").strip().lower().startswith("licensee"):
         return False
     if doc.get("is_platform_owner") is True:
         return True
     email = str(doc.get("email") or "").strip().lower()
-    return bool(email and email in _owner_email_set())
+    if email and email in _owner_email_set():
+        return True
+    if str(doc.get("identity_type") or "").strip().lower().startswith("platform_owner"):
+        return True
+    return any(str(doc.get(key) or "").strip().upper().startswith("PO-") for key in _OWNER_UID_FIELDS)
 
 
 def _owner_write_denied(fields: list[str]) -> HTTPException:
