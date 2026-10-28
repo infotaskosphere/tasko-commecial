@@ -12,7 +12,9 @@ permission restrictions.
 """
 from __future__ import annotations
 
+import logging
 import re
+from datetime import datetime, timezone
 
 from contextvars import ContextVar
 from typing import Any
@@ -21,7 +23,7 @@ from bson import ObjectId
 from fastapi import Depends, HTTPException, status
 
 from backend import dependencies as _dependencies
-from backend.platform_owner import is_platform_owner
+from backend.platform_owner import is_platform_owner, platform_owner_emails
 from backend.tenant_runtime import (
     TenantAwareCollection, in_platform_owner_context,
     set_authenticated_company, set_authenticated_tenant_database,
@@ -98,6 +100,57 @@ def _company_scope_query(query: Any) -> dict[str, Any]:
         ]
     }
     return {"$and": [base, ownership]} if base else ownership
+
+
+_SINGLE_DEVICE_LOGIN_MESSAGE = (
+    "You are already logged in on another device. "
+    "Please log out from that device and then log in again."
+)
+
+
+async def _single_device_login_check(collection, query, update):
+    """Login marks the user's previous session "replaced". For anyone but the
+    Platform Owner, refuse the new login while that session is still active
+    and unexpired. Returns a no-op result for the owner case, None to proceed.
+    (Formerly commercial_guard_request_compat.)"""
+    if collection._name != "sessions" or not isinstance(update, dict):
+        return None
+    values = update.get("$set") or {}
+    if values.get("status") != "replaced" or values.get("revoked_reason") != "new_login":
+        return None
+    try:
+        existing = await collection._collection.find_one(query)
+    except Exception:
+        logging.getLogger("commercial_guard_request_compat").exception("Unable to inspect an existing SaaS session during login.")
+        raise HTTPException(status_code=503, detail="Unable to verify your current login session. Please try again.")
+    if not existing or existing.get("status") != "active":
+        return None
+    expires_at = existing.get("expires_at")
+    if not expires_at:
+        return None
+    if isinstance(expires_at, str):
+        try:
+            expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except Exception:
+            expires_at = None
+    if expires_at and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at and expires_at <= datetime.now(timezone.utc):
+        expires_at = None
+    if expires_at is None:
+        return None
+    raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+    user_id = existing.get("user_id")
+    user_document = await raw_db.users.find_one({"_id": user_id})
+    if not user_document and user_id is not None:
+        user_document = await raw_db.users.find_one({"id": str(user_id)})
+    email = str((user_document or {}).get("email") or "").strip().lower()
+    if email not in platform_owner_emails():
+        raise HTTPException(status_code=403, detail=_SINGLE_DEVICE_LOGIN_MESSAGE)
+
+    class _NoOpResult:
+        modified_count = 0
+    return _NoOpResult()
 
 
 def _licensee_companies(collection) -> bool:
@@ -791,6 +844,9 @@ def _install_collection_overrides() -> None:
         return await original_insert_many(self, documents, *args, **kwargs)
 
     async def update_one(self, query, update, *args, **kwargs):
+        refused_or_noop = await _single_device_login_check(self, query, update)
+        if refused_or_noop is not None:
+            return refused_or_noop
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
             update = _customer_update(self._name, update)

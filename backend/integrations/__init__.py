@@ -17,12 +17,6 @@ import backend.commercial_tenant_scope  # noqa: F401
 import backend.commercial_module_guard as _commercial_module_guard
 _commercial_module_guard.install()
 
-# FastAPI compatibility shim: the original commercial guard's Request
-# annotation was being interpreted as a required query parameter in the
-# deployed runtime, causing authenticated GET endpoints to return 422.
-# Replace only that wrapper before route modules import get_current_user.
-import backend.commercial_guard_request_compat as _commercial_guard_request_compat
-_commercial_guard_request_compat.install()
 
 # Enforce the separate Commercial Control Plane boundary AFTER the Request
 # compatibility wrapper so this remains the final authentication dependency
