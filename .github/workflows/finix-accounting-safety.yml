@@ -18,13 +18,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements.lock
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements.lock
+          pip install "pytest>=8" "pytest-asyncio>=0.23" "mongomock-motor>=0.0.29"
       - name: Compile accounting modules
         run: |
           python -m py_compile backend/accounting_ai/accounting_controls.py
@@ -57,4 +58,9 @@ jobs:
       - name: Run Finix accounting tests
         env:
           ENV_MODE: development
-        run: pytest -q backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py backend/tests/test_accounting_completeness.py backend/tests/test_finix_complete_agent.py backend/tests/test_finix_complete_router.py
+        run: |
+          set -o pipefail
+          python -m pytest -q -rfE backend/tests/test_accounting_controls.py backend/tests/test_finix_statutory_controls.py backend/tests/test_accounting_completeness.py backend/tests/test_finix_complete_agent.py backend/tests/test_finix_complete_router.py 2>&1 | tee /tmp/pytest.log || {
+            grep -E "^(FAILED|ERROR)|Error" /tmp/pytest.log | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+            exit 1
+          }
