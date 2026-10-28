@@ -1,6 +1,6 @@
 """Regression tests for the authentication dependency chain.
 
-Several compatibility layers transplant code into the *same* ``get_current_user``
+Compatibility layers used to transplant code into the *same* ``get_current_user``
 function object that every route captured at import time. On 2026-10-25 a second
 transplant (entitlement hydration re-installed from ``bootstrap_server``)
 replaced the public ``(request, credentials)`` dependency with a one-argument
@@ -36,7 +36,9 @@ def test_bearer_token_reaches_the_inner_auth_layer_intact(monkeypatch):
         received["kwargs"] = kwargs
         raise RuntimeError("stop")
 
-    monkeypatch.setitem(dependencies.__dict__, "_single_session_original_get_current_user", spy)
+    from backend import commercial_control_plane_guard
+
+    monkeypatch.setattr(commercial_control_plane_guard, "_original_get_current_user", spy)
     creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials="token-123")
     with pytest.raises(RuntimeError):
         asyncio.run(dependencies.get_current_user(request=object(), credentials=creds))

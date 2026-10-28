@@ -1,11 +1,8 @@
 import hashlib
-import inspect
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
-from types import FunctionType
 
-from fastapi import HTTPException
 
 import backend.dependencies as dependencies
 
@@ -197,71 +194,6 @@ async def _session_was_replaced(user, bearer_token: str) -> bool:
         return False
 
     return latest_login > issued_at.replace(microsecond=0) + timedelta(seconds=5)
-
-
-async def _guarded_get_current_user(request, credentials):
-    from fastapi import HTTPException
-
-    original = dependencies.__dict__["_single_session_original_get_current_user"]
-    # Keep the public dependency signature `(request, credentials)` so
-    # FastAPI injects both values, but call the wrapped function with the
-    # signature it actually had when this guard was installed. The auth
-    # compatibility layers can leave either a one-argument function
-    # `(credentials)` or a two-argument function `(request, credentials)`.
-    # Passing two arguments to the former makes every protected endpoint
-    # fail with an unhandled TypeError/HTTP 500.
-    accepts_request = dependencies.__dict__.get(
-        "_single_session_original_accepts_request",
-        True,
-    )
-    if accepts_request:
-        user = await original(request, credentials)
-    else:
-        user = await original(credentials)
-    try:
-        import jwt as _jwt
-        _payload = _jwt.decode(
-            credentials.credentials,
-            dependencies.JWT_SECRET,
-            algorithms=[dependencies.ALGORITHM],
-            options={"verify_exp": False},
-        )
-        _sid = _payload.get("sid")
-        from backend.platform_owner import is_platform_owner as _is_owner
-        if not _is_owner(user) and not _sid:
-            raise HTTPException(
-                status_code=401,
-                detail=SESSION_NOT_BOUND_DETAIL,
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        if not _is_owner(user) and _sid:
-            raw_db = _raw_db()
-            current_session = await raw_db.session_manager.find_one(
-                {"session_token": _sid}
-            )
-            if not current_session:
-                token_hash = hashlib.sha256(credentials.credentials.encode("utf-8")).hexdigest()
-                current_session = await raw_db.sessions.find_one(
-                    {"$or": [{"session_token": _sid}, {"token_hash": token_hash}]}
-                )
-            if not current_session or current_session.get("status") != "active":
-                raise HTTPException(
-                    status_code=401,
-                    detail=SESSION_INVALIDATED_DETAIL,
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-    except HTTPException:
-        raise
-    except Exception:
-        pass
-
-    if await _session_was_replaced(user, credentials.credentials):
-        raise HTTPException(
-            status_code=401,
-            detail=SESSION_REPLACED_DETAIL,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return user
 
 
 class SessionManager:
@@ -557,61 +489,3 @@ class SessionManager:
         if not sess:
             return False
         return sess.get("status") == "active"
-
-
-# Route modules import get_current_user directly from backend.dependencies.
-# Mutate that existing function object so those already-imported references
-# receive the single-session check without changing every router individually.
-def _install_global_single_session_guard():
-    try:
-        current = dependencies.get_current_user
-        if getattr(current, "_single_session_guard_installed", False):
-            return
-
-        original = FunctionType(
-            current.__code__,
-            current.__globals__,
-            current.__name__,
-            current.__defaults__,
-            current.__closure__,
-        )
-        try:
-            original_parameters = inspect.signature(original).parameters.values()
-            original_accepts_request = any(
-                parameter.kind
-                in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-                and parameter.name == "request"
-                for parameter in original_parameters
-            )
-        except (TypeError, ValueError):
-            # Keep the existing two-argument behavior if a dynamically
-            # generated dependency cannot be inspected.
-            original_accepts_request = True
-
-        target_globals = current.__globals__
-        target_globals["_single_session_original_get_current_user"] = original
-        target_globals["_single_session_original_accepts_request"] = original_accepts_request
-        target_globals["dependencies"] = dependencies
-        target_globals["_session_was_replaced"] = _session_was_replaced
-        target_globals["SESSION_REPLACED_DETAIL"] = SESSION_REPLACED_DETAIL
-        dependencies.__dict__["_single_session_original_get_current_user"] = original
-
-        # The route modules already hold references to the original function
-        # object, so the guard is installed by transplanting the wrapper's
-        # code object below. A transplanted code object keeps the globals of
-        # its destination function, which is the commercial compatibility
-        # module rather than `backend.dependencies`. Publish the guard's
-        # required names into that actual globals dictionary.
-
-        guarded = _guarded_get_current_user
-        current.__code__ = guarded.__code__
-        # Keep FastAPI's original Depends(security) default intact.
-        current.__defaults__ = original.__defaults__
-        current.__kwdefaults__ = original.__kwdefaults__
-        current.__doc__ = guarded.__doc__
-        current._single_session_guard_installed = True
-    except Exception:
-        logger.exception("Failed to install global single-session authentication guard")
-
-
-_install_global_single_session_guard()

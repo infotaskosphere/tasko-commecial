@@ -35,6 +35,24 @@ async def get_current_user_with_control_plane_guard(
     request: Request,
     credentials=Depends(_dependencies.security),
 ):
+    """The outermost authentication step, installed as
+    dependencies.get_current_user: the control-plane rule below, then the
+    single-device check (a login on another device replaces this one).
+    (The session check used to be transplanted into this function's code
+    object by security.session_manager.)"""
+    from backend.security.session_manager import SESSION_REPLACED_DETAIL, _session_was_replaced
+
+    user = await _control_plane_checked_user(request, credentials)
+    if await _session_was_replaced(user, credentials.credentials):
+        raise HTTPException(
+            status_code=401,
+            detail=SESSION_REPLACED_DETAIL,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+async def _control_plane_checked_user(request: Request, credentials):
     user = await _original_get_current_user(request, credentials)
     if _is_control_plane_path(request.url.path) and not is_platform_owner(user):
         # Never infer control-plane access from role=admin. Customer admins and
