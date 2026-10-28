@@ -429,6 +429,9 @@ async def owner_aware_saas_session_user(token: str):
         session = await raw_db.sessions.find_one(
             {
                 "token_hash": token_hash,
+                # A revoked (logged-out) session must not authenticate; same
+                # rule as the licensee resolver.
+                "$or": [{"status": "active"}, {"status": {"$exists": False}}],
                 "expires_at": {"$gt": datetime.now(timezone.utc)},
             }
         )

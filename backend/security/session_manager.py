@@ -58,6 +58,47 @@ async def _latest_session_for_user(user_id: str, email: str = None):
     )
 
 
+async def jwt_session_is_live(user, bearer_token: str) -> bool:
+    """False when ``bearer_token`` is a JWT bound to a login session (its
+    ``sid`` claim) that has been revoked, logged out, replaced or has expired.
+
+    Tokens without a ``sid`` (and opaque SaaS session tokens, which are
+    checked against the sessions collection when resolved) are not affected
+    here. This check was meant to run before but never did: see the commit
+    that removed the code transplant into the auth function.
+    """
+    if not bearer_token or not user:
+        return True
+    try:
+        import jwt as _jwt
+
+        payload = _jwt.decode(
+            bearer_token,
+            dependencies.JWT_SECRET,
+            algorithms=[dependencies.ALGORITHM],
+            options={"verify_exp": False},
+        )
+    except Exception:
+        return True  # not a JWT: an opaque session token
+    sid = str(payload.get("sid") or "").strip()
+    if not sid:
+        return True
+
+    raw_db = _raw_db()
+    session = await raw_db.session_manager.find_one({"session_token": sid})
+    if not session:
+        token_hash = hashlib.sha256(bearer_token.encode("utf-8")).hexdigest()
+        session = await raw_db.sessions.find_one(
+            {"$or": [{"session_token": sid}, {"token_hash": token_hash}]}
+        )
+    if not session or session.get("status", "active") != "active":
+        return False
+    expires_at = _as_utc(session.get("expires_at"))
+    if expires_at is not None and expires_at <= datetime.now(timezone.utc):
+        return False
+    return True
+
+
 async def _session_was_replaced(user, bearer_token: str) -> bool:
     """Return True when these credentials belong to an older device login."""
     if not bearer_token or not user:
@@ -397,54 +438,52 @@ class SessionManager:
 
     @staticmethod
     async def revoke_session(session_token: str, expected_user_id: str | None = None) -> bool:
-        """Revoke only the session belonging to expected_user_id.
+        """Revoke this login session in every session store.
 
-        The logout endpoint is authenticated separately, but the submitted
-        session_token is client-provided. Binding the revoke operation to the
-        authenticated user prevents a stale/shared-browser token from ever
-        revoking another user's Manager/Staff/Admin session.
+        A login writes the session to ``session_manager`` (keyed by the token)
+        and, for opaque bearer use, to ``sessions`` (keyed by its hash). Both
+        are revoked, otherwise the token that was not revoked keeps working
+        after logout. The session must belong to ``expected_user_id`` (the
+        authenticated caller); ``sessions`` records may store the user's Mongo
+        ``_id`` instead of the application id, so both are accepted.
         """
         now = datetime.now(timezone.utc).isoformat()
         raw_db = _raw_db()
-        user_filter = {}
-        if expected_user_id is not None:
-            user_filter = {"user_id": str(expected_user_id)}
-
-        result = await raw_db.session_manager.update_one(
-            {"session_token": session_token, **user_filter},
-            {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}},
-        )
-        if result.modified_count > 0:
-            return True
-
-        # Commercial SaaS sessions store the token hash in the sessions
-        # collection.
         token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
-        query = (
-            {
-                "$and": [
-                    {"$or": [{"token_hash": token_hash}, {"session_token": session_token}]},
-                    user_filter,
-                ]
-            }
-            if user_filter
-            else {
-                "$or": [{"token_hash": token_hash}, {"session_token": session_token}]
-            }
-        )
-        result = await raw_db.sessions.update_one(
-            query,
-            {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}},
-        )
-        # Keep the two session stores consistent on logout.
-        try:
-            await raw_db.session_manager.update_one(
-                {"session_token": session_token, **user_filter},
-                {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}},
-            )
-        except Exception:
-            logger.warning("Legacy session_manager mirror revoke failed on logout.")
-        return result.modified_count > 0
+        revoke = {"$set": {"status": "revoked", "logout_at": now, "revoked_reason": "logout"}}
+
+        owner_ids = None
+        if expected_user_id is not None:
+            owner_ids = {str(expected_user_id)}
+            try:
+                from bson import ObjectId
+
+                user_doc = await raw_db.users.find_one(
+                    {"id": str(expected_user_id)}, {"_id": 1}
+                )
+                if user_doc and user_doc.get("_id") is not None:
+                    owner_ids.add(str(user_doc["_id"]))
+                if ObjectId.is_valid(str(expected_user_id)):
+                    owner_ids.add(str(ObjectId(str(expected_user_id))))
+            except Exception:
+                pass
+
+        def belongs(record) -> bool:
+            return owner_ids is None or str(record.get("user_id")) in owner_ids
+
+        revoked = False
+        manager_record = await raw_db.session_manager.find_one({"session_token": session_token})
+        if manager_record and belongs(manager_record):
+            result = await raw_db.session_manager.update_one({"_id": manager_record["_id"]}, revoke)
+            revoked = revoked or result.modified_count > 0
+
+        async for record in raw_db.sessions.find(
+            {"$or": [{"token_hash": token_hash}, {"session_token": session_token}]}
+        ):
+            if belongs(record):
+                result = await raw_db.sessions.update_one({"_id": record["_id"]}, revoke)
+                revoked = revoked or result.modified_count > 0
+        return revoked
 
     @staticmethod
     async def revoke_all_user_sessions(user_id: str, reason: str = "security_event") -> int:

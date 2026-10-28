@@ -37,16 +37,26 @@ async def get_current_user_with_control_plane_guard(
 ):
     """The outermost authentication step, installed as
     dependencies.get_current_user: the control-plane rule below, then the
-    single-device check (a login on another device replaces this one).
+    session checks: a JWT bound to a login session (``sid``) is accepted only
+    while that session is active (logout and "revoke session" end it), and a
+    login on another device replaces this one.
     (The session check used to be transplanted into this function's code
     object by security.session_manager.)"""
-    from backend.security.session_manager import SESSION_REPLACED_DETAIL, _session_was_replaced
+    from backend.security.session_manager import (
+        SESSION_INVALIDATED_DETAIL, SESSION_REPLACED_DETAIL, _session_was_replaced, jwt_session_is_live,
+    )
 
     user = await _control_plane_checked_user(request, credentials)
     if await _session_was_replaced(user, credentials.credentials):
         raise HTTPException(
             status_code=401,
             detail=SESSION_REPLACED_DETAIL,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if not await jwt_session_is_live(user, credentials.credentials):
+        raise HTTPException(
+            status_code=401,
+            detail=SESSION_INVALIDATED_DETAIL,
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
