@@ -1,4 +1,4 @@
-"""Platform-owner and SaaS session compatibility.
+"""Platform Owner sessions and workspace (formerly platform_owner_session_compat).
 
 The commercial session creator stores an opaque session token, but its legacy
 return tuple used the user's id as the second value. The frontend treats that
@@ -29,7 +29,6 @@ from backend.platform_owner import is_platform_owner
 
 logger = logging.getLogger(__name__)
 
-_original_saas_session_user = _dependencies._get_saas_session_user
 
 
 def _owner_workspace_id(user: dict) -> str:
@@ -416,8 +415,11 @@ async def _ensure_owner_workspace(raw_db: Any, user: dict, session: dict | None 
     return owner_workspace_id, company
 
 
-async def _owner_aware_saas_session_user(token: str):
-    """Resolve owner sessions without treating the owner as a licensee."""
+async def owner_aware_saas_session_user(token: str):
+    """Resolve owner sessions without treating the owner as a licensee.
+
+    dependencies._get_saas_session_user delegates here; licensee sessions go
+    on to dependencies._licensee_saas_session_user."""
     if not token or not _dependencies.MONGO_URL:
         return None
 
@@ -449,7 +451,7 @@ async def _owner_aware_saas_session_user(token: str):
         # Only change the special Platform Owner path. All commercial users
         # continue through the existing company + subscription validation.
         if not is_platform_owner(user):
-            return await _original_saas_session_user(token)
+            return await _dependencies._licensee_saas_session_user(token)
 
         company_id, company = await _ensure_owner_workspace(raw_db, user, session)
 
@@ -476,80 +478,46 @@ async def _owner_aware_saas_session_user(token: str):
         return None
 
 
-def install() -> None:
-    """Install the owner-aware session resolver exactly once."""
-    if getattr(_dependencies._get_saas_session_user, "__name__", "") != "_owner_aware_saas_session_user":
-        _dependencies._get_saas_session_user = _owner_aware_saas_session_user
+async def owner_aware_create_saas_session(create_session, user: dict):
+    """Wrap the login session creator (auth_routes._create_saas_session).
 
-
-def install_server_session_patch(server_module: Any) -> None:
-    """Fix login access-token compatibility and preserve the owner workspace."""
-    original = getattr(server_module, "_create_saas_session", None)
-    if original is None or getattr(original, "__name__", "") == "_owner_aware_create_saas_session":
-        return
-
-    async def _owner_aware_create_saas_session(user: dict):
-        owner = is_platform_owner(user)
-        result = await original(user)
-
-        session_token, _legacy_access_value, session_user = result
-        user_id = str(
-            getattr(session_user, "id", "")
-            or user.get("_id")
-            or user.get("id")
-            or ""
-        )
-        access_token = _dependencies.create_access_token({"sub": user_id})
-
-        if not owner:
-            return session_token, access_token, session_user
-
-        try:
-            raw_db = getattr(
-                server_module,
-                "_raw_db",
-                getattr(_dependencies, "_raw_db", _dependencies.db),
-            )
-            company_id, company = await _ensure_owner_workspace(raw_db, user)
-            token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
-            await raw_db.sessions.update_one(
-                {"token_hash": token_hash},
-                {"$set": {"company_id": company_id}},
-            )
-
-            data = (
-                session_user.model_dump()
-                if hasattr(session_user, "model_dump")
-                else dict(session_user)
-            )
-            data["company_id"] = str(company_id)
-            data["company_name"] = company.get("name") or "Taskosphere Platform Owner"
-            session_user = _dependencies.User.model_validate(data)
-            return session_token, access_token, session_user
-        except Exception as error:
-            _dependencies.logger.exception(
-                "Platform-owner session workspace patch failed: %s", error
-            )
-            raise
-
-    _owner_aware_create_saas_session.__name__ = "_owner_aware_create_saas_session"
-    server_module._create_saas_session = _owner_aware_create_saas_session
-    # login() now lives in a real module and looks the helper up in that
-    # module's own globals, so patch it there too.
-    import sys as _sys
-    _auth_routes = _sys.modules.get("backend.server_modules.routes.auth_routes")
-    if _auth_routes is not None and hasattr(_auth_routes, "_create_saas_session"):
-        _auth_routes._create_saas_session = _owner_aware_create_saas_session
-
-
-def bootstrap_server(module_name: str) -> None:
-    """Install session/licence compatibility on the composed backend.server module.
-
-    (Formerly backend/startup_compat.py.) Commercial entitlement hydration is
-    installed once by backend/__init__.py inside the auth chain, before route
-    modules capture get_current_user; it is deliberately NOT re-installed here.
+    The legacy creator returned the user id as the "access token"; return a
+    real JWT instead, and for the Platform Owner bind the session to the
+    owner's own workspace company.
     """
-    import sys
+    owner = is_platform_owner(user)
+    session_token, _legacy_access_value, session_user = await create_session(user)
+    user_id = str(
+        getattr(session_user, "id", "")
+        or user.get("_id")
+        or user.get("id")
+        or ""
+    )
+    access_token = _dependencies.create_access_token({"sub": user_id})
 
-    install()
-    install_server_session_patch(sys.modules[module_name])
+    if not owner:
+        return session_token, access_token, session_user
+
+    try:
+        raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+        company_id, company = await _ensure_owner_workspace(raw_db, user)
+        token_hash = hashlib.sha256(session_token.encode("utf-8")).hexdigest()
+        await raw_db.sessions.update_one(
+            {"token_hash": token_hash},
+            {"$set": {"company_id": company_id}},
+        )
+
+        data = (
+            session_user.model_dump()
+            if hasattr(session_user, "model_dump")
+            else dict(session_user)
+        )
+        data["company_id"] = str(company_id)
+        data["company_name"] = company.get("name") or "Taskosphere Platform Owner"
+        session_user = _dependencies.User.model_validate(data)
+        return session_token, access_token, session_user
+    except Exception as error:
+        _dependencies.logger.exception(
+            "Platform-owner session workspace patch failed: %s", error
+        )
+        raise

@@ -26,7 +26,8 @@ from backend import dependencies as _dependencies
 from backend.dependencies import (
     ALGORITHM,
     JWT_SECRET,
-    _get_saas_session_user,
+    # The licensee resolver, which is what this module held in production.
+    _licensee_saas_session_user as _get_saas_session_user,
 )
 
 

@@ -23,11 +23,6 @@ def platform_owner_emails() -> set[str]:
 
 def _install_owner_auth_compat() -> None:
     try:
-        from backend import platform_owner_session_compat
-        platform_owner_session_compat.install()
-    except Exception:
-        pass
-    try:
         from backend import auth_company_recovery
         auth_company_recovery.install()
     except Exception:

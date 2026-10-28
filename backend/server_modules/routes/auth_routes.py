@@ -144,6 +144,12 @@ async def _sync_saas_bootstrap_password() -> None:
 
 
 async def _create_saas_session(user: dict) -> tuple[str, str, User]:
+    """Create a login session: (session token, JWT access token, user)."""
+    from backend.platform_owner_sessions import owner_aware_create_saas_session
+    return await owner_aware_create_saas_session(_create_saas_session_base, user)
+
+
+async def _create_saas_session_base(user: dict) -> tuple[str, str, User]:
     """Create the opaque session consumed by dependencies.get_current_user()."""
     from backend.platform_owner import is_platform_owner
 

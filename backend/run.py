@@ -18,7 +18,6 @@ import backend.admin_identity_compat  # noqa: F401,E402
 
 import backend.server as server_module
 from backend.licensing_api import create_licensing_indexes, router as licensing_router
-from backend import platform_owner_session_compat as _owner_session_compat
 
 app = server_module.app
 
@@ -39,13 +38,8 @@ if not getattr(app.state, "_taskosphere_startup_registered", False):
 from backend.performance_runtime import install_performance_cache
 install_performance_cache(app)
 
-# The Platform Owner has its own operational company/workspace. The owner is
-# exempt from customer subscription gates, but opaque SaaS sessions must still
-# carry that workspace company_id so /auth/me and normal application APIs can
-# authenticate consistently. This wrapper only changes owner sessions; normal
-# licensee company/subscription validation remains unchanged.
-_owner_session_compat.install()
-_owner_session_compat.install_server_session_patch(server_module)
+# (Platform Owner sessions: see backend/platform_owner_sessions.py, called
+# directly by dependencies._get_saas_session_user and the login route.)
 
 # Licensing is a normal FastAPI router; there is no second Node server.
 # Avoid duplicate registration if server.py also registers it.

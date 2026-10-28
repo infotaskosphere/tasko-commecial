@@ -232,7 +232,16 @@ async def _touch_saas_session_if_due(raw_db, session):
 
 
 async def _get_saas_session_user(token: str):
-    """Resolve the opaque SaaS session token created by saas-auth-runtime.cjs."""
+    """Resolve an opaque SaaS session token, Platform Owner sessions included."""
+    from backend.platform_owner_sessions import owner_aware_saas_session_user
+    return await owner_aware_saas_session_user(token)
+
+
+async def _licensee_saas_session_user(token: str):
+    """Resolve the opaque SaaS session token created by saas-auth-runtime.cjs.
+
+    Licensee path; owner sessions are handled first by
+    platform_owner_sessions.owner_aware_saas_session_user."""
     if not token or not MONGO_URL:
         return None
     try:

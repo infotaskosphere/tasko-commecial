@@ -386,5 +386,3 @@ register_legacy_router_mounts(
 from backend.activity_route_diagnostic import log_activity_route_registry
 log_activity_route_registry(app)
 
-from backend.platform_owner_session_compat import bootstrap_server
-bootstrap_server(__name__)
