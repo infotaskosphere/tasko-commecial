@@ -3,84 +3,18 @@
 The route implementation is preserved and executed only after backend.server has
 created api_router. This prevents import-time decorator evaluation from
 requiring server globals before they exist.
+
+The implementation now lives in backend/server_modules/routes/website_activity.py as a
+normal Python module (it used to be a SOURCE string run with exec()).
 """
+from pathlib import Path
+
+_IMPLEMENTATION = Path(__file__).with_name("routes") / "website_activity.py"
+
+# Kept for tools/tests that read the route source text.
+SOURCE = _IMPLEMENTATION.read_text(encoding="utf-8")
+
 
 def register_website_activity(namespace):
-    exec(SOURCE, namespace, namespace)
-    return namespace
-
-SOURCE = r'''from __future__ import annotations
-
-import logging
-import uuid
-from datetime import datetime, timezone
-
-from fastapi import Depends, HTTPException
-
-from backend.dependencies import db, get_current_user
-from backend.models import User
-
-logger = logging.getLogger(__name__)
-
-
-@api_router.get("/activity/websites")
-async def get_website_activity(current_user: User = Depends(get_current_user)):
-    try:
-        pipeline = [
-            {"$match": {"user_id": current_user.id, "type": "website"}},
-            {
-                "$group": {
-                    "_id": "$user_id",
-                    "websites": {
-                        "$push": {
-                            "url": "$url",
-                            "domain": "$domain",
-                            "title": "$title",
-                            "duration": "$duration",
-                            "timestamp": "$timestamp",
-                        }
-                    },
-                }
-            },
-            {"$project": {"_id": 0, "user_id": "$_id", "websites": 1}},
-        ]
-
-        data = await db.staff_activity.aggregate(pipeline).to_list(100)
-
-        return data
-
-    except Exception as e:
-        logger.error(f"Fetch website activity error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch website activity")
-
-
-@api_router.post("/activity/track-website")
-async def track_website(data: dict, current_user: User = Depends(get_current_user)):
-    try:
-        url = data.get("url")
-        domain = data.get("domain")
-
-        if not url or not domain:
-            raise HTTPException(status_code=400, detail="Invalid website data")
-
-        activity = {
-            "id": str(uuid.uuid4()),
-            "user_id": current_user.id,
-            "type": "website",
-            "url": url,
-            "domain": domain,
-            "title": data.get("title", ""),
-            "timestamp": datetime.now(timezone.utc),
-            "duration": int(data.get("duration", 0)),
-        }
-
-        await db.staff_activity.insert_one(activity)
-
-        return {"status": "tracked"}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Website tracking error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Tracking failed")
-'''
+    from backend.server_modules.routes import load_into
+    return load_into("website_activity", namespace)

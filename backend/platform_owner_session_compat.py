@@ -534,3 +534,9 @@ def install_server_session_patch(server_module: Any) -> None:
 
     _owner_aware_create_saas_session.__name__ = "_owner_aware_create_saas_session"
     server_module._create_saas_session = _owner_aware_create_saas_session
+    # login() now lives in a real module and looks the helper up in that
+    # module's own globals, so patch it there too.
+    import sys as _sys
+    _auth_routes = _sys.modules.get("backend.server_modules.routes.auth_routes")
+    if _auth_routes is not None and hasattr(_auth_routes, "_create_saas_session"):
+        _auth_routes._create_saas_session = _owner_aware_create_saas_session

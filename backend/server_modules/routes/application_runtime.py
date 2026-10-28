@@ -1,0 +1,675 @@
+"""Phase 2 application runtime extracted from backend.server.
+
+This is a normal module. It used to be stored as a string (SOURCE) and run
+with exec() inside backend.server's namespace. Every name it borrowed from
+that shared namespace is now imported explicitly below, from the same
+object the shared namespace held. It is loaded (in the original order) by
+backend/server_modules/application_runtime.py via backend.server_modules.routes.load_into().
+"""
+from backend.accounting_core import router as accounting_router
+from backend.accounting_extended import create_accounting_extended_indexes
+from backend.accounting_extended import router as accounting_ext_router
+from backend.accounting_lock import create_accounting_integrity_indexes
+from backend.accounting_lock import router as accounting_lock_router
+from backend.activity_monitor import router as activity_monitor_router
+from backend.ai.aiweave_router import create_aiweave_indexes
+from backend.ai.aiweave_router import router as aiweave_router
+from backend.ai_document_reader import router as ai_document_reader_router
+from backend.attendance_identix import identix_router
+from backend.auth_password_reset import router as auth_password_reset_router
+from backend.automation_engine import birthday_automation_job
+from backend.automation_engine import expiry_router as service_expiry_router
+from backend.automation_engine import festival_greeting_job
+from backend.automation_engine import follow_up_reminder_job
+from backend.automation_engine import router as automation_router
+from backend.automation_engine import service_expiry_alert_job
+from backend.bank_accounts import router as bank_accounts_router
+from backend.client_activity import router as client_activity_router
+from backend.client_portal import router as client_portal_router
+from backend.compliance import create_compliance_indexes
+from backend.compliance import router as compliance_router
+from backend.dependencies import can_view_client
+from backend.dependencies import db
+from backend.dependencies import get_current_user
+from backend.dependencies import personal_birthday_candidates
+from backend.desktop_agent import create_desktop_indexes
+from backend.desktop_agent import router as desktop_agent_router
+from backend.email_integration import router as email_router
+from backend.google_auth import router as google_auth_router
+from backend.governed_modules import ALL_GOVERNED_ROUTERS
+from backend.gst_portal_sync import create_gst_portal_sync_indexes
+from backend.gst_portal_sync import router as gst_portal_sync_router
+from backend.gst_reconciliation import create_gst_reconciliation_indexes
+from backend.gst_reconciliation import router as gst_reconciliation_router
+from backend.invoicing import router as invoicing_router
+from backend.leads import router as leads_router
+from backend.learning.learning_router import router as learning_router
+from backend.mis_report import router as mis_report_router
+from backend.models import User
+from backend.notifications import router as notification_router
+from backend.party_ledgers import router as party_ledgers_router
+from backend.passwords import router as passwords_router
+from backend.permission_governance import router as permission_governance_router
+from backend.purchases import router as purchases_router
+from backend.quotations import router as quotation_router
+from backend.recruitment import router as recruitment_router
+from backend.reminders_router import router as reminders_router
+from backend.roc_forms_dump import resume_pending_roc_dump_jobs
+from backend.roc_sphere import router as roc_sphere_router
+from backend.roles_admin import router as roles_admin_router
+from backend.salary_slip_router import create_salary_slip_indexes
+from backend.salary_slip_router import router as salary_slip_router
+from backend.server_modules.attendance_jobs import configure_event_loop as configure_attendance_event_loop
+from backend.server_modules.attendance_jobs import force_punch_out_11pm_task
+from backend.server_modules.attendance_jobs import mark_absent_users_task
+from backend.server_modules.holiday_jobs import configure_event_loop as configure_holiday_event_loop
+from backend.server_modules.holiday_jobs import fetch_indian_holidays_task
+from backend.server_modules.scheduler_jobs import register_scheduler_jobs
+from backend.server_modules.startup_bootstrap import start_bootstrap_tasks
+from backend.server_modules.startup_indexes import initialize_startup_indexes
+from backend.server_modules.startup_orchestrator import run_startup_orchestration
+from backend.telegram import router as telegram_router
+from backend.trademark_portals_router import router as trademark_portals_router
+from backend.trademark_sphere import router as trademark_sphere_router
+from backend.visits import router as visits_router
+from backend.website_tracking import router as website_tracking_router
+from backend.whatsapp_integration import router as whatsapp_router
+from backend.whatsapp_integration import wa_bridge_keepalive_job
+from backend.whatsapp_integration import wa_scheduled_bulk_job
+from backend.whatsapp_scheduler import wa_compliance_job
+from backend.whatsapp_scheduler import wa_dsc_expiry_job
+from backend.zero_touch_entry import create_zte_indexes
+from backend.zero_touch_entry import router as zero_touch_entry_router
+from datetime import date
+from datetime import datetime
+from fastapi import Depends
+from fastapi import HTTPException
+from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.gzip import GZipMiddleware
+from typing import Dict
+import asyncio
+import os
+import pytz
+import traceback
+from backend.server import api_router, app, logger, scheduler  # created in backend/server.py before route modules load
+from backend.server_modules.routes.dashboard_ops import _run_daily_reminder_job
+from backend.server_modules.routes.email_service_routes import send_birthday_email
+_last_reminder_date_cache = None  # in-process cache for the daily reminder middleware
+
+# Early legacy compatibility mount for quotation-owned /api/quotations
+# and /api/companies routes. This must run before runtime safety checks.
+from backend.quotations import router as quotation_router
+app.include_router(quotation_router, prefix='/api', include_in_schema=False)
+
+# WhatsApp bridge callbacks carry no user login, so they are authenticated with
+# the shared bridge secret (see whatsapp_bridge_webhook_guard).
+from backend.whatsapp_bridge_webhook_guard import install as _install_wa_bridge_webhook_guard
+_install_wa_bridge_webhook_guard(app)
+
+# ====================== CORS CONFIG ======================
+# Supports:
+# - Taskosphere production domains
+# - Vercel production and preview deployments
+# - Render deployments
+# - localhost development
+# - Additional domains through CORS_ALLOWED_ORIGINS
+#
+# IMPORTANT:
+# Do NOT use allow_origins=["*"] because credentials are enabled.
+
+CORS_ALLOWED_ORIGINS = [
+    # Taskosphere production
+    "https://taskosphere.com",
+    "https://www.taskosphere.com",
+
+    # Vercel production frontend
+    "https://tasko-commercial-frontend.vercel.app",
+    # Current production frontend hostname (legacy spelling retained intentionally).
+    "https://tasko-commecial-frontend.vercel.app",
+
+    # Render frontend / legacy frontend
+    "https://final-taskosphere-frontend.onrender.com",
+
+    # Local development
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
+
+
+# --------------------------------------------------------
+# Additional origins can be supplied through environment
+# variable without modifying this file.
+#
+# Example:
+# CORS_ALLOWED_ORIGINS=https://example.com,https://www.example.com
+# --------------------------------------------------------
+
+_extra_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+
+if _extra_cors_origins:
+    for origin in _extra_cors_origins.split(","):
+        origin = origin.strip().rstrip("/")
+
+        if origin and origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(origin)
+
+
+# --------------------------------------------------------
+# Deployment / preview URL support
+#
+# Vercel:
+# https://anything.vercel.app
+#
+# Render:
+# https://anything.onrender.com
+#
+# Local:
+# http://localhost:3000
+# http://127.0.0.1:5173
+# --------------------------------------------------------
+
+_IS_PRODUCTION = str(os.getenv("ENV_MODE") or "").strip().lower() == "production"
+
+# Preview/local regex support is intentionally disabled in production. Customer
+# browsers must originate from one of the explicit production allowlist entries
+# above, or an origin deliberately added through CORS_ALLOWED_ORIGINS.
+CORS_ORIGIN_REGEX = None if _IS_PRODUCTION else (
+    r"^https://[a-zA-Z0-9-]+\.vercel\.app$"
+    r"|^https://[a-zA-Z0-9-]+\.onrender\.com$"
+    r"|^http://localhost(?::[0-9]+)?$"
+    r"|^http://127\.0\.0\.1(?::[0-9]+)?$"
+)
+
+
+# --------------------------------------------------------
+# FastAPI CORS middleware
+# --------------------------------------------------------
+
+_cors_kwargs = {
+    "allow_origins": CORS_ALLOWED_ORIGINS,
+    "allow_credentials": True,
+    "allow_methods": [
+        "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+    ],
+    "allow_headers": [
+        "Accept",
+        "Authorization",
+        "Content-Type",
+        "Origin",
+        "X-Requested-With",
+    ],
+    "expose_headers": ["Content-Disposition", "X-Request-ID"],
+    "max_age": 3600,
+}
+if CORS_ORIGIN_REGEX:
+    _cors_kwargs["allow_origin_regex"] = CORS_ORIGIN_REGEX
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
+
+
+# --------------------------------------------------------
+# Security response headers
+# --------------------------------------------------------
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "camera=(), microphone=(), geolocation=(), payment=()"
+    )
+    if _IS_PRODUCTION:
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains"
+        )
+    # Authentication/session responses must never be cached by the browser,
+    # proxy, or CDN because they can contain account/session metadata.
+    request_path = str(request.url.path or "")
+    if request_path.startswith("/api/auth") or request_path.startswith("/api/security"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
+# --------------------------------------------------------
+# GZIP compression
+# --------------------------------------------------------
+
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=1000,
+)
+
+
+# =============================================================
+# ABSENT MARKING CORE LOGIC
+# Runs via APScheduler at 19:00 IST every working day.
+# Also exposed as POST /api/attendance/mark-absent-bulk for
+# manual admin triggering.
+#
+# Rules:
+#   - Skip confirmed holidays
+#   - Skip weekends (Saturday=5, Sunday=6)
+#   - For every active user with no present/leave/absent record
+#     insert a new absent record with auto_marked=True
+#   - If a record exists but has an unexpected status update to absent
+# =============================================================
+
+
+
+
+
+
+async def startup_event():
+    await run_startup_orchestration(
+        server_module=__import__("backend.server", fromlist=["*"]),
+        db=db,
+        configure_holiday_event_loop=configure_holiday_event_loop,
+        configure_attendance_event_loop=configure_attendance_event_loop,
+        initialize_startup_indexes=initialize_startup_indexes,
+        register_scheduler_jobs=register_scheduler_jobs,
+        start_bootstrap_tasks=start_bootstrap_tasks,
+        scheduler=scheduler,
+        startup_dependencies={
+            "index_factories": {
+                "create_compliance_indexes": create_compliance_indexes,
+                "create_salary_slip_indexes": create_salary_slip_indexes,
+                "create_gst_reconciliation_indexes": create_gst_reconciliation_indexes,
+                "create_zte_indexes": create_zte_indexes,
+                "create_aiweave_indexes": create_aiweave_indexes,
+                "create_gst_portal_sync_indexes": create_gst_portal_sync_indexes,
+                "create_accounting_integrity_indexes": create_accounting_integrity_indexes,
+                "create_accounting_extended_indexes": create_accounting_extended_indexes,
+                "create_desktop_indexes": create_desktop_indexes,
+            },
+            "scheduler_jobs": {
+                "fetch_indian_holidays_task": fetch_indian_holidays_task,
+                "mark_absent_users_task": mark_absent_users_task,
+                "force_punch_out_11pm_task": force_punch_out_11pm_task,
+                "birthday_automation_job": birthday_automation_job,
+                "festival_greeting_job": festival_greeting_job,
+                "service_expiry_alert_job": service_expiry_alert_job,
+                "follow_up_reminder_job": follow_up_reminder_job,
+                "wa_dsc_expiry_job": wa_dsc_expiry_job,
+                "wa_compliance_job": wa_compliance_job,
+                "wa_scheduled_bulk_job": wa_scheduled_bulk_job,
+                "wa_bridge_keepalive_job": wa_bridge_keepalive_job,
+            },
+        },
+    )
+
+    # Resume any ROC Forms Dump jobs that were queued before a backend restart.
+    try:
+        await resume_pending_roc_dump_jobs()
+    except Exception as exc:
+        logger.warning("ROC Forms Dump job recovery skipped: %s", exc)
+
+
+# ====================== HEALTH ======================
+# BUILD_MARKER — bump this string on every deploy-verification change.
+# If a request to /health ever shows a DIFFERENT marker than the one you
+# just committed, the browser/CDN/Render is NOT serving this exact commit —
+# stop looking for a code bug and go fix the deploy instead.
+BUILD_MARKER = "roc-dump-background-job-fix-2026-09-27"
+
+
+def _health_route_paths():
+    """Best-effort scan of every currently-registered /api/* path, walking
+    into sub-routers. Never raises — /health must always answer even if
+    route introspection fails for some reason."""
+    seen_ids = set()
+
+    def walk(routes):
+        for r in routes:
+            path = getattr(r, "path", None)
+            if path and id(r) not in seen_ids:
+                seen_ids.add(id(r))
+                if path.startswith("/api"):
+                    yield path
+            sub = getattr(r, "routes", None)
+            if sub:
+                yield from walk(sub)
+
+    try:
+        return sorted(set(walk(app.routes)))
+    except Exception as e:
+        return [f"__route_scan_failed__: {e}"]
+
+
+@app.api_route("/health", methods=["GET", "HEAD"])
+async def health():
+    all_paths = _health_route_paths()
+    return JSONResponse({
+        "status": "ok",
+        "cors": "configured correctly",
+        "build_marker": BUILD_MARKER,
+        "client_groups_routes_present": any(
+            p.startswith("/api/client-groups") for p in all_paths
+        ),
+        "total_api_routes": len(all_paths),
+    })
+
+
+@app.get("/")
+async def root():
+    return {"message": "Server is running"}
+
+
+# ====================== SECURITY & DB ======================
+rankings_cache = {}
+# Store cache times as timezone-aware UTC datetimes for consistent comparison
+rankings_cache_time: Dict[str, datetime] = {}
+
+
+# ===================== HELPER FUNCTIONS =====================
+
+
+
+
+
+
+
+# =====================================================================================
+# ====================================================================================
+# SALARY / PAYROLL — attendance-based salary due calculation
+# ====================================================================================
+# Policy (as configured by admin):
+#   • Absent day                          → deduct 1.0 day's pay
+#   • Half-day (leave or marked half_day) → deduct 0.5 day's pay
+#   • Late punch-in (after punch_in_time + grace, default 10:30 + 00:10 = 10:40 AM)
+#         OR early punch-out (before 6:00 PM)  → deduct 0.5 day's pay
+#   • Both late-in AND early-out on the same day → deduct 1.0 day's pay (capped)
+#   • Per-day rate = monthly_salary / TOTAL CALENDAR DAYS in that month
+#     (Sundays are already treated as the weekly holiday inside attendance,
+#      so the full number of days in the month — including Sundays — is used
+#      as the denominator, not just Mon-Sat working days).
+#   • Sunday is a holiday by default (no deduction, not counted as absent),
+#     EXCEPT when it's a "continuing holiday": if the employee was ALSO
+#     absent on the Saturday immediately before AND the Monday immediately
+#     after, the leave is treated as spanning straight across the weekend,
+#     so Sunday is deducted as an absent day too.
+#   • Confirmed/declared company holidays (any day of the week) are always
+#     a paid day off — never deducted.
+#   • Saturday is a normal working day, subject to the same
+#     absent/half-day/late/early-out rules as Mon-Fri.
+EARLY_OUT_CUTOFF_MINUTES = 18 * 60  # 6:00 PM — fixed company policy cutoff
+
+
+@api_router.get("/clients/upcoming-birthdays")
+async def get_upcoming_birthdays(
+    days: int = 7, current_user: User = Depends(get_current_user)
+):
+    clients = await db.clients.find({}, {"_id": 0}).to_list(1000)
+    today = date.today()
+    upcoming = []
+    for client in clients:
+        # Keep the existing tenant boundary from TenantAwareDatabase and
+        # additionally apply the same client-level visibility rules used by
+        # the rest of the client module.
+        if not can_view_client(current_user, client):
+            continue
+        for person in personal_birthday_candidates(client):
+            raw = person["birthday"]
+            try:
+                bday = (
+                    date.fromisoformat(raw[:10])
+                    if isinstance(raw, str)
+                    else raw
+                )
+                # Added leap year guard
+                try:
+                    this_year_bday = bday.replace(year=today.year)
+                except ValueError:
+                    this_year_bday = bday.replace(year=today.year, day=28)
+                if this_year_bday < today:
+                    try:
+                        this_year_bday = bday.replace(year=today.year + 1)
+                    except ValueError:
+                        this_year_bday = bday.replace(year=today.year + 1, day=28)
+                days_until = (this_year_bday - today).days
+                if 0 <= days_until <= days:
+                    upcoming.append({
+                        "client_id": client.get("id"),
+                        "company_name": client.get("company_name"),
+                        "person_name": person["name"],
+                        "phone": person["phone"],
+                        "email": person["email"],
+                        "birthday": raw,
+                        "days_until_birthday": days_until,
+                    })
+            except (ValueError, TypeError):
+                continue
+    return sorted(upcoming, key=lambda x: x["days_until_birthday"])
+
+
+# ─── MANUAL BIRTHDAY WISH ────────────────────────────────────────────────────
+@api_router.post("/clients/{client_id}/send-birthday-wish")
+async def send_birthday_wish_manual(
+    client_id: str, current_user: User = Depends(get_current_user)
+):
+    """Manually send a birthday wish to a client. Admin/manager only."""
+    if current_user.role not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Admin or Manager only")
+
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+
+    sent_to, failed, no_email = [], [], []
+
+    # Main client email — only when the client itself IS an individual.
+    # A pvt_ltd/llp/partnership/etc. has a Date of Incorporation, not a
+    # birthday, even though some import flows store it in this same field;
+    # only a proprietorship has no legal identity separate from its owner.
+    client_name = client.get("company_name") or "Valued Client"
+    client_email = client.get("email")
+    wa_sent_to = []
+    is_individual = (client.get("client_type") or "").strip().lower() == "proprietor"
+
+    if is_individual:
+        if client_email:
+            ok = await send_birthday_email(client_email, client_name)
+            (sent_to if ok else failed).append(client_email)
+        else:
+            no_email.append(client_name)
+
+        # WhatsApp birthday wish for main client
+        client_phone = "".join(c for c in (client.get("phone") or "") if c.isdigit())
+        if len(client_phone) == 10:
+            client_phone = "91" + client_phone
+        if client_phone:
+            try:
+                from backend.whatsapp_integration import send_whatsapp_notification
+
+                wa_msg = (
+                    f"🎂 *Happy Birthday, {client_name}!*\n\n"
+                    f"Wishing you a wonderful birthday filled with joy and prosperity! 🎉\n\n"
+                    f"Best wishes,\n_Taskosphere Team_"
+                )
+                await send_whatsapp_notification(
+                    to=client_phone,
+                    message=wa_msg,
+                    message_type="birthday",
+                    context_id=client_id,
+                    sent_by=current_user.id,
+                )
+                wa_sent_to.append(client_phone)
+            except Exception as wa_err:
+                logger.warning(f"WhatsApp birthday failed for {client_name}: {wa_err}")
+
+    # Contact persons
+    for cp in client.get("contact_persons") or []:
+        cp_email = cp.get("email")
+        cp_name = cp.get("name") or client_name
+        if cp_email:
+            ok = await send_birthday_email(cp_email, cp_name)
+            (sent_to if ok else failed).append(cp_email)
+        else:
+            no_email.append(cp_name)
+
+        # WhatsApp for contact person
+        cp_phone = "".join(c for c in (cp.get("phone") or "") if c.isdigit())
+        if len(cp_phone) == 10:
+            cp_phone = "91" + cp_phone
+        if cp_phone:
+            try:
+                from backend.whatsapp_integration import send_whatsapp_notification
+
+                cp_msg = (
+                    f"🎂 *Happy Birthday, {cp_name}!*\n\n"
+                    f"Wishing you a wonderful day! 🎉\n\n"
+                    f"_Taskosphere Team_"
+                )
+                await send_whatsapp_notification(
+                    to=cp_phone,
+                    message=cp_msg,
+                    message_type="birthday",
+                    context_id=client_id,
+                    sent_by=current_user.id,
+                )
+                wa_sent_to.append(cp_phone)
+            except Exception:
+                pass
+
+    return {
+        "status": "completed",
+        "sent_to": sent_to,
+        "failed": failed,
+        "no_email": no_email,
+        "whatsapp_sent_to": wa_sent_to,
+    }
+
+
+# DASHBOARD ROUTES
+# ============================================
+
+
+@app.middleware("http")
+async def auto_daily_reminder(request: Request, call_next):
+    global _last_reminder_date_cache
+    try:
+        india_time = datetime.now(pytz.timezone("Asia/Kolkata"))
+        today_str = india_time.date().isoformat()
+        # Only fire after 10 AM and if the in-memory cache hasn't already
+        # been set for today. The cache acts as a fast pre-check; the actual
+        # DB-level atomic upsert inside _run_daily_reminder_job prevents
+        # duplicate sends even if multiple workers race past here.
+        if india_time.hour >= 10 and _last_reminder_date_cache != today_str:
+            # Set cache immediately to prevent other concurrent requests from
+            # spawning duplicate background tasks in the same process.
+            _last_reminder_date_cache = today_str
+            asyncio.ensure_future(_run_daily_reminder_job(today_str))  # fire-and-forget
+    except Exception as e:
+        logger.error(f"Auto reminder middleware error: {e}")
+    response = await call_next(request)
+    return response
+
+
+async def universal_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Critical Error on {request.url.path}: {str(exc)}")
+    logger.error(traceback.format_exc())
+    # Echo back the request origin when it's a known safe origin. Reuse the
+    # same allow-list/regex the CORSMiddleware itself uses (CORS_ALLOWED_ORIGINS,
+    # CORS_ORIGIN_REGEX) rather than a separate hardcoded list — otherwise a
+    # real 500 on any origin missing from that second list (e.g. the Vercel
+    # frontend) gets reported to the browser as a misleading CORS error
+    # instead of surfacing the actual server error.
+    import re as _re
+
+    origin = request.headers.get("origin", "")
+    # CORS_ORIGIN_REGEX is None in production: re.match(None, ...) raised
+    # TypeError and crashed this handler for any unlisted origin.
+    is_allowed = bool(origin) and (
+        origin in CORS_ALLOWED_ORIGINS
+        or bool(CORS_ORIGIN_REGEX and _re.match(CORS_ORIGIN_REGEX, origin))
+    )
+    headers = {}
+    if is_allowed:
+        headers.update({
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        })
+    headers.update({
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With, Cache-Control",
+    })
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "InternalServerError",
+            "message": "A server error occurred. Please try again.",
+            "path": request.url.path,
+        },
+        headers=headers,
+    )
+
+
+# FIX: universal_exception_handler was previously defined but never actually
+# registered with FastAPI (the decorator that should have registered it was
+# accidentally left attached to an unrelated route in holiday_trademark_misc.py
+# after a prior automated code-split truncated that file -- see the fix note
+# there). Register it explicitly here so uncaught exceptions anywhere in the
+# app get the CORS-safe JSON response above instead of a raw/opaque 500.
+app.add_exception_handler(Exception, universal_exception_handler)
+
+
+# Api Router
+api_router.include_router(invoicing_router)
+api_router.include_router(accounting_router)
+api_router.include_router(party_ledgers_router)   # Customer/Vendor sub-ledgers under AR/AP control accounts
+api_router.include_router(accounting_ext_router)  # Accounting Extended: Day Book, Cash Flow, Depreciation, TDS/TCS, Bank Recon, etc.
+app.include_router(zero_touch_entry_router)     # already has /api/zte prefix
+app.include_router(learning_router)           # Phase 10 Self-Learning Router
+app.include_router(gst_portal_sync_router)       # already has /api/gst-portal prefix
+app.include_router(accounting_lock_router)       # already has /api/accounting-integrity prefix
+api_router.include_router(bank_accounts_router)
+api_router.include_router(permission_governance_router)
+api_router.include_router(roles_admin_router)   # Admin › Roles: role definitions, per-role permissions, user role assignment
+for _governed_router in ALL_GOVERNED_ROUTERS:
+    api_router.include_router(_governed_router)
+app.include_router(ai_document_reader_router)
+app.include_router(aiweave_router, prefix="/api")
+api_router.include_router(trademark_sphere_router)
+app.include_router(trademark_portals_router)  # already has /api/... prefix
+app.include_router(salary_slip_router)        # already has /api/compliance/salary-slips prefix
+api_router.include_router(compliance_router)
+api_router.include_router(roc_sphere_router)  # already has /roc-sphere prefix -> /api/roc-sphere
+api_router.include_router(gst_reconciliation_router)
+api_router.include_router(mis_report_router)
+api_router.include_router(identix_router, prefix="/identix")
+api_router.include_router(passwords_router)
+api_router.include_router(auth_password_reset_router)
+api_router.include_router(visits_router)
+api_router.include_router(website_tracking_router)
+api_router.include_router(quotation_router)
+api_router.include_router(purchases_router)
+api_router.include_router(telegram_router)
+api_router.include_router(leads_router)
+api_router.include_router(client_activity_router)
+api_router.include_router(automation_router)
+api_router.include_router(service_expiry_router)
+api_router.include_router(recruitment_router)
+api_router.include_router(notification_router)
+api_router.include_router(email_router)
+api_router.include_router(activity_monitor_router)
+api_router.include_router(desktop_agent_router)
+api_router.include_router(client_portal_router)
+api_router.include_router(reminders_router)
+api_router.include_router(whatsapp_router)
+app.include_router(google_auth_router)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLIENT MERGE — merge two or more duplicate clients into one
+# ═══════════════════════════════════════════════════════════════════════════════

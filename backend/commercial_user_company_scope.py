@@ -56,12 +56,23 @@ def _owner_emails() -> set[str]:
     return {str(email).strip().lower() for email in platform_owner_emails() if str(email).strip()}
 
 
+# login/register/_sync_saas_bootstrap_password and startup_event used to run
+# from exec()'d strings inside backend.server's namespace; they now live in
+# these real modules. Only these exact modules are trusted (not every route
+# module), so the trust boundary is unchanged.
+_TRUSTED_SERVER_MODULES = frozenset({
+    "backend.server",
+    "backend.server_modules.routes.auth_routes",
+    "backend.server_modules.routes.application_runtime",
+})
+
+
 def _caller_matches(function_names: frozenset[str]) -> bool:
-    """Return True only for named internal functions in backend.server."""
+    """Return True only for named internal functions of the auth/startup code."""
     for frame_info in inspect.stack(context=0):
         if frame_info.function in function_names:
             module_name = str(frame_info.frame.f_globals.get("__name__") or "")
-            if module_name == "backend.server":
+            if module_name in _TRUSTED_SERVER_MODULES:
                 return True
     return False
 
