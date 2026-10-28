@@ -2164,7 +2164,7 @@ async def get_companies(
     return companies
 
 
-@router.get("/companies/list")
+# Not routed: production serves this path from another handler (duplicate route removed).
 async def list_companies(current_user: User = Depends(get_current_user)):
     """
     Company list for cross-module dropdowns and document rendering (Users,

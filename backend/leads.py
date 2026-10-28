@@ -247,7 +247,7 @@ def _build_lead_query(current_user) -> dict:
 
 # ====================== ROUTES ======================
 
-@router.get("/meta/services", response_model=List[str])
+# Not routed: production serves this path from another handler (duplicate route removed).
 async def get_unique_services(current_user=Depends(check_module_permission("leads", "view"))):
     """Returns distinct services from leads + clients combined."""
     lead_services = await db.leads.distinct("services")

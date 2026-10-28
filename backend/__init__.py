@@ -73,17 +73,6 @@ _commercial_control_plane_guard.install()
 # first, so its feature-level licensing and invoice workflow takes precedence.
 import backend.commercial_onboarding_extensions  # noqa: F401
 
-# Public onboarding endpoints run before a customer has a JWT. Rebuild those
-# route dependencies after the onboarding extension is loaded so license
-# verification, first-admin creation, and public user creation use the raw
-# customer/license records while still enforcing the license-wide user cap.
-import backend.commercial_onboarding_admin_compat  # noqa: F401
-
-# Harden public licensed user creation after the compatibility route replacement.
-# This keeps the signup endpoint license-authoritative and returns controlled
-# validation/duplicate/database errors rather than an opaque 500.
-import backend.commercial_onboarding_create_user_compat  # noqa: F401
-
 # Enforce one commercial license per customer and a license-wide user limit.
 # This layer is installed after the licensing extension so it can wrap the
 # canonical license creation function and before backend.server imports route
@@ -100,11 +89,6 @@ import backend.commercial_legacy_user_limit_compat  # noqa: F401
 # the physical users collection can remain shared without ever merging people
 # between legal companies or exposing customer users to the Platform Owner.
 import backend.commercial_user_company_scope  # noqa: F401
-
-# The custom commercial generator creates customer ids automatically. Guard
-# issuance by the registered customer/company name as well so the one-license
-# rule is enforced even when the UI does not submit an explicit customer_id.
-import backend.commercial_license_creation_compat  # noqa: F401
 
 # Company Master user administration is deliberately outside People Matrix
 # licensing. It uses the same users collection and HR fields so every module

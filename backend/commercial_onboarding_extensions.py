@@ -254,12 +254,10 @@ async def _create_license_invoice(license_doc: Dict[str, Any], customer: Dict[st
     return invoice
 
 
-@router.get("/module-catalog")
 async def get_custom_module_catalog(current_user: User = Depends(require_admin())):
     return {"modules": await _enriched_catalog()}
 
 
-@router.put("/module-catalog/{module_id}")
 async def update_custom_module_catalog(module_id: str, payload: Dict[str, Any], current_user: User = Depends(require_admin())):
     require_platform_owner_action(current_user, "can_view_platform_packages", "edit")
     if module_id not in COMMERCIAL_MODULE_IDS:
@@ -290,7 +288,6 @@ async def update_custom_module_catalog(module_id: str, payload: Dict[str, Any], 
     return next(item for item in await _enriched_catalog() if item["id"] == module_id)
 
 
-@router.post("/generate-license", status_code=201)
 async def generate_custom_license(payload: Dict[str, Any], current_user: User = Depends(require_admin())):
     payload = dict(payload or {})
     company_name = str(payload.get("company_name") or "").strip()
@@ -490,14 +487,12 @@ async def generate_custom_license(payload: Dict[str, Any], current_user: User = 
         raise
 
 
-@router.post("/lookup")
 async def lookup_custom_license(payload: Dict[str, Any]):
     customer, license_doc = await _find_customer_for_license(payload.get("license_key"), payload.get("company_name"))
     company = await _ensure_company_master(customer, license_doc)
     return {"valid": True, "customer": _customer_public(customer), "license": _public_license(license_doc), "company": company}
 
 
-@router.post("/create-admin")
 async def create_custom_admin(payload: Dict[str, Any]):
     customer, license_doc = await _find_customer_for_license(payload.get("license_key"), payload.get("company_name"))
     full_name = str(payload.get("full_name") or "").strip()
@@ -625,7 +620,6 @@ async def create_custom_admin(payload: Dict[str, Any]):
         "license": _public_license(license_doc),
     }
 
-@router.post("/create-staff")
 async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Only the company administrator can create staff accounts.")
@@ -657,7 +651,6 @@ async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depe
     return {k: v for k, v in user_doc.items() if k != "password"}
 
 
-@router.get("/my-company")
 async def get_custom_my_company(current_user: User = Depends(get_current_user)):
     if current_user.role != "admin" or not getattr(current_user, "company_id", None):
         raise HTTPException(status_code=403, detail="Commercial company administration is unavailable for this account.")
@@ -666,7 +659,6 @@ async def get_custom_my_company(current_user: User = Depends(get_current_user)):
     return {"customer": _customer_public(customer or {}), "license": license_doc}
 
 
-@router.delete("/licenses/{license_id}/company")
 async def delete_commercial_company(license_id: str, current_user: User = Depends(require_admin())):
     require_platform_owner_action(current_user, "can_view_platform_licensees", "delete")
     license_doc = await db.commercial_licenses.find_one({"id": license_id}, {"_id": 0})
@@ -763,6 +755,7 @@ async def delete_commercial_company(license_id: str, current_user: User = Depend
     }
 
 
-from backend.permission_governance import router as _permission_governance_router
-if not any(getattr(r, "path", "") == "/commercial-onboarding" for r in getattr(_permission_governance_router, "routes", [])):
-    _permission_governance_router.include_router(router)
+# This module's HTTP routes were always shadowed by backend.commercial_onboarding
+# (registered first), so they never served a request and are no longer
+# registered. Its functions are still used directly (approval flow, master
+# data entitlements).

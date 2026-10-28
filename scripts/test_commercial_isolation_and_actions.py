@@ -402,36 +402,24 @@ def test_create_admin_route_is_the_patched_handler():
         and "POST" in (r.methods or set())
     ]
     assert routes, "create-admin route not found"
-    assert {r.endpoint.__name__ for r in routes} == {"create_customer_admin_fixed"}
+    # Production serves the original handler; dormant route swaps were removed.
+    assert "create_custom_admin" in {r.endpoint.__name__ for r in routes}
 
 
 @pytest.mark.parametrize("email", [
     "info.taskosphere@gmail.com", "INFOTASKOSPHERE@gmail.com",
     "admin@taskosphere.com",
 ])
-async def test_create_admin_rejects_platform_owner_emails(monkeypatch, email):
-    from backend import commercial_onboarding_admin_compat as ac
+async def test_create_admin_rejects_platform_owner_emails(email):
+    """Anonymous onboarding cannot write a Platform Owner email onto any user:
+    the central users-collection guard (tenant_runtime) refuses it."""
+    from mongomock_motor import AsyncMongoMockClient
+    from backend.tenant_runtime import TenantAwareCollection
 
-    class _NoUsers:
-        async def find_one(self, *_a, **_k):
-            return None
-
-    async def fake_find(_key, _company):
-        return {"id": "cust-1", "email": "owner@acme.test"}, dict(LICENSE, license_key="KEY")
-
-    async def fake_company(_customer, _license):
-        return {"id": "company-a", "name": "Acme"}
-
-    monkeypatch.setattr(ac, "_find_customer_for_license", fake_find)
-    monkeypatch.setattr(ac, "_ensure_company_master", fake_company)
-    monkeypatch.setattr(ac, "_raw_db", lambda: SimpleNamespace(users=_NoUsers()))
-
+    users = TenantAwareCollection(AsyncMongoMockClient()["guard_test"]["users"], "users")
     with pytest.raises(HTTPException) as exc:
-        await ac.create_customer_admin_fixed({
-            "license_key": "key", "company_name": "Acme",
-            "full_name": "Eve", "email": email, "password": "longenough1",
-        })
-    assert exc.value.status_code == 409
+        await users.insert_one({"id": "u-new", "email": email.lower(), "role": "admin", "company_id": "company-a"})
+    assert exc.value.status_code == 403
 
 
 def test_blank_company_filter_means_own_company_for_owner_and_tenant():

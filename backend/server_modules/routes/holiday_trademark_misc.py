@@ -1100,7 +1100,18 @@ app.add_api_route(
     include_in_schema=False,
 )
 
-app.include_router(api_router)
+# Mount the routes api_router holds *at this point*. Old FastAPI copied a
+# router's routes at include time, so this early mount never contained routes
+# added to api_router later (notably trademark_sphere's catch-all
+# GET /api/{tm_id}, added in application_runtime). FastAPI 0.141 includes
+# routers lazily (a live view), which let that catch-all shadow /api/companies,
+# /api/quotations and /api/recruitment. A snapshot restores the old order;
+# server.py still mounts the complete api_router afterwards.
+from fastapi import APIRouter as _APIRouter
+
+_api_router_snapshot = _APIRouter()
+_api_router_snapshot.routes.extend(list(api_router.routes))
+app.include_router(_api_router_snapshot)
 
 # ── Recruitment direct API mount ─────────────────────────────────────────────
 # EXPLICIT ROUTE SAFETY FIX:

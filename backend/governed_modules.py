@@ -46,17 +46,6 @@ if not any(getattr(r, "path", "") == "/website-config" for r in getattr(permissi
 if not any(getattr(r, "path", "") == "/commercial-onboarding" for r in getattr(permission_governance_router, "routes", [])):
     permission_governance_router.include_router(commercial_onboarding_router)
 
-auth_sync_router = APIRouter(tags=["Authentication"])
-
-@auth_sync_router.post("/auth/sync-permissions")
-async def sync_permissions(current_user: User = Depends(get_current_user)):
-    permissions = getattr(current_user, "permissions", None)
-    if hasattr(permissions, "model_dump"):
-        permissions = permissions.model_dump()
-    elif not isinstance(permissions, dict):
-        permissions = {}
-    return {"permissions": permissions}
-
 class StubRecordIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
     title: str
@@ -184,7 +173,5 @@ _commercial_master_data_module._company_context = _resilient_commercial_company_
 # The canonical user-seat query is license/customer scoped. Install this
 # compatibility route after replacing the company context so the Master Data
 # page reads exactly the same shared user master used by Roles/People Matrix.
-import backend.commercial_master_data_users_compat as _commercial_master_data_users_compat  # noqa: E402
-_commercial_master_data_users_compat.install()
 
-ALL_GOVERNED_ROUTERS: List[APIRouter] = [leave_router, payroll_router, hr_router, performance_router, client_discussion_router, master_data_router, roles_router, auth_sync_router, backup_restore_router, commercial_master_data_router]
+ALL_GOVERNED_ROUTERS: List[APIRouter] = [leave_router, payroll_router, hr_router, performance_router, client_discussion_router, master_data_router, roles_router, backup_restore_router, commercial_master_data_router]

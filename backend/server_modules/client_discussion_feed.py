@@ -20,10 +20,13 @@ async def _leadsense_client_discussion_feed(current_user=Depends(get_current_use
 
 
 def register_client_discussion_feed(app) -> None:
-    for path in ("/api/client-discussion", "/api/client-discussion/"):
-        app.add_api_route(
-            path,
-            _leadsense_client_discussion_feed,
-            methods=["GET"],
-            include_in_schema=False,
-        )
+    # Only the trailing-slash form reaches this feed: GET /api/client-discussion
+    # (no slash) has always been served first by the governed client-discussion
+    # router. Kept exactly as production behaves; unifying the two is a
+    # separate product decision.
+    app.add_api_route(
+        "/api/client-discussion/",
+        _leadsense_client_discussion_feed,
+        methods=["GET"],
+        include_in_schema=False,
+    )

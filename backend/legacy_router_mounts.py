@@ -19,21 +19,8 @@ def register_legacy_router_mounts(app, api_routers, root_routers):
     # reached through the legacy api_router.
     # ─────────────────────────────────────────────────────────────────────────────
 
-    # Focused Finix compatibility routes must be registered before the legacy
-    # invoicing router. FastAPI evaluates matching path operations in registration
-    # order, so these exact invoice paths take precedence without modifying the
-    # existing invoicing CRUD implementation.
-    try:
-        from backend.invoice_backup_compat import router as invoice_backup_compat_router
-        app.include_router(
-            invoice_backup_compat_router,
-            prefix="/api",
-            include_in_schema=False,
-        )
-    except Exception:
-        # Do not prevent unrelated modules from booting if the compatibility
-        # layer cannot be imported in a stripped-down/test environment.
-        pass
+    # (backend/invoice_backup_compat.py was removed: its three /api/invoices/*
+    # routes were always shadowed by the invoicing router and never served.)
 
     # Routers that historically lived under the /api parent router.
     for _legacy_router in api_routers:

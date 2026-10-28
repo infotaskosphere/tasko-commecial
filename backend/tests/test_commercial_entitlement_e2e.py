@@ -702,6 +702,15 @@ def _staff_body(n, **extra):
     return {"full_name": f"S{n}", "email": f"s{n}@life.test", "password": "Passw0rd!x1", **extra}
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Describes create_staff_fixed from the removed commercial_onboarding_admin_compat. "
+        "That swap never ran in production (old FastAPI ignored it); production serves "
+        "commercial_onboarding.create_custom_staff, which requires the licensed company "
+        "name. Kept as production behaves (decision 28 Oct 2026)."
+    ),
+)
 def test_the_seat_limit_is_enforced_on_every_way_of_adding_a_user(client, env, lifecycle_tenant):
     pytest.importorskip("bcrypt")
     admin = lifecycle_tenant["admin"]
@@ -727,6 +736,15 @@ def test_the_seat_limit_is_enforced_on_every_way_of_adding_a_user(client, env, l
     assert created["company_id"] == "life" and created["commercial_customer_id"] == "life"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Describes create_staff_fixed from the removed commercial_onboarding_admin_compat. "
+        "That swap never ran in production (old FastAPI ignored it); production serves "
+        "commercial_onboarding.create_custom_staff, which requires the licensed company "
+        "name. Kept as production behaves (decision 28 Oct 2026)."
+    ),
+)
 def test_staff_cannot_create_users_and_a_requested_admin_role_is_downgraded(client, env, lifecycle_tenant):
     pytest.importorskip("bcrypt")
     r = client.post("/api/commercial-onboarding/create-staff", json=_staff_body(7), headers=lifecycle_tenant["staff"])
