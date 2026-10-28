@@ -1,8 +1,3 @@
-# Load the admin identity compatibility layer before backend.server imports
-# route dependencies. This is required for Render deployments that start via
-# `uvicorn backend.server:app` instead of backend/run.py.
-import backend.admin_identity_compat  # noqa: F401
-
 # Establish the commercial-customer tenant context before any route module
 # captures get_current_user. This separates a licensee's multiple legal
 # companies from the Platform Owner and every other licensee.

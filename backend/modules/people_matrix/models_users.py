@@ -616,8 +616,28 @@ class UserPermissions(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+_ADMIN_MODULE_FLAGS = (
+    "can_access_taskosphere",
+    "can_access_finix",
+    "can_access_compliance",
+    "can_access_records",
+    "can_access_proposals",
+    "can_access_people_matrix",
+    "can_access_aiweave",
+    "can_access_engagex",
+)
+_COMMERCIAL_IDENTITY_FIELDS = (
+    "commercial_customer_id",
+    "license_id",
+    "license_key",
+    "licensed_modules",
+    "selected_features",
+)
+
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
+
     id: str
     email: str
     # Stable hierarchical identity fields. Existing id/_id references remain unchanged.
@@ -702,6 +722,47 @@ class User(BaseModel):
         if v == "" or v is None:
             return None
         return v
+
+
+def _user_init(self, **data):
+    """Normalise the role, and give admins the canonical admin permission
+    template (commercial admins keep their stored module switches).
+    Applies to ``User(**data)`` only, not ``User.model_validate``.
+    (Formerly admin_identity_compat, which replaced User.__init__.)"""
+    role = data.get("role", "staff")
+    role_value = getattr(role, "value", role)
+    if isinstance(role_value, str):
+        role_value = role_value.strip().lower()
+    data["role"] = role_value
+
+    if role_value == "admin":
+        stored = data.get("permissions")
+        if hasattr(stored, "model_dump"):
+            stored = stored.model_dump()
+        elif not isinstance(stored, dict):
+            stored = {}
+
+        canonical = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}))
+        is_commercial_admin = bool(data.get("company_id")) or any(
+            data.get(field) not in (None, "", [], {}) for field in _COMMERCIAL_IDENTITY_FIELDS
+        )
+        if is_commercial_admin:
+            for flag in _ADMIN_MODULE_FLAGS:
+                if flag in stored:
+                    canonical[flag] = bool(stored[flag])
+        data["permissions"] = canonical
+
+    identity = {field: data.get(field) for field in _COMMERCIAL_IDENTITY_FIELDS}
+    BaseModel.__init__(self, **data)
+    for field, value in identity.items():
+        if value not in (None, "", [], {}):
+            try:
+                object.__setattr__(self, field, value)
+            except Exception:
+                pass
+
+
+User.__init__ = _user_init
 
 
 class UserCreate(BaseModel):

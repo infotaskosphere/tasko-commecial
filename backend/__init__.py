@@ -1,8 +1,3 @@
-# Load the admin identity compatibility layer before backend.server imports
-# route dependencies. This is required for Render deployments that start via
-# `uvicorn backend.server:app` instead of backend/run.py.
-import backend.admin_identity_compat  # noqa: F401
-
 # (Authentication's innermost step, dependencies.get_current_user, reads the
 # raw users collection itself; it used to be swapped in here by
 # commercial_auth_bootstrap_compat.)
