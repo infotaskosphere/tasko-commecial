@@ -88,10 +88,6 @@ from backend.ai_document_reader import router as _ai_document_reader_router
 from backend.ai.workspace_router import router as _ai_workspace_router
 _ai_document_reader_router.include_router(_ai_workspace_router)
 
-# Must load before backend.server imports its routers: lets EventSource
-# authenticate opaque SaaS session tokens as well as JWTs.
-import backend.whatsapp_sse_compat as _whatsapp_sse_compat
-_whatsapp_sse_compat.install()
 
 # Private backend-to-bridge trust boundary. This middleware runs before the
 # commercial WhatsApp webhook handlers are registered.

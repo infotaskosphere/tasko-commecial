@@ -11,9 +11,11 @@ from __future__ import annotations
 import re
 
 import asyncio
+import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -1149,65 +1151,125 @@ async def hub_conversation_search(
 
 # ── SSE: real-time event stream ──────────────────────────────────────────────
 
-@router.get("/events")
-async def hub_events(
-    request: Request,
-    token: Optional[str] = None,
-):
-    """Server-Sent Events — streams new-message events to the frontend in real time.
-
-    EventSource (browser API) cannot send custom headers, so we accept the JWT
-    via ?token= query param as a fallback when no Authorization header is present.
-    The frontend already appends ?token=<jwt> when opening the EventSource URL.
-    """
-    from backend.dependencies import JWT_SECRET, ALGORITHM
-    import jwt as _jwt
-    from jwt import PyJWTError as JWTError
-
-    # Try Authorization header first; fall back to ?token= query param.
-    auth_header = request.headers.get("Authorization", "")
-    raw_token = None
-    if auth_header.startswith("Bearer "):
-        raw_token = auth_header[7:]
-    elif token:
-        raw_token = token
+async def _consume_stream_token(raw_token: str):
+    """Consume a short-lived, single-use SSE credential atomically."""
+    from backend import dependencies as _dependencies
 
     if not raw_token:
+        return None
+    raw_db = getattr(_dependencies, "_raw_db", None)
+    if raw_db is None:
+        return None
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    record = await raw_db.whatsapp_sse_tokens.find_one({
+        "token_hash": token_hash,
+        "used": False,
+        "expires_at": {"$gt": now},
+    })
+    if not record:
+        return None
+    result = await raw_db.whatsapp_sse_tokens.update_one(
+        {"_id": record.get("_id"), "used": False},
+        {"$set": {"used": True, "used_at": now}},
+    )
+    if getattr(result, "modified_count", 0) != 1:
+        return None
+    return record
+
+
+async def _resolve_stream_user(request: Request, token: Optional[str]):
+    """The EventSource cannot send headers: ``?token=`` carries a 60-second,
+    single-use stream credential (POST /events-token). An Authorization
+    header (opaque SaaS session or legacy JWT) is accepted for internal
+    callers. (Formerly whatsapp_sse_compat.)"""
+    import jwt as _jwt
+    from backend import dependencies as _dependencies
+
+    auth_header = request.headers.get("Authorization", "")
+    bearer_token = auth_header[7:] if auth_header.startswith("Bearer ") else None
+
+    if token:
+        record = await _consume_stream_token(token)
+        if record:
+            raw_db = getattr(_dependencies, "_raw_db", None)
+            user_doc = None
+            if raw_db is not None:
+                user_doc = await raw_db.users.find_one(
+                    {"id": str(record.get("user_id") or ""), "status": "active"}
+                )
+            if user_doc:
+                stored_company_id = str(user_doc.get("company_id") or "").strip()
+                minted_company_id = str(record.get("company_id") or "").strip()
+                if minted_company_id and stored_company_id and minted_company_id != stored_company_id:
+                    raise HTTPException(401, "Invalid stream credential")
+                user_doc.pop("_id", None)
+                user_doc = _dependencies._normalize_permissions(user_doc)
+                try:
+                    return _dependencies.User(**user_doc)
+                except Exception:
+                    pass
+        raise HTTPException(401, "Invalid or expired stream credential")
+
+    if not bearer_token:
         raise HTTPException(401, "Authentication required")
 
+    # Licensee opaque-session resolver (as used here in production).
+    user = await _dependencies._licensee_saas_session_user(bearer_token)
+    if user is not None:
+        return user
+
     try:
-        payload = _jwt.decode(raw_token, JWT_SECRET, algorithms=[ALGORITHM])
+        payload = _jwt.decode(bearer_token, _dependencies.JWT_SECRET, algorithms=[_dependencies.ALGORITHM])
         user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(401, "Invalid token")
-    except JWTError:
+    except _jwt.PyJWTError:
+        user_id = None
+
+    if not user_id:
         raise HTTPException(401, "Invalid token")
 
     db = _db()
-    user_doc = await db["users"].find_one({"id": user_id})
+    user_doc = await db["users"].find_one({"id": str(user_id)})
     if not user_doc:
         raise HTTPException(401, "User not found")
 
-    # Check hub access: admin always OK; others need wa_hub_access flag
-    role = user_doc.get("role", "")
-    if role != "admin" and not user_doc.get("wa_hub_access"):
+    user_doc.pop("_id", None)
+    user_doc = _dependencies._normalize_permissions(user_doc)
+    try:
+        return User(**user_doc)
+    except Exception:
+        raise HTTPException(401, "Invalid user session")
+
+
+@router.get("/events")
+async def hub_events(request: Request, token: Optional[str] = None):
+    """Server-Sent Events: streams new-message events to the frontend."""
+    current_user = await _resolve_stream_user(request, token)
+    if not await _has_hub_access(current_user):
         raise HTTPException(403, "No WhatsApp Hub access")
 
-    q: asyncio.Queue = asyncio.Queue(maxsize=100)
-    _sse_queues.append(q)
+    queue: asyncio.Queue = asyncio.Queue()
+    _sse_queues.append(queue)
 
     async def generator():
         try:
-            yield ": connected\n\n"
+            yield "event: connected\ndata: {}\n\n"
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
-                    payload = await asyncio.wait_for(q.get(), timeout=25)
-                    yield f"event: {payload['event']}\ndata: {json.dumps(payload['data'])}\n\n"
+                    payload = await asyncio.wait_for(queue.get(), timeout=15)
                 except asyncio.TimeoutError:
-                    yield ": ping\n\n"
+                    # SSE comment keeps the Render/browser connection alive.
+                    yield ": keepalive\n\n"
+                    continue
+
+                event_name = payload.get("event", "message")
+                data = payload.get("data", {})
+                yield f"event: {event_name}\ndata: {json.dumps(data, default=str)}\n\n"
         finally:
             try:
-                _sse_queues.remove(q)
+                _sse_queues.remove(queue)
             except ValueError:
                 pass
 
@@ -1329,3 +1391,26 @@ async def hub_decide_access(body: HubAccessDecision, current_user: User = Depend
         if result.matched_count == 0:
             raise HTTPException(404, "Requested user is outside your tenant scope.")
     return {"ok": True, "status": status}
+
+
+# Registered last, as it was when whatsapp_sse_compat appended it.
+@router.post("/events-token")
+async def issue_stream_token(current_user=Depends(get_current_user)):
+    """Mint the 60-second, single-use credential the EventSource sends."""
+    from backend import dependencies as _dependencies
+
+    raw_db = getattr(_dependencies, "_raw_db", None)
+    if raw_db is None:
+        raise HTTPException(503, "Session store unavailable")
+    raw_token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    await raw_db.whatsapp_sse_tokens.insert_one({
+        "token_hash": token_hash,
+        "user_id": str(getattr(current_user, "id", "") or ""),
+        "company_id": str(getattr(current_user, "company_id", "") or ""),
+        "created_at": now,
+        "expires_at": now + timedelta(seconds=60),
+        "used": False,
+    })
+    return {"stream_token": raw_token, "expires_in": 60}
