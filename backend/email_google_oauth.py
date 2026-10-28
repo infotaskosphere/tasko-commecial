@@ -131,6 +131,46 @@ async def _redirect_result(return_url: str, result: str, reason: Optional[str] =
 
 
 @router.get("/callback")
+async def google_gmail_oauth_callback_with_saved_context(
+    request: Request,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+):
+    """Google redirects back without the user's bearer/session context, so the
+    server-side OAuth state record supplies the company and customer for the
+    callback. (Formerly email_google_oauth_context_compat, which swapped this
+    route's endpoint.)"""
+    from backend.dependencies import _raw_db
+    from backend.commercial_tenant_scope import reset_authenticated_customer, set_authenticated_customer
+    from backend.tenant_runtime import reset_authenticated_company, set_authenticated_company
+
+    state_value = state or request.query_params.get("state")
+    state_doc = None
+    if state_value:
+        state_doc = await _raw_db[GOOGLE_OAUTH_STATE_COLLECTION].find_one(
+            {"state": state_value},
+            {"company_id": 1, "commercial_customer_id": 1},
+        )
+
+    company_id = str((state_doc or {}).get("company_id") or "").strip()
+    customer_id = str((state_doc or {}).get("commercial_customer_id") or "").strip()
+
+    company_token = None
+    customer_token = None
+    try:
+        if company_id:
+            company_token = set_authenticated_company(company_id)
+        if customer_id:
+            customer_token = set_authenticated_customer(customer_id)
+        return await google_gmail_oauth_callback(request, code=code, state=state, error=error)
+    finally:
+        if customer_token is not None:
+            reset_authenticated_customer(customer_token)
+        if company_token is not None:
+            reset_authenticated_company(company_token)
+
+
 async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Query(None), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
     # EngageX MailMaster "Continue with Google" reuses this registered redirect
     # URI; its states are namespaced so the Email module flow is unaffected.
@@ -341,13 +381,26 @@ _email._test_imap_sync = _test_dispatch
 _ORIGINAL_CONN_DOC_TO_OUT = _email._conn_doc_to_out
 
 def _conn_doc_to_out(doc: Dict[str, Any]):
+    """Serialise a connection; Gmail OAuth connections show the Gmail API host.
+
+    The legacy serializer returns a ConnectionOut model, so work on a dict
+    copy and validate back (ConnectionOut has no auth_type/oauth_provider)."""
     out = _ORIGINAL_CONN_DOC_TO_OUT(doc)
+    if hasattr(out, "model_dump"):
+        data = out.model_dump()
+    elif isinstance(out, dict):
+        data = dict(out)
+    else:
+        return out
+
     if doc.get("auth_type") == "google_oauth":
-        out["imap_host"] = "Google Gmail API"
-        out["imap_port"] = 443
-        out["auth_type"] = "google_oauth"
-        out["oauth_provider"] = "google"
-    return out
+        data["imap_host"] = "Google Gmail API"
+        data["imap_port"] = 443
+
+    connection_model = getattr(_email, "ConnectionOut", None)
+    if connection_model is not None and hasattr(connection_model, "model_validate"):
+        return connection_model.model_validate(data)
+    return data
 
 _email._conn_doc_to_out = _conn_doc_to_out
 

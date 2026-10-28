@@ -102,9 +102,6 @@ import backend.whatsapp_bridge_webhook_guard as _whatsapp_bridge_webhook_guard  
 # OAuth routes at /api/email/oauth/google/* and adapts Gmail API reads into the
 # existing email extraction pipeline without changing non-Gmail providers.
 import backend.email_google_oauth  # noqa: F401
-# Google redirects back without the authenticated browser context. Bind the
-# saved OAuth state's commercial company/customer identity for the callback.
-import backend.email_google_oauth_context_compat  # noqa: F401
 
 # MongoDB ObjectId values can still exist in legacy user/company documents.
 # FastAPI's default encoder raises a 500 when such an ObjectId reaches a response.
