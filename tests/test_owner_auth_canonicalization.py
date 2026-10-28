@@ -24,7 +24,7 @@ from backend.tenant_runtime import (
 async def test_saas_owner_session_runs_canonical_company_scope_resolver(monkeypatch):
     owner = SimpleNamespace(
         id="owner-user",
-        email="csmanthandesai@gmail.com",
+        email="infotaskosphere@gmail.com",
         role="admin",
         company_id="stale-owner-company",
     )
@@ -179,12 +179,12 @@ async def test_stale_configured_owner_id_aliases_only_to_verified_name_match(mon
 
     user = SimpleNamespace(
         id="owner-user",
-        email="csmanthandesai@gmail.com",
+        email="infotaskosphere@gmail.com",
         role="admin",
         company_id=canonical_id,
         model_dump=lambda: {
             "id": "owner-user",
-            "email": "csmanthandesai@gmail.com",
+            "email": "infotaskosphere@gmail.com",
             "role": "admin",
             "company_id": canonical_id,
         },

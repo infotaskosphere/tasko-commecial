@@ -407,7 +407,7 @@ def test_create_admin_route_is_the_patched_handler():
 
 @pytest.mark.parametrize("email", [
     "info.taskosphere@gmail.com", "INFOTASKOSPHERE@gmail.com",
-    "admin@taskosphere.com", "csmanthandesai@gmail.com",
+    "admin@taskosphere.com",
 ])
 async def test_create_admin_rejects_platform_owner_emails(monkeypatch, email):
     from backend import commercial_onboarding_admin_compat as ac

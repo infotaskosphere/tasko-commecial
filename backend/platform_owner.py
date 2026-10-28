@@ -12,7 +12,6 @@ DEFAULT_PLATFORM_OWNER_EMAILS = {
     "info.taskosphere@gmail.com",
     "infotaskosphere@gmail.com",
     "admin@taskosphere.com",
-    "csmanthandesai@gmail.com",
 }
 
 

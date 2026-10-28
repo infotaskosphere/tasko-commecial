@@ -14,7 +14,6 @@ const getPlatformOwnerEmails = () => {
     "info.taskosphere@gmail.com",
     "infotaskosphere@gmail.com",
     "admin@taskosphere.com",
-    "csmanthandesai@gmail.com",
   ]);
   if (configured) {
     configured.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).forEach((e) => base.add(e));

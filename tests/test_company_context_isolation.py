@@ -441,7 +441,7 @@ def test_configured_owner_workspace_recovers_when_creator_id_differs_from_sessio
     }
     creator_doc = {
         "id": creator_id,
-        "email": "csmanthandesai@gmail.com",
+        "email": "infotaskosphere@gmail.com",
         "role": "admin",
         "status": "active",
     }
@@ -532,7 +532,7 @@ def test_configured_owner_workspace_recovers_when_creator_id_differs_from_sessio
 
     def is_owner(value):
         email = value.get("email", "") if isinstance(value, dict) else getattr(value, "email", "")
-        return email in {"info.taskosphere@gmail.com", "csmanthandesai@gmail.com"}
+        return email in {"info.taskosphere@gmail.com", "infotaskosphere@gmail.com"}
 
     monkeypatch.setattr(deps, "_owner_operational_companies", no_visible_companies)
     monkeypatch.setattr(deps, "is_platform_owner", is_owner)

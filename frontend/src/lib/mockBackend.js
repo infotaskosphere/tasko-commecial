@@ -639,7 +639,7 @@ export function handleMockRoute(method, url, data) {
 
   if (normUrl === "/auth/login" || normUrl === "/auth/signin") {
     const email = String(data?.email || "").trim().toLowerCase();
-    const isOwner = email === "csmanthandesai@gmail.com" || isPlatformOwner({ email, role: data?.role });
+    const isOwner = isPlatformOwner({ email, role: data?.role });
     const newSessionToken = "sess_" + Date.now() + "_" + Math.random().toString(36).substring(2, 9);
 
     if (typeof window !== "undefined" && window.localStorage && !isOwner && email) {

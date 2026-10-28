@@ -16,7 +16,7 @@ import sys
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-OWNER_EMAILS = {"info.taskosphere@gmail.com", "infotaskosphere@gmail.com", "admin@taskosphere.com", "csmanthandesai@gmail.com"}
+OWNER_EMAILS = {"info.taskosphere@gmail.com", "infotaskosphere@gmail.com", "admin@taskosphere.com"}
 OWNER_EMAILS |= {e.strip().lower() for e in os.getenv("PLATFORM_OWNER_EMAILS", "").split(",") if e.strip()}
 COLLECTIONS = ["invoices", "payments", "clients", "tasks", "purchase_invoices", "chart_of_accounts"]
 
