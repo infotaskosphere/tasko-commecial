@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend import dependencies as _dependencies
-from backend.commercial_licensee_admin import get_all_admin_permissions
+# The license cap without the control-plane restore, as production used it.
+from backend.commercial_licensee_admin import license_capped_admin_permissions as get_all_admin_permissions
 from backend.platform_owner import is_platform_owner
 
 

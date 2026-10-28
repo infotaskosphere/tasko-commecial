@@ -41,7 +41,8 @@ from backend.dependencies import _normalize_permissions
 from backend.commercial_licensee_admin import (
     LICENSE_MODULE_ALIASES,
     COMMERCIAL_LEGACY_PAGE_FLAGS,
-    get_all_admin_permissions,
+    # The license cap without the control-plane restore, as production used it.
+    license_capped_admin_permissions as get_all_admin_permissions,
     normalize_license_selected_features,
     resolve_license_modules,
 )

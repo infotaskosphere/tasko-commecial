@@ -288,7 +288,7 @@ def normalize_license_selected_features(
     return normalized
 
 
-def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def license_capped_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return tenant-admin permissions capped by the active license's module/page selections.
 
     Both module and page access come from the Platform Owner's explicit
@@ -410,6 +410,41 @@ def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> D
             permissions["can_manage_performance"] = False
 
     return permissions
+
+
+# Permissions that belong to the tenant's own Admin control plane (users,
+# roles, settings, reports...). The commercial license caps operational
+# modules/pages, never these. Formerly applied by admin_control_plane_compat,
+# which swapped this module's function at runtime.
+CONTROL_PLANE_FLAGS = frozenset({
+    "can_access_admin",
+    "can_view_user_page",
+    "can_manage_users",
+    "can_manage_permissions",
+    "can_manage_settings",
+    "can_view_master_data",
+    "can_manage_master_data",
+    "can_view_roles",
+    "can_manage_roles",
+    "can_view_backup_restore",
+    "can_view_security_sessions",
+    "can_view_staff_activity",
+    "can_view_reports",
+    "can_download_reports",
+    "can_view_audit_logs",
+    "can_view_selected_users_reports",
+    "can_view_staff_rankings",
+})
+
+
+def get_all_admin_permissions(license_doc: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Tenant-admin permissions: the license-capped set, with the Admin control
+    plane flags always restored to the admin role defaults."""
+    result = dict(license_capped_admin_permissions(license_doc) or {})
+    defaults = dict(DEFAULT_ROLE_PERMISSIONS.get("admin", {}) or {})
+    for flag in CONTROL_PLANE_FLAGS:
+        result[flag] = bool(defaults.get(flag, True))
+    return result
 
 
 def get_tenant_user_permissions(

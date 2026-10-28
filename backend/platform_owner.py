@@ -32,11 +32,6 @@ def _install_owner_auth_compat() -> None:
         auth_company_recovery.install()
     except Exception:
         pass
-    try:
-        from backend import admin_control_plane_compat
-        admin_control_plane_compat.install()
-    except Exception:
-        pass
 
 
 def is_platform_owner(user) -> bool:
