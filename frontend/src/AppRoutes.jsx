@@ -84,7 +84,7 @@ const MasterConsole = lazy(() => import('./pages/MasterConsole.jsx'));
 const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder.jsx'));
 const SecuritySessions = lazy(() => import('./pages/SecuritySessions.jsx'));
 const EngageXDashboard = lazy(() => import('./pages/EngageXDashboard.jsx'));
-const EngageXWhatsAppHub = lazy(() => import('./pages/EngageXWhatsAppHub.jsx'));
+const EngageXWhatsAppHub = lazy(() => import('./pages/EngageXWhatsAppHubV2.jsx'));
 const EngageXMailMaster = lazy(() => import('./pages/EngageXMailMaster.jsx'));
 
 function AuthLoading() { return <GifLoader />; }
@@ -202,8 +202,6 @@ function PlatformOwnerOnly({ children }) {
 }
 
 function EngageXGate({ children }) {
-  // Module ceiling (license) + per-page permission, from the same matrix the
-  // sidebar and the backend module guard use.
   const { user, loading, isPlatformOwner } = useAuth();
   const location = useLocation();
   if (loading) return <AuthLoading />;
@@ -297,7 +295,7 @@ export default function AppRoutes() {
           <Route path="/whatsapp-hub" element={<AdminOnly><LinkedAdminPageGate module="records" page="can_access_whatsapp_hub"><WhatsAppHub /></LinkedAdminPageGate></AdminOnly>} />
           <Route path="/leave" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_leave"><PeopleMatrixPageFrame page="leave"><Leave /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
           <Route path="/payroll" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_payroll"><PeopleMatrixPageFrame page="payroll"><Payroll /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
-          <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><PeopleMatrixPageFrame page="hr"><HR /></PeopleMatrixPageFrame></PageGuard></ModuleGate>} />
+          <Route path="/hr" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_hr"><PeopleMatrixPageFrame page="hr"><HR /></PeopleMatrixPageFrame></ModuleGate>} />
           <Route path="/recruitment" element={<ModuleGate module="peopleMatrix"><PageGuard module="people_matrix" page="can_view_recruitment"><Recruitment /></PageGuard></ModuleGate>} />
           <Route path="/client-discussion" element={<ModuleGate module="proposals"><PageGuard module="proposals" page="can_view_client_discussion"><ClientDiscussion /></PageGuard></ModuleGate>} />
 
