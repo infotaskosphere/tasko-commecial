@@ -36,7 +36,7 @@ jobs:
           if [ -f backend/requirements.txt ]; then
             pip install -r backend/requirements.txt
           fi
-          pip install pytest pytest-asyncio
+          pip install pytest pytest-asyncio mongomock-motor
 
       - name: Compile all Python files
         run: |

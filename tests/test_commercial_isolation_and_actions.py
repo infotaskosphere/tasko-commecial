@@ -413,7 +413,7 @@ def test_create_admin_route_is_the_patched_handler():
 async def test_create_admin_rejects_platform_owner_emails(email):
     """Anonymous onboarding cannot write a Platform Owner email onto any user:
     the central users-collection guard (tenant_runtime) refuses it."""
-    from mongomock_motor import AsyncMongoMockClient
+    AsyncMongoMockClient = pytest.importorskip("mongomock_motor").AsyncMongoMockClient
     from backend.tenant_runtime import TenantAwareCollection
 
     users = TenantAwareCollection(AsyncMongoMockClient()["guard_test"]["users"], "users")
