@@ -280,6 +280,50 @@ def apply_license_cap(d: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def apply_sales_invoicing_gate(normalized):
+    """Map the licensed Sales page to the legacy invoicing API gate.
+
+    The governance UI stores the licensed Sales feature as ``can_view_sale``,
+    while the invoicing router checks ``can_manage_invoices`` on every
+    endpoint. Only the admin role is granted it (managers/staff keep their
+    role-level setting); without Finix, or with Finix but no Sales page, it
+    is removed. Formerly installed by commercial_invoicing_permission_compat.
+    """
+    if not isinstance(normalized, dict):
+        return normalized
+
+    permissions = dict(normalized.get("permissions") or {})
+    role = str(normalized.get("role") or "").strip().lower()
+    modules = normalized.get("licensed_modules") or normalized.get("modules") or []
+    modules = {str(v).strip().lower().replace("-", "_") for v in modules if v}
+
+    selected_features = normalized.get("selected_features")
+    if not isinstance(selected_features, dict):
+        selected_features = (normalized.get("company") or {}).get("selected_features")
+    if not isinstance(selected_features, dict):
+        selected_features = {}
+
+    finix_selected = "finix" in modules
+    selected_finix = selected_features.get("finix")
+    if selected_finix is None:
+        selected_finix = selected_features.get("accounting")
+    sales_feature_selected = isinstance(selected_finix, list) and "can_view_sale" in selected_finix
+
+    if role == "admin" and finix_selected and sales_feature_selected:
+        permissions["can_manage_invoices"] = True
+    elif not finix_selected or (isinstance(selected_finix, list) and not sales_feature_selected):
+        permissions["can_manage_invoices"] = False
+
+    normalized["permissions"] = permissions
+    return normalized
+
+
+def normalize_permissions_for_request(d):
+    """What ``dependencies._normalize_permissions`` resolves to at runtime:
+    the base normalisation, the license cap, then the Sales/invoicing gate."""
+    return apply_sales_invoicing_gate(apply_license_cap(d))
+
+
 if not hasattr(_dependencies, "_normalize_permissions_original"):
     _dependencies._normalize_permissions_original = _dependencies._normalize_permissions
-    _dependencies._normalize_permissions = apply_license_cap
+    _dependencies._normalize_permissions = normalize_permissions_for_request
