@@ -47,11 +47,13 @@ jobs:
       - name: Verify accounting controls import
         env:
           ENV_MODE: development
-        run: python -c "import backend.accounting_ai.accounting_controls as controls; assert controls.ApprovalDecision; print('accounting_controls import: OK')"
+        run: |
+          python -c "import backend.accounting_ai.accounting_controls as controls; assert controls.ApprovalDecision; print('accounting_controls import: OK')"
       - name: Verify full backend import
         env:
           ENV_MODE: development
-        run: python -c "import backend.server as server; assert server.app; print('backend.server import: OK')"
+        run: |
+          python -c "import backend.server as server; assert server.app; print('backend.server import: OK')"
       - name: Run Finix accounting tests
         env:
           ENV_MODE: development

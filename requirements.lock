@@ -2,7 +2,7 @@
 #    uv pip compile requirements.txt --python-version 3.12 --python-platform linux -o requirements.lock
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.4
     # via -r requirements.txt
 aiosignal==1.4.0
     # via aiohttp
@@ -41,7 +41,7 @@ botocore==1.34.100
     #   s3transfer
 cachetools==5.5.2
     # via google-auth
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   -r requirements.txt
     #   httpcore
@@ -73,7 +73,7 @@ distro==1.9.0
     # via
     #   groq
     #   openai
-dnspython==2.7.0
+dnspython==2.9.0
     # via
     #   -r requirements.txt
     #   email-validator
@@ -88,7 +88,7 @@ fastapi==0.141.1
     # via -r requirements.txt
 fonttools==4.68.0
     # via fpdf2
-fpdf2==2.7.9
+fpdf2==2.8.8
     # via -r requirements.txt
 frozenlist==1.8.0
     # via
@@ -219,7 +219,7 @@ pdfminer-six==20260107
     #   pdfplumber
 pdfplumber==0.11.10
     # via -r requirements.txt
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   -r requirements.txt
     #   fpdf2
@@ -270,7 +270,7 @@ pygments==2.21.0
     # via rich
 pyjwt==2.15.0
     # via -r requirements.txt
-pymongo==4.18.2
+pymongo==4.18.3
     # via
     #   -r requirements.txt
     #   motor
@@ -278,7 +278,7 @@ pyparsing==3.1.2
     # via
     #   -r requirements.txt
     #   httplib2
-pypdf==6.19.0
+pypdf==6.21.2
     # via -r requirements.txt
 pypdfium2==5.14.0
     # via pdfplumber
