@@ -352,13 +352,24 @@ def _signed_docs(docs: list, *, purchase: bool, start: str, end: str) -> dict:
         when = date_key(d.get("invoice_date"))
         if not when or when < start or when > end:
             continue
-        sign = -1.0 if inv_type == "credit_note" else 1.0
-        t = d.get("total_taxable") if d.get("total_taxable") not in (None, "") else (
-            d.get("taxable_value") if d.get("taxable_value") not in (None, "") else d.get("subtotal"))
+        # Sale returns (credit notes) and purchase returns reduce their side.
+        sign = -1.0 if inv_type in ("credit_note", "purchase_return") else 1.0
+
+        def _first(*keys):
+            # Sales documents store total_*; purchase bills and returns store
+            # taxable_amount / cgst_amount / ... — read whichever is present.
+            for key in keys:
+                if d.get(key) not in (None, ""):
+                    return d.get(key)
+            return 0
+
+        t = _first("total_taxable", "taxable_value", "taxable_amount", "subtotal")
         taxable += sign * safe_float(t)
-        c, s_, i_ = safe_float(d.get("total_cgst")), safe_float(d.get("total_sgst")), safe_float(d.get("total_igst"))
+        c = safe_float(_first("total_cgst", "cgst_amount"))
+        s_ = safe_float(_first("total_sgst", "sgst_amount"))
+        i_ = safe_float(_first("total_igst", "igst_amount"))
         cgst += sign * c; sgst += sign * s_; igst += sign * i_
-        g = d.get("total_gst") if d.get("total_gst") not in (None, "") else (c + s_ + i_)
+        g = _first("total_gst", "gst_amount") or (c + s_ + i_)
         gst += sign * safe_float(g)
     return {"taxable": round(taxable, 2), "cgst": round(cgst, 2), "sgst": round(sgst, 2),
             "igst": round(igst, 2), "gst": round(gst, 2)}
@@ -375,6 +386,12 @@ async def statutory_summary(company_id: str, today: Optional[date] = None) -> di
     }
     invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0}).to_list(100000)
     purchases = await db.purchase_invoices.find({"company_id": company_id}, {"_id": 0}).to_list(100000)
+    # Purchase returns reverse input GST through their own ledger entries, so
+    # the document side must net them off too (dated by the return date).
+    returns = await db.purchase_returns.find({"company_id": company_id}, {"_id": 0}).to_list(100000)
+    purchases = purchases + [
+        {**r, "invoice_type": "purchase_return", "invoice_date": r.get("return_date")} for r in returns
+    ]
 
     def build(start: str, end: str) -> dict:
         out_gl = ledger.balance("2100", "cr", start, end)
@@ -593,6 +610,7 @@ async def ledger_diagnostics(company_id: str) -> dict:
     payments = {d["id"]: d for d in await db.payments.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
     purchases = {d["id"]: d for d in await db.purchase_invoices.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
     pur_pay = {d["id"]: d for d in await db.purchase_payments.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
+    pur_ret = {d["id"]: d for d in await db.purchase_returns.find({"company_id": company_id}, {"_id": 0}).to_list(200000)}
 
     entry_ids = {x["id"] for x in entries}
     findings = []
@@ -631,6 +649,8 @@ async def ledger_diagnostics(company_id: str) -> dict:
             code, reason = "SOURCE_MISSING", "The purchase bill behind this entry no longer exists."
         elif source == "purchase_payment" and sid not in pur_pay:
             code, reason = "SOURCE_MISSING", "The purchase payment behind this entry no longer exists."
+        elif source == "purchase_return" and sid not in pur_ret:
+            code, reason = "SOURCE_MISSING", "The purchase return behind this entry no longer exists."
         elif source == "reversal":
             if sid and sid not in entry_ids:
                 code, reason = "DANGLING_REVERSAL", "This reversal cancels an entry that no longer exists, so it leaves a one-sided credit in the books."

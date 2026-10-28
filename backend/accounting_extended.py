@@ -618,8 +618,10 @@ async def outstanding_payable(
     rows = []
     buckets = {"current": 0.0, "1_30": 0.0, "31_60": 0.0, "61_90": 0.0, "91_plus": 0.0}
     for inv in purchases:
+        # Purchase returns reduce what is owed, exactly like payments.
         outstanding = _round2(
             float(inv.get("grand_total", 0)) - float(inv.get("amount_paid", 0))
+            - float(inv.get("amount_returned", 0) or 0)
         )
         if outstanding <= 0:
             continue
@@ -633,6 +635,7 @@ async def outstanding_payable(
             "due_date": due,
             "grand_total": _round2(float(inv.get("grand_total", 0))),
             "amount_paid": _round2(float(inv.get("amount_paid", 0))),
+            "amount_returned": _round2(float(inv.get("amount_returned", 0) or 0)),
             "outstanding": outstanding,
             "bucket": bucket,
         })

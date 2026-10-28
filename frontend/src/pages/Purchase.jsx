@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import {
   UploadCloud, Search, RefreshCw, Building2, FileText, IndianRupee, CheckCircle2, AlertTriangle, ShoppingBag, X,
   Database, Edit, Trash2, Wallet, Ban, FileSpreadsheet, SlidersHorizontal, ArrowUpDown, ArrowUp, ArrowDown,
-  LayoutList, Table2, Download, ChevronLeft, ChevronRight, FileCode2, Eye,
+  LayoutList, Table2, Download, ChevronLeft, ChevronRight, FileCode2, Eye, RotateCcw,
 } from 'lucide-react';
 import GifLoader, { MiniLoader } from '@/components/ui/GifLoader.jsx';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
 import InvoiceForm from '@/components/purchase/InvoiceForm.jsx';
 import InvoicePreviewDialog from '@/components/purchase/InvoicePreviewDialog.jsx';
 import ExportDialog from '@/components/purchase/ExportDialog.jsx';
+import PurchaseReturnDialog from '@/components/purchase/PurchaseReturnDialog.jsx';
 import {
   COLORS, EMPTY_FILTERS, PURCHASE_STATUS_META, SORT_OPTIONS, SOURCE_OPTIONS, activeFilterCount, buildPurchaseParams,
   datePresets, errorDetail, errorMessage, fmtC, fmtDate, liveIssues, loadPref, num, savePref,
@@ -454,6 +455,8 @@ function Purchase() {
     }
   };
 
+  const [returningInvoice, setReturningInvoice] = useState(null);
+
   const handleCancelInvoice = async (inv) => {
     if (!canEditPurchase) { toast.error('Edit permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!window.confirm(`Mark bill ${inv.invoice_no || ''} as cancelled? Its ledger entry will be removed.`)) return;
@@ -502,6 +505,11 @@ function Purchase() {
       {canEditPurchase && <Button size="icon" variant="ghost" onClick={() => startEdit(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40" title="Edit / correct this bill">
         <Edit className="h-3.5 w-3.5" />
       </Button>}
+      {inv.status !== 'cancelled' && (canEditPurchase || Number(inv.amount_returned || 0) > 0) && (
+        <Button size="icon" variant="ghost" onClick={() => setReturningInvoice(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40" title="Purchase return — posts its own reversing entry" aria-label="Purchase return">
+          <RotateCcw className="h-3.5 w-3.5" />
+        </Button>
+      )}
       {canEditPurchase && inv.status !== 'cancelled' && (
         <Button size="icon" variant="ghost" onClick={() => handleCancelInvoice(inv)} className="h-7 w-7 rounded-lg text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/40" title="Cancel bill (removes it from the ledger)">
           <Ban className="h-3.5 w-3.5" />
@@ -1092,6 +1100,16 @@ function Purchase() {
         </DialogContent>
       </Dialog>
 
+      {/* ── purchase return ── */}
+      <PurchaseReturnDialog
+        invoice={returningInvoice}
+        onClose={() => setReturningInvoice(null)}
+        onChanged={refresh}
+        canEdit={canEditPurchase}
+        canDelete={canDeletePurchase}
+        isDark={isDark}
+      />
+
       {/* ── payment ── */}
       <Dialog open={payingInvoice !== null} onOpenChange={(open) => { if (!open) setPayingInvoice(null); }}>
         <DialogContent className={`sm:max-w-md ${isDark ? 'bg-slate-900 text-slate-100 border-slate-800' : 'bg-white text-slate-900'}`}>
@@ -1102,7 +1120,7 @@ function Purchase() {
             <div className="space-y-4 my-2">
               <div className={`rounded-xl p-3 text-sm ${isDark ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <p className="font-semibold">{payingInvoice.invoice_no || 'No invoice no.'} — {payingInvoice.supplier_name}</p>
-                <p className="text-slate-400 text-xs mt-1">Bill total {fmtC(payingInvoice.grand_total)} · Due {fmtC(payingInvoice.amount_due ?? payingInvoice.grand_total)}</p>
+                <p className="text-slate-400 text-xs mt-1">Bill total {fmtC(payingInvoice.grand_total)}{Number(payingInvoice.amount_returned || 0) > 0 ? ` · Returned ${fmtC(payingInvoice.amount_returned)}` : ''} · Due {fmtC(payingInvoice.amount_due ?? payingInvoice.grand_total)}</p>
               </div>
               <div>
                 <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Amount Paid (₹)</label>

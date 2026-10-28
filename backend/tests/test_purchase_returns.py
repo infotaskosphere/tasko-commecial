@@ -178,3 +178,36 @@ def test_sale_return_credit_note_reverses_through_its_own_entry(env):
         assert after["id"] == sale_entry["id"]
         assert await env.db.journal_entries.count_documents({"source_id": "cn1"}) == 1
     run(go())
+
+
+def test_gst_summary_nets_purchase_returns_and_documents_agree_with_ledger(env):
+    from datetime import date
+    import backend.accounting_ai.finix_metrics as fm
+
+    async def go():
+        await env.db.purchase_invoices.insert_one({
+            "id": "g1", "invoice_no": "BILL-G1", "company_id": env.cid, "supplier_name": "Acme Supplies",
+            "invoice_date": "2026-10-01", "grand_total": 11800.0, "total_gst": 1800.0, "taxable_amount": 10000.0,
+            "cgst_amount": 900.0, "sgst_amount": 900.0, "igst_amount": 0.0,
+            "status": "outstanding", "amount_paid": 0.0, "amount_due": 11800.0, "created_by": "u1"})
+        await env.inv.sync_purchase_journal_entry("g1")
+        await env.pr.create_purchase_return("g1", _ret(cgst_amount=90, sgst_amount=90), USER)
+        summary = await fm.statutory_summary(env.cid, today=date(2026, 10, 28))
+        month = summary["gst"]["month"]
+        assert month["inward_taxable"] == 9000.0
+        assert month["inward_cgst"] == 810.0 and month["inward_sgst"] == 810.0
+        assert month["total_input_itc"] == 1620.0
+        assert month["document_check"]["input_gst_gl_vs_documents"] == 0.0
+    run(go())
+
+
+def test_payables_ageing_subtracts_returns(env):
+    import backend.accounting_extended as ae
+
+    async def go():
+        await _bill(env)
+        await env.pr.create_purchase_return("b1", _ret(), USER)
+        report = await ae.outstanding_payable(company_id=env.cid, as_of="2026-10-28", current_user=USER)
+        assert report["total_outstanding"] == 10620.0
+        assert report["rows"][0]["amount_returned"] == 1180.0
+    run(go())
