@@ -45,24 +45,12 @@ def test_bearer_token_reaches_the_inner_auth_layer_intact(monkeypatch):
     assert not any(type(value).__name__ == "Depends" for value in passed), "a Depends() placeholder leaked into the call"
 
 
-def test_entitlement_install_is_idempotent():
-    from backend import commercial_license_entitlement_compat as compat
+def test_entitlement_hydration_is_in_the_chain():
+    """License entitlement hydration sits directly under the module guard:
+    production_hardening's active-user check wraps the license-context step."""
+    from backend import commercial_tenant_scope, production_hardening
 
-    before = dependencies.get_current_user.__code__
-    compat.install()
-    compat.install()
-    assert dependencies.get_current_user.__code__ is before
-
-
-def test_entitlement_hydration_is_still_in_the_chain():
-    """The import-time install must remain wired into an inner auth layer."""
-    import sys
-
-    hydrated_layers = [
-        name for name, module in list(sys.modules.items())
-        if name.startswith("backend") and getattr(module, "__dict__", {}).get("_commercial_entitlement_patch_installed")
-    ]
-    assert hydrated_layers, "license entitlement hydration is not installed anywhere"
+    assert production_hardening._ORIGINAL_BASE_GET_CURRENT_USER is commercial_tenant_scope.get_current_user_with_license_context
 
 
 def test_activity_logger_forwards_credentials_to_two_argument_auth(monkeypatch):

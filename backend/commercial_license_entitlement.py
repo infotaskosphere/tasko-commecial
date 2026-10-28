@@ -1,9 +1,9 @@
 """License-authoritative entitlement hydration for commercial customer admins.
 
-This compatibility layer patches the existing authentication function *in place*
-so every FastAPI dependency that already captured ``get_current_user`` sees the
-same commercial-license hydration after login and hard refresh. No second auth
-path is introduced.
+hydrate_license_entitlements() runs on every authenticated request, called by
+commercial_tenant_scope.get_current_user_with_license_context. (Formerly
+commercial_license_entitlement_compat, which transplanted this step into the
+auth function's code object at import time.)
 
 Module selection and page selection are independent: a purchased module only
 sets the module switch; individual page permissions come exclusively from the
@@ -11,7 +11,6 @@ license ``selected_features`` map.
 """
 from __future__ import annotations
 
-import types
 from datetime import datetime, timezone
 from typing import Any
 
@@ -229,73 +228,4 @@ async def _hydrate(user: Any):
     return type(user).model_validate(data)
 
 
-_commercial_entitlement_base_get_current_user = None
-_commercial_entitlement_hydrate = _hydrate
-
-# Process-wide guard. Hydration must be transplanted into the auth chain exactly
-# once: every later auth layer wraps the function object patched here, so the
-# hydration remains on every request path. A second transplant onto an outer
-# layer is not only redundant, it previously replaced the public
-# ``(request, credentials)`` dependency with a one-argument body, which made
-# FastAPI's keyword call raise TypeError (HTTP 500 on all protected routes) and
-# shifted the bearer token into the ``request`` slot (HTTP 401 on direct calls).
-_INSTALLED = False
-
-
-async def _patched_get_current_user(credentials):
-    user = await _commercial_entitlement_base_get_current_user(credentials)
-    try:
-        return await _commercial_entitlement_hydrate(user)
-    except Exception:
-        return user
-
-
-async def _patched_get_current_user_with_request(request, credentials):
-    user = await _commercial_entitlement_base_get_current_user(request, credentials)
-    try:
-        return await _commercial_entitlement_hydrate(user)
-    except Exception:
-        return user
-
-
-def _accepts_request(func) -> bool:
-    return "request" in func.__code__.co_varnames[: func.__code__.co_argcount]
-
-
-def install() -> None:
-    """Transplant entitlement hydration into the current auth function once.
-
-    The transplanted body always has the same positional signature as the
-    function it replaces, because route modules (and FastAPI's cached
-    dependency graphs) have already captured that function object and call it
-    with its original parameters.
-    """
-    global _INSTALLED
-    if _INSTALLED:
-        return
-    current = _dependencies.get_current_user
-    if getattr(current, "_commercial_entitlement_hydration", False):
-        _INSTALLED = True
-        return
-
-    base = types.FunctionType(current.__code__, current.__globals__, current.__name__, current.__defaults__, current.__closure__)
-    base.__kwdefaults__ = current.__kwdefaults__
-    replacement = _patched_get_current_user_with_request if _accepts_request(current) else _patched_get_current_user
-    if replacement.__code__.co_varnames[: replacement.__code__.co_argcount] != current.__code__.co_varnames[: current.__code__.co_argcount]:
-        # Never change a captured dependency's parameter names; FastAPI calls
-        # it by keyword. Leave authentication intact rather than breaking it.
-        _INSTALLED = True
-        return
-
-    target_globals = current.__globals__
-    target_globals["_commercial_entitlement_base_get_current_user"] = base
-    target_globals["_commercial_entitlement_hydrate"] = _hydrate
-    target_globals["_commercial_entitlement_patch_installed"] = True
-
-    current.__code__ = replacement.__code__
-    current.__kwdefaults__ = base.__kwdefaults__
-    current._commercial_entitlement_hydration = True
-    _INSTALLED = True
-
-
-install()
+hydrate_license_entitlements = _hydrate

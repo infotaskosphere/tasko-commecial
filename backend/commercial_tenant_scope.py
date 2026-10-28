@@ -44,6 +44,67 @@ def authenticated_customer_id() -> str | None:
     return _current_customer_id.get()
 
 
+# The authenticated customer's active license id. Legacy license-generated
+# company records may carry only license_id (no commercial_customer_id); they
+# are visible to the customer whose active license they belong to.
+# (Formerly commercial_legacy_company_scope_compat.)
+_current_license_id: ContextVar[str | None] = ContextVar("taskosphere_commercial_license_id", default=None)
+
+
+def current_license_id() -> str | None:
+    return _current_license_id.get()
+
+
+async def _resolve_license_id(user: Any, customer_id: str | None) -> str | None:
+    direct = str(getattr(user, "license_id", "") or "").strip()
+    if direct:
+        return direct
+    if not customer_id:
+        return None
+    raw_db = getattr(_dependencies, "_raw_db", _dependencies.db)
+    doc = await raw_db.commercial_licenses.find_one(
+        {"customer_id": customer_id, "status": "active"},
+        {"_id": 0, "id": 1},
+        sort=[("issued_at", -1)],
+    )
+    return str((doc or {}).get("id") or "").strip() or None
+
+
+def _company_scope_query(query: Any) -> dict[str, Any]:
+    """Companies visible to the authenticated customer: its own, plus legacy
+    records linked by its active license, never an owner workspace."""
+    customer_id = authenticated_customer_id()
+    license_id = current_license_id()
+    if not customer_id or in_platform_owner_context():
+        return dict(query or {})
+
+    base = dict(query or {})
+    requested = base.get("commercial_customer_id")
+    if requested is not None and str(requested) != customer_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cross-licensee access is not permitted")
+
+    ownership = {
+        "$and": [
+            {
+                "$or": [
+                    {"commercial_customer_id": customer_id},
+                    {"id": customer_id},
+                    *([{"license_id": license_id}] if license_id else []),
+                ]
+            },
+            # Never admit an owner workspace because stale customer/license
+            # markers happen to match this licensee.
+            {"is_platform_owner_workspace": {"$ne": True}},
+        ]
+    }
+    return {"$and": [base, ownership]} if base else ownership
+
+
+def _licensee_companies(collection) -> bool:
+    """A companies read by a licensee: answered by _company_scope_query alone."""
+    return collection._name == "companies" and bool(authenticated_customer_id()) and not in_platform_owner_context()
+
+
 def _is_owner_context() -> bool:
     return bool(in_platform_owner_context())
 
@@ -645,6 +706,27 @@ async def get_current_user_with_customer_scope(
     return await _apply_live_license_permissions(user, customer_id)
 
 
+async def get_current_user_with_license_context(
+    credentials=Depends(_dependencies.security),
+):
+    """Customer scope, then the active-license context and the license
+    entitlement hydration. This is the function installed as
+    dependencies.get_current_user; the module, session and control-plane
+    guards wrap it."""
+    from backend.commercial_license_entitlement import hydrate_license_entitlements
+
+    user = await get_current_user_with_customer_scope(credentials)
+    customer_id = authenticated_customer_id()
+    if is_platform_owner(user) or not customer_id:
+        _current_license_id.set(None)
+    else:
+        _current_license_id.set(await _resolve_license_id(user, customer_id))
+    try:
+        return await hydrate_license_entitlements(user)
+    except Exception:
+        return user
+
+
 def _install_collection_overrides() -> None:
     if getattr(TenantAwareCollection, "_commercial_customer_scope_installed", False):
         return
@@ -671,21 +753,29 @@ def _install_collection_overrides() -> None:
         return original_registry_enabled(self)
 
     def find(self, query=None, *args, **kwargs):
+        if _licensee_companies(self):
+            return self._collection.find(_company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return original_find(self, query, *args, **kwargs)
 
     async def find_one(self, query=None, *args, **kwargs):
+        if _licensee_companies(self):
+            return await self._collection.find_one(_company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return await original_find_one(self, query, *args, **kwargs)
 
     async def count_documents(self, query=None, *args, **kwargs):
+        if _licensee_companies(self):
+            return await self._collection.count_documents(_company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return await original_count(self, query, *args, **kwargs)
 
     async def distinct(self, key, query=None, *args, **kwargs):
+        if _licensee_companies(self):
+            return await self._collection.distinct(key, _company_scope_query(query), *args, **kwargs)
         if _customer_scoped_collection(self._name):
             query = _customer_query(self._name, query)
         return await original_distinct(self, key, query, *args, **kwargs)
@@ -746,6 +836,10 @@ def _install_collection_overrides() -> None:
         return await original_delete_many(self, query, *args, **kwargs)
 
     def aggregate(self, pipeline, *args, **kwargs):
+        if _licensee_companies(self):
+            pipeline = list(pipeline or [])
+            pipeline.insert(0, {"$match": _company_scope_query({})})
+            return self._collection.aggregate(pipeline, *args, **kwargs)
         if _customer_scoped_collection(self._name):
             customer_id = authenticated_customer_id()
             if customer_id and not _is_owner_context():
@@ -788,8 +882,8 @@ def _install_collection_overrides() -> None:
 
 def install() -> None:
     _install_collection_overrides()
-    if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_customer_scope":
-        _dependencies.get_current_user = get_current_user_with_customer_scope
+    if getattr(_dependencies.get_current_user, "__name__", "") != "get_current_user_with_license_context":
+        _dependencies.get_current_user = get_current_user_with_license_context
 
 
 install()

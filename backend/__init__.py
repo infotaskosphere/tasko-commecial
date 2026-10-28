@@ -12,16 +12,7 @@ import backend.admin_identity_compat  # noqa: F401
 # companies from the Platform Owner and every other licensee.
 import backend.commercial_tenant_scope  # noqa: F401
 
-# Legacy license-generated company records may carry the license id without
-# the newer commercial_customer_id field. Expose only those records belonging
-# to the authenticated customer's active license and normalize them when used.
-import backend.commercial_legacy_company_scope_compat  # noqa: F401
 
-# Resolve the final commercial admin permissions from the customer's ONE active
-# license. This is customer-level, not legal-company-level, so all companies
-# under the same license inherit the purchased modules while other licensees
-# remain isolated.
-import backend.commercial_license_entitlement_compat  # noqa: F401
 
 # Install the commercial tenant module cap before route modules import
 # get_current_user. Internal admins remain unrestricted; licensed company

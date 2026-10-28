@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from backend import commercial_tenant_scope as tenant_scope
 from backend import quotations
-from backend import commercial_legacy_company_scope_compat as legacy_scope
+from backend import commercial_tenant_scope as legacy_scope
 
 
 class _Cursor:
