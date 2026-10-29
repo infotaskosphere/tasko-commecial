@@ -382,7 +382,7 @@ export default function EmailConfigTab() {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Server size={16} className="text-[#1F6FB2]" /> Section A: Email Provider Architecture
+                <Server size={16} className="text-[#1F6FB2]" /> Manual provider
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Switch providers transparently without modifying business logic. Secrets are never exposed to frontend code.
@@ -452,10 +452,10 @@ export default function EmailConfigTab() {
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
           <div className="border-b border-slate-100 pb-3">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Mail size={16} className="text-[#1F6FB2]" /> Section B: Sender & Branding Defaults
+              <Mail size={16} className="text-[#1F6FB2]" /> Sender name & reply address
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Default FROM name and mailbox used on all outgoing security alerts, invitations, and license events.
+              The name people see on platform emails, the address they come from and where replies go. With a connected account, mail is sent from that account; to send from a different address, use “Change account” above.
             </p>
           </div>
 
@@ -510,7 +510,7 @@ export default function EmailConfigTab() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Server size={16} className="text-[#1F6FB2]" /> Section C: SMTP Connection Details
+                <Server size={16} className="text-[#1F6FB2]" /> SMTP server details
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Host, Port, and authenticated credentials for your standard SMTP mail provider.
@@ -600,7 +600,7 @@ export default function EmailConfigTab() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Key size={16} className="text-[#1F6FB2]" /> Section D: SendGrid REST API Credentials
+                <Key size={16} className="text-[#1F6FB2]" /> SendGrid API key
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 SendGrid API Key requires Mail Send full permissions. Sender verification must be completed in SendGrid console.
@@ -632,7 +632,7 @@ export default function EmailConfigTab() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Key size={16} className="text-[#1F6FB2]" /> Section D: Brevo (Sendinblue) API Credentials
+                <Key size={16} className="text-[#1F6FB2]" /> Brevo API key
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 Preserves backward compatibility with legacy Brevo email relay keys.
@@ -664,10 +664,10 @@ export default function EmailConfigTab() {
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         <div className="border-b border-slate-100 pb-3">
           <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-            <Send size={16} className="text-[#1F6FB2]" /> Section E: Dispatch Verification & Diagnostic Test
+            <Send size={16} className="text-[#1F6FB2]" /> Send a test email
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Send an immediate live diagnostic test message to confirm socket connection, TLS handshake, and sender authenticity.
+            Send one email to any address to check that the sending account works.
           </p>
         </div>
 
