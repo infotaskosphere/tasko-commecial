@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { AGENT_URL as DESKTOP_AGENT_URL, agentEnabledInThisBrowser, disconnectAgent } from './desktopAgent';
 
 /**
  * agentAutoAuth.js
@@ -15,7 +16,8 @@ import axios from 'axios';
  * This runs silently in the background. User never sees it.
  */
 
-const AGENT_URL = (import.meta.env?.VITE_DSC_AGENT_URL || 'http://localhost:7432').replace(/\/+$/, '');
+// 127.0.0.1, not localhost: the agent binds IPv4 only and localhost can resolve to ::1.
+const AGENT_URL = DESKTOP_AGENT_URL;
 const AUTH_ENDPOINT = '/api/auth';
 const DEBUG_AGENT_AUTO_AUTH =
   import.meta.env?.VITE_DEBUG_AGENT_AUTOAUTH === 'true' ||
@@ -111,6 +113,8 @@ export function isAgentAuthed() {
 export function resetAgentAuth() {
   isAuthed = false;
   lastAuthTime = 0;
+  // Sign the agent out too, so it stops reporting for this user.
+  if (agentEnabledInThisBrowser()) disconnectAgent();
 }
 
 /**
@@ -136,7 +140,11 @@ export async function autoAuthenticateAgent(token, userId) {
     import.meta.env?.VITE_ENABLE_DESKTOP_AGENT === "true" ||
     (typeof window !== 'undefined' && window.__TASKOSPHERE_ENABLE_DESKTOP_AGENT__ === true);
 
-  if (!isLocalHost || !isExplicitlyEnabled) {
+  // Contact the agent only where the user installed/connected it (Settings >
+  // Desktop Agent remembers that per browser), or in local development with
+  // the explicit flag. Probing 127.0.0.1 for everyone would make Chrome ask
+  // every user for local-network permission.
+  if (!agentEnabledInThisBrowser() && !(isLocalHost && isExplicitlyEnabled)) {
     return false;
   }
 

@@ -827,6 +827,15 @@ function UsbDscPopup({ device, isDark, onDismiss, onSaved, clients = [] }) {
                     <p style={{ margin: '0 0 4px', fontSize: 11, color: '#d97706', fontWeight: 700 }}>
                       🪟 Auto-read failed — upload your certificate file instead
                     </p>
+                    {!agentConnected ? (
+                      <p style={{ margin: '0 0 6px', fontSize: 10, color: isDark ? '#c7d2fe' : '#4338ca', lineHeight: 1.6 }}>
+                        Reads tokens automatically on Windows:{' '}
+                        <a href="/settings/desktop-agent" target="_blank" rel="noopener" style={{ fontWeight: 700, textDecoration: 'underline' }}>
+                          install the Taskosphere Desktop Agent
+                        </a>
+                        , then click Fetch Data again.
+                      </p>
+                    ) : null}
                     <p style={{ margin: '0 0 6px', fontSize: 10, color: isDark ? '#fde68a' : '#92400e', lineHeight: 1.6 }}>
                       Export from <strong>mToken Manager</strong> → Certificate tab → <strong>Export</strong> → save as <code style={{ background: isDark ? '#1e1b4b' : '#e0e7ff', padding: '1px 4px', borderRadius: 3 }}>.cer</code>, then upload:
                     </p>
