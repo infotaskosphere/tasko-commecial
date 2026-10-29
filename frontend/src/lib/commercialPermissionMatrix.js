@@ -371,6 +371,9 @@ export function canAccessPath(user, pathname) {
   // administration surfaces linked to the entire app, not separately purchased operational modules.
   // Keep them reachable even when the tenant buys only one module.
   const normalizedPath = String(pathname || "").split("?", 1)[0];
+  // Every signed-in user installs/connects the Desktop Agent on their own PC
+  // (DSC reading, activity); it is not an admin setting or a licensed module.
+  if (normalizedPath === "/settings/desktop-agent") return true;
   // Tenant-wide administration pages are not purchased operational modules.
   // Use the shared allowlist here so Settings child pages, including Message
   // Automation, retain consistent access for authenticated licensee admins.
