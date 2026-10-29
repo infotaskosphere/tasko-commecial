@@ -8,10 +8,13 @@ from typing import Any, Dict, List, Optional
 
 from backend.dependencies import db
 from backend.email_service.models import EmailDeliveryLog, EmailProviderConfig, MaskedEmailConfig
-from backend.email_service.providers import BaseEmailProvider, BrevoProvider, SMTPProvider, SendGridProvider
+from backend.email_service.providers import BaseEmailProvider, BrevoProvider, ConnectedAccountProvider, SMTPProvider, SendGridProvider
 from backend.email_service.templates import SYSTEM_TEMPLATES, render_template
 
 logger = logging.getLogger("email_service")
+
+# provider_type values for accounts connected by sign-in → the account kind.
+OAUTH_PROVIDER_TYPES = {"google_oauth": "google", "microsoft_oauth": "microsoft"}
 
 
 class CentralEmailService:
@@ -116,7 +119,69 @@ class CentralEmailService:
             "last_email_sent_at": cfg.get("last_email_sent_at"),
             "last_email_failed_at": cfg.get("last_email_failed_at"),
             "last_email_error": cfg.get("last_email_error"),
+            "connected_account": self._connected_account(cfg),
         }
+
+    @staticmethod
+    def _connected_account(cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """The mailbox connected by account (sign-in or auto-detected password), if any."""
+        ptype = str(cfg.get("provider_type") or "").lower()
+        if ptype in OAUTH_PROVIDER_TYPES and cfg.get("oauth_email"):
+            return {"kind": OAUTH_PROVIDER_TYPES[ptype], "email": cfg.get("oauth_email"), "connected_at": cfg.get("connected_at")}
+        if ptype == "smtp" and cfg.get("connected_via") == "auto" and cfg.get("smtp_username"):
+            return {"kind": "password", "email": cfg.get("from_email") or cfg.get("smtp_username"),
+                    "provider_label": cfg.get("connected_provider_label"), "connected_at": cfg.get("connected_at")}
+        return None
+
+    async def save_connected_account(self, provider_type: str, *, email: str, refresh_token: Optional[str] = None,
+                                     smtp: Optional[Dict[str, Any]] = None, password: Optional[str] = None,
+                                     updated_by: str = "admin") -> Dict[str, Any]:
+        """Make a connected mailbox the platform sender (Google/Microsoft sign-in or auto SMTP)."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        current = await self.get_raw_config()
+        fields: Dict[str, Any] = {
+            "provider_type": provider_type,
+            "from_email": email,
+            "is_enabled": True,
+            "connected_at": now_iso,
+            "updated_at": now_iso,
+            "updated_by": updated_by,
+            "last_test_error": None,
+            "last_email_error": None,
+        }
+        if provider_type in OAUTH_PROVIDER_TYPES:
+            from backend.engagex.common import encrypt_secret
+
+            fields.update({"oauth_email": email, "oauth_refresh_token_enc": encrypt_secret(refresh_token or ""),
+                           "connected_via": OAUTH_PROVIDER_TYPES[provider_type]})
+        else:
+            smtp = smtp or {}
+            fields.update({
+                "smtp_host": smtp.get("host"), "smtp_port": int(smtp.get("port") or 587),
+                "smtp_use_ssl": smtp.get("security") == "ssl", "smtp_use_tls": smtp.get("security") == "starttls",
+                "smtp_username": smtp.get("username") or email, "smtp_password": password or "",
+                "connected_via": "auto", "connected_provider_label": smtp.get("provider_label"),
+            })
+        await db.email_system_settings.update_one(
+            {"type": "central_email_config"}, {"$set": {**current, **fields}}, upsert=True)
+        self._provider_cache = None
+        self._cached_config = None
+        return await self.get_masked_config()
+
+    async def disconnect_account(self, updated_by: str = "admin") -> Dict[str, Any]:
+        """Forget the connected mailbox; the service falls back to manual SMTP settings."""
+        current = await self.get_raw_config()
+        fields = {"oauth_email": None, "oauth_refresh_token_enc": None, "connected_via": None, "connected_at": None,
+                  "updated_at": datetime.now(timezone.utc).isoformat(), "updated_by": updated_by}
+        if str(current.get("provider_type") or "").lower() in OAUTH_PROVIDER_TYPES:
+            fields["provider_type"] = "smtp"
+        if current.get("connected_via") == "auto":
+            fields["smtp_password"] = ""
+        await db.email_system_settings.update_one(
+            {"type": "central_email_config"}, {"$set": {**current, **fields}}, upsert=True)
+        self._provider_cache = None
+        self._cached_config = None
+        return await self.get_masked_config()
 
     async def save_config(self, new_data: Dict[str, Any], updated_by: str = "admin") -> Dict[str, Any]:
         """Saves config preserving existing unedited masked secrets."""
@@ -163,6 +228,28 @@ class CentralEmailService:
         cfg = await self.get_raw_config()
         ptype = cfg.get("provider_type", "smtp").lower()
 
+        if ptype in OAUTH_PROVIDER_TYPES:
+            from backend.engagex.common import decrypt_secret
+
+            try:
+                refresh_token = decrypt_secret(cfg.get("oauth_refresh_token_enc") or "")
+            except Exception:
+                refresh_token = ""
+
+            async def _rotate(token: str) -> None:
+                from backend.engagex.common import encrypt_secret
+
+                await db.email_system_settings.update_one(
+                    {"type": "central_email_config"}, {"$set": {"oauth_refresh_token_enc": encrypt_secret(token)}})
+
+            return ConnectedAccountProvider(
+                kind=OAUTH_PROVIDER_TYPES[ptype],
+                refresh_token=refresh_token,
+                account_email=cfg.get("oauth_email") or cfg.get("from_email", ""),
+                default_from_name=cfg.get("from_name", "TaskoSphere"),
+                reply_to=cfg.get("reply_to"),
+                on_rotate=_rotate,
+            )
         if ptype == "sendgrid":
             return SendGridProvider(
                 api_key=cfg.get("sendgrid_api_key") or os.getenv("SENDGRID_API_KEY", ""),

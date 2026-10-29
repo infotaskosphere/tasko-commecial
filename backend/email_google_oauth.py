@@ -174,7 +174,7 @@ async def google_gmail_oauth_callback_with_saved_context(
 async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Query(None), state: Optional[str] = Query(None), error: Optional[str] = Query(None)):
     # EngageX MailMaster "Continue with Google" reuses this registered redirect
     # URI; its states are namespaced so the Email module flow is unaffected.
-    if state and state.startswith("exg."):
+    if state and state.startswith(("exg.", "pes.")):
         from backend.engagex.google_sender import handle_callback
 
         return await handle_callback(request, code=code, state=state, error=error)
@@ -407,3 +407,9 @@ _email._conn_doc_to_out = _conn_doc_to_out
 # email_integration already has the /email prefix. Mounting this router here
 # exposes exactly /api/email/oauth/google/start and /callback.
 _email.router.include_router(router)
+
+# "Continue with Microsoft" callback lives beside Google's:
+# /api/email/oauth/microsoft/callback (see backend.mail_connect_routes).
+from backend.mail_connect_routes import router as _microsoft_router  # noqa: E402
+
+_email.router.include_router(_microsoft_router)

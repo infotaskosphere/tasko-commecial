@@ -36,6 +36,8 @@ from .common import SENDERS, company_profile, decrypt_secret, encrypt_secret, is
 logger = logging.getLogger("engagex.google")
 
 STATE_PREFIX = "exg."
+PLATFORM_STATE_PREFIX = "pes."  # Commercial Console platform email service
+PLATFORM_RETURN_PATH = "/master-console?tab=email-config"
 STATES = "engagex_oauth_states"
 GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", GMAIL_SEND_SCOPE]
@@ -78,7 +80,8 @@ def _frontend_return_url(request: Request, return_path: Optional[str]) -> str:
     return f"{origin}{path}" if origin else path
 
 
-async def start(request: Request, user: Any, company_id: str, return_path: Optional[str]) -> str:
+async def start(request: Request, user: Any, company_id: str, return_path: Optional[str], *, platform: bool = False,
+                login_hint: Optional[str] = None) -> str:
     from backend.email_google_oauth import _redirect_uri
 
     redirect_uri = _redirect_uri(request)
@@ -91,17 +94,19 @@ async def start(request: Request, user: Any, company_id: str, return_path: Optio
             "EngageX Google sign-in: GOOGLE_EMAIL_REDIRECT_URI host %s differs from this server %s; "
             "Google will return users to %s. Expected https://%s/api/email/oauth/google/callback",
             redirect_host, this_host, redirect_uri, this_host)
-    state = STATE_PREFIX + secrets.token_urlsafe(32)
+    state = (PLATFORM_STATE_PREFIX if platform else STATE_PREFIX) + secrets.token_urlsafe(32)
     flow = _flow(redirect_uri, state)
+    extra = {"login_hint": login_hint} if login_hint else {}
     auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="false",
-                                         prompt="consent select_account", state=state)
+                                         prompt="consent select_account", state=state, **extra)
     await raw_db()[STATES].insert_one({
         "state": state,
         "company_id": company_id,
         "user_id": str(getattr(user, "id", "")),
         "redirect_uri": redirect_uri,
         "code_verifier": getattr(flow, "code_verifier", None),
-        "return_url": _frontend_return_url(request, return_path),
+        "return_url": (_frontend_return_url(request, return_path or PLATFORM_RETURN_PATH) if platform
+                       else _frontend_return_url(request, return_path)),
         "created_at": iso(),
         "expires_at": iso(utcnow() + STATE_TTL),
     })
@@ -125,7 +130,7 @@ async def _fetch_email(access_token: str) -> Optional[str]:
 
 async def handle_callback(request: Request, *, code: Optional[str], state: str, error: Optional[str]) -> RedirectResponse:
     doc = await raw_db()[STATES].find_one_and_delete({"state": state})
-    fallback = _frontend_return_url(request, "/engagex/mailmaster")
+    fallback = _frontend_return_url(request, PLATFORM_RETURN_PATH if state.startswith(PLATFORM_STATE_PREFIX) else "/engagex/mailmaster")
     if not doc:
         return _result(fallback, "error", reason="The Google sign-in expired. Please try again.")
     return_url = doc.get("return_url") or fallback
@@ -149,6 +154,12 @@ async def handle_callback(request: Request, *, code: Optional[str], state: str, 
         email = await _fetch_email(creds.token)
         if not email:
             return _result(return_url, "error", reason="Could not read the Google account's email address.")
+        if state.startswith(PLATFORM_STATE_PREFIX):
+            from backend.email_service.service import email_service
+
+            await email_service.save_connected_account(
+                "google_oauth", email=email, refresh_token=creds.refresh_token, updated_by=doc.get("user_id") or "oauth")
+            return _result(return_url, "connected", email=email)
         company_id = doc["company_id"]
         profile = await company_profile(company_id)
         now = iso()

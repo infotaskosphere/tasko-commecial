@@ -964,3 +964,102 @@ async def trigger_user_welcome_email(
         details=f"Admin {user.email} sent welcome email to {email}.",
     )
     return {"status": "success", "message": f"Welcome email dispatched to {email}."}
+
+
+# ── Connect the platform email service by account ────────────────────────────
+# "Continue with Google", "Continue with Microsoft", or any address + password
+# with the mail server found automatically — no SMTP settings to look up.
+class PlatformConnectStartIn(BaseModel):
+    login_hint: Optional[str] = Field(None, max_length=254)
+    return_path: str = Field("/master-console?tab=email-config", max_length=300)
+
+
+class PlatformConnectPasswordIn(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=1, max_length=512)
+    host: Optional[str] = Field(None, max_length=255)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    security: Optional[str] = Field(None, pattern="^(starttls|ssl|none)$")
+    username: Optional[str] = Field(None, max_length=254)
+
+
+def _require_email_settings_edit(user: User) -> None:
+    require_platform_owner_action(user, "can_view_platform_settings", "edit")
+
+
+async def _log_email_connect(user: User, details: str) -> None:
+    await AuditSecurity.log_security_event(
+        event_type="email_config_updated",
+        actor_id=str(user.id),
+        company_id=str(getattr(user, "company_id", "") or ""),
+        severity="warning",
+        details=details,
+    )
+
+
+@router.get("/email/connect/detect")
+async def detect_platform_mailbox(email: str, user: User = Depends(require_commercial_admin)):
+    from backend import mail_connect
+
+    if "@" not in str(email or ""):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    info = await mail_connect.detect(email.strip())
+    info["microsoft_available"] = mail_connect.microsoft_configured()
+    return info
+
+
+@router.get("/email/connect/options")
+async def platform_connect_options(request: Request, user: User = Depends(require_commercial_admin)):
+    from backend import mail_connect
+    from backend.email_google_oauth import _redirect_uri
+
+    return {
+        "google_available": bool((os.getenv("GOOGLE_CLIENT_ID") or "").strip() and (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()),
+        "google_redirect_uri": _redirect_uri(request),
+        "microsoft_available": mail_connect.microsoft_configured(),
+        "microsoft_redirect_uri": mail_connect.microsoft_redirect_uri(request),
+    }
+
+
+@router.post("/email/connect/google/start")
+async def start_platform_google(body: PlatformConnectStartIn, request: Request, user: User = Depends(require_commercial_admin)):
+    _require_email_settings_edit(user)
+    from backend.engagex.google_sender import start
+
+    url = await start(request, user, str(getattr(user, "company_id", "") or ""), body.return_path,
+                      platform=True, login_hint=(body.login_hint or "").strip().lower() or None)
+    return {"auth_url": url}
+
+
+@router.post("/email/connect/microsoft/start")
+async def start_platform_microsoft(body: PlatformConnectStartIn, request: Request, user: User = Depends(require_commercial_admin)):
+    _require_email_settings_edit(user)
+    from backend import mail_connect
+
+    return_url = mail_connect.frontend_return_url(request, body.return_path, "/master-console?tab=email-config")
+    url = await mail_connect.microsoft_start(request, prefix="pes.", company_id=str(getattr(user, "company_id", "") or ""),
+                                             user_id=str(user.id), return_url=return_url,
+                                             login_hint=(body.login_hint or "").strip().lower() or None)
+    return {"auth_url": url}
+
+
+@router.post("/email/connect/password")
+async def connect_platform_password(body: PlatformConnectPasswordIn, user: User = Depends(require_commercial_admin)):
+    _require_email_settings_edit(user)
+    from backend import mail_connect
+
+    email = body.email.strip().lower()
+    manual = {"host": body.host, "port": body.port or 587, "security": body.security or "starttls"} if (body.host or "").strip() else None
+    cfg = await mail_connect.auto_smtp(email, body.password, manual=manual, username=body.username or None)
+    config = await email_service.save_connected_account("smtp", email=email, smtp=cfg, password=body.password.strip(),
+                                                        updated_by=str(user.id))
+    await _log_email_connect(user, f"Platform email connected by {user.email}: {email} via {cfg['host']}:{cfg['port']}")
+    return {"status": "success", "config": config}
+
+
+@router.post("/email/connect/disconnect")
+async def disconnect_platform_mailbox(user: User = Depends(require_commercial_admin)):
+    _require_email_settings_edit(user)
+    config = await email_service.disconnect_account(updated_by=str(user.id))
+    await _log_email_connect(user, f"Platform email account disconnected by {user.email}")
+    return {"status": "success", "config": config}

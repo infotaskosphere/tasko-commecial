@@ -382,3 +382,61 @@ class BrevoProvider(BaseEmailProvider):
             return {"status": "error", "message": f"Brevo check failed ({resp.status_code}): {resp.text}"}
         except Exception as e:
             return {"status": "error", "message": f"Brevo check error: {str(e)}"}
+
+
+class ConnectedAccountProvider(BaseEmailProvider):
+    """Sends as a mailbox connected with Google or Microsoft sign-in (no password stored).
+
+    ``kind`` is "google" (Gmail API) or "microsoft" (Microsoft Graph). The
+    message is always sent from the connected address; the configured from
+    name and Reply-To still apply.
+    """
+
+    def __init__(self, kind: str, refresh_token: str, account_email: str, default_from_name: str = "TaskoSphere",
+                 reply_to: Optional[str] = None, on_rotate=None):
+        self.kind = kind
+        self.name = "gmail" if kind == "google" else "outlook"
+        self.refresh_token = refresh_token
+        self.account_email = account_email
+        self.default_from_name = default_from_name or "TaskoSphere"
+        self.default_reply_to = reply_to
+        self.on_rotate = on_rotate
+
+    def _session(self):
+        if self.kind == "google":
+            from backend.engagex.google_sender import GmailSession
+
+            return GmailSession(self.refresh_token)
+        from backend.mail_connect import GraphSession
+
+        return GraphSession(self.refresh_token, on_rotate=self.on_rotate)
+
+    async def send(self, to_email: str, subject: str, body_plain: str, body_html: Optional[str] = None,
+                   from_name: Optional[str] = None, from_email: Optional[str] = None, reply_to: Optional[str] = None,
+                   attachments: Optional[List[Dict[str, Any]]] = None) -> bool:
+        from backend.mail_connect import build_simple_mime
+
+        if not self.refresh_token:
+            raise RuntimeError("The connected email account needs to be reconnected in Commercial Console → Email Settings.")
+        message = build_simple_mime(
+            from_name=from_name or self.default_from_name, from_email=self.account_email, to_email=to_email,
+            subject=subject, body_plain=body_plain, body_html=body_html,
+            reply_to=reply_to or self.default_reply_to, attachments=attachments)
+        session = self._session()
+        try:
+            await session.send(self.account_email, to_email, message)
+        finally:
+            await session.close()
+        return True
+
+    async def verify_connection(self) -> Dict[str, Any]:
+        if not self.refresh_token:
+            return {"status": "error", "message": "No account is connected. Connect one in Email Settings."}
+        session = self._session()
+        try:
+            await session._access_token(force=True)
+            return {"status": "success", "message": f"Connected as {self.account_email}"}
+        except Exception as exc:
+            return {"status": "error", "message": str(exc)}
+        finally:
+            await session.close()

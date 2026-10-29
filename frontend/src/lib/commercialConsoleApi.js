@@ -71,6 +71,44 @@ export async function getEmailStats() {
   return res.data;
 }
 
+// Connect the platform email service by account (Google / Microsoft sign-in,
+// or any address + password with the mail server found automatically).
+const EMAIL_CONNECT_RETURN = "/master-console?tab=email-config";
+
+export async function getEmailConnectOptions() {
+  const res = await api.get("/commercial-console/email/connect/options");
+  return res.data;
+}
+
+export async function detectPlatformMailbox(email) {
+  const res = await api.get("/commercial-console/email/connect/detect", { params: { email } });
+  return res.data;
+}
+
+export async function startPlatformGoogle(loginHint = null) {
+  const res = await api.post("/commercial-console/email/connect/google/start", { login_hint: loginHint, return_path: EMAIL_CONNECT_RETURN });
+  return res.data;
+}
+
+export async function startPlatformMicrosoft(loginHint = null) {
+  const res = await api.post("/commercial-console/email/connect/microsoft/start", { login_hint: loginHint, return_path: EMAIL_CONNECT_RETURN });
+  return res.data;
+}
+
+export async function connectPlatformPassword({ email, password, advanced }) {
+  const res = await api.post("/commercial-console/email/connect/password", {
+    email, password,
+    host: advanced?.host || null, port: advanced?.host ? advanced.port : null,
+    security: advanced?.host ? advanced.security : null, username: advanced?.username || null,
+  }, { timeout: 120000 });
+  return res.data;
+}
+
+export async function disconnectPlatformMailbox() {
+  const res = await api.post("/commercial-console/email/connect/disconnect");
+  return res.data;
+}
+
 // ── Email Templates ──────────────────────────────────────────────────────────
 export async function getEmailTemplates() {
   const res = await api.get("/commercial-console/email/templates");

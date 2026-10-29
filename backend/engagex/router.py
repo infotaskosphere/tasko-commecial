@@ -972,6 +972,7 @@ def _public_sender(doc: dict) -> dict:
         "security": doc.get("security"),
         "username": mask_email(doc.get("username") or "") if "@" in str(doc.get("username") or "") else doc.get("username"),
         "has_password": bool(doc.get("password_enc")),
+        "provider": doc.get("provider"),
         "is_default": bool(doc.get("is_default")),
         "verified_at": doc.get("verified_at"),
         "last_error": doc.get("last_error"),
@@ -1078,8 +1079,8 @@ async def update_sender(sender_id: str, body: SenderIn, current_user: User = Dep
     from .mailer import verify_smtp
 
     existing = await _sender_doc(company_id, sender_id)
-    if existing.get("kind") == "google":
-        raise HTTPException(status_code=400, detail="Google accounts are managed by Google sign-in. Reconnect instead.")
+    if existing.get("kind") in ("google", "microsoft"):
+        raise HTTPException(status_code=400, detail="This account is connected by sign-in. Reconnect it instead.")
     password = body.password or decrypt_secret(existing.get("password_enc") or "")
     username = (body.username or body.from_email).strip()
     cfg = {"host": body.smtp_host.strip(), "port": body.smtp_port, "security": body.security, "username": username, "password": password}
@@ -1123,6 +1124,30 @@ async def delete_sender(sender_id: str, current_user: User = Depends(get_current
 
 class GoogleStartIn(BaseModel):
     return_path: str = Field("/engagex/mailmaster", max_length=300)
+    login_hint: Optional[str] = Field(None, max_length=254)
+
+
+class AdvancedSmtpIn(BaseModel):
+    host: str = Field("", max_length=255)
+    port: int = Field(587, ge=1, le=65535)
+    security: Literal["starttls", "ssl", "none"] = "starttls"
+    username: Optional[str] = Field(None, max_length=254)
+
+
+class ConnectMailboxIn(BaseModel):
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=1, max_length=512)
+    from_name: Optional[str] = Field(None, max_length=120)
+    label: Optional[str] = Field(None, max_length=120)
+    advanced: Optional[AdvancedSmtpIn] = None
+
+    @field_validator("email")
+    @classmethod
+    def _valid_email(cls, value: str) -> str:
+        email = normalize_email(value)
+        if not email:
+            raise ValueError("Enter a valid email address.")
+        return email
 
 
 class SenderProfileIn(BaseModel):
@@ -1141,7 +1166,53 @@ async def start_google_sender(body: GoogleStartIn, request: Request, current_use
     company_id = workspace_company_id(current_user)
     from .google_sender import start
 
-    return {"auth_url": await start(request, current_user, company_id, body.return_path)}
+    return {"auth_url": await start(request, current_user, company_id, body.return_path, login_hint=normalize_email(body.login_hint) or None)}
+
+
+@router.post("/mail/senders/microsoft/start")
+async def start_microsoft_sender(body: GoogleStartIn, request: Request, current_user: User = Depends(get_current_user)):
+    """Begin "Continue with Microsoft" (Outlook.com, Hotmail, Microsoft 365)."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    from backend import mail_connect
+
+    return_url = mail_connect.frontend_return_url(request, body.return_path, "/engagex/mailmaster?tab=senders")
+    url = await mail_connect.microsoft_start(request, prefix="exm.", company_id=workspace_company_id(current_user),
+                                             user_id=str(current_user.id), return_url=return_url,
+                                             login_hint=normalize_email(body.login_hint) or None)
+    return {"auth_url": url}
+
+
+@router.get("/mail/senders/detect")
+async def detect_mailbox(email: str, current_user: User = Depends(get_current_user)):
+    """Which provider hosts this address, and whether it connects by sign-in or password."""
+    require_page(current_user, PAGE_MAIL)
+    from backend import mail_connect
+
+    address = normalize_email(email)
+    if not address:
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    info = await mail_connect.detect(address)
+    info["microsoft_available"] = mail_connect.microsoft_configured()
+    return info
+
+
+@router.post("/mail/senders/connect")
+async def connect_mailbox(body: ConnectMailboxIn, current_user: User = Depends(get_current_user)):
+    """Add any mailbox with just its address and password; server settings are found automatically."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    company_id = workspace_company_id(current_user)
+    from backend import mail_connect
+    from .connected_senders import save_smtp_sender
+
+    manual = body.advanced.model_dump() if body.advanced and body.advanced.host.strip() else None
+    cfg = await mail_connect.auto_smtp(body.email, body.password, manual=manual,
+                                       username=(body.advanced.username if body.advanced else None) or None)
+    doc = await save_smtp_sender(company_id=company_id, user_id=str(current_user.id), email=body.email,
+                                 password=body.password, cfg=cfg, from_name=clean_text(body.from_name or "", 120) or None,
+                                 label=clean_text(body.label or "", 120) or None)
+    return _public_sender(doc)
 
 
 @router.get("/mail/senders/google/setup")
@@ -1152,6 +1223,7 @@ async def google_sender_setup(request: Request, current_user: User = Depends(get
     import os
     from urllib.parse import urlparse
     from backend.email_google_oauth import _redirect_uri
+    from backend import mail_connect as _mail_connect
 
     configured = bool((os.getenv("GOOGLE_EMAIL_REDIRECT_URI") or "").strip())
     redirect_uri = _redirect_uri(request)
@@ -1165,6 +1237,8 @@ async def google_sender_setup(request: Request, current_user: User = Depends(get
         "host_mismatch": bool(this_host and redirect_host and redirect_host != this_host.split(":")[0]),
         "client_configured": bool((os.getenv("GOOGLE_CLIENT_ID") or "").strip() and (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()),
         "scopes": ["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/gmail.send"],
+        "microsoft_configured": _mail_connect.microsoft_configured(),
+        "microsoft_redirect_uri": _mail_connect.microsoft_redirect_uri(request),
     }
 
 

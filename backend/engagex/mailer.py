@@ -47,7 +47,7 @@ class ResolvedSender:
     from_name: str
     from_email: str
     reply_to: Optional[str]
-    kind: str  # "platform" | "smtp" | "google"
+    kind: str  # "platform" | "smtp" | "google" | "microsoft"
     smtp: dict = field(default_factory=dict)
     oauth: dict = field(default_factory=dict)
 
@@ -153,15 +153,15 @@ async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedS
     doc = await raw_db()[SENDERS].find_one({"id": sender_id, "company_id": company_id, "deleted": {"$ne": True}})
     if not doc:
         raise HTTPException(status_code=404, detail="Email sender account not found.")
-    if doc.get("kind") == "google":
+    if doc.get("kind") in ("google", "microsoft"):
         return ResolvedSender(
             id=doc["id"],
             label=doc.get("label") or doc.get("from_email"),
             from_name=doc.get("from_name") or "",
             from_email=doc.get("from_email") or "",
             reply_to=normalize_email(doc.get("reply_to")) or None,
-            kind="google",
-            oauth={"refresh_token": decrypt_secret(doc.get("refresh_token_enc") or "")},
+            kind=doc["kind"],
+            oauth={"refresh_token": decrypt_secret(doc.get("refresh_token_enc") or ""), "company_id": company_id},
         )
     return ResolvedSender(
         id=doc["id"],
@@ -239,6 +239,16 @@ def open_session(sender: ResolvedSender):
         from .google_sender import GmailSession
 
         return GmailSession(sender.oauth.get("refresh_token") or "")
+    if sender.kind == "microsoft":
+        from backend.mail_connect import GraphSession
+        from .connected_senders import store_rotated_refresh_token
+
+        company_id, sender_id = sender.oauth.get("company_id") or "", sender.id
+
+        async def _rotate(token: str) -> None:
+            await store_rotated_refresh_token(company_id, sender_id, token)
+
+        return GraphSession(sender.oauth.get("refresh_token") or "", on_rotate=_rotate)
     return None
 
 

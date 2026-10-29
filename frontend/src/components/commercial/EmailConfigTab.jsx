@@ -8,8 +8,24 @@ import {
   getEmailConfig,
   updateEmailConfig,
   testEmailDispatch,
-  getEmailStats
+  getEmailStats,
+  getEmailConnectOptions,
+  detectPlatformMailbox,
+  startPlatformGoogle,
+  startPlatformMicrosoft,
+  connectPlatformPassword,
+  disconnectPlatformMailbox,
 } from "@/lib/commercialConsoleApi";
+import { ConnectAccountButtons, ConnectEmailDialog, GoogleMark, MicrosoftMark } from "@/components/email/ConnectEmailAccount";
+
+const platformMailboxApi = {
+  detect: detectPlatformMailbox,
+  startGoogle: (hint) => startPlatformGoogle(hint || null),
+  startMicrosoft: (hint) => startPlatformMicrosoft(hint || null),
+  connectPassword: connectPlatformPassword,
+};
+
+const PROVIDER_NAMES = { google_oauth: "Gmail (Google sign-in)", microsoft_oauth: "Outlook (Microsoft sign-in)", smtp: "SMTP", sendgrid: "SendGrid", brevo: "Brevo" };
 
 export default function EmailConfigTab() {
   const [loading, setLoading] = useState(true);
@@ -18,6 +34,10 @@ export default function EmailConfigTab() {
   const [testRecipient, setTestRecipient] = useState("");
   const [testResult, setTestResult] = useState(null);
   const [stats, setStats] = useState(null);
+  const [connected, setConnected] = useState(null);
+  const [connectOptions, setConnectOptions] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [showManual, setShowManual] = useState(false);
 
   const [form, setForm] = useState({
     enabled: true,
@@ -57,7 +77,33 @@ export default function EmailConfigTab() {
 
   useEffect(() => {
     loadConfig();
+    getEmailConnectOptions().then(setConnectOptions).catch(() => {});
+    // Back from Google / Microsoft sign-in.
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get("google") ? "google" : params.get("microsoft") ? "microsoft" : null;
+    if (key) {
+      const name = key === "google" ? "Google" : "Microsoft";
+      if (params.get(key) === "connected") {
+        toast.success(`${params.get("email") || `Your ${name} account`} is now the platform sender`);
+      } else {
+        toast.error(params.get("reason") || `${name} sign-in did not complete.`);
+      }
+      ["google", "microsoft", "email", "reason"].forEach((k) => params.delete(k));
+      const query = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    }
   }, []);
+
+  async function handleDisconnect() {
+    if (!window.confirm(`Disconnect ${connected?.email}? Platform emails will stop until another account is connected or manual settings are saved.`)) return;
+    try {
+      await disconnectPlatformMailbox();
+      toast.success("Email account disconnected");
+      loadConfig();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || err.message);
+    }
+  }
 
   async function loadConfig() {
     setLoading(true);
@@ -68,7 +114,7 @@ export default function EmailConfigTab() {
       ]);
       if (cfg) {
         setForm({
-          enabled: cfg.enabled ?? true,
+          enabled: cfg.is_enabled ?? cfg.enabled ?? true,
           provider_type: cfg.provider_type || "smtp",
           from_name: cfg.from_name || "TaskoSphere",
           from_email: cfg.from_email || "",
@@ -98,6 +144,7 @@ export default function EmailConfigTab() {
           last_email_failure_at: cfg.last_email_failure_at,
         });
       }
+      setConnected(cfg?.connected_account || null);
       if (st) setStats(st);
     } catch (err) {
       toast.error("Failed to load email settings: " + (err.response?.data?.detail || err.message));
@@ -110,7 +157,8 @@ export default function EmailConfigTab() {
     if (e) e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form };
+      const { enabled, ...rest } = form;
+      const payload = { ...rest, is_enabled: enabled };
       // Only send passwords/keys if user entered a new value
       if (!payload.smtp_password) delete payload.smtp_password;
       if (!payload.sendgrid_api_key) delete payload.sendgrid_api_key;
@@ -237,7 +285,7 @@ export default function EmailConfigTab() {
             {form.enabled ? "Online & Routing" : "Globally Disabled"}
           </div>
           <div className="text-[11px] text-slate-500 mt-1">
-            Provider: <strong className="uppercase text-slate-700">{form.provider_type}</strong>
+            Provider: <strong className="text-slate-700">{PROVIDER_NAMES[form.provider_type] || form.provider_type}</strong>
           </div>
         </div>
 
@@ -287,9 +335,50 @@ export default function EmailConfigTab() {
         </div>
       </div>
 
+      {/* Sending account: connect by account instead of server settings */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+        <div>
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Mail size={16} className="text-[#1F6FB2]" /> Sending account
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            The mailbox that sends alerts, invitations and licence emails. Sign in with Google or Microsoft, or enter any other address and its password — the mail server is found automatically.
+          </p>
+        </div>
+        {connected ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
+                {connected.kind === "google" ? <GoogleMark className="h-5 w-5" /> : connected.kind === "microsoft" ? <MicrosoftMark className="h-5 w-5" /> : <Mail size={20} className="text-slate-500" />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900 truncate">{connected.email}</p>
+                <p className="text-[11px] text-slate-500">
+                  {connected.kind === "google" ? "Connected with Google" : connected.kind === "microsoft" ? "Connected with Microsoft" : `Connected with password${connected.provider_label ? ` · ${connected.provider_label}` : ""}`}
+                  {connected.connected_at ? ` · ${new Date(connected.connected_at).toLocaleDateString()}` : ""}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setAdding(true)} className="px-3 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl">Change account</button>
+              <button type="button" onClick={handleDisconnect} className="px-3 py-2 border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-xs font-semibold rounded-xl">Disconnect</button>
+            </div>
+          </div>
+        ) : (
+          <ConnectAccountButtons api={platformMailboxApi} options={connectOptions} onOther={() => setAdding(true)} />
+        )}
+        {connected && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            <span>Switch to:</span>
+            <ConnectAccountButtons api={platformMailboxApi} options={connectOptions} onOther={() => setAdding(true)} />
+          </div>
+        )}
+        <ConnectEmailDialog open={adding} onOpenChange={setAdding} api={platformMailboxApi} askName={false} onConnected={loadConfig} />
+      </div>
+
       <form onSubmit={handleSave} className="space-y-8">
-        {/* Section A: Provider Selection */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+        {/* Section A: Provider Selection (manual setup) */}
+        {showManual && (<div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -357,6 +446,8 @@ export default function EmailConfigTab() {
           </div>
         </div>
 
+        )}
+
         {/* Section B: Sender Identity */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
           <div className="border-b border-slate-100 pb-3">
@@ -385,6 +476,8 @@ export default function EmailConfigTab() {
               <input
                 type="email"
                 value={form.from_email}
+                disabled={!!connected && connected.kind !== "password"}
+                title={connected && connected.kind !== "password" ? "Mail is sent from the connected account" : undefined}
                 onChange={(e) => setForm({ ...form, from_email: e.target.value })}
                 placeholder="noreply@taskosphere.com"
                 className="w-full text-xs px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:border-[#0D3B66]"
@@ -404,8 +497,16 @@ export default function EmailConfigTab() {
           </div>
         </div>
 
+        <button
+          type="button"
+          onClick={() => setShowManual((v) => !v)}
+          className="text-xs font-semibold text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline"
+        >
+          {showManual ? "Hide manual provider settings" : "Manual provider settings (SMTP relay, SendGrid, Brevo) — advanced"}
+        </button>
+
         {/* Section C: SMTP Configuration */}
-        {form.provider_type === "smtp" && (
+        {showManual && form.provider_type === "smtp" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -495,7 +596,7 @@ export default function EmailConfigTab() {
         )}
 
         {/* Section D: SendGrid Configuration */}
-        {form.provider_type === "sendgrid" && (
+        {showManual && form.provider_type === "sendgrid" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -527,7 +628,7 @@ export default function EmailConfigTab() {
         )}
 
         {/* Section D (Alt): Brevo Configuration */}
-        {form.provider_type === "brevo" && (
+        {showManual && form.provider_type === "brevo" && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="border-b border-slate-100 pb-3">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">

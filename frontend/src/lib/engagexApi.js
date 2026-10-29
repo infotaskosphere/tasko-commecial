@@ -70,7 +70,11 @@ export const engagexApi = {
   setDefaultSender: (id) => data(api.post(`${BASE}/mail/senders/${id}/default`)),
   restorePlatformSender: () => data(api.post(`${BASE}/mail/senders/platform/restore`)),
   /** "Continue with Google": returns { auth_url } for the Google account chooser. */
-  startGoogleSender: (returnPath = '/engagex/mailmaster?tab=senders') => data(api.post(`${BASE}/mail/senders/google/start`, { return_path: returnPath }, TIMEOUT)),
+  startGoogleSender: (returnPath = '/engagex/mailmaster?tab=senders', loginHint = null) => data(api.post(`${BASE}/mail/senders/google/start`, { return_path: returnPath, login_hint: loginHint }, TIMEOUT)),
+  startMicrosoftSender: (returnPath = '/engagex/mailmaster?tab=senders', loginHint = null) => data(api.post(`${BASE}/mail/senders/microsoft/start`, { return_path: returnPath, login_hint: loginHint }, TIMEOUT)),
+  detectMailbox: (email) => data(api.get(`${BASE}/mail/senders/detect`, { params: { email }, ...TIMEOUT })),
+  // Tries the provider's mail servers until one accepts the login: allow time.
+  connectMailbox: (body) => data(api.post(`${BASE}/mail/senders/connect`, body, { timeout: 120000 })),
   updateSenderProfile: (id, body) => data(api.patch(`${BASE}/mail/senders/${id}`, body)),
   googleSetup: () => data(api.get(`${BASE}/mail/senders/google/setup`, TIMEOUT)),
   testSend: (body) => data(api.post(`${BASE}/mail/test-send`, body, UPLOAD_TIMEOUT)),
