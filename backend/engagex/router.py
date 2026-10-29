@@ -1210,7 +1210,7 @@ async def connect_mailbox(body: ConnectMailboxIn, current_user: User = Depends(g
     cfg = await mail_connect.auto_smtp(body.email, body.password, manual=manual,
                                        username=(body.advanced.username if body.advanced else None) or None)
     doc = await save_smtp_sender(company_id=company_id, user_id=str(current_user.id), email=body.email,
-                                 password=body.password, cfg=cfg, from_name=clean_text(body.from_name or "", 120) or None,
+                                 password=cfg.get("password") or body.password, cfg=cfg, from_name=clean_text(body.from_name or "", 120) or None,
                                  label=clean_text(body.label or "", 120) or None)
     return _public_sender(doc)
 

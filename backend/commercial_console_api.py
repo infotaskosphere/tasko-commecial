@@ -1051,7 +1051,7 @@ async def connect_platform_password(body: PlatformConnectPasswordIn, user: User 
     email = body.email.strip().lower()
     manual = {"host": body.host, "port": body.port or 587, "security": body.security or "starttls"} if (body.host or "").strip() else None
     cfg = await mail_connect.auto_smtp(email, body.password, manual=manual, username=body.username or None)
-    config = await email_service.save_connected_account("smtp", email=email, smtp=cfg, password=body.password.strip(),
+    config = await email_service.save_connected_account("smtp", email=email, smtp=cfg, password=cfg.get("password") or body.password.strip(),
                                                         updated_by=str(user.id))
     await _log_email_connect(user, f"Platform email connected by {user.email}: {email} via {cfg['host']}:{cfg['port']}")
     return {"status": "success", "config": config}

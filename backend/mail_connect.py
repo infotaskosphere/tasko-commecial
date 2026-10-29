@@ -69,8 +69,10 @@ PROVIDER_LABELS = {
 
 # Providers that refuse the normal account password over SMTP.
 APP_PASSWORD_HELP = {
-    "google": "Google blocks normal passwords here. Use “Continue with Google” instead.",
-    "microsoft": "Use “Continue with Microsoft” instead, so no password is needed.",
+    "google": ("Gmail needs an app password, not your normal password: turn on 2-Step Verification, then open "
+               "myaccount.google.com/apppasswords, create one named “Taskosphere” and paste the 16 letters here."),
+    "microsoft": ("Outlook may refuse your normal password. If it does, create an app password in your Microsoft "
+                  "account → Security → Advanced security options, or use “Continue with Microsoft”."),
     "yahoo": "Yahoo needs an app password: Yahoo Account → Security → Generate app password.",
     "icloud": "iCloud needs an app-specific password: appleid.apple.com → Sign-In and Security → App-Specific Passwords.",
     "aol": "AOL needs an app password: AOL Account → Security → Generate app password.",
@@ -200,6 +202,9 @@ async def auto_smtp(email: str, password: str, *, username: Optional[str] = None
     if not password:
         raise HTTPException(status_code=400, detail="Enter the mailbox password.")
     info = await detect(email)
+    if info["provider"] == "google":
+        # Google shows app passwords as four groups of four letters.
+        password = password.replace(" ", "")
     if manual and manual.get("host"):
         candidates = [{"host": str(manual["host"]).strip(), "port": int(manual.get("port") or 587),
                        "security": str(manual.get("security") or "starttls")}]
@@ -215,7 +220,7 @@ async def auto_smtp(email: str, password: str, *, username: Optional[str] = None
             break
         try:
             await asyncio.to_thread(_try_login, cand["host"], cand["port"], cand["security"], login, password, timeout)
-            return {**cand, "username": login, "provider": info["provider"], "provider_label": info["provider_label"]}
+            return {**cand, "username": login, "password": password, "provider": info["provider"], "provider_label": info["provider_label"]}
         except _AuthFailed as exc:
             # The right server answered and refused the password; other
             # servers for the same provider will say the same.

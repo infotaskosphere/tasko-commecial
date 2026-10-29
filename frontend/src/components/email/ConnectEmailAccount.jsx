@@ -124,8 +124,6 @@ export function ConnectEmailDialog({ open, onOpenChange, api, onConnected, defau
     try {
       const found = await api.detect(address);
       setInfo(found);
-      if (found.oauth === 'google') return signIn('google', address);
-      if (found.oauth === 'microsoft' && found.microsoft_available) return signIn('microsoft', address);
       const first = found.candidates?.[0];
       if (first) setAdvanced({ host: first.host, port: first.port, security: first.security, username: '' });
       setStep('password');
@@ -164,7 +162,7 @@ export function ConnectEmailDialog({ open, onOpenChange, api, onConnected, defau
           <DialogTitle>{step === 'email' ? 'Add an email account' : `Sign in to ${info?.provider_label || 'your email'}`}</DialogTitle>
           <DialogDescription>
             {step === 'email'
-              ? 'Enter the address you want to send from. Gmail and Outlook addresses sign in with their own account page; any other address just needs its password.'
+              ? 'Enter the address you want to send from. Next you’ll enter its password — the mail server is found automatically.'
               : email.trim()}
           </DialogDescription>
         </DialogHeader>
@@ -185,10 +183,17 @@ export function ConnectEmailDialog({ open, onOpenChange, api, onConnected, defau
             <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               <Mail className="h-4 w-4 shrink-0" /><span className="truncate">{info?.provider_label}</span>
             </div>
-            <label className="block text-xs font-semibold text-slate-500">Password
+            <label className="block text-xs font-semibold text-slate-500">{info?.provider === 'google' ? 'App password' : 'Password'}
               <Input className="mt-1" type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </label>
             {info?.password_help && <p className="flex gap-2 text-xs text-amber-700 dark:text-amber-300"><KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />{info.password_help}</p>}
+            {(info?.oauth === 'google' || (info?.oauth === 'microsoft' && info?.microsoft_available)) && (
+              <button type="button" onClick={() => signIn(info.oauth, email.trim())} disabled={signingIn}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+                {info.oauth === 'google' ? <GoogleMark className="h-4 w-4" /> : <MicrosoftMark className="h-4 w-4" />}
+                Or sign in with {info.oauth === 'google' ? 'Google' : 'Microsoft'} instead (no password)
+              </button>
+            )}
             {askName && (
               <label className="block text-xs font-semibold text-slate-500">Name recipients see
                 <Input className="mt-1" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your company name" />

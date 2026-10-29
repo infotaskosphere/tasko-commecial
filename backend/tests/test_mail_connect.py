@@ -319,3 +319,10 @@ def test_platform_service_password_connect_and_send_via_google(platform, monkeyp
     token, sender, to, message = sent[0]
     assert (token, sender, to) == ("GRT", "owner@gmail.com", "client@x.com")
     assert "From: OneNexa <owner@gmail.com>" in message
+
+
+def test_gmail_app_password_spaces_removed(no_dns, monkeypatch):
+    seen = []
+    monkeypatch.setattr(mail_connect, "_try_login", lambda host, port, sec, user, pw, t: seen.append((host, pw)))
+    cfg = _run(mail_connect.auto_smtp("me@gmail.com", "abcd efgh ijkl mnop"))
+    assert seen == [("smtp.gmail.com", "abcdefghijklmnop")] and cfg["host"] == "smtp.gmail.com"
