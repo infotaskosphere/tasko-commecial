@@ -138,7 +138,10 @@ export default function MasterConsole() {
   // Platform Owner admin: full control. Owner staff: only what Permission Matrix grants.
   const canEditLicense = canPerformPlatformOwnerAction(consoleUser, "can_view_platform_licenses", "edit");
   const canDeleteLicensee = canPerformPlatformOwnerAction(consoleUser, "can_view_platform_licensees", "delete");
-  const [tab, setTab] = useState("overview");
+  // ?tab=email-config etc. opens a section directly (linked from MailMaster).
+  const [tab, setTab] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("tab") || "overview"; } catch { return "overview"; }
+  });
   const [state, setState] = useState({ licenses: [], customers: [] });
   const [modules, setModules] = useState([]);
   const [invoiceCompanies, setInvoiceCompanies] = useState([]);

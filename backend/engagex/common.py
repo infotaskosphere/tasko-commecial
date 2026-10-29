@@ -40,6 +40,8 @@ CONTACTS = "engagex_contacts"
 TEMPLATES = "engagex_templates"
 SUPPRESSIONS = "engagex_suppressions"
 MEDIA = "engagex_media"
+# Per-company settings for the shared platform sender (name, Reply-To, removed).
+PLATFORM_SENDER_PREFS = "engagex_platform_sender_prefs"
 
 PLATFORM_SENDER_ID = "platform"
 

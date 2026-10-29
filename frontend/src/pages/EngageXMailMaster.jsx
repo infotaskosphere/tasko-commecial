@@ -178,9 +178,10 @@ function SenderNameDialog({ sender, onOpenChange, onSaved }) {
   );
 }
 
-function SendersPanel({ senders, canManage, companyName, reload }) {
+function SendersPanel({ senders, canManage, canConfigurePlatform, platformRemoved, companyName, reload }) {
   const [editing, setEditing] = useState(null);
   const [naming, setNaming] = useState(null);
+  const [editingPlatform, setEditingPlatform] = useState(null);
   const [testing, setTesting] = useState(null);
   const { user } = useAuth();
   const [testTo, setTestTo] = useState(user?.email || '');
@@ -227,7 +228,15 @@ function SendersPanel({ senders, canManage, companyName, reload }) {
           )}
         </div>
       )}
-      <GuidanceNote icon={ShieldCheck}>Without a connected account, MailMaster sends through the platform email service with <b>your company name</b> as the sender and <b>your company email</b> as Reply-To.</GuidanceNote>
+      {platformRemoved ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          <span><Server className="mr-1.5 inline h-4 w-4" />The platform email service is removed for your company. Campaigns send only from your own senders.</span>
+          {canManage && <Button size="sm" variant="outline" onClick={() => act(() => engagexApi.restorePlatformSender(), 'Platform email service restored')}><RefreshCw className="h-3.5 w-3.5 mr-1" />Restore</Button>}
+        </div>
+      ) : (
+        <GuidanceNote icon={ShieldCheck}>Without a connected account, MailMaster sends through the platform email service with <b>your company name</b> as the sender and <b>your company email</b> as Reply-To. Use the pencil to change those for your company.</GuidanceNote>
+      )}
+      {!senders.length && <EmptyState title="No sender yet" hint="Connect your Google account or another mailbox above to start sending." />}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {senders.map((s) => (
           <div key={s.id} className={`rounded-xl border p-4 ${s.is_default ? 'border-teal-400 ring-1 ring-teal-400/40' : 'border-slate-200 dark:border-slate-700'}`}>
@@ -248,8 +257,13 @@ function SendersPanel({ senders, canManage, companyName, reload }) {
               <Button size="sm" variant="outline" onClick={() => setTesting(s)}><Send className="h-3.5 w-3.5 mr-1" />Test</Button>
               {canManage && !s.is_default && <Button size="sm" variant="outline" onClick={() => act(() => engagexApi.setDefaultSender(s.id), 'Default sender updated')}><Star className="h-3.5 w-3.5 mr-1" />Make default</Button>}
               {canManage && s.kind === 'google' && s.last_error && <Button size="sm" variant="outline" onClick={connect}><RefreshCw className="h-3.5 w-3.5 mr-1" />Reconnect</Button>}
-              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => (s.kind === 'google' ? setNaming(s) : setEditing(s))}><Pencil className="h-4 w-4" /></Button>}
-              {canManage && s.kind !== PLATFORM && <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" title="Remove" onClick={() => { if (window.confirm(`Disconnect ${s.from_email}?`)) act(() => engagexApi.deleteSender(s.id), 'Sender removed'); }}><Trash2 className="h-4 w-4" /></Button>}
+              {canManage && <Button size="icon" variant="ghost" className="h-8 w-8" title="Edit" onClick={() => (s.kind === PLATFORM ? setEditingPlatform(s) : s.kind === 'google' ? setNaming(s) : setEditing(s))}><Pencil className="h-4 w-4" /></Button>}
+              {canManage && <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" title="Remove" onClick={() => {
+                const question = s.kind === PLATFORM
+                  ? 'Remove the platform email service for your company? Campaigns will need one of your own senders. You can restore it later.'
+                  : `Disconnect ${s.from_email}?`;
+                if (window.confirm(question)) act(() => engagexApi.deleteSender(s.id), s.kind === PLATFORM ? 'Platform email service removed' : 'Sender removed');
+              }}><Trash2 className="h-4 w-4" /></Button>}
             </div>
           </div>
         ))}
@@ -257,6 +271,7 @@ function SendersPanel({ senders, canManage, companyName, reload }) {
       {!canManage && <p className="text-xs text-slate-500">Only administrators can connect or change sender accounts.</p>}
       <SenderDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} initial={editing} companyName={companyName} onSaved={reload} />
       <SenderNameDialog sender={naming} onOpenChange={(o) => !o && setNaming(null)} onSaved={reload} />
+      <PlatformSenderDialog sender={editingPlatform} canConfigureService={canConfigurePlatform} onOpenChange={(o) => !o && setEditingPlatform(null)} onSaved={reload} />
       <Dialog open={!!testing} onOpenChange={(o) => !o && setTesting(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader><DialogTitle>Send a test email</DialogTitle><DialogDescription>From {testing?.from_name} &lt;{testing?.from_email}&gt;</DialogDescription></DialogHeader>
@@ -438,7 +453,7 @@ function TemplatesPanel({ templates, companyName, reload, onUse }) {
 // Campaign builder
 // ═════════════════════════════════════════════════════════════════════════════
 const blankCampaign = (senders) => ({
-  id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || PLATFORM, subject: '', preview_text: '',
+  id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || senders[0]?.id || PLATFORM, subject: '', preview_text: '',
   html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, track_opens: true, footer_address: '', template_id: null,
   banner: null, attachments: [],
 });
@@ -779,12 +794,56 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
 // ═════════════════════════════════════════════════════════════════════════════
 // Page
 // ═════════════════════════════════════════════════════════════════════════════
+function PlatformSenderDialog({ sender, canConfigureService, onOpenChange, onSaved }) {
+  const [fromName, setFromName] = useState('');
+  const [replyTo, setReplyTo] = useState('');
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (sender) {
+      setFromName(sender.custom_from_name || '');
+      setReplyTo(sender.custom_reply_to || '');
+      setLabel(sender.label && sender.label !== 'Platform email service' ? sender.label : '');
+    }
+  }, [sender]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await engagexApi.updateSenderProfile(PLATFORM, { from_name: fromName.trim(), reply_to: replyTo.trim() || null, label: label.trim() || null });
+      toast.success('Platform sender updated');
+      onSaved();
+      onOpenChange(false);
+    } catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
+  };
+  return (
+    <Dialog open={!!sender} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit platform email service</DialogTitle>
+          <DialogDescription>Sends from {sender?.from_email || 'the platform address'}. These settings apply to your company only; leave a field empty to use your company profile.</DialogDescription>
+        </DialogHeader>
+        <label className="text-xs font-semibold text-slate-500">Name recipients see<Input className="mt-1" value={fromName} onChange={(e) => setFromName(e.target.value)} maxLength={120} placeholder={sender?.default_from_name || 'Your company name'} /></label>
+        <label className="text-xs font-semibold text-slate-500">Reply-To<Input className="mt-1" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder={sender?.default_reply_to || 'Your company email'} /></label>
+        <label className="text-xs font-semibold text-slate-500">Label in MailMaster<Input className="mt-1" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={120} placeholder="Platform email service" /></label>
+        {canConfigureService ? (
+          <p className="text-xs text-slate-500">The sending address and mail server are shared by every company. Change them in <a className="font-semibold text-blue-600 underline" href="/master-console?tab=email-config">Commercial Console → Email Settings</a>.</p>
+        ) : (
+          <p className="text-xs text-slate-500">The sending address belongs to the platform. To send from your own address, connect Google or another mailbox.</p>
+        )}
+        <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function EngageXMailMaster() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState('campaigns');
   const [senders, setSenders] = useState([]);
   const [canManage, setCanManage] = useState(false);
+  const [platformRemoved, setPlatformRemoved] = useState(false);
+  const [canConfigurePlatform, setCanConfigurePlatform] = useState(false);
   const [lists, setLists] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -793,7 +852,7 @@ export default function EngageXMailMaster() {
   const [openId, setOpenId] = useState(params.get('campaign'));
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const loadSenders = useCallback(async () => { const d = await engagexApi.senders(); setSenders(d.senders || []); setCanManage(!!d.can_manage); return d.senders || []; }, []);
+  const loadSenders = useCallback(async () => { const d = await engagexApi.senders(); setSenders(d.senders || []); setCanManage(!!d.can_manage); setPlatformRemoved(!!d.platform_removed); setCanConfigurePlatform(!!d.can_configure_platform_service); return d.senders || []; }, []);
   const loadLists = useCallback(async () => { const d = await engagexApi.lists(); setLists(d.items || []); }, []);
   const loadTemplates = useCallback(async () => { const d = await engagexApi.templates('email'); setTemplates((d.items || []).map((t) => ({ ...t, starter: false }))); }, []);
 
@@ -830,7 +889,7 @@ export default function EngageXMailMaster() {
     setParams(params, { replace: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const companyName = senders.find((s) => s.id === PLATFORM)?.from_name || user?.company_name || 'Your company';
+  const companyName = senders.find((s) => s.id === PLATFORM)?.default_from_name || senders.find((s) => s.id === PLATFORM)?.from_name || user?.company_name || 'Your company';
   const platform = senders.find((s) => s.id === PLATFORM);
   const startNew = () => { setBuilder(blankCampaign(senders)); setTab('campaigns'); };
   const closeSheet = (open) => { if (open) return; setOpenId(null); if (params.get('campaign')) { params.delete('campaign'); setParams(params, { replace: true }); } };
@@ -895,7 +954,7 @@ export default function EngageXMailMaster() {
                 onUse={(t) => setBuilder({ ...blankCampaign(senders), subject: t.subject || '', preview_text: t.preview_text || '', html: t.html, template_id: t.starter ? null : t.id })} />
             </ExCard>
           </TabsContent>
-          <TabsContent value="senders" className="mt-4"><ExCard icon={Inbox} title="Sender accounts" color={BRAND.email}><SendersPanel senders={senders} canManage={canManage} companyName={companyName} reload={loadSenders} /></ExCard></TabsContent>
+          <TabsContent value="senders" className="mt-4"><ExCard icon={Inbox} title="Sender accounts" color={BRAND.email}><SendersPanel senders={senders} canManage={canManage} canConfigurePlatform={canConfigurePlatform} platformRemoved={platformRemoved} companyName={companyName} reload={loadSenders} /></ExCard></TabsContent>
           <TabsContent value="unsubscribed" className="mt-4"><ExCard icon={ShieldOff} title="Unsubscribed" color={BRAND.email}><OptOutPanel channel="email" /></ExCard></TabsContent>
         </Tabs>
       )}

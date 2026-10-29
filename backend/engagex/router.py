@@ -41,6 +41,7 @@ from .common import (
     PAGE_MAIL,
     PAGE_WHATSAPP,
     PLATFORM_SENDER_ID,
+    PLATFORM_SENDER_PREFS,
     RECIPIENTS,
     SENDERS,
     SUPPRESSIONS,
@@ -982,28 +983,48 @@ def _public_sender(doc: dict) -> dict:
 async def list_senders(current_user: User = Depends(get_current_user)):
     require_page(current_user, PAGE_MAIL)
     company_id = workspace_company_id(current_user)
-    from .mailer import platform_sender
+    from .mailer import platform_sender, platform_sender_prefs
 
     platform = await platform_sender(company_id)
+    prefs = await platform_sender_prefs(company_id)
+    removed = bool(prefs.get("removed"))
     from backend.email_service.service import email_service
 
     cfg = await email_service.get_raw_config()
     custom = await raw_db()[SENDERS].find(scoped(company_id, {"deleted": {"$ne": True}}), {"_id": 0}).sort("created_at", 1).to_list(100)
     has_default = any(d.get("is_default") for d in custom)
-    return {
-        "senders": [{
-            "id": PLATFORM_SENDER_ID,
-            "kind": "platform",
-            "label": "Platform email service",
-            "from_name": platform.from_name,
-            "from_email": platform.from_email,
-            "reply_to": platform.reply_to,
-            "is_default": not has_default,
-            "enabled": bool(cfg.get("is_enabled", True)) and bool(platform.from_email),
-            "provider": cfg.get("provider_type"),
-        }] + [_public_sender(d) for d in custom],
-        "can_manage": is_admin(current_user),
+    profile = await company_profile(company_id)
+    platform_entry = {
+        "id": PLATFORM_SENDER_ID,
+        "kind": "platform",
+        "label": platform.label,
+        "from_name": platform.from_name,
+        "from_email": platform.from_email,
+        "reply_to": platform.reply_to,
+        "is_default": not has_default and not removed,
+        "enabled": bool(cfg.get("is_enabled", True)) and bool(platform.from_email) and not removed,
+        "provider": cfg.get("provider_type"),
+        # What this company changed, and what it falls back to.
+        "custom_from_name": prefs.get("from_name") or None,
+        "custom_reply_to": prefs.get("reply_to") or None,
+        "default_from_name": profile.get("name") or cfg.get("from_name") or "",
+        "default_reply_to": profile.get("email") or None,
     }
+    return {
+        "senders": ([] if removed else [platform_entry]) + [_public_sender(d) for d in custom],
+        "platform_removed": removed,
+        "can_manage": is_admin(current_user),
+        "can_configure_platform_service": is_platform_owner(current_user),
+    }
+
+
+async def _active_campaigns_using(company_id: str, sender_id: str) -> int:
+    clause = {"settings.sender_id": sender_id}
+    if sender_id == PLATFORM_SENDER_ID:
+        clause = {"$or": [{"settings.sender_id": PLATFORM_SENDER_ID}, {"settings.sender_id": None}, {"settings.sender_id": {"$exists": False}}]}
+    return await raw_db()[CAMPAIGNS].count_documents(scoped(company_id, {
+        **clause, "channel": "email", "status": {"$in": ["queued", "scheduled", "running", "paused"]},
+    }))
 
 
 async def _sender_doc(company_id: str, sender_id: str) -> dict:
@@ -1082,9 +1103,18 @@ async def delete_sender(sender_id: str, current_user: User = Depends(get_current
     require_page(current_user, PAGE_MAIL)
     require_admin_user(current_user)
     company_id = workspace_company_id(current_user)
+    if sender_id == PLATFORM_SENDER_ID:
+        if await _active_campaigns_using(company_id, sender_id):
+            raise HTTPException(status_code=409, detail="The platform email service is used by an active campaign. Cancel or finish it first.")
+        # The service itself is shared; "remove" turns it off for this company.
+        await raw_db()[PLATFORM_SENDER_PREFS].update_one(
+            {"company_id": company_id},
+            {"$set": {"company_id": company_id, "removed": True, "updated_at": iso(), "updated_by": str(current_user.id)}},
+            upsert=True,
+        )
+        return {"deleted": True}
     await _sender_doc(company_id, sender_id)
-    in_use = await raw_db()[CAMPAIGNS].count_documents(scoped(company_id, {"settings.sender_id": sender_id, "status": {"$in": ["queued", "scheduled", "running", "paused"]}}))
-    if in_use:
+    if await _active_campaigns_using(company_id, sender_id):
         raise HTTPException(status_code=409, detail="This sender is used by an active campaign. Cancel or finish it first.")
     await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": {
         "deleted": True, "is_default": False, "password_enc": None, "refresh_token_enc": None, "updated_at": iso()}})
@@ -1096,7 +1126,9 @@ class GoogleStartIn(BaseModel):
 
 
 class SenderProfileIn(BaseModel):
-    from_name: str = Field(..., min_length=1, max_length=120)
+    # Required for connected accounts; for the platform sender an empty value
+    # means "use the company name".
+    from_name: str = Field("", max_length=120)
     reply_to: Optional[str] = None
     label: Optional[str] = Field(None, max_length=120)
 
@@ -1142,14 +1174,43 @@ async def update_sender_profile(sender_id: str, body: SenderProfileIn, current_u
     require_page(current_user, PAGE_MAIL)
     require_admin_user(current_user)
     company_id = workspace_company_id(current_user)
-    existing = await _sender_doc(company_id, sender_id)
     if body.reply_to and not normalize_email(body.reply_to):
         raise HTTPException(status_code=400, detail="Enter a valid Reply-To email address.")
+    if sender_id == PLATFORM_SENDER_ID:
+        # Company-level overrides; an empty value falls back to the company
+        # profile (name / email).
+        updates = {
+            "company_id": company_id,
+            "from_name": clean_text(body.from_name, 120) or None,
+            "reply_to": normalize_email(body.reply_to) or None,
+            "label": clean_text(body.label, 120) or None,
+            "updated_at": iso(),
+            "updated_by": str(current_user.id),
+        }
+        await raw_db()[PLATFORM_SENDER_PREFS].update_one({"company_id": company_id}, {"$set": updates}, upsert=True)
+        return {"id": PLATFORM_SENDER_ID, "kind": "platform", **{k: updates[k] for k in ("from_name", "reply_to", "label")}}
+    existing = await _sender_doc(company_id, sender_id)
+    if not clean_text(body.from_name, 120):
+        raise HTTPException(status_code=400, detail="Enter the sender name.")
     updates = {"from_name": clean_text(body.from_name, 120), "reply_to": normalize_email(body.reply_to), "updated_at": iso()}
     if body.label:
         updates["label"] = clean_text(body.label, 120)
     await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": updates})
     return _public_sender({**existing, **updates})
+
+
+@router.post("/mail/senders/platform/restore")
+async def restore_platform_sender(current_user: User = Depends(get_current_user)):
+    """Turn the platform email service back on for this company."""
+    require_page(current_user, PAGE_MAIL)
+    require_admin_user(current_user)
+    company_id = workspace_company_id(current_user)
+    await raw_db()[PLATFORM_SENDER_PREFS].update_one(
+        {"company_id": company_id},
+        {"$set": {"company_id": company_id, "removed": False, "updated_at": iso(), "updated_by": str(current_user.id)}},
+        upsert=True,
+    )
+    return {"restored": True}
 
 
 @router.post("/mail/senders/{sender_id}/default")
@@ -1159,6 +1220,11 @@ async def set_default_sender(sender_id: str, current_user: User = Depends(get_cu
     company_id = workspace_company_id(current_user)
     if sender_id != PLATFORM_SENDER_ID:
         await _sender_doc(company_id, sender_id)
+    else:
+        from .mailer import platform_sender_prefs
+
+        if (await platform_sender_prefs(company_id)).get("removed"):
+            raise HTTPException(status_code=400, detail="Restore the platform email service before making it the default.")
     await raw_db()[SENDERS].update_many(scoped(company_id), {"$set": {"is_default": False}})
     if sender_id != PLATFORM_SENDER_ID:
         await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": {"is_default": True}})

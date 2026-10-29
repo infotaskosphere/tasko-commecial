@@ -68,6 +68,7 @@ export const engagexApi = {
   updateSender: (id, body) => data(api.put(`${BASE}/mail/senders/${id}`, body)),
   deleteSender: (id) => data(api.delete(`${BASE}/mail/senders/${id}`)),
   setDefaultSender: (id) => data(api.post(`${BASE}/mail/senders/${id}/default`)),
+  restorePlatformSender: () => data(api.post(`${BASE}/mail/senders/platform/restore`)),
   /** "Continue with Google": returns { auth_url } for the Google account chooser. */
   startGoogleSender: (returnPath = '/engagex/mailmaster?tab=senders') => data(api.post(`${BASE}/mail/senders/google/start`, { return_path: returnPath }, TIMEOUT)),
   updateSenderProfile: (id, body) => data(api.patch(`${BASE}/mail/senders/${id}`, body)),

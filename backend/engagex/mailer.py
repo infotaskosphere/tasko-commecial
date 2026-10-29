@@ -27,6 +27,7 @@ from fastapi import HTTPException
 
 from .common import (
     PLATFORM_SENDER_ID,
+    PLATFORM_SENDER_PREFS,
     SENDERS,
     company_profile,
     decrypt_secret,
@@ -118,23 +119,36 @@ Sent by {_html.escape(footer_company)}{address}<br />You received this email bec
 
 
 # ── Sender resolution ────────────────────────────────────────────────────────
+async def platform_sender_prefs(company_id: str) -> dict:
+    """This company's settings for the shared platform sender: optional
+    from_name / reply_to / label overrides and whether it was removed."""
+    doc = await raw_db()[PLATFORM_SENDER_PREFS].find_one({"company_id": company_id}, {"_id": 0}) or {}
+    return doc
+
+
 async def platform_sender(company_id: str) -> ResolvedSender:
     from backend.email_service.service import email_service
 
     cfg = await email_service.get_raw_config()
     profile = await company_profile(company_id)
+    prefs = await platform_sender_prefs(company_id)
     return ResolvedSender(
         id=PLATFORM_SENDER_ID,
-        label="Platform email service",
-        from_name=profile["name"] or cfg.get("from_name") or "OneNexa",
+        label=prefs.get("label") or "Platform email service",
+        from_name=prefs.get("from_name") or profile["name"] or cfg.get("from_name") or "OneNexa",
         from_email=str(cfg.get("from_email") or ""),
-        reply_to=profile["email"] or None,
+        reply_to=prefs.get("reply_to") or profile["email"] or None,
         kind="platform",
     )
 
 
 async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedSender:
     if not sender_id or sender_id == PLATFORM_SENDER_ID:
+        if (await platform_sender_prefs(company_id)).get("removed"):
+            raise HTTPException(
+                status_code=400,
+                detail="The platform email service is removed for your company. Choose another sender, or restore it under Senders.",
+            )
         return await platform_sender(company_id)
     doc = await raw_db()[SENDERS].find_one({"id": sender_id, "company_id": company_id, "deleted": {"$ne": True}})
     if not doc:
