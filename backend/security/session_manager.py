@@ -502,21 +502,33 @@ class SessionManager:
                 "revoked_reason": reason,
             }
         }
+        # Session records may store the application id or the user's Mongo
+        # _id (SaaS sessions do); sessions without a status count as active.
+        owner_ids: list = [user_id_str]
+        try:
+            from bson import ObjectId
+
+            lookup = {"id": user_id_str}
+            if ObjectId.is_valid(user_id_str):
+                lookup = {"$or": [{"id": user_id_str}, {"_id": ObjectId(user_id_str)}]}
+            user_doc = await raw_db.users.find_one(lookup, {"_id": 1, "id": 1})
+            if user_doc:
+                for value in (user_doc.get("_id"), str(user_doc.get("_id") or ""), user_doc.get("id")):
+                    if value not in (None, "") and value not in owner_ids:
+                        owner_ids.append(value)
+        except Exception:
+            pass
+        live = {"user_id": {"$in": owner_ids}, "status": {"$nin": ["revoked", "replaced"]}}
+
         total = 0
         try:
-            result = await raw_db.session_manager.update_many(
-                {"user_id": user_id_str, "status": "active"},
-                update,
-            )
+            result = await raw_db.session_manager.update_many(live, update)
             total += int(getattr(result, "modified_count", 0) or 0)
         except Exception:
             logger.warning("Failed to revoke session_manager sessions for user %s.", user_id_str)
 
         try:
-            result = await raw_db.sessions.update_many(
-                {"user_id": user_id_str, "status": "active"},
-                update,
-            )
+            result = await raw_db.sessions.update_many(live, update)
             total += int(getattr(result, "modified_count", 0) or 0)
         except Exception:
             logger.warning("Failed to revoke sessions records for user %s.", user_id_str)

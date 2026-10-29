@@ -74,11 +74,28 @@ class _FakeDb:
         ])
 
 
+def _mongo_session_db():
+    """revoke_all_user_sessions uses $in/$nin filters, which _FakeDb does not
+    implement; use the in-memory MongoDB with the same documents."""
+    import pytest
+
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    db = mongomock_motor.AsyncMongoMockClient()["phase2_sessions"]
+    fake = _FakeDb()
+    asyncio.run(db.session_manager.insert_many([dict(d) for d in fake.session_manager.documents]))
+    asyncio.run(db.sessions.insert_many([dict(d) for d in fake.sessions.documents]))
+    return db
+
+
+def _status(db, collection, token):
+    return asyncio.run(db[collection].find_one({"session_token": token}))
+
+
 def test_revoke_all_user_sessions_hits_both_session_stores(monkeypatch):
     from backend.security import session_manager
 
-    fake_db = _FakeDb()
-    monkeypatch.setattr(session_manager, "_raw_db", lambda: fake_db)
+    db = _mongo_session_db()
+    monkeypatch.setattr(session_manager, "_raw_db", lambda: db)
 
     revoked = asyncio.run(
         session_manager.SessionManager.revoke_all_user_sessions(
@@ -88,19 +105,17 @@ def test_revoke_all_user_sessions_hits_both_session_stores(monkeypatch):
     )
 
     assert revoked == 2
-    assert fake_db.session_manager.documents[0]["status"] == "revoked"
-    assert fake_db.sessions.documents[0]["status"] == "revoked"
-    assert fake_db.session_manager.documents[1]["status"] == "active"
-    assert fake_db.sessions.documents[1]["status"] == "active"
-    assert fake_db.session_manager.documents[0]["revoked_reason"] == "password_changed"
-    assert fake_db.sessions.documents[0]["revoked_reason"] == "password_changed"
+    for collection in ("session_manager", "sessions"):
+        mine = _status(db, collection, "sess-1")
+        assert mine["status"] == "revoked" and mine["revoked_reason"] == "password_changed"
+        assert _status(db, collection, "sess-other")["status"] == "active"
 
 
 def test_revoke_all_user_sessions_does_not_cross_user_boundary(monkeypatch):
     from backend.security import session_manager
 
-    fake_db = _FakeDb()
-    monkeypatch.setattr(session_manager, "_raw_db", lambda: fake_db)
+    db = _mongo_session_db()
+    monkeypatch.setattr(session_manager, "_raw_db", lambda: db)
 
     asyncio.run(
         session_manager.SessionManager.revoke_all_user_sessions(
@@ -109,8 +124,8 @@ def test_revoke_all_user_sessions_does_not_cross_user_boundary(monkeypatch):
         )
     )
 
-    assert fake_db.session_manager.documents[1]["status"] == "active"
-    assert fake_db.sessions.documents[1]["status"] == "active"
+    assert _status(db, "session_manager", "sess-other")["status"] == "active"
+    assert _status(db, "sessions", "sess-other")["status"] == "active"
 
 
 def test_session_replaced_constant_is_stable():

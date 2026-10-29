@@ -210,9 +210,25 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
     await db.users.update_one({"email": email}, {"$set": updates})
     await db.password_reset_tokens.delete_many({"email": email})
 
-    # Invalidate existing sessions and dispatch alert
+    # Sign the account out everywhere. (This used to call a method that does
+    # not exist, so every reset answered 500 after saving the new password and
+    # no session was revoked.)
     client_ip = request.client.host if request and request.client else "unknown"
-    await AccountRecoveryService.on_password_reset_success(user_id=user_id, client_ip=client_ip)
+    try:
+        from backend.security.session_manager import SessionManager
+        await SessionManager.revoke_all_user_sessions(user_id, reason="password_reset")
+    except Exception:
+        logger.exception("Session revocation after password reset failed for %s", email)
+    try:
+        await AuditSecurity.log_security_event(
+            event_type="password_reset",
+            actor_id=user_id,
+            company_id=str(user.get("company_id") or ""),
+            severity="info",
+            details=f"Password reset from {client_ip}; all sessions revoked.",
+        )
+    except Exception:
+        pass
 
     logger.info("Password reset successful and sessions invalidated for %s", email)
     return {"message": "Password updated successfully. Please log in with your new credentials."}
