@@ -265,7 +265,8 @@ from backend.server_modules.dashboard_ops import register_dashboard_ops
 from backend.server_modules.holiday_trademark_misc import register_holiday_trademark_misc
 from backend.server_modules.application_runtime import register_application_runtime
 
-app = FastAPI(title="Taskosphere Backend", redirect_slashes=False)
+from backend.api_docs import DOCS_SETTINGS
+app = FastAPI(title="Taskosphere Backend", redirect_slashes=False, **DOCS_SETTINGS)
 from backend.commercial_console_api import router as commercial_console_router
 app.include_router(commercial_console_router)
 api_router = APIRouter(prefix="/api")
