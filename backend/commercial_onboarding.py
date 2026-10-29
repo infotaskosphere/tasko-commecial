@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 
-from backend.dependencies import create_access_token, db, get_current_user, require_admin
+from backend.dependencies import db, get_current_user, require_admin
 from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
@@ -658,7 +658,7 @@ async def create_custom_admin(payload: Dict[str, Any]):
             {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
         )
         user_id = str(user_doc.get("id") or "")
-        return {"access_token": create_access_token({"sub": user_id}), "token_type": "bearer", "user": user_doc, "company": company, "license": _public_license(license_doc)}
+        return {"access_token": "", "token_type": "bearer", "user": user_doc, "company": company, "license": _public_license(license_doc)}
 
     licensee_uid = str(getattr(current_user, "licensee_uid", "") or license_doc.get("licensee_uid") or "").strip()
     if not licensee_uid:
@@ -705,7 +705,7 @@ async def create_custom_admin(payload: Dict[str, Any]):
     }
     await db.users.insert_one(user_doc)
     safe_user = {k: v for k, v in user_doc.items() if k != "password"}
-    return {"access_token": create_access_token({"sub": user_id}), "token_type": "bearer", "user": safe_user, "company": company, "license": _public_license(license_doc)}
+    return {"access_token": "", "token_type": "bearer", "user": safe_user, "company": company, "license": _public_license(license_doc)}
 
 
 @router.post("/create-staff")

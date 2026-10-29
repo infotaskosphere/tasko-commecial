@@ -684,7 +684,10 @@ async def register(
     # AUTH RESPONSE LOGIC (CLEANED)
     # ─────────────────────────────────────────────
 
-    access_token = create_access_token({"sub": user_id})
+    # The caller is the admin creating this account: never hand them a login
+    # token for it (it had no session, so it could not be revoked, and the
+    # Users page does not use it). Same as self-registration.
+    access_token = ""
 
     # Remove sensitive fields
     new_user.pop("password", None)

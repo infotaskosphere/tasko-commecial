@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from backend.dependencies import create_access_token, db, get_current_user, require_admin
+from backend.dependencies import db, get_current_user, require_admin
 from backend.platform_owner_actions import require_platform_owner_action
 from backend.models import DEFAULT_ROLE_PERMISSIONS, User
 from backend.modules.people_matrix.permissions.catalog import MODULE_HIERARCHY
@@ -613,7 +613,7 @@ async def create_custom_admin(payload: Dict[str, Any]):
     safe_user["company_name"] = customer.get("company_name")
 
     return {
-        "access_token": create_access_token({"sub": user_id}),
+        "access_token": "",
         "token_type": "bearer",
         "user": safe_user,
         "company": company,
