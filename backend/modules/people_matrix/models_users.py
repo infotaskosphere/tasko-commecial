@@ -653,7 +653,9 @@ class User(BaseModel):
     # Optional custom-role key (see backend/roles_admin.py). `role` always
     # stays one of admin/manager/staff so every existing role check works.
     role_key: Optional[str] = None
-    password: Optional[str] = None
+    # The stored bcrypt hash. Never serialised: /auth/me and every other
+    # response built from this model used to return it.
+    password: Optional[str] = Field(default=None, exclude=True)
     consent_given: bool = False
     departments: List[str] = Field(default_factory=list)
     phone: Optional[str] = None

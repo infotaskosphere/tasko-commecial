@@ -521,12 +521,12 @@ async def get_users(
     if current_user.role == "admin":
         base_q = _make_user_id_query(user_id) if user_id else {}
         query = await _scope_users_query_by_company(current_user, base_q)
-        users_raw = await db.users.find(query, {"password": 0}).to_list(1000)
+        users_raw = await db.users.find(query, {"password": 0, "password_hash": 0, "password_salt": 0}).to_list(1000)
     elif current_user.role == "manager":
         if user_id:
             scoped_lookup = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
             target_user = await db.users.find_one(
-                scoped_lookup, {"password": 0}
+                scoped_lookup, {"password": 0, "password_hash": 0, "password_salt": 0}
             )
             if not target_user:
                 raise HTTPException(status_code=404, detail="User not found")
@@ -544,7 +544,7 @@ async def get_users(
             visible_ids = list(set(cross_ids + [current_user.id]))
             base_q = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
             query = await _scope_users_query_by_company(current_user, base_q)
-            users_raw = await db.users.find(query, {"password": 0}).to_list(
+            users_raw = await db.users.find(query, {"password": 0, "password_hash": 0, "password_salt": 0}).to_list(
                 1000
             )
     else:
@@ -557,12 +557,12 @@ async def get_users(
             # Specific user lookup â own record always allowed
             if user_id == current_user.id:
                 users_raw = await db.users.find(
-                    _make_user_id_query(user_id), {"password": 0}
+                    _make_user_id_query(user_id), {"password": 0, "password_hash": 0, "password_salt": 0}
                 ).to_list(1000)
             elif can_view_dir:
                 query = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
                 users_raw = await db.users.find(
-                    query, {"password": 0}
+                    query, {"password": 0, "password_hash": 0, "password_salt": 0}
                 ).to_list(1000)
             else:
                 # Allow lookup if target is in any of this staff's cross-vis lists
@@ -571,7 +571,7 @@ async def get_users(
                     raise HTTPException(status_code=403, detail="Not allowed")
                 query = await _scope_users_query_by_company(current_user, _make_user_id_query(user_id))
                 users_raw = await db.users.find(
-                    query, {"password": 0}
+                    query, {"password": 0, "password_hash": 0, "password_salt": 0}
                 ).to_list(1000)
         elif can_view_dir:
             # Staff with can_view_user_page: return full directory (active users only, no passwords)
@@ -580,7 +580,7 @@ async def get_users(
             users_raw = await db.users.find(
                 query,
                 {
-                    "password": 0,
+                    "password": 0, "password_hash": 0, "password_salt": 0,
                     "permissions": 0,
                 },  # strip permissions for privacy
             ).to_list(1000)
@@ -591,7 +591,7 @@ async def get_users(
             base_q = {"$or": [{"id": {"$in": visible_ids}}, {"_id": {"$in": [ObjectId(x) for x in visible_ids if ObjectId.is_valid(x)]}}]} if any(ObjectId.is_valid(x) for x in visible_ids) else {"id": {"$in": visible_ids}}
             query = await _scope_users_query_by_company(current_user, base_q)
             users_raw = await db.users.find(
-                query, {"password": 0}
+                query, {"password": 0, "password_hash": 0, "password_salt": 0}
             ).to_list(1000)
     for u in users_raw:
         if not u.get("id") and u.get("_id"):
@@ -629,7 +629,7 @@ async def update_user(
         team_ids = await get_team_user_ids(current_user.id)
         if user_id not in team_ids:
             raise HTTPException(status_code=403, detail="User is not in your team")
-        target_user = await db.users.find_one(_make_user_id_query(user_id), {"password": 0})
+        target_user = await db.users.find_one(_make_user_id_query(user_id), {"password": 0, "password_hash": 0, "password_salt": 0})
         if target_user and target_user.get("role") in ("admin", "manager"):
             raise HTTPException(
                 status_code=403, detail="Managers can only edit staff members"

@@ -719,7 +719,7 @@ async def ensure_licensee_admin(
             update_fields["is_active"] = False
             update_fields["admin_credentials_pending"] = True
         await raw_db.users.update_one({"_id": existing_user.get("_id")}, {"$set": update_fields})
-        updated = await raw_db.users.find_one({"_id": existing_user.get("_id")}, {"_id": 0, "password": 0})
+        updated = await raw_db.users.find_one({"_id": existing_user.get("_id")}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
         logger.info("Updated licensee admin %s for customer %s/license %s", email, customer_id, license_id)
         return updated
 

@@ -655,7 +655,7 @@ async def create_custom_admin(payload: Dict[str, Any]):
         )
         user_doc = await db.users.find_one(
             {"id": existing_admin_id},
-            {"_id": 0, "password": 0},
+            {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
         )
         user_id = str(user_doc.get("id") or "")
         return {"access_token": create_access_token({"sub": user_id}), "token_type": "bearer", "user": user_doc, "company": company, "license": _public_license(license_doc)}

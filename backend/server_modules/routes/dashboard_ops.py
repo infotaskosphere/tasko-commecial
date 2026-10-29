@@ -451,7 +451,7 @@ async def get_activity_summary(
         if category not in user_summary[uid]["categories"]:
             user_summary[uid]["categories"][category] = 0
         user_summary[uid]["categories"][category] += duration
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(200)
+    users = await db.users.find({}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).to_list(200)
     user_map = {
         u.get("id"): u.get("full_name", "Unknown") for u in users if u.get("id")
     }

@@ -83,7 +83,7 @@ async def get_efficiency_report(
     total_screen_time = sum(l.get("screen_time_minutes", 0) for l in logs)
     total_tasks_completed = sum(l.get("tasks_completed", 0) for l in logs)
     target_user_doc = await db.users.find_one(
-        {"id": target_user_id}, {"_id": 0, "password": 0}
+        {"id": target_user_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}
     )
     user_info = {
         "id": target_user_id,

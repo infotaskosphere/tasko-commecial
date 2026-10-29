@@ -272,13 +272,13 @@ async def list_employees(
     query: Dict[str, Any] = {}
     if department_id:
         query["department_id"] = department_id
-    employees = await db.users.find(query, {"_id": 0, "password": 0}).sort("full_name", 1).to_list(2000)
+    employees = await db.users.find(query, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).sort("full_name", 1).to_list(2000)
     return employees
 
 
 @employee_router.get("/{employee_id}")
 async def get_employee(employee_id: str, current_user: User = Depends(require_page(MODULE_KEY, VIEW_FLAG))):
-    employee = await db.users.find_one({"id": employee_id}, {"_id": 0, "password": 0})
+    employee = await db.users.find_one({"id": employee_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
     return employee
@@ -290,7 +290,7 @@ async def update_employee(
     payload: UserUpdate,
     current_user: User = Depends(require_action(MODULE_KEY, MANAGE_FLAG, "edit")),
 ):
-    existing = await db.users.find_one({"id": employee_id}, {"_id": 0, "password": 0})
+    existing = await db.users.find_one({"id": employee_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
     if not existing:
         raise HTTPException(status_code=404, detail="Employee not found")
 

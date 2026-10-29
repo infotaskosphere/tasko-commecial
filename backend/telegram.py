@@ -416,14 +416,14 @@ def _tg_permissions(user, module):
 
 async def _tg_find_user(name=None, user_id=None):
     if user_id:
-        return await db.users.find_one({"id": str(user_id)}, {"_id": 0, "password": 0})
+        return await db.users.find_one({"id": str(user_id)}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
     name = _tg_clean(name)
     if not name:
         return None
     regex = {"$regex": re.escape(str(name)), "$options": "i"}
     return await db.users.find_one(
         {"$or": [{"full_name": regex}, {"name": regex}, {"email": regex}]},
-        {"_id": 0, "password": 0},
+        {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0},
     )
 
 
@@ -876,7 +876,7 @@ async def _tg_natural_language_handler(chat_id: int, text: str, message: dict) -
     if convo:
         return False
 
-    user = await db.users.find_one({"telegram_id": chat_id}, {"_id": 0, "password": 0})
+    user = await db.users.find_one({"telegram_id": chat_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
     intent = await _tg_ai_command(
         text,
         user_id=user.get("id") if user else None,
@@ -1093,7 +1093,7 @@ async def _tg_natural_language_handler(chat_id: int, text: str, message: dict) -
             await send_message(chat_id, _tg_human_no_results("tasks", search))
             return True
         ids = {x.get("assigned_to") for x in tasks if x.get("assigned_to")} | {x.get("created_by") for x in tasks if x.get("created_by")}
-        users = await db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "password": 0}).to_list(100)
+        users = await db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).to_list(100)
         um = {x["id"]: x.get("full_name", x.get("email", "")) for x in users}
         lines = [f"📋 *Tasks ({len(tasks)})*"]
         for t in tasks:
@@ -1143,7 +1143,7 @@ async def _tg_natural_language_handler(chat_id: int, text: str, message: dict) -
             await send_message(chat_id, _tg_human_no_results("attendance"))
             return True
         ids = {r.get("user_id") for r in rows if r.get("user_id")}
-        users = await db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "password": 0}).to_list(1000)
+        users = await db.users.find({"id": {"$in": list(ids)}}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).to_list(1000)
         um = {u["id"]: u.get("full_name", "") for u in users}
         lines = [f"🕘 *Attendance ({len(rows)})*"]
         for r in rows:

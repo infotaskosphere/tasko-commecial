@@ -598,7 +598,7 @@ async def get_staff_attendance_report(
 ):
     now = datetime.now(IST)
     target_month = month or now.strftime("%Y-%m")
-    users = await db.users.find({}, {"_id": 0, "password": 0}).to_list(length=None)
+    users = await db.users.find({}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).to_list(length=None)
     user_map = {u["id"]: u for u in users}
 
     # SCOPE enforcement

@@ -363,7 +363,7 @@ async def list_users(current_user: User = Depends(get_current_user)):
         if licensee_comp_ids:
             user_query["company_id"] = {"$nin": list(licensee_comp_ids)}
 
-    users = await db.users.find(user_query, {"_id": 0, "password": 0}).to_list(5000)
+    users = await db.users.find(user_query, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}).to_list(5000)
     roles = {r["key"]: r for r in await _all_roles()}
     out = []
     for u in users:
@@ -394,7 +394,7 @@ class AssignRoleIn(BaseModel):
 @router.put("/users/{user_id}/role")
 async def assign_role(user_id: str, payload: AssignRoleIn, current_user: User = Depends(get_current_user)):
     _require_admin(current_user)
-    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0})
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0})
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
     role = next((r for r in await _all_roles() if r["key"] == payload.role_key), None)

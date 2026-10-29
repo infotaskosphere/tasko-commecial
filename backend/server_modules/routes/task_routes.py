@@ -302,7 +302,7 @@ async def get_tasks(
         if user_id
     }
     users = await db.users.find(
-        {"id": {"$in": list(user_ids)}}, {"_id": 0, "password": 0}
+        {"id": {"$in": list(user_ids)}}, {"_id": 0, "password": 0, "password_hash": 0, "password_salt": 0}
     ).to_list(length=None)
     user_map = {u["id"]: u["full_name"] for u in users}
     client_ids = {task.get("client_id") for task in tasks if task.get("client_id")}
