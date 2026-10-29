@@ -38,33 +38,19 @@ const crypto          = require('crypto');
 // ── Command-line flag handling (for NSIS installer) ──────────────────────────
 const args = process.argv.slice(2);
 
-if (args.includes('--install-service')) {
-  console.log('[agent] Installing Windows service...');
-  const { execSync } = require('child_process');
+// The packaged .exe has no `node` on PATH, so call service.js in-process.
+if (args.includes('--install-service') || args.includes('--uninstall-service')) {
+  const service = require('./service');
   try {
-    execSync('node service.js install', { stdio: 'inherit', cwd: __dirname });
-    console.log('[agent] Service installed successfully');
+    if (args.includes('--install-service')) service.installService();
+    else service.removeService();
     process.exit(0);
   } catch (err) {
-    console.error('[agent] Failed to install service:', err.message);
+    console.error('[agent] Service command failed:', err.message);
     process.exit(1);
   }
 }
 
-if (args.includes('--uninstall-service')) {
-  console.log('[agent] Uninstalling Windows service...');
-  const { execSync } = require('child_process');
-  try {
-    execSync('node service.js remove', { stdio: 'inherit', cwd: __dirname });
-    console.log('[agent] Service uninstalled successfully');
-    process.exit(0);
-  } catch (err) {
-    console.error('[agent] Failed to uninstall service:', err.message);
-    process.exit(1);
-  }
-}
-
-// ── Existing modules (reused, not replaced) ──────────────────────────────────
 const { readCertFromPcSc } = require('./pcscReader');
 const dscWatcher           = require('./dscWatcher');
 const activityTracker      = require('./activityTracker');
@@ -224,6 +210,19 @@ async function processOfflineQueue() {
 // ── Express Server (backward compatible) ─────────────────────────────────────
 
 const app = express();
+
+// Chrome asks before a public HTTPS website may call a program on the user's
+// own computer (Private Network Access / Local Network Access): the preflight
+// carries Access-Control-Request-Private-Network and the answer must allow it,
+// or every request from the Taskosphere website is blocked. Runs before cors()
+// because cors() answers the preflight itself. The origin is still checked by
+// the allowlist below.
+app.use((req, res, next) => {
+  if (req.headers['access-control-request-private-network'] === 'true') {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  }
+  next();
+});
 app.use(express.json());
 
 // Exact allowlist. A wildcard such as *.onrender.com lets ANY site hosted on
@@ -342,6 +341,17 @@ app.post('/api/auth', (req, res) => {
   console.log('[agent] ✓ All modules started — monitoring active');
 
   res.json({ success: true, message: 'Agent authenticated and monitoring', agent_id: AGENT_ID });
+});
+
+// ── Disconnect (called by the web app on logout) ─────────────────────────────
+app.post('/api/logout', (req, res) => {
+  authToken  = null;
+  authUserId = null;
+  try { activityTracker.setAuth(null, null); } catch {}
+  try { notificationReceiver.setAuth(null, null); } catch {}
+  try { autoUpdater.setAuth(null); } catch {}
+  console.log('[agent] Signed out by the web app');
+  res.json({ success: true });
 });
 
 // ── Legacy auth endpoint (backward compatibility) ───────────────────────────
@@ -580,7 +590,7 @@ function stopAllModules() {
 
 // ── Start HTTP server and all modules ────────────────────────────────────────
 
-app.listen(PORT, '127.0.0.1', () => {
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log('');
   console.log('╔══════════════════════════════════════════════════════════════╗');
   console.log('║     Taskosphere Agent v' + AGENT_VERSION.padEnd(5) + ' — Enterprise Edition              ║');
@@ -605,6 +615,16 @@ app.listen(PORT, '127.0.0.1', () => {
   console.log('');
 
   startAllModules();
+});
+
+// A second copy (for example started at login while one is already running)
+// cannot bind the port: leave quietly instead of crashing.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.log(`[agent] Already running on port ${PORT}; exiting this copy.`);
+    process.exit(0);
+  }
+  console.error('[agent] Server error:', err && err.message);
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────

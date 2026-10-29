@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = {
-  BACKEND_URL: process.env.TASKOSPHERE_BACKEND_URL || 'https://final-taskosphere-backend.onrender.com',
+  BACKEND_URL: process.env.TASKOSPHERE_BACKEND_URL || 'https://tasko-commercial-backend.onrender.com',
   // Ed25519 public key (PEM) that every auto-update must be signed with.
   // Generate the pair once with: node scripts/sign-update.js --keygen
   // Paste the PUBLIC key here (or set TASKOSPHERE_UPDATE_PUBKEY). Keep the
