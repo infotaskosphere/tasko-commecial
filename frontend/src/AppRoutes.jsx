@@ -77,6 +77,7 @@ const PermissionMatrix = lazy(() => import('./pages/PermissionMatrix.jsx'));
 const ContactDetails = lazy(() => import('./pages/ContactDetails.jsx'));
 const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const DesktopAgentSettings = lazy(() => import('./pages/DesktopAgentSettings.jsx'));
+const AgentPair = lazy(() => import('./pages/AgentPair.jsx'));
 const BackupRestore = lazy(() => import('./pages/BackupRestore.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
 const EmailSettings = lazy(() => import('@/components/EmailSettings.jsx'));
@@ -136,11 +137,24 @@ function LicensedDashboardHome() {
   return <Navigate to={destination} replace />;
 }
 
+// Set by /agent/pair when the user had to sign in first (see pages/AgentPair.jsx).
+function takePendingAgentPairCode() {
+  try {
+    const code = sessionStorage.getItem('taskosphere_pending_agent_pair');
+    if (code) sessionStorage.removeItem('taskosphere_pending_agent_pair');
+    return code;
+  } catch {
+    return null;
+  }
+}
+
 function ProtectedLayout() {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <AuthLoading />;
   if (!user) return <Navigate to="/login" replace />;
+  const pendingPair = takePendingAgentPairCode();
+  if (pendingPair) return <Navigate to={`/agent/pair?code=${encodeURIComponent(pendingPair)}`} replace />;
   return (
     <DashboardLayout>
       <RouteErrorBoundary resetKey={location.pathname}>
@@ -156,6 +170,8 @@ function PublicOnly({ children }) {
   const { user, loading, isPlatformOwner } = useAuth();
   if (loading) return <AuthLoading />;
   if (user) {
+    const pendingPair = takePendingAgentPairCode();
+    if (pendingPair) return <Navigate to={`/agent/pair?code=${encodeURIComponent(pendingPair)}`} replace />;
     const destination = taskosphereLanding(user, isPlatformOwner) || peopleMatrixLanding(user) || (isCommercialTenant(user) ? firstAccessiblePath(user) : '/dashboard');
     if (destination === '/login') return <NoModuleAccess />;
     return <Navigate to={destination} replace />;
@@ -226,6 +242,8 @@ export default function AppRoutes() {
         <Route path="/client-portal" element={<Navigate to="/client-portal/login" replace />} />
         <Route path="/client-portal/login" element={<PageTransition><ClientPortalLogin /></PageTransition>} />
         <Route path="/client-portal/dashboard" element={<PageTransition><ClientPortalDashboard /></PageTransition>} />
+        {/* Opened by the Taskosphere Agent to connect a computer (one click, no login in the agent). */}
+        <Route path="/agent/pair" element={<AgentPair />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<LicensedDashboardHome />} />

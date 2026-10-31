@@ -212,6 +212,11 @@ if CORS_ORIGIN_REGEX:
 
 app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
+# Taskosphere Agent device credentials only open the agent's own endpoints.
+from backend.desktop_agent_pairing import install_device_token_guard  # noqa: E402
+
+install_device_token_guard(app)
+
 
 # --------------------------------------------------------
 # Security response headers

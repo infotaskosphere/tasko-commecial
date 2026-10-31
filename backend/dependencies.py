@@ -844,9 +844,20 @@ async def get_current_user(credentials=Depends(security)) -> User:
         raise unauthorized
     token = token.strip()
 
+    # Taskosphere Agent device credential (desktop_agent_pairing.py). Resolved
+    # to its user, then validated exactly like a JWT user below. Only the
+    # agent's own endpoints accept it (device_token_guard middleware).
+    device_owner_id = None
+    if token.startswith("tsa_"):
+        from backend.desktop_agent_pairing import device_user_id
+
+        device_owner_id = await device_user_id(token)
+        if not device_owner_id:
+            raise unauthorized
+
     # Opaque SaaS session path. Still canonicalise the Platform Owner company
     # so the owner's request-local company allow-list is built.
-    saas_user = await _get_saas_session_user(token)
+    saas_user = None if device_owner_id else await _get_saas_session_user(token)
     if saas_user is not None:
         saas_user = await _canonicalize_platform_owner_company(saas_user)
         owner_context = is_platform_owner(saas_user)
@@ -864,13 +875,16 @@ async def get_current_user(credentials=Depends(security)) -> User:
         set_platform_owner(owner_context)
         return saas_user
 
-    try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if user_id is None:
+    if device_owner_id:
+        user_id = device_owner_id
+    else:
+        try:
+            payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id is None:
+                raise unauthorized
+        except jwt.InvalidTokenError:
             raise unauthorized
-    except jwt.InvalidTokenError:
-        raise unauthorized
 
     raw_db = globals().get("_raw_db", db)
     user_query = {"id": user_id}
@@ -881,6 +895,9 @@ async def get_current_user(credentials=Depends(security)) -> User:
     document = await raw_db.users.find_one(user_query)
     if document is None:
         raise HTTPException(status_code=401, detail="User not found")
+    if device_owner_id and (document.get("is_active") is False
+                            or str(document.get("status") or "active").lower() in {"inactive", "deleted", "disabled", "suspended"}):
+        raise unauthorized
 
     user = _auth_normalise_user(document, str(user_id))
     if is_platform_owner(user):

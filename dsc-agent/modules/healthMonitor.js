@@ -97,6 +97,9 @@ async function sendHeartbeat(agentId, machineName, agentVersion, token, userId) 
     };
 
     const req = (isHttps ? https : http).request(options, (res) => {
+      if (res.statusCode === 401 && token && onUnauthorized) {
+        try { onUnauthorized(); } catch {}
+      }
       let buf = '';
       res.on('data', chunk => { buf += chunk; });
       res.on('end', () => {
@@ -117,6 +120,10 @@ async function sendHeartbeat(agentId, machineName, agentVersion, token, userId) 
     req.end();
   });
 }
+
+// Called when the backend answers 401 (the computer was disconnected).
+let onUnauthorized = null;
+function setOnUnauthorized(fn) { onUnauthorized = fn; }
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -150,4 +157,4 @@ function getStatus() {
   };
 }
 
-module.exports = { start, stop, getStatus, checkInternet, sendHeartbeat };
+module.exports = { start, stop, getStatus, checkInternet, sendHeartbeat, setOnUnauthorized };

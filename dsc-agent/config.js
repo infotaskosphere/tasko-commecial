@@ -2,6 +2,9 @@
 
 module.exports = {
   BACKEND_URL: process.env.TASKOSPHERE_BACKEND_URL || 'https://tasko-commercial-backend.onrender.com',
+  // The Taskosphere web app: the agent opens <FRONTEND_URL>/agent/pair to be
+  // connected to an account, and the tray's "Open Taskosphere" goes here.
+  FRONTEND_URL: process.env.TASKOSPHERE_FRONTEND_URL || 'https://tasko-commecial-frontend.vercel.app',
   // Ed25519 public key (PEM) that every auto-update must be signed with.
   // Generate the pair once with: node scripts/sign-update.js --keygen
   // Paste the PUBLIC key here (or set TASKOSPHERE_UPDATE_PUBKEY). Keep the

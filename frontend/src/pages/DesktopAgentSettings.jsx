@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, Download, KeyRound, Loader2, Monitor, RefreshCw, ShieldAlert, Unplug, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, KeyRound, Laptop, Loader2, Monitor, RefreshCw, ShieldAlert, Unplug, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { GuidanceNote, PageBanner } from '@/components/ui/PageKit';
 import { useAuth } from '@/contexts/AuthContext';
+import api, { getErrorMessage } from '@/lib/api';
 import {
   AGENT_DOWNLOAD_URL,
   agentEnabledInThisBrowser,
@@ -46,6 +47,28 @@ export default function DesktopAgentSettings() {
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [devices, setDevices] = useState({ loading: true, items: [], isAdmin: false });
+
+  // Computers connected by pairing (the agent's own credential).
+  const loadDevices = useCallback(async () => {
+    try {
+      const res = await api.get('/desktop/devices');
+      setDevices({ loading: false, items: res.data?.devices || [], isAdmin: !!res.data?.is_admin });
+    } catch {
+      setDevices({ loading: false, items: [], isAdmin: false });
+    }
+  }, []);
+  useEffect(() => { loadDevices(); }, [loadDevices]);
+
+  const revoke = async (device) => {
+    try {
+      await api.delete(`/desktop/devices/${encodeURIComponent(device.id)}`);
+      toast.success(`${device.machine_name} disconnected. Its agent will ask to be connected again.`);
+      loadDevices();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
 
   // Contacting 127.0.0.1 can make the browser ask for local-network permission,
   // so the page only checks automatically where the agent was set up before.
@@ -166,17 +189,50 @@ export default function DesktopAgentSettings() {
             </Button>
           </a>
         </Step>
-        <Step n={2} title="Run TaskosphereAgentSetup.exe" done={running}>
-          <p>Open the downloaded file and click through the installer. The agent starts straight away and from then on whenever you sign in to Windows.</p>
+        <Step n={2} title="Run TaskosphereAgentSetup.exe" done={running || devices.items.length > 0}>
+          <p>Open the downloaded file and click through the installer. The agent starts straight away, shows the Taskosphere icon in the system tray (bottom-right, next to the clock; it may be under the <b>^</b> arrow), and from then on starts whenever you sign in to Windows.</p>
           <p className="mt-1 flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             If Windows shows “Windows protected your PC”, click <b>More info</b> → <b>Run anyway</b>. The installer is not yet code-signed.
           </p>
         </Step>
-        <Step n={3} title="Connect it to your account" done={connected}>
-          <p>Click <b>Check this computer</b>, then <b>Connect to my account</b>. If the browser asks to access devices on your local network, choose <b>Allow</b>; that is how this page talks to the agent.</p>
-          <p className="mt-1">After that, the agent is connected automatically each time you log in on this browser.</p>
+        <Step n={3} title="Click “Connect this computer”" done={connected || devices.items.length > 0}>
+          <p>The first time it runs, the agent opens a Taskosphere page in your browser. Click <b>Connect this computer</b> there. No login is needed in the agent, and it stays connected after restarts.</p>
+          <p className="mt-1">If the page did not open, right-click the Taskosphere tray icon and choose <b>Connect to Taskosphere</b>.</p>
         </Step>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold">{devices.isAdmin ? 'Connected computers in your company' : 'Your connected computers'}</p>
+          <Button size="sm" variant="outline" onClick={loadDevices}><RefreshCw className="mr-1.5 h-4 w-4" />Refresh</Button>
+        </div>
+        {devices.loading ? (
+          <p className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Loading…</p>
+        ) : devices.items.length === 0 ? (
+          <p className="text-sm text-slate-500">No computer is connected yet.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+            {devices.items.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Laptop className="h-5 w-5 shrink-0 text-slate-400" />
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-semibold">{d.machine_name}{d.os_user ? <span className="font-normal text-slate-500"> · {d.os_user}</span> : null}</p>
+                    <p className="text-xs text-slate-500">
+                      {devices.isAdmin && d.user_name ? `${d.user_name} · ` : ''}
+                      Connected {d.created_at ? new Date(d.created_at).toLocaleDateString() : ''}
+                      {d.last_seen_at ? ` · last active ${new Date(d.last_seen_at).toLocaleString()}` : ' · not active yet'}
+                    </p>
+                  </div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => revoke(d)} className="border-rose-200 text-rose-600 hover:bg-rose-50">
+                  <Unplug className="mr-1.5 h-4 w-4" />Disconnect
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <GuidanceNote icon={Monitor}>
