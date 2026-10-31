@@ -188,8 +188,8 @@ function DialogGradHeader({ gradient, icon: Icon, eyebrow, title, subtitle, onCl
           </div>
           <div className="flex-1 min-w-0">
             {eyebrow && <p className="text-white/50 text-[10px] font-semibold uppercase tracking-widest mb-1">{eyebrow}</p>}
-            <h2 className="text-xl font-bold text-white leading-snug tracking-tight">{title}</h2>
-            {subtitle && <p className="text-white/55 text-sm mt-1">{subtitle}</p>}
+            <h2 className="text-xl font-bold text-white leading-snug tracking-tight break-words">{title}</h2>
+            {subtitle && <p className="text-white/75 text-sm mt-1 break-words">{subtitle}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
@@ -1863,6 +1863,7 @@ function OffboardingDialog({ open, onClose, targetUser, allUsers, onComplete }) 
   return (
     <Dialog open={open} onOpenChange={v => { if (!v && !executing) onClose(); }}>
       <DialogContent
+        hideClose
         className="p-0 overflow-hidden rounded-2xl border-0 shadow-2xl"
         style={{
           maxWidth: 680,
@@ -1873,7 +1874,7 @@ function OffboardingDialog({ open, onClose, targetUser, allUsers, onComplete }) 
         }}
       >
         {/* ── Gradient Header ── */}
-        <div className="relative overflow-hidden flex-shrink-0" style={{ background: 'linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #ef4444 100%)' }}>
+        <div className="relative overflow-hidden flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="absolute right-0 top-0 w-64 h-64 rounded-full -mr-24 -mt-24 opacity-10"
             style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
           <div className="relative px-6 py-5 flex items-start justify-between gap-4">
@@ -3867,7 +3868,7 @@ export default function Users() {
 
       {/* ════ CREATE / EDIT DIALOG ════ */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
+        <DialogContent hideClose className="max-w-3xl max-h-[92vh] overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
           <DialogHeader className="sr-only">
             <DialogTitle>{selectedUser ? `Edit Member — ${selectedUser.full_name}` : 'Add New Team Member'}</DialogTitle>
             <DialogDescription>{selectedUser ? 'Update user profile and settings.' : 'Register a new team member.'}</DialogDescription>
@@ -3876,6 +3877,7 @@ export default function Users() {
             eyebrow={selectedUser ? 'Edit Member' : 'New Member'}
             title={selectedUser ? selectedUser.full_name : 'Add Team Member'}
             subtitle={isAdmin ? 'Full administrative control' : 'Update your personal information'}
+            onClose={() => setDialogOpen(false)}
             onMinimize={() => { minimizeUserForm(); setDialogOpen(false); toast.message('Team member form minimized', { description: 'Resume it anytime from the dock in the bottom-left corner.' }); }} />
           <div className="p-6 space-y-6 bg-white dark:bg-slate-900">
             <div className="flex justify-center">
@@ -4060,14 +4062,15 @@ export default function Users() {
 
       {/* ════ PERMISSIONS DIALOG ════ */}
       <Dialog open={permDialogOpen} onOpenChange={setPermDialogOpen}>
-        <DialogContent className="w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-2rem)] max-w-5xl max-h-[92vh] overflow-x-hidden overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
+        <DialogContent hideClose className="w-[calc(100vw-1.5rem)] sm:w-[calc(100vw-2rem)] max-w-5xl max-h-[92vh] overflow-x-hidden overflow-y-auto users-slim rounded-2xl p-0 border-0 shadow-2xl gap-0">
           <DialogHeader className="sr-only">
             <DialogTitle>{`Permissions — ${selectedUserForPerms?.full_name || 'User'}`}</DialogTitle>
             <DialogDescription>Configure access levels and module permissions for this user.</DialogDescription>
           </DialogHeader>
           <DialogGradHeader gradient={GRADIENT} icon={Shield} eyebrow="Access Governance"
             title={`Permissions — ${selectedUserForPerms?.full_name || ''}`}
-            subtitle="Configure access levels and module permissions" />
+            subtitle="Configure access levels and module permissions"
+            onClose={() => setPermDialogOpen(false)} />
           <div className="p-6 space-y-5 bg-white dark:bg-slate-900">
             <PermissionMatrixSummary permissions={permissions} />
             {/* Manager scope notice */}

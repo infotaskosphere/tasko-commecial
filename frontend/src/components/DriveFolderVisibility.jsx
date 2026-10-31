@@ -14,6 +14,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import api from "@/lib/api";
+import { Cloud } from "lucide-react";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 // ── MIME helpers ──────────────────────────────────────────────────────────
 const MIME_META = {
@@ -184,22 +186,13 @@ export default function DriveFolderVisibility({ portalUserId, portalUsername, on
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
 
         {/* ── Header ───────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              ☁️ Drive Folder Visibility
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              Control which files <span className="font-medium text-indigo-700">@{portalUsername}</span> can see in their portal
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100"
-          >
-            ✕
-          </button>
-        </div>
+        <PopupHeader
+          icon={Cloud}
+          eyebrow="Client portal"
+          title="Drive Folder Visibility"
+          subtitle={<>Control which files <span className="font-semibold text-white">@{portalUsername}</span> can see in their portal</>}
+          onClose={onClose}
+        />
 
         {/* ── Stats bar ────────────────────────────────────────────────── */}
         {!loading && files.length > 0 && (

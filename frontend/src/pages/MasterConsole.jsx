@@ -7,6 +7,7 @@ import {
   Mail
 } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import {
   generateCommercialLicense,
   getLicenseState,
@@ -820,18 +821,16 @@ export default function MasterConsole() {
       {/* Issue License Modal */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <form onSubmit={submit} className="relative my-4 max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl space-y-6">
-            <div className="flex items-start justify-between border-b pb-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Issue Commercial Customer License</h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Provision new multi-tenant license with automated commercial invoice generation.
-                </p>
-              </div>
-              <button type="button" disabled={generating} onClick={() => setShowCreate(false)} className="text-slate-400 hover:text-slate-600">
-                <X size={20} />
-              </button>
-            </div>
+          <form onSubmit={submit} className="relative my-4 max-h-[94vh] w-full max-w-5xl overflow-y-auto overflow-x-hidden rounded-3xl bg-white p-6 shadow-2xl space-y-6">
+            <PopupHeader
+              className="-mx-6 -mt-6"
+              icon={KeyRound}
+              eyebrow="Master console"
+              title="Issue Commercial Customer License"
+              subtitle="Provision new multi-tenant license with automated commercial invoice generation."
+              onClose={() => setShowCreate(false)}
+              closeDisabled={generating}
+            />
 
             <div className="grid gap-5 lg:grid-cols-3">
               <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">

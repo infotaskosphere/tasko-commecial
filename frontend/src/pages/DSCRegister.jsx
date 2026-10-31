@@ -22,6 +22,7 @@ import {
   Zap, Settings2, Phone, Send, Timer, RefreshCw
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { PopupHeader } from '@/components/ui/popup-header';
 import { format } from 'date-fns';
 import { detectDscDuplicates } from '@/lib/aiDuplicateEngine';
 import AIDuplicateDialog from '@/components/ui/AIDuplicateDialog';
@@ -2666,11 +2667,8 @@ export default function DSCRegister() {
               const daysLeft = selectedDSC ? Math.ceil((new Date(selectedDSC.expiry_date) - new Date()) / (1000 * 60 * 60 * 24)) : 999;
               const isUrgent = daysLeft <= 7;
               const isExpiredDSC = daysLeft < 0;
-              const headerGrad = isExpiredDSC
-                ? 'linear-gradient(135deg,#7f1d1d,#dc2626)'
-                : isUrgent
-                  ? 'linear-gradient(135deg,#7c2d12,#ea580c)'
-                  : 'linear-gradient(135deg,#0f1f4d,#1e3a8a)';
+              // Same navy band as every popup; expiry status shows in the icon and stripes.
+              const headerGrad = 'linear-gradient(135deg,#0D3B66,#1F6FB2)';
               return (
             <div className="relative px-6 py-5" style={{ background: headerGrad }}>
               {isUrgent && <div className="absolute inset-0 opacity-10" style={{ background: 'repeating-linear-gradient(45deg,#fff,#fff 2px,transparent 2px,transparent 12px)' }} />}
@@ -2908,17 +2906,9 @@ export default function DSCRegister() {
       {/* ── WhatsApp Share Choice Dialog ── */}
       {shareChoiceDialog && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" style={{ background: 'rgba(6,78,59,0.60)', backdropFilter: 'blur(6px)' }}>
-          <div className={`rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
-            <div className="px-6 pt-6 pb-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: '#25d36620' }}>
-                  <MessageCircle className="h-5 w-5" style={{ color: '#25d366' }} />
-                </div>
-                <div>
-                  <h3 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Send WhatsApp Alert</h3>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{shareChoiceDialog.holder_name}</p>
-                </div>
-              </div>
+          <div className={`rounded-2xl shadow-2xl w-full max-w-sm max-h-[92vh] overflow-y-auto overflow-x-hidden ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+            <PopupHeader icon={MessageCircle} eyebrow="DSC expiry alert" title="Send WhatsApp Alert" subtitle={shareChoiceDialog.holder_name} titleAs="h3" onClose={() => setShareChoiceDialog(null)} />
+            <div className="px-6 pt-5 pb-4">
               <p className={`text-sm mb-4 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>How would you like to send the DSC expiry alert?</p>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -2962,16 +2952,7 @@ export default function DSCRegister() {
       {waMsgSettingsOpen && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4" style={{ background: 'rgba(6,78,59,0.60)', backdropFilter: 'blur(6px)' }}>
           <div className={`rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
-            <div className="px-6 pt-6 pb-4 flex items-center gap-3 border-b" style={{ borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
-              <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-indigo-900/40' : 'bg-indigo-50'}`}>
-                <Settings2 className="h-5 w-5 text-indigo-500" />
-              </div>
-              <div className="flex-1">
-                <h3 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>WhatsApp Message Template</h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Customise the expiry alert message sent via WhatsApp</p>
-              </div>
-              <button onClick={() => setWaMsgSettingsOpen(false)} className={`h-8 w-8 rounded-lg flex items-center justify-center ${isDark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>✕</button>
-            </div>
+            <PopupHeader icon={Settings2} eyebrow="WhatsApp" title="WhatsApp Message Template" subtitle="Customise the expiry alert message sent via WhatsApp" titleAs="h3" onClose={() => setWaMsgSettingsOpen(false)} />
             <div className="px-6 py-5 space-y-5">
               {[
                 { key: 'senderName', label: 'Sender Name (Signature)', placeholder: 'e.g. Your Firm Name', hint: 'Appears at the bottom of every message as "— Sender Name"' },
@@ -3068,16 +3049,8 @@ export default function DSCRegister() {
       {/* ── Legacy WhatsApp Phone Entry Dialog (kept for automation bulk flow) ── */}
       {waPhoneDialog && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(6,78,59,0.55)', backdropFilter: 'blur(4px)' }}>
-          <div className={`rounded-2xl shadow-2xl w-full max-w-sm p-6 ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: '#25d36620' }}>
-                <MessageCircle className="h-5 w-5" style={{ color: '#25d366' }} />
-              </div>
-              <div>
-                <h3 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Send WhatsApp Alert</h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{waPhoneDialog.holder_name}</p>
-              </div>
-            </div>
+          <div className={`rounded-2xl shadow-2xl w-full max-w-sm p-6 max-h-[92vh] overflow-y-auto overflow-x-hidden ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+            <PopupHeader className="-mx-6 -mt-6 mb-4" icon={MessageCircle} eyebrow="DSC expiry alert" title="Send WhatsApp Alert" subtitle={waPhoneDialog.holder_name} titleAs="h3" onClose={() => setWaPhoneDialog(null)} />
             <p className={`text-sm mb-3 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
               Enter the mobile number of <strong>{waPhoneDialog.holder_name}</strong> to send DSC expiry alert:
             </p>
@@ -3114,20 +3087,11 @@ export default function DSCRegister() {
       {/* ── WhatsApp Automation Dialog ── */}
       {whatsappAutoOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: 'rgba(6,78,59,0.55)', backdropFilter: 'blur(4px)' }}>
-          <div className={`rounded-2xl shadow-2xl w-full max-w-md ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+          <div className={`rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden ${isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
             {/* Header */}
-            <div className="px-6 pt-6 pb-4 flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#25d36620,#128c7e20)' }}>
-                <Zap className="h-5 w-5" style={{ color: '#25d366' }} />
-              </div>
-              <div className="flex-1">
-                <h3 className={`font-bold text-lg ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>WhatsApp Alerts & Automation</h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Configure expiry notifications for DSC holders</p>
-              </div>
-              <button onClick={() => setWhatsappAutoOpen(false)} className={`h-8 w-8 rounded-lg flex items-center justify-center transition-colors ${isDark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>✕</button>
-            </div>
+            <PopupHeader icon={Zap} eyebrow="WhatsApp" title="WhatsApp Alerts & Automation" subtitle="Configure expiry notifications for DSC holders" titleAs="h3" onClose={() => setWhatsappAutoOpen(false)} />
             {/* Message Template shortcut */}
-            <div className={`mx-6 mt-2 mb-0 rounded-xl p-3 border flex items-center gap-3 cursor-pointer transition-all hover:opacity-80 ${isDark ? 'bg-indigo-900/20 border-indigo-800/40' : 'bg-indigo-50 border-indigo-100'}`}
+            <div className={`mx-6 mt-5 mb-0 rounded-xl p-3 border flex items-center gap-3 cursor-pointer transition-all hover:opacity-80 ${isDark ? 'bg-indigo-900/20 border-indigo-800/40' : 'bg-indigo-50 border-indigo-100'}`}
               onClick={() => { setWhatsappAutoOpen(false); setWaMsgSettingsOpen(true); }}>
               <Settings2 className="h-4 w-4 text-indigo-500 flex-shrink-0" />
               <div className="flex-1">

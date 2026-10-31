@@ -1156,7 +1156,7 @@ export default function Recruitment() {
         {convertOpen && (
           <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
             <DialogContent className={`max-w-lg ${dark ? 'bg-slate-900 border-slate-800' : 'bg-white'}`}>
-              <DialogHeader className="px-6 py-4 border-b" style={{ background: GRADIENT_GREEN }}>
+              <DialogHeader className="px-6 py-4 border-b" style={{ background: GRADIENT }}>
                 <DialogTitle className="text-white font-bold flex items-center gap-2">
                   <UserCheck className="w-5 h-5" /> Convert to User
                 </DialogTitle>

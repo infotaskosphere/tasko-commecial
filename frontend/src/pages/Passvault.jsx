@@ -138,20 +138,24 @@ function HolderBadge({ holderType }) {
   );
 }
 
+// All Passvault popups share the app-wide popup header look (navy band).
+// `grad` is kept for call-site compatibility but no longer changes the colour.
 function ModalHead({ icon, title, sub, grad, onClose }) {
   return (
-    <div className="px-5 py-4 flex-shrink-0" style={{ background: grad }}>
-      <div className="flex items-center justify-between gap-3">
+    <div className="relative overflow-hidden px-6 py-5 flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
+      <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-20 w-56 h-56 opacity-10"
+        style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
+      <div className="relative flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0">{icon}</div>
+          <div className="w-10 h-10 bg-white/15 rounded-xl flex items-center justify-center flex-shrink-0">{icon}</div>
           <div className="min-w-0">
-            <p className="text-white font-bold text-sm leading-tight">{title}</p>
-            {sub && <p className="text-white/60 text-[11px] mt-0.5 truncate">{sub}</p>}
+            <p className="text-white font-bold text-xl leading-snug break-words">{title}</p>
+            {sub && <p className="text-white/75 text-[13px] mt-0.5 break-words">{sub}</p>}
           </div>
         </div>
-        <button type="button" onClick={onClose}
-          className="w-7 h-7 bg-white/15 hover:bg-white/25 rounded-lg flex items-center justify-center transition-all flex-shrink-0">
-          <X className="h-3.5 w-3.5 text-white" />
+        <button type="button" onClick={onClose} aria-label="Close"
+          className="w-8 h-8 bg-white/15 hover:bg-white/25 rounded-lg flex items-center justify-center transition-all flex-shrink-0">
+          <X className="h-4 w-4 text-white" />
         </button>
       </div>
     </div>

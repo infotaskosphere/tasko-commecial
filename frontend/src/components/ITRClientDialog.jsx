@@ -491,7 +491,7 @@ export default function ITRClientDialog({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent
-        className="max-w-3xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0"
+        className="dialog-close-on-band max-w-3xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0"
         style={{ background: isDark ? '#0f172a' : '#fff', borderColor: isDark ? '#1e3a5f' : '#e2e8f0' }}
       >
         <DialogTitle className="sr-only">ITR Client</DialogTitle>
@@ -499,16 +499,16 @@ export default function ITRClientDialog({
 
         {/* ── Header ── */}
         <div
-          className="flex-shrink-0 px-7 py-5 border-b"
-          style={{ background: 'linear-gradient(135deg, #0f3460 0%, #16213e 60%, #0d7377 100%)', borderColor: 'transparent' }}
+          className="flex-shrink-0 px-7 py-5 pr-16 border-b"
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)', borderColor: 'transparent' }}
         >
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl flex items-center justify-center flex-shrink-0"
               style={{ background: 'rgba(255,255,255,0.15)' }}>
               <FileText className="h-5 w-5 text-white" />
             </div>
-            <div className="flex-1">
-              <h2 className="text-lg font-bold text-white">
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-bold text-white break-words">
                 {isEdit ? `Edit ITR Client — ${editingClient.company_name}` : 'New ITR Client'}
               </h2>
               <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.6)' }}>

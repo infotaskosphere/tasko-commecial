@@ -348,9 +348,7 @@ const TaskDetailModal = memo(function TaskDetailModal({ task, onClose, onUpdateS
   const safeDate = (d) => { try { return format(new Date(d), 'MMM d, yyyy · h:mm a'); } catch { return '—'; } };
   const priorityColors = { high:'#EF4444', critical:'#DC2626', medium:COLORS.amber, urgent:'#F97316', low:'#3B82F6' };
   const pColor = priorityColors[(task.priority || '').toLowerCase()] || '#94A3B8';
-  const headerGradient = isCompleted
-    ? `linear-gradient(135deg, ${COLORS.emeraldGreen}, #15803d)`
-    : `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})`;
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
 
   return (
     <DetailModal isDark={isDark} onClose={onClose}
@@ -410,11 +408,7 @@ const TaskDetailModal = memo(function TaskDetailModal({ task, onClose, onUpdateS
 const DeadlineDetailModal = memo(function DeadlineDetailModal({ due, onClose, navigate, isDark }) {
   if (!due) return null;
   const daysLeft = due.days_remaining ?? 0;
-  const headerGradient =
-    daysLeft <= 0  ? 'linear-gradient(135deg,#DC2626,#B91C1C)'
-    : daysLeft <= 7  ? 'linear-gradient(135deg,#EA580C,#C2410C)'
-    : daysLeft <= 15 ? `linear-gradient(135deg,${COLORS.amber},#D97706)`
-    :                  `linear-gradient(135deg,${COLORS.emeraldGreen},#15803d)`;
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
   const chipColor = daysLeft <= 0 ? COLORS.coral : daysLeft <= 7 ? '#EA580C' : daysLeft <= 15 ? COLORS.amber : COLORS.emeraldGreen;
   const safeDate = (d) => { try { return format(new Date(d), 'EEEE, MMMM d, yyyy'); } catch { return '—'; } };
 
@@ -462,9 +456,7 @@ const VisitDetailModal = memo(function VisitDetailModal({ visit, onClose, naviga
   if (!visit) return null;
   const sc  = VISIT_STATUS_COLORS[visit.status] || VISIT_STATUS_COLORS.scheduled;
   const isT = visit.visit_date && isToday(parseISO(visit.visit_date));
-  const headerGradient = isT
-    ? `linear-gradient(135deg, ${COLORS.emeraldGreen}, #15803d)`
-    : 'linear-gradient(135deg, #0F766E, #0D9488)';
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
   const safeDate = (d) => { try { return format(parseISO(d), 'EEEE, MMMM d, yyyy'); } catch { return '—'; } };
 
   return (
@@ -522,11 +514,7 @@ const TodoDetailModal = memo(function TodoDetailModal({ todo, onClose, onToggle,
   const isCompleted = todo.completed || todo.is_completed === true || todo.status === 'completed';
   const isOD        = todo.due_date && new Date(todo.due_date) < new Date() && !isCompleted;
   const safeDate = (d) => { try { return format(new Date(d), 'EEEE, MMMM d, yyyy'); } catch { return '—'; } };
-  const headerGradient = isCompleted
-    ? `linear-gradient(135deg, ${COLORS.emeraldGreen}, #15803d)`
-    : isOD
-    ? 'linear-gradient(135deg, #DC2626, #B91C1C)'
-    : `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})`;
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
 
   return (
     <DetailModal isDark={isDark} onClose={onClose}
@@ -573,11 +561,7 @@ const PerformerDetailModal = memo(function PerformerDetailModal({ member, index,
   const isSilver = index === 1;
   const isBronze = index === 2;
   const medal    = isGold ? '🥇' : isSilver ? '🥈' : isBronze ? '🥉' : `#${index + 1}`;
-  const headerGradient = isGold
-    ? 'linear-gradient(135deg, #7B5A0A 0%, #C9920A 40%, #FFD700 100%)'
-    : isSilver ? 'linear-gradient(135deg, #3A3A3A 0%, #707070 40%, #C0C0C0 100%)'
-    : isBronze ? 'linear-gradient(135deg, #5C2E00 0%, #A0521A 40%, #CD7F32 100%)'
-    : `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})`;
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
   const hours = member.total_hours
     ? `${Math.floor(member.total_hours)}h ${Math.round((member.total_hours % 1) * 60)}m`
     : '0h 0m';

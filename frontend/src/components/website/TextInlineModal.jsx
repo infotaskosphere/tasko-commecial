@@ -11,6 +11,7 @@ import {
   Check,
   X
 } from "lucide-react";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export default function TextInlineModal({
   sectionId,
@@ -33,24 +34,7 @@ export default function TextInlineModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden border border-slate-100">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <Type size={16} />
-            </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-900">Direct Text Editor</h3>
-              <p className="text-[11px] text-slate-400 capitalize">Editing field: {fieldKey}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader icon={Type} eyebrow="Website Studio" title="Direct Text Editor" subtitle={<>Editing field: {fieldKey}</>} onClose={onClose} />
 
         {/* Text Input area */}
         <div className="p-6 space-y-4">

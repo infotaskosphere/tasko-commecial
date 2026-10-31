@@ -11,6 +11,7 @@ import {
   X
 } from "lucide-react";
 import { THEME_PRESETS, SAFE_FONTS } from "./studioTemplates";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export default function ThemeCustomizerModal({
   currentTheme = {},
@@ -61,24 +62,7 @@ export default function ThemeCustomizerModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
       <div className="flex h-[88vh] max-h-[700px] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600">
-              <Palette size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900">Website Theme &amp; Typography</h2>
-              <p className="text-xs text-slate-500">Pick a professional color palette or customize individual brand tones.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader icon={Palette} eyebrow="Website Studio" title="Website Theme & Typography" subtitle="Pick a professional color palette or customize individual brand tones." onClose={onClose} />
 
         {/* Tab switch */}
         <div className="flex border-b border-slate-100 bg-slate-50 px-6">

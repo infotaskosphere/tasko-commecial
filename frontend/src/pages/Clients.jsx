@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import api from '@/lib/api';
 import { lookupPincode } from '@/lib/pincode';
@@ -727,17 +727,17 @@ const BulkMessageModal = React.memo(({ open, onClose, mode, filteredClients, isD
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0" style={{ background: isDark ? '#0f172a' : '#fff', borderColor: isDark ? '#1e3a5f' : '#e2e8f0' }}>
+      <DialogContent className="dialog-close-on-band max-w-4xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0" style={{ background: isDark ? '#0f172a' : '#fff', borderColor: isDark ? '#1e3a5f' : '#e2e8f0' }}>
         <DialogTitle className="sr-only">{isWhatsApp ? 'Bulk WhatsApp' : 'Bulk Email'}</DialogTitle>
 
         {/* Header */}
-        <div className="flex-shrink-0 px-6 py-4 border-b" style={{ background: isWhatsApp ? 'linear-gradient(135deg, #064e3b, #065f46)' : 'linear-gradient(135deg, #1e3a5f, #1e40af)', borderColor: 'transparent' }}>
+        <div className="flex-shrink-0 px-6 py-4 border-b" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)', borderColor: 'transparent' }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.15)' }}>
               {isWhatsApp ? <MessageCircle className="h-5 w-5 text-white" /> : <Mail className="h-5 w-5 text-white" />}
             </div>
             <div className="flex-1">
-              <h2 className="text-base font-bold text-white">{isWhatsApp ? 'Bulk WhatsApp — Direct Send' : 'Bulk Email'}</h2>
+              <h2 className="text-xl font-bold text-white break-words">{isWhatsApp ? 'Bulk WhatsApp — Direct Send' : 'Bulk Email'}</h2>
               <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>
                 {isWhatsApp ? 'Send personalized messages directly · Schedule for later · Export for Broadcast' : 'Draft → opens in your mail client with all recipients in BCC'}
               </p>
@@ -1664,17 +1664,17 @@ const BulkAssignModal = React.memo(({ open, onClose, filteredClients, users, isD
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
+      <DialogContent className="dialog-close-on-band max-w-3xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
         <DialogTitle className="sr-only">Bulk Assign Clients</DialogTitle>
         {/* Header */}
-        <div className="flex-shrink-0 px-7 py-5 border-b border-slate-100" style={{ background: 'linear-gradient(135deg, #eff6ff, #dbeafe)' }}>
+        <div className="flex-shrink-0 px-7 py-5 pr-16" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm flex-shrink-0" style={{ background: accentGrad }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0 bg-white/15">
               <UserCheck className="h-5 w-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Bulk Assign Clients</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Select clients and assign them to a team member in one shot</p>
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-white break-words">Bulk Assign Clients</h2>
+              <p className="text-xs text-white/75 mt-0.5">Select clients and assign them to a team member in one shot</p>
             </div>
             <div className="ml-auto flex-shrink-0">
               <span className="text-xs font-bold px-3 py-1.5 rounded-full border" style={{ background: '#dbeafe', color: '#1e40af', borderColor: '#bfdbfe' }}>
@@ -2106,16 +2106,16 @@ const BulkAuditorDialog = React.memo(({ open, onClose, filteredClients, savedAud
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[88vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
+      <DialogContent className="dialog-close-on-band max-w-2xl max-h-[88vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
         <DialogTitle className="sr-only">Bulk Set Auditor</DialogTitle>
-        <div className="flex-shrink-0 px-7 py-5 border-b border-slate-100" style={{ background: 'linear-gradient(135deg, #f5f3ff, #ede9fe)' }}>
+        <div className="flex-shrink-0 px-7 py-5 pr-16" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-sm flex-shrink-0" style={{ background: accentGrad }}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0 bg-white/15">
               <FileCheck className="h-5 w-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Bulk Set Auditor</h2>
-              <p className="text-xs text-slate-500 mt-0.5">Select clients and assign or update their auditor in one shot</p>
+            <div className="min-w-0">
+              <h2 className="text-xl font-bold text-white break-words">Bulk Set Auditor</h2>
+              <p className="text-xs text-white/75 mt-0.5">Select clients and assign or update their auditor in one shot</p>
             </div>
             <div className="ml-auto flex-shrink-0">
               <span className="text-xs font-bold px-3 py-1.5 rounded-full border" style={{ background: '#ede9fe', color: '#6d28d9', borderColor: '#ddd6fe' }}>
@@ -3101,17 +3101,17 @@ const ClientDetailPopup = React.memo(({ selectedClient, detailDialogOpen, setDet
 
   return (
     <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-      <DialogContent className={`max-w-4xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+      <DialogContent className={`dialog-close-on-band max-w-4xl max-h-[92vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
         <DialogTitle className="sr-only">Client Details</DialogTitle>
         <DialogDescription className="sr-only">View complete client information</DialogDescription>
 
         {/* ── Header ── */}
-        <div className="sticky top-0 z-10 pt-6 px-8 pb-6 border-b border-slate-100" style={{ background: `linear-gradient(135deg, ${cfg.bg}, white)` }}>
+        <div className="sticky top-0 z-10 pt-6 px-8 pr-16 pb-6" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-start gap-4">
             <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white text-2xl font-bold flex-shrink-0 shadow-md" style={{ background: avatarGrad }}>{selectedClient.company_name?.charAt(0).toUpperCase() || '?'}</div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
-                <h2 className={`text-2xl font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{selectedClient.company_name}</h2>
+                <h2 className="text-2xl font-bold text-white break-words min-w-0">{selectedClient.company_name}</h2>
                 <TypePill type={selectedClient.client_type} customLabel={selectedClient.client_type_label} />
                 {selectedClient.status === 'inactive' && <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full">Archived</span>}
               </div>
@@ -6521,23 +6521,23 @@ export default function Clients() {
                 <Button onClick={openAddDialog} className="h-9 px-5 text-sm !rounded-none bg-white text-slate-800 hover:bg-blue-50 shadow-sm gap-2 font-semibold border-0" style={{ borderRadius: 0 }}><Plus className="h-4 w-4" /> New Client</Button>
               </DialogTrigger>
               )}
-              <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-0">
-                <div className={`sticky top-0 z-10 border-b px-8 py-5 flex items-center justify-between ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
-                  <div>
-                    <DialogTitle className={`text-xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{editingClient ? 'Edit Client Profile' : 'New Client Profile'}</DialogTitle>
-                    <DialogDescription className="text-sm text-slate-400 mt-0.5">Complete client information and preferences</DialogDescription>
+              <DialogContent className="dialog-close-on-band max-w-5xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl p-0">
+                <div className="sticky top-0 z-10 px-8 py-5 pr-16 flex flex-wrap items-center justify-between gap-3" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
+                  <div className="min-w-0">
+                    <DialogTitle className="text-xl font-bold tracking-tight text-white break-words">{editingClient ? 'Edit Client Profile' : 'New Client Profile'}</DialogTitle>
+                    <DialogDescription className="text-sm text-white/75 mt-0.5">Complete client information and preferences</DialogDescription>
                   </div>
                   <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Status</span>
+                    <div className="flex items-center gap-3 bg-white/10 px-4 py-2 rounded-xl border border-white/20">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-white/60">Status</span>
                       <Switch checked={formData.status === 'active'} onCheckedChange={c => setFormData(p => ({ ...p, status: c ? 'active' : 'inactive' }))} />
-                      <span className={`text-xs font-semibold ${formData.status === 'active' ? 'text-emerald-600' : 'text-amber-600'}`}>{formData.status === 'active' ? 'Active' : 'Archived'}</span>
+                      <span className={`text-xs font-semibold ${formData.status === 'active' ? 'text-emerald-300' : 'text-amber-300'}`}>{formData.status === 'active' ? 'Active' : 'Archived'}</span>
                     </div>
                     {/* Minimize — shrink this form to the dock, go do something else, resume later */}
                     <button
                       type="button"
                       onClick={() => { minimizeClientForm(); setDialogOpen(false); toast.message('Client form minimized', { description: 'Resume it anytime from the dock in the bottom-left corner.' }); }}
-                      className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-500 transition-colors"
+                      className="w-9 h-9 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-colors"
                       title="Minimize (resume later without losing your progress)"
                     >
                       <Minimize2 className="h-4 w-4" />
@@ -7735,14 +7735,13 @@ export default function Clients() {
 
       {/* Bulk delete confirmation dialog */}
       <Dialog open={bulkDeleteConfirm} onOpenChange={setBulkDeleteConfirm}>
-        <DialogContent className="max-w-sm rounded-2xl border border-red-200 shadow-2xl">
-          <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
-              <Trash2 className="h-5 w-5 text-red-600" />
-            </div>
-            Delete {bulkSelectedIds.size} client{bulkSelectedIds.size !== 1 ? 's' : ''}?
-          </DialogTitle>
-          <DialogDescription className="text-sm text-slate-500 mt-1">
+        <DialogContent className="max-w-sm rounded-2xl shadow-2xl">
+          <DialogHeader icon={Trash2} eyebrow="Delete clients">
+            <DialogTitle>
+              Delete {bulkSelectedIds.size} client{bulkSelectedIds.size !== 1 ? 's' : ''}?
+            </DialogTitle>
+          </DialogHeader>
+          <DialogDescription className="text-sm text-slate-500">
             This will permanently delete <strong>{bulkSelectedIds.size}</strong> selected client{bulkSelectedIds.size !== 1 ? 's' : ''} and all their associated data. This action <strong>cannot be undone</strong>.
           </DialogDescription>
           <div className="flex gap-2 mt-4">
@@ -7923,12 +7922,10 @@ export default function Clients() {
       {/* CSV PREVIEW DIALOG */}
 <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
   <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col rounded-2xl border border-slate-200 shadow-2xl">
-    <DialogTitle className={`text-lg font-bold px-6 pt-5 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-      Review Excel Import
-    </DialogTitle>
-    <DialogDescription className="text-sm text-slate-400 px-6">
-      Preview and confirm data before bulk import
-    </DialogDescription>
+    <DialogHeader icon={FileSpreadsheet} eyebrow="Import clients">
+      <DialogTitle>Review Excel Import</DialogTitle>
+      <DialogDescription>Preview and confirm data before bulk import</DialogDescription>
+    </DialogHeader>
 
     <div className="flex-1 overflow-auto mx-6 mt-4 rounded-xl border border-slate-100">
       <table className="min-w-full text-xs">
@@ -8097,13 +8094,13 @@ export default function Clients() {
 
       {/* MDS PREVIEW DIALOG */}
       <Dialog open={mdsPreviewOpen} onOpenChange={(open) => { if (!open) { setMdsPreviewOpen(false); setMdsData(null); setMdsForm(null); } }}>
-        <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
-          <div className={`sticky top-0 z-10 border-b px-7 py-5 ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
+        <DialogContent className="dialog-close-on-band max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl border border-slate-200 shadow-2xl p-0 bg-white">
+          <div className="sticky top-0 z-10 px-7 py-5 pr-16" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}><Building2 className="h-5 w-5" /></div>
-              <div>
-                <DialogTitle className={`text-lg font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>MCA / MDS Data Preview</DialogTitle>
-                <DialogDescription className="text-xs text-slate-400 mt-0.5">Review and edit the parsed data before saving{mdsData?.sheets_parsed && <span className="ml-2 text-blue-500 font-medium">· {mdsData.sheets_parsed.length} sheet{mdsData.sheets_parsed.length !== 1 ? 's' : ''} parsed</span>}</DialogDescription>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0 bg-white/15"><Building2 className="h-5 w-5" /></div>
+              <div className="min-w-0">
+                <DialogTitle className="text-xl font-bold text-white break-words">MCA / MDS Data Preview</DialogTitle>
+                <DialogDescription className="text-xs text-white/75 mt-0.5">Review and edit the parsed data before saving{mdsData?.sheets_parsed && <span className="ml-2 text-sky-200 font-medium">· {mdsData.sheets_parsed.length} sheet{mdsData.sheets_parsed.length !== 1 ? 's' : ''} parsed</span>}</DialogDescription>
               </div>
             </div>
           </div>

@@ -65,7 +65,7 @@ export default function PortalSyncModal({ onClose, onDone, isDark }) {
       >
         {/* Header */}
         <div className="px-6 py-5 relative overflow-hidden"
-             style={{ background: 'linear-gradient(135deg,#3B0764 0%,#7C3AED 60%,#2563EB 100%)' }}>
+             style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-white/15 flex items-center justify-center">

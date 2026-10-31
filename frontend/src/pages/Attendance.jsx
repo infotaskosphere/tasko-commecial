@@ -1,6 +1,7 @@
 import { useDark } from '@/hooks/useDark';
 import AttendanceReportModal from './AttendanceReportModal';
 import React, { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import { PopupHeader } from '@/components/ui/popup-header';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatInTimeZone } from 'date-fns-tz';
 import { useAuth } from '@/contexts/AuthContext';
@@ -623,7 +624,7 @@ function HolidayDetailPopup({ holiday, isAdmin, onClose, onEdit, onDelete, isDar
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-5 text-white relative overflow-hidden" style={{ background: `linear-gradient(135deg, ${COLORS.amber}, #D97706)` }}>
+        <div className="px-6 py-5 text-white relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-10" style={{ background: 'white', transform: 'translate(30%,-30%)' }} />
           <div className="relative flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -734,7 +735,7 @@ function ReminderDetailPopup({ reminder, isViewingOther, onClose, onDelete, onEd
         {/* Header */}
         <div
           className="px-6 py-5 text-white relative overflow-hidden flex-shrink-0"
-          style={{ background: isDue ? `linear-gradient(135deg, ${COLORS.red}, #B91C1C)` : `linear-gradient(135deg, ${COLORS.purple}, #6D28D9)` }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-10" style={{ background: 'white', transform: 'translate(30%,-30%)' }} />
           <div className="relative flex items-start justify-between">
@@ -845,11 +846,8 @@ function AttendanceUserDetailModal({ detail, onClose, isDark, resolveLocation })
   const isLeave    = type === 'leave';
   const isLocation = type === 'location';
   const accent = isLocation ? (COLORS.deepBlue || '#2563EB') : isLeave ? (COLORS.amber || '#F59E0B') : COLORS.red;
-  const headerGradient = isLocation
-    ? `linear-gradient(135deg, ${COLORS.deepBlue || '#2563EB'}, #1D4ED8)`
-    : isLeave
-      ? `linear-gradient(135deg, #F59E0B, #B45309)`
-      : `linear-gradient(135deg, ${COLORS.red}, #B91C1C)`;
+  // Same navy band as every other popup; the title says which kind it is.
+  const headerGradient = 'linear-gradient(135deg, #0D3B66, #1F6FB2)';
   const records = isLocation || isLeave ? (item.records || []) : (item.dates || []).map(d => ({ date: d }));
   const HeaderIcon = isLocation ? MapPin : isLeave ? CalendarOff : UserX;
   const eyebrow = isLocation ? 'Location History' : isLeave ? 'Applied Leave' : 'Absent This Month';
@@ -1030,7 +1028,7 @@ function ReminderEditModal({ reminder, isOpen, onClose, onSave, isDark }) {
         transition={{ type: 'spring', stiffness: 220, damping: 22 }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="px-6 py-5 text-white" style={{ background: `linear-gradient(135deg, ${COLORS.mediumBlue}, #1d4ed8)` }}>
+        <div className="px-6 py-5 text-white" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-bold">Edit Reminder</h2>
             <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center"><X className="w-4 h-4 text-white" /></button>
@@ -1124,7 +1122,7 @@ function ReminderCalendarModal({ reminders, onClose, onClickReminder, currentMon
       >
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between flex-shrink-0"
-          style={{ background: `linear-gradient(135deg, ${COLORS.purple}, #6D28D9)` }}>
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center"><CalendarIcon className="w-4 h-4 text-white" /></div>
             <div>
@@ -1231,7 +1229,7 @@ function LateWorkingPopup({ onContinue, onPunchOut, onRemindLater, isDark }) {
       >
         {/* Header */}
         <div className="px-6 py-5 text-white relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #1e40af, #7c3aed)' }}>
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="absolute top-0 right-0 w-28 h-28 rounded-full opacity-10"
             style={{ background: 'white', transform: 'translate(35%,-35%)' }} />
           <div className="relative flex items-center gap-3">
@@ -1594,7 +1592,7 @@ function GoalSettingsModal({ goal, onSave, onClose, isDark, hoursWorkedToday, ta
       >
         {/* Header */}
         <div className="px-6 py-5 text-white flex-shrink-0"
-          style={{ background: `linear-gradient(135deg, #1e3a5f, ${COLORS.mediumBlue})` }}>
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -1819,19 +1817,13 @@ function EditAttendanceModal({ record, isOpen, status, setStatus, note, setNote,
           style={{ backgroundColor: D.bg, borderColor: D.border }}
           onClick={e => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: D.border }}>
-            <div>
-              <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: D.text }}>
-                <Edit2 className="w-4 h-4 text-blue-500" /> Edit Attendance
-              </h2>
-              <p className="text-xs mt-0.5" style={{ color: D.muted }}>
-                {record.date}{record.user_id ? ` \u00b7 User: ${record.user_id.slice(0, 8)}...` : ''}
-              </p>
-            </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-              <X className="w-4 h-4" style={{ color: D.muted }} />
-            </button>
-          </div>
+          <PopupHeader
+            icon={Edit2}
+            eyebrow="Attendance"
+            title="Edit Attendance"
+            subtitle={`${record.date}${record.user_id ? ` \u00b7 User: ${record.user_id.slice(0, 8)}...` : ''}`}
+            onClose={onClose}
+          />
 
           <div className="p-5 space-y-4">
             <div>
@@ -5977,7 +5969,7 @@ Taskosphere HR Management System · Confidential
               >
                 {/* Header */}
                 <div className="px-6 py-5 text-white flex items-center justify-between flex-shrink-0"
-                  style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue}, #1e40af)` }}>
+                  style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
                       <CalendarIcon className="w-4.5 h-4.5 text-white" />
@@ -6093,7 +6085,7 @@ Taskosphere HR Management System · Confidential
                 initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
                 transition={{ type: 'spring', stiffness: 220, damping: 20 }}
               >
-                <div className="px-6 py-5 text-white flex items-center justify-between" style={{ background: `linear-gradient(135deg, ${COLORS.amber}, #D97706)` }}>
+                <div className="px-6 py-5 text-white flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
                   <h2 className="text-lg font-black">Edit Holiday</h2>
                   <button onClick={() => setEditingHoliday(null)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center">
                     <X className="w-4 h-4 text-white" />
@@ -6134,7 +6126,7 @@ Taskosphere HR Management System · Confidential
                 initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
                 transition={{ type: 'spring', stiffness: 220, damping: 20 }}
               >
-                <div className="px-7 py-5 text-white flex-shrink-0" style={{ background: `linear-gradient(135deg, ${COLORS.purple}, #6D28D9)` }}>
+                <div className="px-7 py-5 text-white flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><AlarmClock className="w-5 h-5 text-white" /></div>

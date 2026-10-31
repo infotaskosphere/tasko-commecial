@@ -1209,7 +1209,7 @@ export default function DocumentRegister() {
 
           <div ref={shareAreaRef} className={`rounded-2xl overflow-hidden border shadow-2xl ${isDark ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}>
             {/* Header strip — dark navy with icon tile */}
-            <div className="relative px-6 py-5" style={{ background: 'linear-gradient(135deg,#0f1f4d,#1e3a8a)' }}>
+            <div className="relative px-6 py-5" style={{ background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' }}>
               <div className="flex items-center gap-3">
                 <div className="h-11 w-11 rounded-xl bg-white/10 flex items-center justify-center backdrop-blur">
                   <FileText className="h-5 w-5 text-white" />

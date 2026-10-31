@@ -9,6 +9,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { BASE_URL } from "@/lib/api";
+import { POPUP_GRADIENT } from "@/components/ui/popup-header";
 
 // Same department codes used on Admin → Users (a staff member's
 // `departments` field) and Admin → Contact Details (the helpline
@@ -186,12 +187,12 @@ function PreviewModal({ file, onClose }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3.5 border-b border-gray-100 bg-gray-50">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className={`text-xl flex-shrink-0 ${meta.color}`}>{meta.icon}</span>
+        <div className="flex items-center justify-between gap-3 px-6 py-5 text-white" style={{ background: POPUP_GRADIENT }}>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-10 h-10 flex items-center justify-center bg-white/15 text-xl flex-shrink-0">{meta.icon}</span>
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-gray-800 truncate">{file.name}</p>
-              <p className="text-xs text-gray-400">
+              <p className="text-xl font-bold text-white break-words">{file.name}</p>
+              <p className="text-xs text-white/75">
                 {file.modifiedTime ? fmtDate(file.modifiedTime) : ""}{file.size ? ` · ${fmtSize(file.size)}` : ""}
               </p>
             </div>
@@ -200,7 +201,7 @@ function PreviewModal({ file, onClose }) {
             <a
               href={getProxyDownloadUrl(file)}
               title="Download"
-              className="p-2 rounded-lg text-gray-500 hover:text-blue-600 hover:bg-blue-50 transition"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/15 text-white hover:bg-white/25 transition"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
@@ -209,7 +210,7 @@ function PreviewModal({ file, onClose }) {
             <button
               onClick={onClose}
               title="Close"
-              className="p-2 rounded-lg text-gray-500 hover:text-red-600 hover:bg-red-50 transition"
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/15 text-white hover:bg-white/25 transition"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

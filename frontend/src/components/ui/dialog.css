@@ -1,0 +1,164 @@
+/*
+ * Shared popup look (see dialog.jsx). Modelled on the Create Invoice popup:
+ * navy gradient header band, square icon tile, white title, light footer bar.
+ * Selectors are scoped to [data-app-dialog] so they win over the app-wide
+ * dialog overrides without touching custom-built modals.
+ */
+
+[data-app-dialog] {
+  --dlg-pt: 1.5rem;
+  --dlg-pr: 1.5rem;
+  --dlg-pb: 1.5rem;
+  --dlg-pl: 1.5rem;
+  --dlg-brand: linear-gradient(135deg, #0D3B66, #1F6FB2);
+  min-width: 0;
+}
+
+/* index.css gives every [role="dialog"] a 0.75rem margin on phones, which
+   pushes this centred box off the right edge. The width already leaves room. */
+[role="dialog"][data-app-dialog] {
+  margin: 0 !important;
+}
+
+/* Grid and flex children may shrink below their content width, so long
+   addresses, numbers and side-by-side inputs stay inside the box. */
+[data-app-dialog] > * {
+  min-width: 0;
+}
+
+/* ── Header band ─────────────────────────────────────────────────────────── */
+[data-app-dialog] .dialog-band-header {
+  position: sticky;
+  top: calc(-1 * var(--dlg-pt));
+  z-index: 10;
+  margin: calc(-1 * var(--dlg-pt)) calc(-1 * var(--dlg-pr)) 0 calc(-1 * var(--dlg-pl));
+  padding: 20px 64px 20px max(var(--dlg-pl), 24px);
+  background: var(--dlg-brand);
+  color: #fff;
+  text-align: left;
+  overflow: hidden;
+  border: 0;
+}
+
+[data-app-dialog] .dialog-band-glow {
+  position: absolute;
+  right: -80px;
+  top: -80px;
+  width: 224px;
+  height: 224px;
+  opacity: 0.1;
+  pointer-events: none;
+  background: radial-gradient(circle, #fff 0%, transparent 70%);
+}
+
+[data-app-dialog] .dialog-band-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+[data-app-dialog] .dialog-band-eyebrow {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+[data-app-dialog] .dialog-band-header [data-dialog-title] {
+  margin: 0;
+  color: #fff !important;
+  font-size: 1.25rem !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  column-gap: 12px;
+  min-width: 0;
+}
+
+[data-app-dialog] .dialog-band-header [data-dialog-title] svg {
+  color: #fff !important;
+  stroke: currentColor;
+}
+
+/* A leading icon inside the title becomes the square icon tile. */
+[data-app-dialog] .dialog-band-header [data-dialog-title] > svg:first-child {
+  box-sizing: content-box;
+  flex: 0 0 auto;
+  width: 20px !important;
+  height: 20px !important;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+[data-app-dialog] .dialog-band-header [data-dialog-description] {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.75) !important;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+/* Close button on the band: a translucent white square, like Create Invoice. */
+[data-app-dialog] .dialog-band-close {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  margin-top: -16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
+  border: 0;
+  transition: background-color 150ms ease;
+}
+
+[data-app-dialog] .dialog-band-close:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+[data-app-dialog] .dialog-band-close:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ── Footer bar ──────────────────────────────────────────────────────────── */
+[data-app-dialog] .dialog-band-footer {
+  position: sticky;
+  bottom: calc(-1 * var(--dlg-pb));
+  z-index: 10;
+  margin: 4px calc(-1 * var(--dlg-pr)) calc(-1 * var(--dlg-pb)) calc(-1 * var(--dlg-pl));
+  padding: 14px max(var(--dlg-pr), 24px) 14px max(var(--dlg-pl), 24px);
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.dark [data-app-dialog] .dialog-band-footer {
+  border-top-color: #334155;
+  background: #0f172a;
+}
+
+[data-app-dialog] .dialog-band-footer > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Popups that draw their own navy header band (custom markup, not
+   DialogHeader) but keep the built-in close button: show it in white. */
+[data-app-dialog].dialog-close-on-band > [data-dialog-close] {
+  color: #fff;
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+[data-app-dialog].dialog-close-on-band > [data-dialog-close]:hover {
+  background: rgba(255, 255, 255, 0.25);
+}

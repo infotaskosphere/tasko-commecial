@@ -5,6 +5,7 @@ import {
   Clock, ChevronDown, Trash2, Save, Building2, Users, FileSpreadsheet, FileText,
   RefreshCw, Info, Banknote, Target, Download,
 } from 'lucide-react';
+import { PopupHeader } from '@/components/ui/popup-header';
 import {
   BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend,
@@ -1038,14 +1039,9 @@ function AddClientModal({ isDark, onClose, onCreated }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-900/50 p-4" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md rounded-2xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+        className={`w-full max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden rounded-2xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className={`text-base font-extrabold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            <Building2 className="h-4 w-4" /> Add New Client
-          </h3>
-          <button onClick={onClose}><X className={`h-4 w-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} /></button>
-        </div>
+        <PopupHeader className="-mx-6 -mt-6 mb-4" icon={Building2} eyebrow="MIS report" title="Add New Client" titleAs="h3" onClose={onClose} />
         <div className="space-y-3">
           <div>
             <label className={`text-xs font-semibold mb-1 block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Company Name *</label>

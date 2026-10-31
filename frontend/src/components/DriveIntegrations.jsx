@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BACKEND_BASE_URL } from '@/lib/api';
+import { PopupHeader } from '@/components/ui/popup-header';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
@@ -267,22 +268,11 @@ function ShareFileModal({ file, onClose, isDark }) {
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.93, y: 12 }}
           transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
-          className={`w-full max-w-md rounded-2xl border shadow-2xl ${card}`}
+          className={`w-full max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden rounded-2xl border shadow-2xl ${card}`}
           onClick={e => e.stopPropagation()}  // prevent backdrop close when clicking modal
         >
           {/* Header */}
-          <div className={`flex items-center gap-3 px-5 py-4 border-b ${isDark ? 'border-slate-700' : 'border-slate-100'}`}>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: `${color}18` }}>
-              <Icon size={18} style={{ color }} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className={`text-sm font-bold truncate ${text}`}>{file.name}</p>
-              <p className={`text-xs ${muted}`}>Share &amp; Download</p>
-            </div>
-            <button onClick={onClose} className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${isDark ? 'hover:bg-slate-700 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}>
-              <X size={16} />
-            </button>
-          </div>
+          <PopupHeader icon={Icon} eyebrow="Share & Download" title={file.name} onClose={onClose} />
 
           {/* Body */}
           <div className="p-5 space-y-4">

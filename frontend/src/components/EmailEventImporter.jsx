@@ -144,7 +144,7 @@ export default function EmailEventImporter({ mode, onSelectEvent, onClose }) {
         {/* ── Header ── */}
         <div
           className="px-6 py-5 text-white flex-shrink-0"
-          style={{ background: `linear-gradient(135deg, ${modeColor}, ${modeColor}CC)` }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">

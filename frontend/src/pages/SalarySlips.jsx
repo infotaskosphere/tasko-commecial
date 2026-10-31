@@ -6,6 +6,7 @@ import {
   UserPlus, ClipboardList, Upload, FileSpreadsheet, AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PopupHeader } from '@/components/ui/popup-header';
 import api from '@/lib/api';
 import useDark from '@/hooks/useDark';
 import { useAuth } from '@/contexts/AuthContext.jsx';
@@ -127,14 +128,9 @@ function ModalShell({ isDark, onClose, title, icon: Icon, children, wide }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-900/50 p-4" onClick={onClose}>
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto rounded-2xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+        className={`w-full ${wide ? 'max-w-2xl' : 'max-w-md'} max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-2xl p-6 ${isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
       >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className={`text-base font-extrabold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            {Icon && <Icon className="h-4 w-4" />} {title}
-          </h3>
-          <button onClick={onClose}><X className={`h-4 w-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} /></button>
-        </div>
+        <PopupHeader className="-mx-6 -mt-6 mb-4 sticky -top-6 z-10" icon={Icon} eyebrow="Salary slips" title={title} titleAs="h3" onClose={onClose} />
         {children}
       </div>
     </div>

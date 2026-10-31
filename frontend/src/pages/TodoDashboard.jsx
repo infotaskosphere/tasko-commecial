@@ -283,7 +283,7 @@ function PromoteToTaskModal({ todo, isDark, onClose, onConfirm, isLoading, allUs
         {/* Header */}
         <div
           className="relative px-6 py-5 overflow-hidden"
-          style={{ background: `linear-gradient(135deg, ${COLORS.deepBlue} 0%, #1a5fa8 100%)` }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="absolute right-0 top-0 w-48 h-48 rounded-full -mr-12 -mt-12 opacity-10"
             style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
@@ -604,11 +604,7 @@ function TodoDetailModal({ todo, isDark, onClose, onToggle, onPromote, onDelete,
         <div
           className="relative px-6 py-5 overflow-hidden"
           style={{
-            background: isOverdue && !isCompleted
-              ? `linear-gradient(135deg, #B91C1C, #EF4444)`
-              : isCompleted
-              ? `linear-gradient(135deg, ${COLORS.emeraldGreen}, ${COLORS.lightGreen})`
-              : `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})`,
+            background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)',
           }}
         >
           <div className="absolute right-0 top-0 w-40 h-40 rounded-full -mr-10 -mt-10 opacity-10"

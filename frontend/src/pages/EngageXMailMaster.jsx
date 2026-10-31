@@ -761,16 +761,16 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
 
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
+          <DialogHeader icon={confirm === 'schedule' ? CalendarClock : Send} eyebrow="Email campaign">
             <DialogTitle>{confirm === 'schedule' ? 'Schedule this campaign?' : 'Send this campaign now?'}</DialogTitle>
             <DialogDescription>Recipients who unsubscribed or appear twice are removed automatically.</DialogDescription>
           </DialogHeader>
-          <dl className="space-y-1.5 text-sm">
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Recipients</dt><dd className="font-semibold">≈ {fmtNumber(audienceCount)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="shrink-0 text-slate-500">From</dt><dd className="truncate font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Subject</dt><dd className="truncate font-semibold">{c.subject}</dd></div>
-            {c.attachments.length > 0 && <div className="flex justify-between gap-3"><dt className="text-slate-500">Attachments</dt><dd className="font-semibold">{c.attachments.length} file{c.attachments.length > 1 ? 's' : ''}</dd></div>}
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Estimated time</dt><dd className="font-semibold">{fmtDuration(etaSeconds)}</dd></div>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+            <dt className="text-slate-500">Recipients</dt><dd className="min-w-0 text-right font-semibold">≈ {fmtNumber(audienceCount)}</dd>
+            <dt className="text-slate-500">From</dt><dd className="min-w-0 break-words text-right font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd>
+            <dt className="text-slate-500">Subject</dt><dd className="min-w-0 break-words text-right font-semibold">{c.subject}</dd>
+            {c.attachments.length > 0 && <><dt className="text-slate-500">Attachments</dt><dd className="min-w-0 text-right font-semibold">{c.attachments.length} file{c.attachments.length > 1 ? 's' : ''}</dd></>}
+            <dt className="text-slate-500">Estimated time</dt><dd className="min-w-0 text-right font-semibold">{fmtDuration(etaSeconds)}</dd>
           </dl>
           {confirm === 'schedule' && <Input type="datetime-local" value={scheduleAt} min={localDateTimeValue(Date.now() + 2 * 60 * 1000)} onChange={(e) => setScheduleAt(e.target.value)} />}
           <DialogFooter>

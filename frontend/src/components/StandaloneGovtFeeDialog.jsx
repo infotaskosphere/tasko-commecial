@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -608,19 +608,14 @@ export default function StandaloneGovtFeeDialog({
       <DialogContent className="max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden p-0">
 
         {/* ── Header ── */}
-        <div className="flex items-center gap-2 px-6 pt-5 pb-3 border-b border-slate-100 shrink-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-blue-50">
-            <IndianRupee className="h-4 w-4 text-blue-600" />
-          </div>
-          <div>
-            <DialogTitle className="text-base font-semibold text-slate-800 leading-tight">
-              {editing ? 'Edit Government Fee' : 'Add Government Fee'}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-400 mt-0">
-              Record a one-off government fee (not part of a recurring compliance).
-            </DialogDescription>
-          </div>
-        </div>
+        <DialogHeader icon={IndianRupee} eyebrow="Government fee" className="shrink-0">
+          <DialogTitle>
+            {editing ? 'Edit Government Fee' : 'Add Government Fee'}
+          </DialogTitle>
+          <DialogDescription>
+            Record a one-off government fee (not part of a recurring compliance).
+          </DialogDescription>
+        </DialogHeader>
 
         {/* ── Scrollable body ── */}
         <div className="overflow-y-auto px-6 py-4 flex-1">
