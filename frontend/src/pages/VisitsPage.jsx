@@ -6,6 +6,7 @@ import {
   isToday, parseISO, addMonths, subMonths, isBefore, getDay, isValid,
 } from "date-fns";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import EmailEventImporter from "@/components/EmailEventImporter";
 import { useAuth } from "@/contexts/AuthContext";
@@ -298,19 +299,11 @@ function BulkDeleteDialog({ count, onConfirm, onCancel, isPending }) {
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
       onClick={e => e.target === e.currentTarget && onCancel()}>
       <motion.div
-        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-6 border border-slate-200 dark:border-slate-700"
+        className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-sm p-6 overflow-hidden border border-slate-200 dark:border-slate-700"
         initial={{ scale: 0.88, y: 40, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.88, y: 40, opacity: 0 }}
         transition={{ type: "spring", stiffness: 220, damping: 22 }}>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800">
-            <Trash2 className="h-5 w-5 text-red-500" />
-          </div>
-          <div>
-            <h3 className="font-bold text-slate-800 dark:text-slate-100">Delete {count} Visit{count !== 1 ? "s" : ""}?</h3>
-            <p className="text-xs text-slate-400 mt-0.5">This action cannot be undone.</p>
-          </div>
-        </div>
+        <PopupHeader className="-mx-6 -mt-6 mb-4" icon={Trash2} eyebrow="Visits" title={`Delete ${count} Visit${count !== 1 ? "s" : ""}?`} subtitle="This action cannot be undone." titleAs="h3" onClose={onCancel} />
         <div
           onClick={() => setDeleteRecurrences(r => !r)}
           className="flex items-center gap-3 p-3 rounded-xl border dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 cursor-pointer mb-5 select-none">

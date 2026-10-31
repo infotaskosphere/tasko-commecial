@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Search
 } from "lucide-react";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export const SECTION_CATALOG = [
   {
@@ -255,26 +256,7 @@ export default function SectionLibraryModal({ onAddSection, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="flex h-[90vh] max-h-[750px] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-              <Layers size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-slate-900">Add a Section to Your Page</h2>
-              <p className="text-xs text-slate-500">
-                Choose a pre-designed section. You can customize text, pictures, and colors anytime.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50"
-          >
-            Cancel
-          </button>
-        </div>
+        <PopupHeader icon={Layers} eyebrow="Website Studio" title="Add a Section to Your Page" subtitle="Choose a pre-designed section. You can customize text, pictures, and colors anytime." onClose={onClose} />
 
         {/* Search & Categories */}
         <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-6 py-3 sm:flex-row sm:items-center sm:justify-between">

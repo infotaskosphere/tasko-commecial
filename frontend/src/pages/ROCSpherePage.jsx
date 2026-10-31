@@ -12,6 +12,7 @@ import {
   BookOpen, ArrowLeftRight, BadgeCheck, CalendarDays, Zap, UsersRound, Clock3, History,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { PopupHeader } from '@/components/ui/popup-header';
 import api from '@/lib/api';
 import { useDark } from '@/hooks/useDark';
 import { HubBanner, StatCard, HUB_COLORS } from '@/components/SectionHub.jsx';
@@ -1013,11 +1014,8 @@ function NewCompanyModal({ isDark, input, text, muted, eligibleClients, onClose,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-emerald-900/50 p-4" onClick={onClose}>
-      <div className={`w-full max-w-lg rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} p-5`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className={`font-semibold ${text}`}>Add Company Manually</h3>
-          <button onClick={onClose}><X size={18} className={muted} /></button>
-        </div>
+      <div className={`w-full max-w-lg max-h-[92vh] overflow-y-auto overflow-x-hidden rounded-xl border ${isDark ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'} p-5`} onClick={(e) => e.stopPropagation()}>
+        <PopupHeader className="-mx-5 -mt-5 mb-4" icon={Building2} eyebrow="ROC Sphere" title="Add Company Manually" titleAs="h3" onClose={onClose} />
         <p className={`text-xs ${muted} mb-3`}>Companies from your Clients list sync in automatically — use this only for a company that isn't a Client yet.</p>
 
         {eligibleClients.length > 0 && (

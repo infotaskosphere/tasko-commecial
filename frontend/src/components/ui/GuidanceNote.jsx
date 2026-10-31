@@ -21,6 +21,7 @@
 import React, { useState } from 'react';
 import { HelpCircle, X, Lightbulb, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PopupHeader } from '@/components/ui/popup-header';
 
 export const GUIDANCE_CONTENT = {
   'accounting-integrity': {
@@ -175,15 +176,10 @@ export function GuidanceNote({ pageKey = 'default', isDark, className = '' }) {
       {open && (
         <div className="fixed inset-0 bg-emerald-900/40 z-[60] flex items-center justify-center p-4" onClick={() => setOpen(false)}>
           <div
-            className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[85vh] overflow-y-auto ${isDark ? 'bg-slate-800' : 'bg-white'}`}
+            className={`w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[85vh] overflow-y-auto overflow-x-hidden ${isDark ? 'bg-slate-800' : 'bg-white'}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-1">
-              <h3 className={`font-bold text-lg ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{content.title}</h3>
-              <button onClick={() => setOpen(false)} className={isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-700'}>
-                <X className="h-4 w-4" />
-              </button>
-            </div>
+            <PopupHeader className="-mx-6 -mt-6 mb-4" icon={Lightbulb} eyebrow="How this works" title={content.title} titleAs="h3" onClose={() => setOpen(false)} />
             <p className={`text-sm mb-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{content.plain}</p>
             {content.steps?.length > 0 && (
               <div className="space-y-2.5">

@@ -4,6 +4,7 @@
 import { useDark } from '@/hooks/useDark';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { PopupHeader } from '@/components/ui/popup-header';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -998,7 +999,7 @@ function ImportExcelModal({complianceId,complianceName,onClose,onImported,isDark
         initial={{scale:0.92,y:24}} animate={{scale:1,y:0}} exit={{scale:0.92,y:24}}
         transition={{type:'spring',stiffness:220,damping:22}} onClick={e=>e.stopPropagation()}>
         <div className="px-6 py-5 text-white flex-shrink-0 flex items-center justify-between"
-          style={{background:'linear-gradient(135deg,#0D3B66,#1FAF5A)'}}>
+          style={{background:'linear-gradient(135deg,#0D3B66,#1F6FB2)'}}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><FileUp className="w-5 h-5 text-white"/></div>
             <div><h2 className="text-lg font-black">Import Excel / CSV</h2>
@@ -1219,7 +1220,7 @@ function AssignClientsModal({compliance,onClose,onAssigned,isDark,allUsers=[]}){
         initial={{scale:0.92,y:24}} animate={{scale:1,y:0}} exit={{scale:0.92,y:24}}
         transition={{type:'spring',stiffness:220,damping:22}} onClick={e=>e.stopPropagation()}>
         <div className="px-6 py-5 text-white flex items-center justify-between flex-shrink-0"
-          style={{background:'linear-gradient(135deg,#0D3B66,#8B5CF6)'}}>
+          style={{background:'linear-gradient(135deg,#0D3B66,#1F6FB2)'}}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center"><Users className="w-5 h-5 text-white"/></div>
             <div><h2 className="text-lg font-black">Assign Clients</h2>
@@ -2312,14 +2313,7 @@ function ComplianceDetailPage({compliance:initialCompliance,onBack,isDark,allUse
               transition={{type:'spring',stiffness:260,damping:24}}
               onClick={e=>e.stopPropagation()}>
               {/* Header */}
-              <div className="px-4 py-3 flex items-center justify-between flex-shrink-0 border-b"
-                style={{backgroundColor:isDark?D.raised:'#f8fafc',borderColor:isDark?D.border:'#e2e8f0'}}>
-                <div className="min-w-0">
-                  <p className="text-xs font-black truncate" style={{color:isDark?D.text:'#0f172a'}}>{commentPopup.clientName}</p>
-                  <p className="text-[10px]" style={{color:isDark?D.dimmer:'#94a3b8'}}>Comments</p>
-                </div>
-                <button onClick={()=>setCommentPopup(null)} className="w-7 h-7 rounded-lg flex items-center justify-center hover:opacity-70" style={{color:isDark?D.muted:'#64748b'}}><X className="w-4 h-4"/></button>
-              </div>
+              <PopupHeader icon={MessageSquare} eyebrow="Comments" title={commentPopup.clientName} onClose={()=>setCommentPopup(null)}/>
               {/* Comments list */}
               <div className="flex-1 overflow-auto p-4 space-y-3" style={{scrollbarWidth:'thin'}}>
                 {popupCommentsLoading?(<div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500"/></div>
@@ -2373,10 +2367,10 @@ function ComplianceDetailPage({compliance:initialCompliance,onBack,isDark,allUse
               onClick={e=>e.stopPropagation()}>
               {/* Header */}
               <div className="px-5 py-4 flex items-center justify-between text-white flex-shrink-0"
-                style={{background:`linear-gradient(135deg,${catCfg.color}dd,${catCfg.color}99)`}}>
+                style={{background:'linear-gradient(135deg,#0D3B66,#1F6FB2)'}}>
                 <div className="min-w-0 flex-1">
                   <p className="text-[10px] font-bold uppercase tracking-widest opacity-70 mb-0.5">{compliance.name}</p>
-                  <h3 className="text-base font-black truncate">{detailRow.client_name}</h3>
+                  <h3 className="text-xl font-bold break-words">{detailRow.client_name}</h3>
                 </div>
                 <button onClick={()=>setDetailRow(null)} className="w-8 h-8 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center flex-shrink-0 ml-3"><X className="w-4 h-4 text-white"/></button>
               </div>
@@ -3257,15 +3251,10 @@ function ComplianceCalendarPanel({ isDark, showAddCal, setShowAddCal }) {
             style={{ backgroundColor: 'rgba(6,78,59,0.4)' }}
             onClick={() => setShowAddCal(false)}>
             <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md rounded-2xl border shadow-2xl p-6 space-y-4"
+              className="w-full max-w-md max-h-[92vh] overflow-y-auto overflow-x-hidden rounded-2xl border shadow-2xl p-6 space-y-4"
               style={{ backgroundColor: isDark ? D.card : '#fff', borderColor: isDark ? D.border : '#e2e8f0' }}
               onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between">
-                <h3 className="font-bold text-base" style={{ color: isDark ? D.text : '#0f172a' }}>Add New Due Date</h3>
-                <button onClick={() => setShowAddCal(false)} className="p-1 rounded-lg hover:opacity-70">
-                  <X className="w-4 h-4" style={{ color: isDark ? D.muted : '#64748b' }} />
-                </button>
-              </div>
+              <PopupHeader className="-mx-6 -mt-6" icon={Calendar} eyebrow="Compliance calendar" title="Add New Due Date" titleAs="h3" onClose={() => setShowAddCal(false)} />
               <div className="space-y-3">
                 <div>
                   <label className="text-[11px] font-bold uppercase tracking-wider block mb-1" style={{ color: isDark ? D.dimmer : '#94a3b8' }}>Title *</label>

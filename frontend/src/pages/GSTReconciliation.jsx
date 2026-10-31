@@ -7,6 +7,7 @@ import { saveAs } from 'file-saver';
 // export/parsing libraries that most visits never use.
 let XLSX, jsPDF, autoTable;
 import { motion, AnimatePresence } from 'framer-motion';
+import { PopupHeader } from '@/components/ui/popup-header';
 import api from '@/lib/api';
 import {
   Upload, CheckCircle2, AlertTriangle, Download, Search, ArrowLeft, RefreshCw, ArrowLeftRight, Info, X, Globe, BookOpen, FileText, FileSpreadsheet, Building2, Hash, MapPin, Phone, Mail, Calendar, ChevronRight, ScanSearch, Filter, Tag, ArrowUpDown, ChevronsUpDown, History, Clock, Trash2, ChevronDown, User, Loader2, FolderOpen, Edit3, MessageSquare, Sparkles, Layers, Plus, BarChart3, TrendingUp, ShieldCheck, Save, CalendarClock
@@ -3955,7 +3956,7 @@ const InvoiceDetailModal = ({ record, tabId, manualTradeNames, comments, onClose
         className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-auto"
       >
         {/* Header */}
-        <div className={`flex items-center justify-between px-5 py-3 ${isPair ? 'bg-gradient-to-r from-blue-600 via-violet-600 to-indigo-600' : 'bg-gradient-to-r from-indigo-600 to-blue-600'}`}>
+        <div className={`flex items-center justify-between px-5 py-3 bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2]`}>
           <div>
             <h2 className="text-sm font-bold text-white">Invoice Details</h2>
             <p className="text-[11px] text-white/75 mt-0.5">
@@ -4858,18 +4859,7 @@ const EditSessionModal = ({ session, clients, onSave, onClose }) => {
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex-shrink-0">
-          <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
-            <Edit3 className="h-4 w-4 text-indigo-600 dark:text-indigo-400"/>
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Edit Reconciliation Details</h3>
-            <p className="text-[11px] text-slate-400 truncate">{session.client_name || 'Unknown'}{session.period ? ` · ${session.period}` : ''}</p>
-          </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 transition-colors">
-            <X className="h-4 w-4"/>
-          </button>
-        </div>
+        <PopupHeader icon={Edit3} eyebrow="GST reconciliation" title="Edit Reconciliation Details" subtitle={`${session.client_name || 'Unknown'}${session.period ? ` · ${session.period}` : ''}`} titleAs="h3" onClose={onClose} />
 
         {/* Scrollable body */}
         <div className="overflow-y-auto flex-1 p-5 space-y-5">
@@ -5214,19 +5204,19 @@ const ITC_MODAL_META = {
     title: 'ITC Claimable',
     desc: 'Tax from invoices present in both portal and books (matched). These can be claimed in GSTR-3B.',
     color: 'emerald',
-    headerBg: 'bg-emerald-600',
+    headerBg: 'bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2]',
   },
   toBook: {
     title: 'ITC to Book',
     desc: 'Tax from portal-only invoices not yet entered in books. Book these entries to avail ITC.',
     color: 'blue',
-    headerBg: 'bg-blue-600',
+    headerBg: 'bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2]',
   },
   atRisk: {
     title: 'ITC at Risk',
     desc: 'Tax from books-only invoices where vendor has NOT filed on portal. Follow up with vendor or reverse ITC.',
     color: 'rose',
-    headerBg: 'bg-rose-600',
+    headerBg: 'bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2]',
   },
 };
 
@@ -5538,7 +5528,7 @@ const SideBySideCompare = ({ portalOnly, booksOnly, onConfirmMatch, onClose }) =
         className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-[97vw] max-h-[92vh] flex flex-col overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 flex-shrink-0">
+        <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2] flex-shrink-0">
           <div>
             <h2 className="text-sm font-bold text-white flex items-center gap-2"><ArrowLeftRight className="h-4 w-4"/>Portal Only vs Books Only — Smart Compare</h2>
             <p className="text-[11px] text-white/75 mt-0.5">Auto-paired by invoice number &amp; value — including cross-GSTIN matches. Click Confirm to move matched pairs into Matched.</p>
@@ -7792,7 +7782,7 @@ export default function GSTReconciliation() {
               className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700"
               onClick={e => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-amber-500 to-orange-500 text-white">
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2] text-white">
                 <div className="flex items-center gap-2">
                   <CalendarClock className="h-5 w-5"/>
                   <div>
@@ -7888,7 +7878,7 @@ export default function GSTReconciliation() {
               exit={{ scale: 0.95, opacity: 0, y: 10 }}
               className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
             >
-              <div className="flex items-start gap-3 px-5 py-4 bg-gradient-to-r from-amber-500 to-orange-500">
+              <div className="flex items-start gap-3 px-5 py-4 bg-gradient-to-br from-[#0D3B66] to-[#1F6FB2]">
                 <div className="p-2 rounded-lg bg-white/20 flex-shrink-0">
                   <AlertTriangle className="h-5 w-5 text-white"/>
                 </div>

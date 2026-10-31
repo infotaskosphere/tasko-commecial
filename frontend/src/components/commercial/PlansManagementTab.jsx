@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { CreditCard, Check, Plus, ShieldCheck, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import { createCommercialPlan } from "@/lib/commercialConsoleApi";
 
 export default function PlansManagementTab({ plans = [], onRefresh }) {
@@ -108,8 +109,8 @@ export default function PlansManagementTab({ plans = [], onRefresh }) {
 
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <form onSubmit={handleCreate} className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-slate-900">Create Subscription Plan</h3>
+          <form onSubmit={handleCreate} className="w-full max-w-md max-h-[92vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl">
+            <PopupHeader className="-mx-6 -mt-6" icon={CreditCard} eyebrow="Plans" title="Create Subscription Plan" titleAs="h3" onClose={() => setShowCreate(false)} />
             <div className="mt-4 space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Plan Name</label>

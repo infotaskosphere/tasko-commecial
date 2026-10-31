@@ -12,6 +12,7 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export default function AiWebsiteAssistantModal({
   config,
@@ -151,26 +152,7 @@ export default function AiWebsiteAssistantModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="flex h-[88vh] max-h-[680px] w-full max-w-2xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md">
-              <Sparkles size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900">✨ AI Website Assistant</h2>
-              <p className="text-xs text-slate-500">
-                Describe your business or desired change in plain words.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader icon={Sparkles} eyebrow="Website Studio" title="AI Website Assistant" subtitle="Describe your business or desired change in plain words." onClose={onClose} />
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">

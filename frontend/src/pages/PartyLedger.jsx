@@ -1202,14 +1202,14 @@ export default function PartyLedger({
       >
 
         {/* ── HEADER BAR ────────────────────────────────────── */}
-        <div className={`flex-shrink-0 flex items-center justify-between px-7 py-4 border-b ${divider} ${isDark ? 'bg-slate-900' : 'bg-white'}`}>
+        <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 px-7 py-5" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${isDark ? 'bg-blue-900/50' : 'bg-blue-50'}`}>
-              <BookOpen className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/15">
+              <BookOpen className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <DialogTitle className="text-lg font-bold leading-none">Party Ledger</DialogTitle>
-              <DialogDescription className="text-[12px] text-slate-400 mt-0.5 leading-none">
+            <div className="min-w-0">
+              <DialogTitle className="text-xl font-bold leading-snug text-white">Party Ledger</DialogTitle>
+              <DialogDescription className="text-[12px] text-white/75 mt-0.5 leading-snug">
                 Account Statement · Invoice · Payment · Credit/Debit Note
               </DialogDescription>
             </div>
@@ -1222,7 +1222,7 @@ export default function PartyLedger({
                   onClick={handleExportExcel}
                   variant="outline"
                   size="sm"
-                  className={`gap-1.5 text-xs font-medium rounded-xl h-9 px-4 ${isDark ? 'border-slate-600 hover:bg-slate-700' : ''}`}
+                  className="gap-1.5 text-xs font-medium rounded-xl h-9 px-4 border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"
                 >
                   <Download className="w-3.5 h-3.5" />
                   Export Excel
@@ -1230,7 +1230,7 @@ export default function PartyLedger({
                 <Button
                   onClick={handlePrint}
                   size="sm"
-                  className="gap-1.5 text-xs font-semibold rounded-xl h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white"
+                  className="gap-1.5 text-xs font-semibold rounded-xl h-9 px-4 bg-white hover:bg-white/90 text-[#0D3B66]"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   Print / PDF
@@ -1241,7 +1241,8 @@ export default function PartyLedger({
               onClick={onClose}
               variant="ghost"
               size="icon"
-              className={`w-9 h-9 rounded-xl flex-shrink-0 ${isDark ? 'hover:bg-slate-700' : 'hover:bg-slate-100'}`}
+              aria-label="Close"
+              className="w-8 h-8 rounded-xl flex-shrink-0 bg-white/15 text-white hover:bg-white/25 hover:text-white"
             >
               <X className="w-4 h-4" />
             </Button>

@@ -3,6 +3,7 @@ import {
   Mail, X, Save, RefreshCw, CheckCircle2, AlertTriangle, ShieldCheck
 } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import {
   getLicenseeEmailSettings,
   updateLicenseeEmailSettings
@@ -87,25 +88,14 @@ export default function LicenseeEmailModal({ customerId, customerName, onClose, 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-[#1F6FB2] flex items-center justify-center">
-              <Mail size={16} />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Email & Notifications: {customerName || "Licensee"}
-              </h3>
-              <p className="text-xs text-slate-500">Configure customer mailboxes and dispatch channels</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader
+          icon={Mail}
+          eyebrow="Licensee"
+          title={`Email & Notifications: ${customerName || "Licensee"}`}
+          subtitle="Configure customer mailboxes and dispatch channels"
+          titleAs="h3"
+          onClose={onClose}
+        />
 
         {loading ? (
           <div className="py-16 flex flex-col items-center justify-center space-y-2">

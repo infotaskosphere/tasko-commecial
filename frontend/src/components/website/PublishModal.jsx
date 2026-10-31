@@ -13,6 +13,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export default function PublishModal({
   config,
@@ -60,28 +61,7 @@ export default function PublishModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
       <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Globe2 size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900">
-                {success ? "Website Is Live!" : "Ready to Publish Website"}
-              </h2>
-              <p className="text-xs text-slate-500">
-                {success ? "Your visitors can now view your live website." : "Review pre-flight checklist and make your site public."}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader icon={Globe2} eyebrow="Website Studio" title={<>{success ? "Website Is Live!" : "Ready to Publish Website"}</>} subtitle={<>{success ? "Your visitors can now view your live website." : "Review pre-flight checklist and make your site public."}</>} onClose={onClose} />
 
         {/* Content */}
         <div className="p-6 space-y-5">

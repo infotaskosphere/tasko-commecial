@@ -194,7 +194,7 @@ function TeamDetailModal({ detail, onClose, isDark }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-6 py-5 text-white relative overflow-hidden flex-shrink-0"
-          style={{ background: isLeave ? 'linear-gradient(135deg, #F59E0B, #B45309)' : `linear-gradient(135deg, ${COLORS.red}, #B91C1C)` }}>
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="relative flex items-start justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">

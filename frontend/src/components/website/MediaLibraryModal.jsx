@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { STOCK_LIBRARY_MEDIA } from "./studioTemplates";
+import { PopupHeader } from "@/components/ui/popup-header";
 
 export default function MediaLibraryModal({
   currentValue = "",
@@ -80,24 +81,7 @@ export default function MediaLibraryModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="flex h-[88vh] max-h-[700px] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
-              <ImageIcon size={20} />
-            </div>
-            <div>
-              <h2 className="text-base font-black text-slate-900">Choose or Upload an Image</h2>
-              <p className="text-xs text-slate-500">Pick from brand logos, professional royalty-free photos, or upload your own.</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-200 p-2 text-slate-400 hover:bg-slate-50"
-          >
-            <X size={18} />
-          </button>
-        </div>
+        <PopupHeader icon={ImageIcon} eyebrow="Website Studio" title="Choose or Upload an Image" subtitle="Pick from brand logos, professional royalty-free photos, or upload your own." onClose={onClose} />
 
         {/* Tab selection */}
         <div className="flex border-b border-slate-100 bg-slate-50 px-6">

@@ -10,6 +10,7 @@ import React, {
   useRef,
 } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { PopupHeader } from "@/components/ui/popup-header";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -291,14 +292,7 @@ function ReminderDetailPopup({ rem, isDark, isViewingOther, onClose, onEdit, onD
         <div
           className="px-8 py-7 relative overflow-hidden"
           style={{
-            background: (() => {
-              const status = getHearingStatus(rem);
-              if (status) {
-                const s = HEARING_STATUS_STYLES[status];
-                return `linear-gradient(135deg, ${s.solid}, ${s.solidTo})`;
-              }
-              return `linear-gradient(135deg, ${isDue ? COLORS.coral : COLORS.purple}, ${COLORS.mediumBlue})`;
-            })(),
+            background: "linear-gradient(135deg, #0D3B66, #1F6FB2)",
           }}
         >
           <div className="flex items-center justify-between">
@@ -575,7 +569,7 @@ function RescheduleModal({ rem, isDark, onConfirm, onCancel }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-5" style={{ background: "linear-gradient(135deg, #8B5CF6, #1F6FB2)" }}>
+        <div className="px-6 py-5" style={{ background: "linear-gradient(135deg, #0D3B66, #1F6FB2)" }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
@@ -739,14 +733,7 @@ function PopupSettingsModal({ isOpen, onClose }) {
         animate={{ scale: 1, opacity: 1 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? "border-slate-700" : "border-slate-100"}`}>
-          <h3 className={`font-semibold text-sm flex items-center gap-2 ${isDark ? "text-white" : "text-slate-900"}`}>
-            <Bell className="h-4 w-4" /> Popup Reminder Settings
-          </h3>
-          <button onClick={onClose} className={isDark ? "text-slate-400 hover:text-white" : "text-slate-400 hover:text-slate-700"}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <PopupHeader icon={Bell} eyebrow="Reminders" title="Popup Reminder Settings" titleAs="h3" onClose={onClose} />
 
         <div className="px-6 py-5 space-y-4">
           {loading ? (
@@ -938,7 +925,7 @@ function DuplicatesModal({ isOpen, isDark, onClose, onChanged }) {
         {/* Header */}
         <div
           className="px-6 py-5 flex items-center justify-between flex-shrink-0"
-          style={{ background: `linear-gradient(135deg, ${COLORS.coral}, ${COLORS.purple})` }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center">
@@ -2084,7 +2071,7 @@ export default function Reminders() {
               <div
                 className="px-6 py-5 relative overflow-hidden"
                 style={{
-                  background: `linear-gradient(135deg, ${COLORS.purple}, ${COLORS.mediumBlue})`,
+                  background: "linear-gradient(135deg, #0D3B66, #1F6FB2)",
                 }}
               >
                 <div className="flex items-center justify-between">

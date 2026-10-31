@@ -4,6 +4,7 @@ import {
   XCircle, Filter, Copy, Check, RefreshCw, X, AlertCircle, Sparkles
 } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import {
   getEmailTemplates,
   updateEmailTemplate,
@@ -296,20 +297,14 @@ export default function EmailTemplatesTab() {
       {modalMode === "edit" && activeTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Edit Template: {activeTemplate.name} ({activeTemplate.code})
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">{activeTemplate.purpose}</p>
-              </div>
-              <button
-                onClick={() => setModalMode(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            <PopupHeader
+              icon={Edit3}
+              eyebrow="Email template"
+              title={`Edit Template: ${activeTemplate.name} (${activeTemplate.code})`}
+              subtitle={activeTemplate.purpose}
+              titleAs="h3"
+              onClose={() => setModalMode(null)}
+            />
 
             <div className="p-5 flex-1 overflow-y-auto space-y-4 text-xs">
               {/* Variable Chips */}
@@ -406,20 +401,14 @@ export default function EmailTemplatesTab() {
       {modalMode === "preview" && activeTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">
-                  Preview: {activeTemplate.name}
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Rendered with representative mock variables</p>
-              </div>
-              <button
-                onClick={() => setModalMode(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            <PopupHeader
+              icon={Eye}
+              eyebrow="Email template"
+              title={`Preview: ${activeTemplate.name}`}
+              subtitle="Rendered with representative mock variables"
+              titleAs="h3"
+              onClose={() => setModalMode(null)}
+            />
 
             <div className="p-5 flex-1 overflow-y-auto space-y-4 text-xs">
               {previewLoading ? (
@@ -483,17 +472,13 @@ export default function EmailTemplatesTab() {
       {modalMode === "test" && activeTemplate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">
-                Send Test: {activeTemplate.name}
-              </h3>
-              <button
-                onClick={() => setModalMode(null)}
-                className="p-1 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
+            <PopupHeader
+              icon={Send}
+              eyebrow="Email template"
+              title={`Send Test: ${activeTemplate.name}`}
+              titleAs="h3"
+              onClose={() => setModalMode(null)}
+            />
 
             <div className="p-5 space-y-4 text-xs">
               <p className="text-slate-500">

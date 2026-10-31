@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckSquare, Plus, Search, RefreshCw, Calendar, AlertCircle, CheckCircle2, ChevronRight, X, Users, MessageSquare, Download, Trash2, Edit3, Send, Upload, ChevronDown, Check, ArrowUpDown, FileText, Repeat } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import { format, parseISO, isToday, isPast } from "date-fns";
 import api from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -55,10 +56,7 @@ export default function Tasks() {
 
       {showCreateModal&&<div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-950/50 p-4" onClick={()=>setShowCreateModal(false)}>
         <div className="w-full max-w-3xl max-h-[94vh] overflow-hidden border border-slate-200 bg-white shadow-2xl rounded-none flex flex-col" onClick={e=>e.stopPropagation()}>
-          <div className="flex items-center justify-between border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-6 py-4 shrink-0">
-            <div><div className="flex items-center gap-2"><div className="w-7 h-7 flex items-center justify-center bg-[#0D3B66] text-white"><Plus className="h-4 w-4"/></div><h2 className="text-base font-extrabold text-[#0D3B66]">Create New Task</h2></div><p className="text-[11px] text-slate-500 mt-1">Fill in the details to create a new task.</p></div>
-            <button onClick={()=>{setShowCreateModal(false);resetCreateForm();}} className="p-1.5 border border-slate-200 bg-white hover:bg-slate-100"><X className="h-4 w-4"/></button>
-          </div>
+          <PopupHeader className="shrink-0" icon={Plus} eyebrow="Tasks" title="Create New Task" subtitle="Fill in the details to create a new task." onClose={()=>{setShowCreateModal(false);resetCreateForm();}} />
 
           <div className="overflow-y-auto min-h-0 bg-slate-50/40">
             <form onSubmit={handleCreateTask} className="p-5 space-y-4">

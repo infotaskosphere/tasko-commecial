@@ -1510,13 +1510,13 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
         {/* Header */}
         <div
           className="px-6 py-4 flex items-center justify-between gap-4 flex-wrap flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #064e3b, #065f46, #047857)' }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
-          <div className="flex items-center gap-3">
-            <FileSpreadsheet className="h-5 w-5 text-white" />
-            <div>
-              <h2 className="text-white font-bold text-lg leading-tight">GST Returns</h2>
-              <p className="text-emerald-200 text-xs">GSTR-1 · GSTR-3B · {baseInvoices.length} invoices in view</p>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0"><FileSpreadsheet className="h-5 w-5 text-white" /></div>
+            <div className="min-w-0">
+              <h2 className="text-white font-bold text-xl leading-tight">GST Returns</h2>
+              <p className="text-white/75 text-xs">GSTR-1 · GSTR-3B · {baseInvoices.length} invoices in view</p>
             </div>
           </div>
 
@@ -2221,19 +2221,19 @@ const handleImport = async () => {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className={`w-full max-w-xl rounded-2xl border shadow-2xl p-0 overflow-hidden flex flex-col ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+      <DialogContent hideClose className={`w-full max-w-xl rounded-2xl border shadow-2xl p-0 overflow-hidden flex flex-col ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
         style={{ maxHeight: '90vh' }}>
         <DialogTitle className="sr-only">Import Invoices</DialogTitle>
         <DialogDescription className="sr-only">Import invoices from KhataBook .vyp or Excel file</DialogDescription>
         {/* Header */}
         <div className="px-6 py-5 relative overflow-hidden flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #065f46, #059669)' }}>
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}>
           <div className="absolute right-0 top-0 w-40 h-40 rounded-full -mr-12 -mt-12 opacity-10"
             style={{ background: 'radial-gradient(circle, white 0%, transparent 70%)' }} />
           <div className="relative flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0"><Database className="h-5 w-5 text-white" /></div>
-              <div><h2 className="text-white font-bold text-lg leading-tight">Import Invoices</h2><p className="text-emerald-200 text-xs mt-0.5">KhataBook · Tally · Vyapar · Excel</p></div>
+              <div><h2 className="text-white font-bold text-xl leading-tight">Import Invoices</h2><p className="text-white/75 text-xs mt-0.5">KhataBook · Tally · Vyapar · Excel</p></div>
             </div>
             <button onClick={handleClose} className="w-8 h-8 rounded-xl bg-white/15 hover:bg-white/25 flex items-center justify-center transition-all flex-shrink-0"><X className="h-4 w-4 text-white" /></button>
           </div>
@@ -2246,7 +2246,7 @@ const handleImport = async () => {
                 const isDoneStep = i < current;
                 return (
                   <React.Fragment key={s}>
-                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${isActive ? 'bg-white text-emerald-700' : isDoneStep ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50'}`}>
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-all ${isActive ? 'bg-white text-[#0D3B66]' : isDoneStep ? 'bg-white/30 text-white' : 'bg-white/10 text-white/50'}`}>
                       {isDoneStep ? <CheckCircle2 className="h-3 w-3" /> : <span className="w-3 h-3 flex items-center justify-center">{i + 1}</span>}
                       {['Upload', 'Preview', 'Import', 'Done'][i]}
                     </div>
@@ -5024,7 +5024,7 @@ const InvoicePreviewModal = ({ open, onClose, invoice, previewHtml, isDark }) =>
         {/* HEADER */}
         <div
           className="px-7 py-5 relative overflow-hidden flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #0D3B66, #1565C0)' }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="relative flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
@@ -7780,18 +7780,18 @@ const BulkInvoiceWAModal = React.memo(({ open, onClose, invoices, isDark }) => {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0"
+      <DialogContent className="dialog-close-on-band max-w-4xl max-h-[94vh] overflow-hidden flex flex-col rounded-2xl border shadow-2xl p-0"
         style={{ background: bg, borderColor: border }}>
         <DialogTitle className="sr-only">Bulk WhatsApp — Invoices</DialogTitle>
 
         {/* Header */}
-        <div className="flex-shrink-0 px-6 py-4 border-b" style={{ background: 'linear-gradient(135deg, #064e3b, #065f46)', borderColor: 'transparent' }}>
+        <div className="flex-shrink-0 px-6 py-4 pr-16 border-b" style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)', borderColor: 'transparent' }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(255,255,255,0.15)' }}>
               <MessageCircle className="h-5 w-5 text-white" />
             </div>
-            <div className="flex-1">
-              <h2 className="text-base font-bold text-white">Bulk WhatsApp — Invoices</h2>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-xl font-bold text-white break-words">Bulk WhatsApp — Invoices</h2>
               <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.65)' }}>Send personalized invoice reminders directly to clients</p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

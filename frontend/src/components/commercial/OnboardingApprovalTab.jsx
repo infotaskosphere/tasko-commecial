@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { ClipboardCheck, Building2, Search, RefreshCw, CheckCircle2, XCircle, Eye, Loader2, KeyRound, ChevronDown, ArrowLeft, ArrowRight, Copy } from "lucide-react";
 import { toast } from "sonner";
+import { PopupHeader } from "@/components/ui/popup-header";
 import { getOnboardingApplications, reviewOnboardingApplication } from "@/lib/commercialConsoleApi";
 import { getLicenseState } from "@/lib/licenseApi";
 
@@ -304,7 +305,7 @@ export default function OnboardingApprovalTab({ modules = [], invoiceCompanies =
 
     {selected && createPortal(<div className="fixed inset-0 z-[110] flex min-h-screen w-screen items-center justify-center bg-slate-950/60 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="commercial-onboarding-title">
       <div className="w-full max-w-5xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl sm:p-6">
-        <div className="flex items-start justify-between gap-3"><div><h3 id="commercial-onboarding-title" className="text-xl font-bold text-slate-900">{selected.trade_name || selected.legal_name}</h3><p className="mt-1 text-xs text-slate-500">{selected.application_id} · {selected.created_at ? new Date(selected.created_at).toLocaleString("en-IN") : "Previously issued license"}</p></div><button onClick={() => { setSelected(null); setIssued(null); }} className="rounded-lg border px-3 py-1.5 text-sm">Close</button></div>
+        <PopupHeader className="-mx-5 -mt-5 sm:-mx-6 sm:-mt-6" icon={ClipboardCheck} eyebrow="Onboarding application" titleAs="h3" titleProps={{ id: "commercial-onboarding-title" }} title={selected.trade_name || selected.legal_name} subtitle={`${selected.application_id} · ${selected.created_at ? new Date(selected.created_at).toLocaleString("en-IN") : "Previously issued license"}`} onClose={() => { setSelected(null); setIssued(null); }} />
 
         {selected.legacy_approved && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4"><div className="flex items-center gap-2 font-bold text-emerald-900"><CheckCircle2 size={16}/> Previously approved license</div><p className="mt-1 text-xs text-emerald-800">This license was issued before the Commercial Onboarding feature was introduced, so it is included here as an approved historical record.</p>{selected.license_key && <><code className="mt-3 block break-all rounded-lg bg-white p-3 text-sm">{selected.license_key}</code><button onClick={() => { navigator.clipboard?.writeText(selected.license_key || ""); toast.success("License key copied."); }} className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold underline"><Copy size={12}/> Copy license key</button></>}</div>}
 

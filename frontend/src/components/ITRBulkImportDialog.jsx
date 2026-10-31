@@ -539,7 +539,7 @@ function EditRowModal({ row, isDark, onSave, onCancel }) {
       >
         <div
           className="flex items-center justify-between px-5 py-3"
-          style={{ background: 'linear-gradient(135deg, #0f766e 0%, #0369a1 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <p className="text-white font-semibold text-sm">Edit Client</p>
           <button onClick={onCancel} className="p-1 rounded hover:bg-white/20">
@@ -813,6 +813,7 @@ export default function ITRBulkImportDialog({ open, onClose, onImported, isDark 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
+        hideClose
         className="p-0 overflow-hidden rounded-2xl shadow-2xl"
         style={{ maxWidth: 900, width: '95vw', background: bg, borderColor: border }}
       >
@@ -822,14 +823,14 @@ export default function ITRBulkImportDialog({ open, onClose, onImported, isDark 
         {/* ── Header ── */}
         <div
           className="flex items-center justify-between px-6 py-4"
-          style={{ background: 'linear-gradient(135deg, #0f766e 0%, #0369a1 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #0D3B66, #1F6FB2)' }}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-white/20">
+            <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-white/15 flex-shrink-0">
               <FileSpreadsheet className="h-5 w-5 text-white" />
             </div>
             <div>
-              <p className="text-white font-semibold text-sm">Bulk Import ITR Clients</p>
+              <p className="text-white font-bold text-xl leading-snug">Bulk Import ITR Clients</p>
               <p className="text-white/70 text-xs">
                 {step === 'preview' && parsedRows.length > 0
                   ? `${parsedRows.length} clients ready${detectedAY ? ` · AY ${detectedAY}` : ''}`
@@ -837,7 +838,7 @@ export default function ITRBulkImportDialog({ open, onClose, onImported, isDark 
               </p>
             </div>
           </div>
-          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-white/20 transition-colors">
+          <button onClick={handleClose} aria-label="Close" className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/15 hover:bg-white/25 transition-colors flex-shrink-0">
             <X className="h-4 w-4 text-white" />
           </button>
         </div>

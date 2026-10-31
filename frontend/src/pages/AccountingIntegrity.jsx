@@ -14,6 +14,7 @@ import { canPerformFinixAction } from '@/lib/commercialPermissionMatrix';
 import { useDark } from '@/hooks/useDark';
 import RequestAccessGate from '@/components/RequestAccessGate.jsx';
 import { GuidanceNote } from '@/components/ui/GuidanceNote.jsx';
+import { PopupHeader } from '@/components/ui/popup-header';
 
 const fmtC = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
@@ -113,11 +114,8 @@ function AdjustmentDrawer({ entry, accounts, isDark, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-emerald-900/40 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className={`w-full max-w-2xl rounded-2xl shadow-2xl p-6 my-8 ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
-        <div className="flex items-center justify-between mb-1">
-          <h3 className={`font-bold text-lg ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Fix this entry</h3>
-          <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
-        </div>
+      <div className={`w-full max-w-2xl rounded-2xl shadow-2xl p-6 my-8 overflow-hidden ${isDark ? 'bg-slate-800' : 'bg-white'}`}>
+        <PopupHeader className="-mx-6 -mt-6 mb-4" icon={Wand2} eyebrow="Accounting integrity" title="Fix this entry" titleAs="h3" onClose={onClose} />
         <p className={`text-sm mb-4 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
           Correcting <span className="font-semibold">{entry.narration}</span> ({fmtC(entry.total_debit)}) — this updates the
           entry's own lines directly. The values it had before are kept in the Adjustment Note History below for the audit trail.
