@@ -11,7 +11,8 @@ const MODULE_BRANDING = {
   admin: { label: 'Admin', landingPath: '/admin-dashboard', wordmark: true },
   settings: { label: 'Settings', landingPath: '/settings/general', wordmark: true },
 };
-const ONE_NEXA = { label: 'OneNexa', landingPath: '/dashboard', lightLogo: '/onenexa-logo.svg', darkLogo: '/onenexa-logo.svg', collapsedLogo: '/onenexa-icon.svg' };
+// The shell shows only the OneNexa icon (no wordmark), expanded or collapsed.
+const ONE_NEXA = { label: 'OneNexa', landingPath: '/dashboard', mark: '/onenexa-mark.png' };
 let scheduled = false;
 let lastModule = '';
 
@@ -40,7 +41,7 @@ const sync = () => {
   let img=link.querySelector('img[data-onenexa-shell-logo="true"]')||link.querySelector('img');
   if (!img) { img=document.createElement('img'); img.dataset.onenexaShellLogo='true'; link.querySelectorAll(':scope > span').forEach(n=>n.style.display='none'); link.appendChild(img); }
   const collapsed=Boolean(header.firstElementChild && header.firstElementChild.getBoundingClientRect().width<=100);
-  const src=collapsed?ONE_NEXA.collapsedLogo:ONE_NEXA.lightLogo; if(img.src!==new URL(src,location.origin).href) img.src=src; img.alt=ONE_NEXA.label; img.style.display='block'; img.style.objectFit='contain'; img.style.width=collapsed?'58px':'205px'; img.style.height=collapsed?'58px':'56px'; img.style.margin='0 auto'; img.style.filter=document.documentElement.classList.contains('dark')?'brightness(0) invert(1)':'none';
+  const src=ONE_NEXA.mark; if(img.src!==new URL(src,location.origin).href) img.src=src; img.alt=ONE_NEXA.label; const size=collapsed?'46px':'50px'; const dark=document.documentElement.classList.contains('dark'); img.style.display='block'; img.style.objectFit='contain'; img.style.width=size; img.style.height=size; img.style.margin='0 auto'; img.style.filter='none'; img.style.background=dark?'#ffffff':'transparent'; img.style.borderRadius=dark?'50%':'0'; img.style.padding=dark?'3px':'0'; img.style.boxSizing='border-box';
   const title=header.querySelector('h1'); if(title){title.textContent=module.label; title.setAttribute('aria-label',module.label);}
   document.title=`${module.label} · OneNexa`; lastModule=moduleId;
 };
