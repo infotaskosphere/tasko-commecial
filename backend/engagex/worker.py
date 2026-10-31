@@ -46,6 +46,17 @@ from .common import (
     utcnow,
 )
 
+from .deliverability import (
+    SEND_LOG,
+    STYLE_PERSONAL,
+    build_personal_html,
+    campaign_style,
+    capacity_resume_at,
+    mailbox_key,
+    provider_backoff,
+    record_send,
+)
+
 logger = logging.getLogger("engagex.worker")
 
 POLL_SECONDS = 5
@@ -85,6 +96,9 @@ async def ensure_indexes() -> None:
         ("whatsapp_messages", [("batch_id", ASCENDING)], {}),
         ("email_delivery_logs", [("related_user_id", ASCENDING), ("created_at", DESCENDING)], {}),
         ("email_delivery_logs", [("related_licensee_id", ASCENDING), ("created_at", DESCENDING)], {}),
+        # Rolling 24-hour send counts per mailbox (see deliverability.py).
+        (SEND_LOG, [("mailbox", ASCENDING), ("at", ASCENDING)], {}),
+        (SEND_LOG, [("at", ASCENDING)], {"expireAfterSeconds": 2 * 24 * 3600}),
     ]
     for name, keys, options in specs:
         try:
@@ -140,6 +154,7 @@ async def _claim(campaign_id: str) -> Optional[dict]:
             "lease_owner": WORKER_ID,
             "lease_until": iso(now + timedelta(seconds=LEASE_SECONDS)),
             "last_error": None,
+            "throttled_until": None,
             "updated_at": iso(now),
         }},
         return_document=ReturnDocument.AFTER,
@@ -295,6 +310,9 @@ class _MailChannel:
         self.sender = None
         self.session = None
         self.attachments: list = []
+        self.style = campaign_style(self.settings)
+        self.limits = None
+        self.mailbox = ""
 
     async def open(self) -> Optional[str]:
         from .mailer import resolve_sender
@@ -314,32 +332,60 @@ class _MailChannel:
         self.session = open_session(self.sender)
         if self.sender.kind == "platform" and not self.sender.from_email:
             return "The platform email service has no From address configured in the Commercial Console."
+        self.limits = self.sender.limits()
+        self.mailbox = mailbox_key(self.sender.from_email)
         return None
 
-    async def send(self, recipient: dict) -> None:
-        from .mailer import build_email_html, html_to_text, send_one
+    async def capacity_wait(self) -> Optional[tuple]:
+        """(resume_at, reason) when this mailbox has used its daily allowance."""
+        if not self.limits or not self.mailbox:
+            return None
+        resume_at = await capacity_resume_at(self.mailbox, self.limits)
+        if resume_at is None:
+            return None
+        return resume_at, (
+            f"Daily sending limit reached for {self.sender.from_email} ({self.limits.daily} emails per 24 hours, "
+            f"kept below {self.limits.provider}'s limit of {self.limits.provider_daily} to protect the account). "
+            "The rest will be sent automatically when the limit resets."
+        )
 
+    def backoff(self, error: str) -> Optional[tuple]:
+        return provider_backoff(error) if self.sender and self.sender.kind != "platform" else None
+
+    async def send(self, recipient: dict) -> None:
+        from .mailer import banner_html, build_email_html, html_to_text, send_one
+
+        personal = self.style == STYLE_PERSONAL
         base = (self.campaign.get("public_base_url") or "").rstrip("/")
         token = recipient.get("token") or ""
         unsubscribe_url = f"{base}/api/engagex-public/u/{token}" if base and token else ""
-        pixel_url = f"{base}/api/engagex-public/o/{token}.gif" if base and token and self.settings.get("track_opens", True) else ""
+        tracking = not personal and self.settings.get("track_opens", True)
+        pixel_url = f"{base}/api/engagex-public/o/{token}.gif" if base and token and tracking else ""
         variables = merge_variables(recipient, self.campaign.get("sender_company") or "")
+        # A {{unsubscribe_url}} the user typed into the message still works.
         variables["unsubscribe_url"] = unsubscribe_url
         subject = render_merge(self.content.get("subject") or "", variables)
         body = render_merge(self.content.get("html") or "", variables, escape_html=True)
-        preview = render_merge(self.content.get("preview_text") or "", variables)
-        html_body = build_email_html(
-            body_html=body,
-            preview_text=preview,
-            footer_company=self.sender.from_name or self.campaign.get("sender_company") or "",
-            footer_address=self.settings.get("footer_address") or "",
-            unsubscribe_url=unsubscribe_url,
-            open_pixel_url=pixel_url,
-            banner=self.content.get("banner"),
-        )
         text_body = html_to_text(body)
-        if unsubscribe_url:
-            text_body += f"\n\n--\nUnsubscribe: {unsubscribe_url}"
+        if personal:
+            # Letter-style message: none of the bulk-mail signals that make
+            # Gmail file it under Promotions (see deliverability.py).
+            html_body = build_personal_html(body_html=body, banner_markup=banner_html(self.content.get("banner")))
+            header_unsubscribe, campaign_header = "", ""
+        else:
+            preview = render_merge(self.content.get("preview_text") or "", variables)
+            html_body = build_email_html(
+                body_html=body,
+                preview_text=preview,
+                footer_company=self.sender.from_name or self.campaign.get("sender_company") or "",
+                footer_address=self.settings.get("footer_address") or "",
+                unsubscribe_url=unsubscribe_url,
+                open_pixel_url=pixel_url,
+                banner=self.content.get("banner"),
+            )
+            if unsubscribe_url:
+                text_body += f"\n\n--\nUnsubscribe: {unsubscribe_url}"
+            header_unsubscribe, campaign_header = unsubscribe_url, self.campaign["id"]
         await send_one(
             sender=self.sender,
             session=self.session,
@@ -347,20 +393,27 @@ class _MailChannel:
             subject=subject,
             html_body=html_body,
             text_body=text_body,
-            unsubscribe_url=unsubscribe_url,
-            campaign_id=self.campaign["id"],
+            unsubscribe_url=header_unsubscribe,
+            campaign_id=campaign_header,
             related_user_id=self.campaign.get("created_by"),
             related_licensee_id=self.campaign.get("tenant", {}).get("customer_id"),
             attachments=self.attachments,
         )
         recipient["_subject"] = subject
+        if self.limits and self.mailbox:
+            await record_send(self.mailbox, self.campaign["company_id"], self.campaign["id"])
 
     async def record(self, recipient: dict, status: str, error: Optional[str]) -> None:
         return None
 
     def delay(self, sent_in_run: int) -> float:
         per_minute = max(1, min(600, int(self.settings.get("per_minute") or 30)))
-        return 60.0 / per_minute
+        if not self.limits:
+            return 60.0 / per_minute
+        # Personal mailboxes: never faster than the safe pace, and not at a
+        # machine-regular interval (steady bursts are what get accounts flagged).
+        base = 60.0 / min(per_minute, self.limits.per_minute)
+        return base * random.uniform(0.8, 1.6)
 
     async def close(self) -> None:
         if self.session is not None:
@@ -392,6 +445,11 @@ async def _run_campaign(campaign: dict) -> None:
                 status = await _campaign_status(campaign_id)
                 if status != "running":
                     break
+                wait = await channel.capacity_wait() if hasattr(channel, "capacity_wait") else None
+                if wait:
+                    resume_at, reason = wait
+                    await _throttle(campaign_id, resume_at, reason)
+                    return
                 recipient = await db[RECIPIENTS].find_one_and_update(
                     {"campaign_id": campaign_id, "status": "pending"},
                     {"$set": {"status": "sending", "updated_at": iso()}, "$inc": {"attempts": 1}},
@@ -409,6 +467,16 @@ async def _run_campaign(campaign: dict) -> None:
                     await channel.send(recipient)
                 except Exception as exc:
                     error = str(getattr(exc, "detail", None) or exc)[:500] or type(exc).__name__
+                backoff = channel.backoff(error) if error and hasattr(channel, "backoff") else None
+                if backoff:
+                    # The provider refused because of volume, not because of
+                    # this recipient: the message was not accepted, so it goes
+                    # back in the queue and the whole run stops for a while.
+                    wait_for, reason = backoff
+                    await db[RECIPIENTS].update_one({"id": recipient["id"]}, {"$set": {"status": "pending", "updated_at": iso()}})
+                    await _throttle(campaign_id, utcnow() + wait_for, f"{reason} Sending stopped to protect the account and "
+                                    f"continues automatically later. Provider message: {error[:200]}")
+                    return
                 now = iso()
                 if error:
                     consecutive_failures += 1
@@ -441,6 +509,18 @@ async def _run_campaign(campaign: dict) -> None:
         {"id": campaign_id, "lease_owner": WORKER_ID},
         {"$set": {"lease_owner": None, "lease_until": None}},
     )
+
+
+async def _throttle(campaign_id: str, resume_at, reason: str) -> None:
+    """Stop this run and hand the campaign back to the scheduler at resume_at.
+
+    The campaign stays ``running`` with its lease ending at resume_at, so the
+    regular claim query (running + expired lease) picks it up again then, and
+    pause/cancel keep working in the meantime."""
+    await recompute_stats(campaign_id)
+    await _set_campaign(campaign_id, lease_owner=None, lease_until=iso(resume_at), throttled_until=iso(resume_at),
+                        last_error=reason)
+    logger.info("EngageX campaign %s throttled until %s: %s", campaign_id, iso(resume_at), reason)
 
 
 async def _lane_task(key: str, campaign: dict) -> None:

@@ -13,7 +13,10 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
-from .common import CAMPAIGNS, CONTACTS, MEDIA, RECIPIENTS, SUPPRESSIONS, iso, raw_db
+from datetime import timedelta
+
+from .common import CAMPAIGNS, CONTACTS, MEDIA, RECIPIENTS, SUPPRESSIONS, iso, raw_db, utcnow
+from .deliverability import OPEN_GRACE_SECONDS
 
 logger = logging.getLogger("engagex.public")
 router = APIRouter(prefix="/engagex-public", tags=["engagex-public"])
@@ -92,8 +95,11 @@ async def unsubscribe_confirm(token: str, request: Request):
 @router.get("/o/{token}.gif")
 async def open_pixel(token: str):
     try:
+        # Ignore loads right after sending: that is the sender viewing their
+        # own Sent copy (the pixel is in it too), not the recipient opening it.
         await raw_db()[RECIPIENTS].update_one(
-            {"token": token, "channel": "email", "opened_at": None},
+            {"token": token, "channel": "email", "opened_at": None,
+             "sent_at": {"$lte": iso(utcnow() - timedelta(seconds=OPEN_GRACE_SECONDS))}},
             {"$set": {"opened_at": iso()}},
         )
     except Exception:  # tracking must never break image rendering
