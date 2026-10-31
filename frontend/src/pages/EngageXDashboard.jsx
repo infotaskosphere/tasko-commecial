@@ -7,7 +7,7 @@ import {
 } from 'recharts';
 import {
   AlertTriangle, ArrowRight, ChevronLeft, ChevronRight, Download, History, Mail, MailOpen, Megaphone, MessageCircle,
-  RefreshCw, Search, Send, ShieldOff, TrendingUp,
+  RefreshCw, Search, Send, ShieldOff, Trash2, TrendingUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -15,6 +15,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { EmptyState, LoadingState, PageBanner, StatRow } from '@/components/ui/PageKit';
 import useDark from '@/hooks/useDark';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
@@ -75,12 +79,18 @@ function RecentCampaigns({ campaigns, onOpen }) {
   );
 }
 
-function HistoryTable({ onCampaign }) {
-  const [filters, setFilters] = useState({ channel: 'all', status: 'all', q: '', date_from: '', date_to: '' });
+const ALL_FILTERS = { channel: 'all', status: 'all', q: '', date_from: '', date_to: '' };
+const rowKey = (row) => `${row.kind || row.channel}:${row.id}`;
+
+function HistoryTable({ onCampaign, onDeleted }) {
+  const [filters, setFilters] = useState(ALL_FILTERS);
   const [page, setPage] = useState(1);
-  const [state, setState] = useState({ loading: true, items: [], total: 0 });
+  const [state, setState] = useState({ loading: true, items: [], total: 0, canDelete: false });
   const [selected, setSelected] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [checked, setChecked] = useState({}); // rowKey -> {kind, id}
+  const [confirmDelete, setConfirmDelete] = useState(null); // 'selected' | 'all'
+  const [deleting, setDeleting] = useState(false);
   const pageSize = 25;
 
   const params = useMemo(() => ({ ...filters, page, page_size: pageSize }), [filters, page]);
@@ -88,16 +98,45 @@ function HistoryTable({ onCampaign }) {
     setState((s) => ({ ...s, loading: true }));
     try {
       const data = await engagexApi.history(params);
-      setState({ loading: false, items: data.items || [], total: data.total || 0 });
+      setState({ loading: false, items: data.items || [], total: data.total || 0, canDelete: !!data.can_delete });
     } catch (error) {
-      setState({ loading: false, items: [], total: 0 });
+      setState({ loading: false, items: [], total: 0, canDelete: false });
       toast.error(engagexError(error));
     }
   }, [params]);
 
   useEffect(() => { const t = setTimeout(load, filters.q ? 300 : 0); return () => clearTimeout(t); }, [load, filters.q]);
-  const set = (key) => (value) => { setFilters((f) => ({ ...f, [key]: value })); setPage(1); };
+  const set = (key) => (value) => { setFilters((f) => ({ ...f, [key]: value })); setPage(1); setChecked({}); };
   const pages = Math.max(1, Math.ceil(state.total / pageSize));
+
+  // ── Selection & delete ──
+  const canDelete = state.canDelete;
+  const selectable = state.items.filter((row) => row.kind && row.id);
+  const checkedCount = Object.keys(checked).length;
+  const pageAllChecked = selectable.length > 0 && selectable.every((row) => checked[rowKey(row)]);
+  const toggleRow = (row, on) => setChecked((c) => {
+    const next = { ...c };
+    if (on) next[rowKey(row)] = { kind: row.kind, id: row.id }; else delete next[rowKey(row)];
+    return next;
+  });
+  const togglePage = (on) => setChecked((c) => {
+    const next = { ...c };
+    selectable.forEach((row) => { if (on) next[rowKey(row)] = { kind: row.kind, id: row.id }; else delete next[rowKey(row)]; });
+    return next;
+  });
+  const filtered = JSON.stringify(filters) !== JSON.stringify(ALL_FILTERS);
+  const runDelete = async () => {
+    setDeleting(true);
+    try {
+      const res = confirmDelete === 'all'
+        ? await engagexApi.deleteAllHistory(filters)
+        : await engagexApi.deleteHistory(Object.values(checked));
+      toast.success(`${fmtNumber(res.deleted || 0)} message${res.deleted === 1 ? '' : 's'} deleted from history`);
+      setChecked({}); setConfirmDelete(null); setPage(1);
+      await load();
+      onDeleted?.();
+    } catch (error) { toast.error(engagexError(error)); } finally { setDeleting(false); }
+  };
 
   const exportCsv = async () => {
     setExporting(true);
@@ -111,7 +150,21 @@ function HistoryTable({ onCampaign }) {
       badge={state.loading ? undefined : fmtNumber(state.total)}
       description="Every WhatsApp message and email sent from this workspace — EngageX campaigns, client reminders, invoices and platform emails."
       color={BRAND.teal}
-      actions={<Button size="sm" variant="outline" onClick={exportCsv} disabled={exporting}><Download className="h-4 w-4 mr-1.5" />{exporting ? 'Exporting…' : 'Export CSV'}</Button>}
+      actions={(
+        <div className="flex flex-wrap justify-end gap-2">
+          {canDelete && checkedCount > 0 && (
+            <Button size="sm" variant="outline" className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => setConfirmDelete('selected')}>
+              <Trash2 className="h-4 w-4 mr-1.5" />Delete selected ({fmtNumber(checkedCount)})
+            </Button>
+          )}
+          {canDelete && state.total > 0 && (
+            <Button size="sm" variant="outline" className="text-rose-600 hover:bg-rose-50 hover:text-rose-700" onClick={() => setConfirmDelete('all')}>
+              <Trash2 className="h-4 w-4 mr-1.5" />{filtered ? 'Delete all filtered' : 'Delete all history'}
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={exportCsv} disabled={exporting}><Download className="h-4 w-4 mr-1.5" />{exporting ? 'Exporting…' : 'Export CSV'}</Button>
+        </div>
+      )}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[200px]">
@@ -137,6 +190,11 @@ function HistoryTable({ onCampaign }) {
           <table className="w-full min-w-[820px] text-sm">
             <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
               <tr>
+                {canDelete && (
+                  <th className="w-10 px-3 py-2.5">
+                    <Checkbox aria-label="Select all on this page" checked={pageAllChecked} onCheckedChange={(v) => togglePage(v === true)} />
+                  </th>
+                )}
                 <th className="px-4 py-2.5 text-left font-semibold">When</th>
                 <th className="px-4 py-2.5 text-left font-semibold">Recipient</th>
                 <th className="px-4 py-2.5 text-left font-semibold">Message / subject</th>
@@ -146,7 +204,12 @@ function HistoryTable({ onCampaign }) {
             </thead>
             <tbody>
               {state.items.map((row) => (
-                <tr key={`${row.channel}-${row.id}`} onClick={() => setSelected(row)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50/70 dark:border-slate-700/60 dark:hover:bg-slate-800/40">
+                <tr key={`${row.channel}-${row.id}`} onClick={() => setSelected(row)} className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50/70 dark:border-slate-700/60 dark:hover:bg-slate-800/40 ${checked[rowKey(row)] ? 'bg-teal-50/60 dark:bg-teal-500/10' : ''}`}>
+                  {canDelete && (
+                    <td className="w-10 px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                      {row.kind && row.id && <Checkbox aria-label={`Select message to ${row.recipient}`} checked={!!checked[rowKey(row)]} onCheckedChange={(v) => toggleRow(row, v === true)} />}
+                    </td>
+                  )}
                   <td className="px-4 py-2.5 whitespace-nowrap text-xs text-slate-500">{fmtDateTime(row.at)}</td>
                   <td className="px-4 py-2.5">
                     <span className="flex items-center gap-2">
@@ -173,6 +236,35 @@ function HistoryTable({ onCampaign }) {
           <Button size="icon" variant="outline" className="h-7 w-7" disabled={page >= pages || page >= 200} onClick={() => setPage((p) => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
         </div>
       )}
+
+      {checkedCount > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          {fmtNumber(checkedCount)} selected
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setChecked({})}>Clear selection</Button>
+        </div>
+      )}
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(o) => !o && !deleting && setConfirmDelete(null)}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader icon={Trash2} eyebrow="Message history">
+            <AlertDialogTitle>
+              {confirmDelete === 'all'
+                ? (filtered ? `Delete all ${fmtNumber(state.total)} filtered messages?` : `Delete all ${fmtNumber(state.total)} messages from history?`)
+                : `Delete ${fmtNumber(checkedCount)} selected message${checkedCount === 1 ? '' : 's'}?`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete === 'all' && filtered ? 'Only messages matching the current filters are deleted. ' : ''}
+              They are removed from this history and the dashboard counts. This can’t be undone. Campaign reports keep their delivery numbers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button className="bg-rose-600 text-white hover:bg-rose-700" disabled={deleting} onClick={runDelete}>
+              <Trash2 className="h-4 w-4 mr-1.5" />{deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
         <DialogContent className="max-w-lg">
@@ -278,7 +370,7 @@ export default function EngageXDashboard() {
         </ExCard>
       </div>
 
-      <HistoryTable onCampaign={openCampaign} />
+      <HistoryTable onCampaign={openCampaign} onDeleted={() => load()} />
     </div>
   );
 }

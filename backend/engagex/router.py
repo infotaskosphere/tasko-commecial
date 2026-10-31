@@ -409,15 +409,23 @@ def _wa_status(value: Any) -> str:
     return status or "sent"
 
 
-async def _history_rows(user: User, company_id: str, *, channel: Optional[str], status: Optional[str], q: Optional[str],
-                        campaign_id: Optional[str], date_from: Optional[str], date_to: Optional[str], limit: int) -> tuple[list[dict], int]:
-    rows: list[dict] = []
-    total = 0
+# Rows deleted from the EngageX history are hidden, not removed: the same
+# records drive campaign statistics, the WhatsApp module and the platform email
+# service's audit log and daily sending count.
+HISTORY_HIDDEN = "history_hidden_at"
+NOT_HIDDEN = {HISTORY_HIDDEN: None}
+
+
+async def _history_queries(user: User, company_id: str, *, channel: Optional[str], status: Optional[str], q: Optional[str],
+                           campaign_id: Optional[str], date_from: Optional[str], date_to: Optional[str]) -> dict[str, dict]:
+    """Mongo queries for each history source (whatsapp / engagex / platform)
+    matching the filters. A source that the filters exclude is left out."""
+    queries: dict[str, dict] = {}
     dates = _date_range(date_from, date_to)
     regex = {"$regex": re.escape(q.strip()), "$options": "i"} if q and q.strip() else None
 
     if channel in (None, "whatsapp"):
-        query: dict[str, Any] = {"$and": [await _wa_scope(user, company_id)]}
+        query: dict[str, Any] = {"$and": [await _wa_scope(user, company_id), NOT_HIDDEN]}
         if dates:
             query["$and"].append({"sent_at": dates})
         if status == "sent":
@@ -430,12 +438,59 @@ async def _history_rows(user: User, company_id: str, *, channel: Optional[str], 
             query["$and"].append({"batch_id": campaign_id})
         if regex:
             query["$and"].append({"$or": [{"to": regex}, {"message": regex}, {"batch_name": regex}]})
+        queries["whatsapp"] = query
+
+    if channel in (None, "email"):
+        query = scoped(company_id, {"channel": "email", "status": {"$in": ["sent", "failed"]}, **NOT_HIDDEN})
+        if status in ("sent", "failed"):
+            query["status"] = status
+        elif status == "opened":
+            query["opened_at"] = {"$ne": None}
+        elif status:
+            query["status"] = status
+        if campaign_id:
+            query["campaign_id"] = campaign_id
+        if dates:
+            query["updated_at"] = dates
+        if regex:
+            query["$or"] = [{"email": regex}, {"name": regex}, {"rendered_subject": regex}]
+        queries["engagex"] = query
+
+        if not campaign_id and status != "opened":
+            log_query: dict[str, Any] = {"$and": [await _email_log_scope(user, company_id), NOT_HIDDEN]}
+            if dates:
+                log_query["$and"].append({"created_at": dates})
+            if status == "sent":
+                log_query["$and"].append({"status": "SENT"})
+            elif status == "failed":
+                log_query["$and"].append({"status": {"$in": ["FAILED", "RETRYING"]}})
+            elif status:
+                log_query["$and"].append({"status": status.upper()})
+            if regex:
+                log_query["$and"].append({"$or": [{"recipient": regex}, {"subject": regex}]})
+            queries["platform"] = log_query
+    return queries
+
+
+_HISTORY_COLLECTIONS = {"whatsapp": "whatsapp_messages", "engagex": RECIPIENTS, "platform": "email_delivery_logs"}
+
+
+async def _history_rows(user: User, company_id: str, *, channel: Optional[str], status: Optional[str], q: Optional[str],
+                        campaign_id: Optional[str], date_from: Optional[str], date_to: Optional[str], limit: int) -> tuple[list[dict], int]:
+    rows: list[dict] = []
+    total = 0
+    queries = await _history_queries(user, company_id, channel=channel, status=status, q=q, campaign_id=campaign_id,
+                                     date_from=date_from, date_to=date_to)
+
+    if "whatsapp" in queries:
+        query = queries["whatsapp"]
         coll = raw_db()["whatsapp_messages"]
         total += await coll.count_documents(query)
         async for doc in coll.find(query).sort("sent_at", DESCENDING).limit(limit):
             rows.append({
                 "id": str(doc.get("_id")),
                 "channel": "whatsapp",
+                "kind": "whatsapp",
                 "source": "engagex" if doc.get("message_type") == "engagex_campaign" else (doc.get("message_type") or "app"),
                 "campaign_id": doc.get("batch_id"),
                 "campaign_name": doc.get("batch_name"),
@@ -449,20 +504,8 @@ async def _history_rows(user: User, company_id: str, *, channel: Optional[str], 
                 "sent_by": doc.get("sent_by"),
             })
 
-    if channel in (None, "email"):
-        query = scoped(company_id, {"channel": "email", "status": {"$in": ["sent", "failed"]}})
-        if status in ("sent", "failed"):
-            query["status"] = status
-        elif status == "opened":
-            query["opened_at"] = {"$ne": None}
-        elif status:
-            query["status"] = status
-        if campaign_id:
-            query["campaign_id"] = campaign_id
-        if dates:
-            query["updated_at"] = dates
-        if regex:
-            query["$or"] = [{"email": regex}, {"name": regex}, {"rendered_subject": regex}]
+    if "engagex" in queries:
+        query = queries["engagex"]
         coll = raw_db()[RECIPIENTS]
         total += await coll.count_documents(query)
         names: dict[str, str] = {}
@@ -474,6 +517,7 @@ async def _history_rows(user: User, company_id: str, *, channel: Optional[str], 
             rows.append({
                 "id": doc["id"],
                 "channel": "email",
+                "kind": "engagex",
                 "source": "engagex",
                 "campaign_id": cid,
                 "campaign_name": names.get(cid),
@@ -487,36 +531,27 @@ async def _history_rows(user: User, company_id: str, *, channel: Optional[str], 
                 "sent_by": None,
             })
 
-        if not campaign_id and status != "opened":
-            log_query: dict[str, Any] = {"$and": [await _email_log_scope(user, company_id)]}
-            if dates:
-                log_query["$and"].append({"created_at": dates})
-            if status == "sent":
-                log_query["$and"].append({"status": "SENT"})
-            elif status == "failed":
-                log_query["$and"].append({"status": {"$in": ["FAILED", "RETRYING"]}})
-            elif status:
-                log_query["$and"].append({"status": status.upper()})
-            if regex:
-                log_query["$and"].append({"$or": [{"recipient": regex}, {"subject": regex}]})
-            coll = raw_db()["email_delivery_logs"]
-            total += await coll.count_documents(log_query)
-            async for doc in coll.find(log_query, {"_id": 0}).sort("created_at", DESCENDING).limit(limit):
-                rows.append({
-                    "id": doc.get("id"),
-                    "channel": "email",
-                    "source": doc.get("email_type") or "platform",
-                    "campaign_id": None,
-                    "campaign_name": None,
-                    "recipient": doc.get("recipient"),
-                    "recipient_name": None,
-                    "summary": doc.get("subject") or "",
-                    "status": "sent" if doc.get("status") == "SENT" else ("failed" if doc.get("status") in ("FAILED", "RETRYING") else str(doc.get("status") or "").lower()),
-                    "error": doc.get("error_message"),
-                    "at": doc.get("sent_at") or doc.get("created_at"),
-                    "opened_at": None,
-                    "sent_by": doc.get("related_user_id"),
-                })
+    if "platform" in queries:
+        log_query = queries["platform"]
+        coll = raw_db()["email_delivery_logs"]
+        total += await coll.count_documents(log_query)
+        async for doc in coll.find(log_query, {"_id": 0}).sort("created_at", DESCENDING).limit(limit):
+            rows.append({
+                "id": doc.get("id"),
+                "channel": "email",
+                "kind": "platform",
+                "source": doc.get("email_type") or "platform",
+                "campaign_id": None,
+                "campaign_name": None,
+                "recipient": doc.get("recipient"),
+                "recipient_name": None,
+                "summary": doc.get("subject") or "",
+                "status": "sent" if doc.get("status") == "SENT" else ("failed" if doc.get("status") in ("FAILED", "RETRYING") else str(doc.get("status") or "").lower()),
+                "error": doc.get("error_message"),
+                "at": doc.get("sent_at") or doc.get("created_at"),
+                "opened_at": None,
+                "sent_by": doc.get("related_user_id"),
+            })
 
     rows.sort(key=lambda r: str(r.get("at") or ""), reverse=True)
     return rows, total
@@ -532,7 +567,7 @@ async def overview(days: int = Query(30, ge=1, le=365), current_user: User = Dep
     trend = {(since_dt + timedelta(days=i)).strftime("%Y-%m-%d"): {"whatsapp": 0, "email": 0, "failed": 0} for i in range(days)}
     kpis = {"whatsapp_sent": 0, "whatsapp_failed": 0, "email_sent": 0, "email_failed": 0, "email_opened": 0}
 
-    wa_match = {"$and": [await _wa_scope(current_user, company_id), {"sent_at": {"$gte": since}}]}
+    wa_match = {"$and": [await _wa_scope(current_user, company_id), {"sent_at": {"$gte": since}}, NOT_HIDDEN]}
     async for row in raw_db()["whatsapp_messages"].aggregate([
         {"$match": wa_match},
         {"$group": {"_id": {"d": {"$substrBytes": ["$sent_at", 0, 10]}, "s": "$status"}, "n": {"$sum": 1}}},
@@ -548,7 +583,7 @@ async def overview(days: int = Query(30, ge=1, le=365), current_user: User = Dep
                 trend[day]["failed"] += row["n"]
 
     async for row in raw_db()[RECIPIENTS].aggregate([
-        {"$match": scoped(company_id, {"channel": "email", "status": {"$in": ["sent", "failed"]}, "updated_at": {"$gte": since}})},
+        {"$match": scoped(company_id, {"channel": "email", "status": {"$in": ["sent", "failed"]}, "updated_at": {"$gte": since}, **NOT_HIDDEN})},
         {"$group": {"_id": {"d": {"$substrBytes": ["$updated_at", 0, 10]}, "s": "$status"}, "n": {"$sum": 1},
                     "o": {"$sum": {"$cond": [{"$ifNull": ["$opened_at", False]}, 1, 0]}}}},
     ]):
@@ -559,7 +594,7 @@ async def overview(days: int = Query(30, ge=1, le=365), current_user: User = Dep
         if day in trend:
             trend[day]["email" if state == "sent" else "failed"] += row["n"]
 
-    log_match = {"$and": [await _email_log_scope(current_user, company_id), {"created_at": {"$gte": since}}]}
+    log_match = {"$and": [await _email_log_scope(current_user, company_id), {"created_at": {"$gte": since}}, NOT_HIDDEN]}
     async for row in raw_db()["email_delivery_logs"].aggregate([
         {"$match": log_match},
         {"$group": {"_id": {"d": {"$substrBytes": ["$created_at", 0, 10]}, "s": "$status"}, "n": {"$sum": 1}}},
@@ -584,7 +619,7 @@ async def overview(days: int = Query(30, ge=1, le=365), current_user: User = Dep
     unsubscribed = await raw_db()[SUPPRESSIONS].count_documents(scoped(company_id))
     email_total = kpis["email_sent"] + kpis["email_failed"]
     wa_total = kpis["whatsapp_sent"] + kpis["whatsapp_failed"]
-    engagex_email_sent = await raw_db()[RECIPIENTS].count_documents(scoped(company_id, {"channel": "email", "status": "sent", "updated_at": {"$gte": since}}))
+    engagex_email_sent = await raw_db()[RECIPIENTS].count_documents(scoped(company_id, {"channel": "email", "status": "sent", "updated_at": {"$gte": since}, **NOT_HIDDEN}))
     return {
         "days": days,
         "kpis": {
@@ -619,7 +654,82 @@ async def history(
     rows, total = await _history_rows(current_user, company_id, channel=channel, status=status, q=q, campaign_id=campaign_id,
                                       date_from=date_from, date_to=date_to, limit=page * page_size)
     start = (page - 1) * page_size
-    return {"items": rows[start:start + page_size], "total": total, "page": page, "page_size": page_size}
+    return {"items": rows[start:start + page_size], "total": total, "page": page, "page_size": page_size,
+            "can_delete": is_admin(current_user)}
+
+
+class HistoryRef(BaseModel):
+    kind: Literal["whatsapp", "engagex", "platform"]
+    id: str = Field(..., min_length=1, max_length=80)
+
+
+class HistoryDeleteIn(BaseModel):
+    items: list[HistoryRef] = Field(..., min_length=1, max_length=500)
+
+
+class HistoryDeleteAllIn(BaseModel):
+    """Same filters as the history list; no filters means the whole history."""
+    channel: Optional[Literal["whatsapp", "email"]] = None
+    status: Optional[str] = Field(None, max_length=20)
+    q: Optional[str] = Field(None, max_length=120)
+    campaign_id: Optional[str] = Field(None, max_length=80)
+    date_from: Optional[str] = Field(None, max_length=10)
+    date_to: Optional[str] = Field(None, max_length=10)
+
+
+def _require_history_admin(user: User) -> None:
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Only an administrator can delete message history.")
+
+
+async def _hide(queries: dict[str, dict], user: User) -> int:
+    stamp = {"$set": {HISTORY_HIDDEN: iso(), "history_hidden_by": str(user.id)}}
+    hidden = 0
+    for kind, query in queries.items():
+        res = await raw_db()[_HISTORY_COLLECTIONS[kind]].update_many(query, stamp)
+        hidden += res.modified_count
+    return hidden
+
+
+@router.post("/history/delete")
+async def delete_history_items(body: HistoryDeleteIn, current_user: User = Depends(get_current_user)):
+    """Remove selected rows from the EngageX history (and its dashboard counts)."""
+    require_page(current_user, PAGE_DASHBOARD)
+    _require_history_admin(current_user)
+    company_id = workspace_company_id(current_user)
+    from bson import ObjectId
+    from bson.errors import InvalidId
+
+    ids: dict[str, list] = {"whatsapp": [], "engagex": [], "platform": []}
+    for ref in body.items:
+        if ref.kind == "whatsapp":
+            try:
+                ids["whatsapp"].append(ObjectId(ref.id))
+            except (InvalidId, TypeError):
+                continue
+        else:
+            ids[ref.kind].append(ref.id)
+    # Each id is matched inside this company's history scope, so rows of other
+    # companies can never be touched even if their ids are sent.
+    scopes = await _history_queries(current_user, company_id, channel=None, status=None, q=None, campaign_id=None,
+                                    date_from=None, date_to=None)
+    queries = {}
+    for kind, values in ids.items():
+        if values and kind in scopes:
+            key = "_id" if kind == "whatsapp" else "id"
+            queries[kind] = {"$and": [scopes[kind], {key: {"$in": values}}]}
+    return {"deleted": await _hide(queries, current_user)}
+
+
+@router.post("/history/delete-all")
+async def delete_history_all(body: HistoryDeleteAllIn, current_user: User = Depends(get_current_user)):
+    """Remove every history row matching the filters (all history when none)."""
+    require_page(current_user, PAGE_DASHBOARD)
+    _require_history_admin(current_user)
+    company_id = workspace_company_id(current_user)
+    queries = await _history_queries(current_user, company_id, channel=body.channel, status=body.status, q=body.q,
+                                     campaign_id=body.campaign_id, date_from=body.date_from, date_to=body.date_to)
+    return {"deleted": await _hide(queries, current_user)}
 
 
 @router.get("/history/export")

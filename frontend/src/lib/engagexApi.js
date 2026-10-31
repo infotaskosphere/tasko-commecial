@@ -32,6 +32,8 @@ export const engagexApi = {
   // Dashboard
   overview: (days = 30) => data(api.get(`${BASE}/overview`, { params: { days }, ...TIMEOUT })),
   history: (params) => data(api.get(`${BASE}/history`, { params: clean(params), ...TIMEOUT })),
+  deleteHistory: (items) => data(api.post(`${BASE}/history/delete`, { items }, TIMEOUT)),
+  deleteAllHistory: (filters) => data(api.post(`${BASE}/history/delete-all`, clean(filters), TIMEOUT)),
   exportHistory: async (params) => {
     const res = await api.get(`${BASE}/history/export`, { params: clean(params), responseType: 'blob' });
     const url = URL.createObjectURL(res.data);
