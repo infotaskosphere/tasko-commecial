@@ -157,6 +157,9 @@ class MailCampaignIn(BaseModel):
     html: str = Field("", max_length=500_000)
     audience: MailAudienceIn = Field(default_factory=MailAudienceIn)
     per_minute: int = Field(30, ge=1, le=600)
+    # "personal": plain letter-style email, best chance of the Primary inbox
+    # (no tracking pixel / unsubscribe header). "newsletter": tracked marketing.
+    style: Literal["personal", "newsletter"] = "personal"
     track_opens: bool = True
     footer_address: str = Field("", max_length=300)
     template_id: Optional[str] = None
@@ -198,6 +201,7 @@ class TestSendIn(BaseModel):
     preview_text: str = ""
     banner: Optional[BannerIn] = None
     attachments: list[AttachmentRef] = Field(default_factory=list, max_length=MAX_EMAIL_ATTACHMENTS)
+    style: Literal["personal", "newsletter"] = "personal"
 
 
 class ListIn(BaseModel):
@@ -977,7 +981,17 @@ def _public_sender(doc: dict) -> dict:
         "verified_at": doc.get("verified_at"),
         "last_error": doc.get("last_error"),
         "created_at": doc.get("created_at"),
+        "daily_limit": doc.get("daily_limit"),
+        "limits": _sender_limits(doc),
     }
+
+
+def _sender_limits(doc: dict) -> Optional[dict]:
+    from .deliverability import mailbox_limits
+
+    limits = mailbox_limits(doc.get("kind") or "smtp", doc.get("from_email") or "", doc.get("smtp_host") or "",
+                            doc.get("daily_limit"))
+    return limits.as_dict() if limits else None
 
 
 @router.get("/mail/senders")
@@ -1156,6 +1170,9 @@ class SenderProfileIn(BaseModel):
     from_name: str = Field("", max_length=120)
     reply_to: Optional[str] = None
     label: Optional[str] = Field(None, max_length=120)
+    # Lower daily cap for this mailbox (e.g. a Workspace trial allows 500/day).
+    # 0 clears it; omitted leaves it unchanged.
+    daily_limit: Optional[int] = Field(None, ge=0, le=10000)
 
 
 @router.post("/mail/senders/google/start")
@@ -1269,6 +1286,8 @@ async def update_sender_profile(sender_id: str, body: SenderProfileIn, current_u
     updates = {"from_name": clean_text(body.from_name, 120), "reply_to": normalize_email(body.reply_to), "updated_at": iso()}
     if body.label:
         updates["label"] = clean_text(body.label, 120)
+    if body.daily_limit is not None:
+        updates["daily_limit"] = body.daily_limit or None
     await raw_db()[SENDERS].update_one(scoped(company_id, {"id": sender_id}), {"$set": updates})
     return _public_sender({**existing, **updates})
 
@@ -1318,9 +1337,26 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     sender = await resolve_sender(company_id, body.sender_id)
     variables = merge_variables({"name": getattr(current_user, "full_name", "") or "", "email": to}, sender.from_name)
     content = render_merge(body.html, variables, escape_html=True)
-    html_body = build_email_html(body_html=content, preview_text=render_merge(body.preview_text, variables),
-                                 footer_company=sender.from_name, footer_address="", unsubscribe_url="", open_pixel_url="",
-                                 banner=body.banner.model_dump() if body.banner else None)
+    banner = body.banner.model_dump() if body.banner else None
+    if body.style == "personal":
+        # The test looks exactly like what recipients will get.
+        from .deliverability import build_personal_html
+        from .mailer import banner_html
+
+        html_body = build_personal_html(body_html=content, banner_markup=banner_html(banner))
+    else:
+        html_body = build_email_html(body_html=content, preview_text=render_merge(body.preview_text, variables),
+                                     footer_company=sender.from_name, footer_address="", unsubscribe_url="", open_pixel_url="",
+                                     banner=banner)
+    limits = sender.limits()
+    if limits:
+        from .deliverability import capacity_resume_at, mailbox_key
+
+        resume_at = await capacity_resume_at(mailbox_key(sender.from_email), limits)
+        if resume_at:
+            raise HTTPException(status_code=429, detail=(
+                f"{sender.from_email} has used its daily allowance ({limits.daily} emails per 24 hours). "
+                f"Try again after {resume_at.strftime('%d %b %H:%M')} UTC."))
     from .mailer import load_attachments
 
     attachments_payload = [a.model_dump() for a in body.attachments]
@@ -1341,6 +1377,10 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     finally:
         if session is not None:
             await session.close()
+    if limits:
+        from .deliverability import mailbox_key, record_send
+
+        await record_send(mailbox_key(sender.from_email), company_id)
     return {"sent": True, "to": to}
 
 
@@ -1524,7 +1564,8 @@ def _mail_fields(body: MailCampaignIn) -> dict:
         "settings": {
             "sender_id": body.sender_id or PLATFORM_SENDER_ID,
             "per_minute": body.per_minute,
-            "track_opens": body.track_opens,
+            "style": body.style,
+            "track_opens": body.track_opens and body.style == "newsletter",
             "footer_address": clean_text(body.footer_address, 300),
         },
         "content": {

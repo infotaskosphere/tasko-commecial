@@ -50,6 +50,15 @@ class ResolvedSender:
     kind: str  # "platform" | "smtp" | "google" | "microsoft"
     smtp: dict = field(default_factory=dict)
     oauth: dict = field(default_factory=dict)
+    daily_limit: Optional[int] = None  # optional lower per-sender daily cap
+
+    def limits(self):
+        """Known daily/pace limits for this mailbox (None: no known cap)."""
+        from .deliverability import mailbox_limits
+
+        if self.kind == "platform":
+            return None
+        return mailbox_limits(self.kind, self.from_email, (self.smtp or {}).get("host") or "", self.daily_limit)
 
 
 # ── HTML helpers ─────────────────────────────────────────────────────────────
@@ -162,6 +171,7 @@ async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedS
             reply_to=normalize_email(doc.get("reply_to")) or None,
             kind=doc["kind"],
             oauth={"refresh_token": decrypt_secret(doc.get("refresh_token_enc") or ""), "company_id": company_id},
+            daily_limit=doc.get("daily_limit"),
         )
     return ResolvedSender(
         id=doc["id"],
@@ -170,6 +180,7 @@ async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedS
         from_email=doc.get("from_email") or doc.get("username") or "",
         reply_to=normalize_email(doc.get("reply_to")) or None,
         kind="smtp",
+        daily_limit=doc.get("daily_limit"),
         smtp={
             "host": doc.get("smtp_host"),
             "port": int(doc.get("smtp_port") or 587),

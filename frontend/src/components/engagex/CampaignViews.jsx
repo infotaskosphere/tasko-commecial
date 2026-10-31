@@ -188,6 +188,12 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
             </div>
             {campaign.status !== 'draft' && <DeliveryBar stats={st} className="h-2.5" />}
             {campaign.status === 'scheduled' && <p className="text-xs text-violet-600 dark:text-violet-300">Scheduled for {fmtDateTime(campaign.scheduled_at)}</p>}
+            {campaign.status === 'running' && campaign.throttled_until && new Date(campaign.throttled_until) > new Date() && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                <p className="font-semibold">Waiting for the sending limit — continues automatically at {fmtDateTime(campaign.throttled_until)}</p>
+                {campaign.last_error && <p className="mt-0.5">{campaign.last_error}</p>}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               {campaign.status === 'draft' && onEditDraft && <Button size="sm" onClick={() => onEditDraft(campaign)}>Edit draft</Button>}

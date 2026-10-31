@@ -52,6 +52,7 @@ function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
     setForm(editing ? {
       provider: 'custom', label: initial.label, from_name: initial.from_name, from_email: initial.from_email, reply_to: initial.reply_to || '',
       smtp_host: initial.smtp_host, smtp_port: initial.smtp_port, security: initial.security, username: '', password: '',
+      daily_limit: initial.daily_limit || '',
     } : { ...emptySender, from_name: companyName || '' });
   }, [open, editing, initial, companyName]);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -69,7 +70,10 @@ function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
         reply_to: form.reply_to || null, smtp_host: form.smtp_host, smtp_port: Number(form.smtp_port), security: form.security,
         username: form.username || form.from_email, password: form.password || null, verify: true,
       };
-      if (editing) await engagexApi.updateSender(initial.id, body); else await engagexApi.createSender(body);
+      if (editing) {
+        await engagexApi.updateSender(initial.id, body);
+        if (initial.limits) await engagexApi.updateSenderProfile(initial.id, { from_name: body.from_name, reply_to: body.reply_to, daily_limit: Number(form.daily_limit) || 0 });
+      } else await engagexApi.createSender(body);
       toast.success('Sender verified and saved');
       onSaved(); onOpenChange(false);
     } catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
@@ -110,6 +114,7 @@ function SenderDialog({ open, onOpenChange, initial, companyName, onSaved }) {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-slate-500">Username<Input className="mt-1" value={form.username} onChange={(e) => set({ username: e.target.value })} placeholder={form.from_email || 'Usually your email address'} autoComplete="off" /></label>
+            {editing && initial.limits && <DailyLimitField limits={initial.limits} value={form.daily_limit} onChange={(v) => set({ daily_limit: v })} />}
             <label className="text-xs font-semibold text-slate-500">{editing ? 'New password (leave blank to keep)' : 'Password / app password *'}<Input className="mt-1" type="password" value={form.password} onChange={(e) => set({ password: e.target.value })} autoComplete="new-password" /></label>
           </div>
         </div>
@@ -145,14 +150,28 @@ export function GoogleButton({ onClick, busy, children = 'Continue with Google',
   );
 }
 
+/** Optional lower daily cap for a Gmail/Outlook mailbox (e.g. a Workspace trial allows 500/day). */
+function DailyLimitField({ limits, value, onChange }) {
+  return (
+    <label className="block text-xs font-semibold text-slate-500">Daily sending limit (optional)
+      <Input className="mt-1" type="number" min={1} max={limits.daily} value={value} onChange={(e) => onChange(e.target.value)} placeholder={`${limits.daily} (default)`} />
+      <span className="mt-1 block font-normal text-slate-400">MailMaster sends at most {limits.daily} emails per 24 hours from this {limits.provider} mailbox ({limits.provider} allows {fmtNumber(limits.provider_daily)}). Enter a lower number only if your account has a lower limit.</span>
+    </label>
+  );
+}
+
 function SenderNameDialog({ sender, onOpenChange, onSaved }) {
   const [fromName, setFromName] = useState('');
   const [replyTo, setReplyTo] = useState('');
+  const [dailyLimit, setDailyLimit] = useState('');
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (sender) { setFromName(sender.from_name || ''); setReplyTo(sender.reply_to || ''); } }, [sender]);
+  useEffect(() => { if (sender) { setFromName(sender.from_name || ''); setReplyTo(sender.reply_to || ''); setDailyLimit(sender.daily_limit || ''); } }, [sender]);
   const save = async () => {
     setSaving(true);
-    try { await engagexApi.updateSenderProfile(sender.id, { from_name: fromName, reply_to: replyTo || null }); toast.success('Sender updated'); onSaved(); onOpenChange(false); }
+    try {
+      await engagexApi.updateSenderProfile(sender.id, { from_name: fromName, reply_to: replyTo || null, ...(sender.limits ? { daily_limit: Number(dailyLimit) || 0 } : {}) });
+      toast.success('Sender updated'); onSaved(); onOpenChange(false);
+    }
     catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
   };
   return (
@@ -161,6 +180,7 @@ function SenderNameDialog({ sender, onOpenChange, onSaved }) {
         <DialogHeader><DialogTitle>Sender details</DialogTitle><DialogDescription>{sender?.from_email}</DialogDescription></DialogHeader>
         <label className="text-xs font-semibold text-slate-500">Name recipients see<Input className="mt-1" value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Your company name" /></label>
         <label className="text-xs font-semibold text-slate-500">Reply-To (optional)<Input className="mt-1" type="email" value={replyTo} onChange={(e) => setReplyTo(e.target.value)} placeholder="Replies go to the mailbox itself when empty" /></label>
+        {sender?.limits && <DailyLimitField limits={sender.limits} value={dailyLimit} onChange={setDailyLimit} />}
         <DialogFooter><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={save} disabled={saving || !fromName.trim()}>{saving ? 'Saving…' : 'Save'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
@@ -239,6 +259,7 @@ function SendersPanel({ senders, canManage, canConfigurePlatform, platformRemove
             <dl className="mt-3 space-y-1 text-xs">
               <div className="flex justify-between gap-2"><dt className="shrink-0 text-slate-500">From</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.from_name} &lt;{s.from_email || 'not configured'}&gt;</dd></div>
               <div className="flex justify-between gap-2"><dt className="shrink-0 text-slate-500">Reply-To</dt><dd className="truncate text-right text-slate-700 dark:text-slate-200">{s.reply_to || (s.kind === PLATFORM ? '—' : 'Same mailbox')}</dd></div>
+              {s.limits && <div className="flex justify-between gap-2" title={`${s.limits.provider} allows ${s.limits.provider_daily} per day. MailMaster stays below it so the account is not blocked; bigger lists continue automatically the next day.`}><dt className="shrink-0 text-slate-500">Daily limit</dt><dd className="text-right text-slate-700 dark:text-slate-200">{fmtNumber(s.limits.daily)} emails / 24 h</dd></div>}
             </dl>
             {s.kind === PLATFORM && !s.enabled && <p className="mt-2 text-[11px] text-amber-600">The platform service is not configured yet — add your own email account above.</p>}
             {s.last_error && <p className="mt-2 text-[11px] text-rose-600">{s.last_error}</p>}
@@ -445,7 +466,7 @@ function TemplatesPanel({ templates, companyName, reload, onUse }) {
 // ═════════════════════════════════════════════════════════════════════════════
 const blankCampaign = (senders) => ({
   id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || senders[0]?.id || PLATFORM, subject: '', preview_text: '',
-  html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, track_opens: true, footer_address: '', template_id: null,
+  html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, style: 'personal', track_opens: true, footer_address: '', template_id: null,
   banner: null, attachments: [],
 });
 
@@ -460,6 +481,8 @@ export const campaignFromDoc = (doc, senders) => ({
   list_ids: doc.audience?.list_ids || [],
   recipients: doc.audience?.recipients || [],
   per_minute: doc.settings?.per_minute || 30,
+  // Campaigns from before email styles were sent as newsletters.
+  style: doc.settings?.style || 'newsletter',
   track_opens: doc.settings?.track_opens !== false,
   footer_address: doc.settings?.footer_address || '',
   banner: doc.content?.banner || null,
@@ -620,7 +643,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
 
   const body = () => ({
     name: c.name.trim() || c.subject.trim() || 'Untitled campaign', sender_id: c.sender_id, subject: c.subject, preview_text: c.preview_text, html: c.html,
-    audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), track_opens: c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
+    audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), style: c.style, track_opens: c.style === 'newsletter' && c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
     banner: c.banner?.url ? { url: c.banner.url, link: c.banner.link || '', alt: c.banner.alt || '', media_id: c.banner.media_id || null } : null,
     attachments: c.attachments.map(({ id, filename, size, mime_type }) => ({ id, filename, size, mime_type })),
   });
@@ -655,7 +678,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
   const sendTest = async () => {
     try {
       const b = body();
-      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text, banner: b.banner, attachments: b.attachments });
+      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text, banner: b.banner, attachments: b.attachments, style: c.style });
       toast.success(`Test sent to ${testTo}`); setTestOpen(false);
     } catch (error) { toast.error(engagexError(error)); }
   };
@@ -667,7 +690,12 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
     catch (error) { toast.error(engagexError(error)); }
   };
 
-  const etaSeconds = audienceCount ? (audienceCount / Math.max(1, Number(c.per_minute))) * 60 : 0;
+  // Gmail/Outlook mailboxes: slower, varied pace and a daily cap (see backend deliverability.py).
+  const limits = sender?.limits || null;
+  const pace = limits ? Math.min(Number(c.per_minute), limits.per_minute) / 1.2 : Number(c.per_minute);
+  const sendDays = limits && audienceCount > limits.daily ? Math.ceil(audienceCount / limits.daily) : 1;
+  const etaSeconds = audienceCount ? (Math.min(audienceCount, limits ? limits.daily : audienceCount) / Math.max(1, pace)) * 60 : 0;
+  const etaLabel = sendDays > 1 ? `about ${sendDays} days (${fmtNumber(limits.daily)} per day)` : fmtDuration(etaSeconds);
 
   return (
     <div className="space-y-4">
@@ -738,16 +766,39 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
         <AttachmentPicker attachments={c.attachments} onChange={(attachments) => set({ attachments })} />
       </ChecklistRow>
 
-      <ChecklistRow done title="Settings" summary={`${c.per_minute} emails per minute · open tracking ${c.track_opens ? 'on' : 'off'}`}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label className="text-xs font-semibold text-slate-500">Sending speed (emails / minute)
-            <Input type="number" min={1} max={600} className="mt-1" value={c.per_minute} onChange={(e) => set({ per_minute: Math.min(600, Math.max(1, Number(e.target.value) || 1)) })} />
-            <span className="mt-1 block font-normal text-slate-400">Gmail/Outlook mailboxes: keep at 20–30. SES/SendGrid can go higher.</span>
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Footer address (recommended)
-            <Input className="mt-1" value={c.footer_address} onChange={(e) => set({ footer_address: e.target.value })} placeholder="Office address shown in the footer" maxLength={300} />
-          </label>
-          <label className="flex items-center gap-3 pt-5 text-sm text-slate-700 dark:text-slate-200"><Switch checked={c.track_opens} onCheckedChange={(v) => set({ track_opens: v })} />Track opens</label>
+      <ChecklistRow done title="Settings" summary={`${c.style === 'personal' ? 'Personal email' : `Newsletter · open tracking ${c.track_opens ? 'on' : 'off'}`} · ${limits ? `${Math.min(Number(c.per_minute), limits.per_minute)}` : c.per_minute} emails per minute`}>
+        <div className="space-y-4">
+          <div>
+            <p className="text-xs font-semibold text-slate-500">Email style</p>
+            <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+              {[
+                { key: 'personal', title: 'Personal (recommended)', text: 'Arrives like a normal email you typed. Best chance of the main Inbox (Primary tab). No open tracking or unsubscribe footer.' },
+                { key: 'newsletter', title: 'Newsletter', text: 'Designed layout with open tracking and an unsubscribe link. Gmail usually files these under Promotions.' },
+              ].map((o) => (
+                <button key={o.key} type="button" onClick={() => set({ style: o.key })} aria-pressed={c.style === o.key}
+                  className={`rounded-lg border p-3 text-left transition ${c.style === o.key ? 'border-teal-500 bg-teal-50/60 ring-1 ring-teal-500/40 dark:bg-teal-500/10' : 'border-slate-200 hover:border-slate-300 dark:border-slate-700'}`}>
+                  <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{o.title}</span>
+                  <span className="mt-0.5 block text-xs text-slate-500">{o.text}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <label className="text-xs font-semibold text-slate-500">Sending speed (emails / minute)
+              <Input type="number" min={1} max={600} className="mt-1" value={c.per_minute} onChange={(e) => set({ per_minute: Math.min(600, Math.max(1, Number(e.target.value) || 1)) })} />
+              <span className="mt-1 block font-normal text-slate-400">{limits
+                ? `${limits.provider} mailbox: sends at most ${limits.per_minute} per minute at a varied pace and ${fmtNumber(limits.daily)} per 24 hours, so the account is not blocked. Bigger lists continue automatically the next day.`
+                : 'SES, SendGrid and similar services can go higher.'}</span>
+            </label>
+            {c.style === 'newsletter' && (
+              <>
+                <label className="text-xs font-semibold text-slate-500">Footer address (recommended)
+                  <Input className="mt-1" value={c.footer_address} onChange={(e) => set({ footer_address: e.target.value })} placeholder="Office address shown in the footer" maxLength={300} />
+                </label>
+                <label className="flex items-center gap-3 pt-5 text-sm text-slate-700 dark:text-slate-200"><Switch checked={c.track_opens} onCheckedChange={(v) => set({ track_opens: v })} />Track opens</label>
+              </>
+            )}
+          </div>
         </div>
       </ChecklistRow>
 
@@ -770,7 +821,8 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
             <dt className="text-slate-500">From</dt><dd className="min-w-0 break-words text-right font-semibold">{sender?.from_name} &lt;{sender?.from_email}&gt;</dd>
             <dt className="text-slate-500">Subject</dt><dd className="min-w-0 break-words text-right font-semibold">{c.subject}</dd>
             {c.attachments.length > 0 && <><dt className="text-slate-500">Attachments</dt><dd className="min-w-0 text-right font-semibold">{c.attachments.length} file{c.attachments.length > 1 ? 's' : ''}</dd></>}
-            <dt className="text-slate-500">Estimated time</dt><dd className="min-w-0 text-right font-semibold">{fmtDuration(etaSeconds)}</dd>
+            <dt className="text-slate-500">Email style</dt><dd className="min-w-0 text-right font-semibold">{c.style === 'personal' ? 'Personal' : 'Newsletter'}</dd>
+            <dt className="text-slate-500">Estimated time</dt><dd className="min-w-0 text-right font-semibold">{etaLabel}</dd>
           </dl>
           {confirm === 'schedule' && <Input type="datetime-local" value={scheduleAt} min={localDateTimeValue(Date.now() + 2 * 60 * 1000)} onChange={(e) => setScheduleAt(e.target.value)} />}
           <DialogFooter>
