@@ -4,6 +4,10 @@ const https = require('https');
 const http  = require('http');
 const config = require('./config');
 
+// Called when the backend answers 401 (the computer was disconnected).
+let onUnauthorized = null;
+function setOnUnauthorized(fn) { onUnauthorized = fn; }
+
 function post(path, body, token) {
   return new Promise((resolve, reject) => {
     const data = JSON.stringify(body);
@@ -25,6 +29,9 @@ function post(path, body, token) {
     };
 
     const req = (isHttps ? https : http).request(options, (res) => {
+      if (res.statusCode === 401 && token && onUnauthorized) {
+        try { onUnauthorized(); } catch {}
+      }
       let buf = '';
       res.on('data', chunk => { buf += chunk; });
       res.on('end', () => {
@@ -39,4 +46,4 @@ function post(path, body, token) {
   });
 }
 
-module.exports = { post };
+module.exports = { post, setOnUnauthorized };

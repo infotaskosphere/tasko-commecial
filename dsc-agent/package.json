@@ -1,6 +1,6 @@
 {
   "name": "taskosphere-agent",
-  "version": "4.1.0",
+  "version": "4.2.0",
   "description": "Taskosphere Enterprise Desktop Agent",
   "main": "agent.js",
   "bin": "agent.js",
@@ -15,11 +15,13 @@
     "express": "^4.18.2"
   },
   "devDependencies": {
-    "pkg": "^5.8.1"
+    "pkg": "^5.8.1",
+    "rcedit": "^4.0.1"
   },
   "pkg": {
     "assets": [
-      "modules/**/*"
+      "modules/**/*",
+      "assets/**/*"
     ],
     "targets": [
       "node18-win-x64"

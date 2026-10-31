@@ -43,20 +43,53 @@ jobs:
           $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      - name: Agent tests (pairing, saved credential, tray state)
+        run: node --test tests/pairing-flow.test.js
+
       - name: Build TaskosphereAgent.exe
         run: npx pkg . --targets node18-win-x64 --output dist/TaskosphereAgent.exe
 
-      - name: Smoke-test the exe
+      # The tray icon: a small WinForms program compiled with the C# compiler
+      # that ships with Windows (.NET Framework 4), so Windows shows it as
+      # "Taskosphere Agent" with the Taskosphere icon.
+      - name: Build TaskosphereTray.exe
         run: |
-          $p = Start-Process -FilePath dist\TaskosphereAgent.exe -PassThru -WindowStyle Hidden
-          $ok = $false
-          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
-            Start-Sleep -Seconds 1
-            try { $r = Invoke-RestMethod http://127.0.0.1:7432/health; $ok = ($r.status -eq 'ok') } catch {}
-          }
-          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-          if (-not $ok) { throw "agent did not answer /health" }
-          Write-Host "agent /health ok, version $($r.version)"
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          & $csc /nologo /target:winexe /optimize+ /win32icon:assets\taskosphere.ico /out:dist\TaskosphereTray.exe /r:System.Windows.Forms.dll /r:System.Drawing.dll tray\TaskosphereTray.cs
+          if ($LASTEXITCODE -ne 0) { throw "TaskosphereTray.exe did not compile" }
+          Copy-Item assets\tray.ico dist\tray.ico
+
+      - name: Check the PowerShell tray fallback parses
+        run: |
+          node -e "require('fs').writeFileSync('tray-check.ps1', require('./modules/tray').TRAY_SCRIPT)"
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path tray-check.ps1).Path, [ref]$null, [ref]$errors)
+          if ($errors.Count) { $errors | ForEach-Object { Write-Host $_ }; throw "tray script has syntax errors" }
+
+      - name: Smoke-test the exe and tray icon
+        run: pwsh installer/smoke-test.ps1 -Exe dist\TaskosphereAgent.exe
+
+      # Give TaskosphereAgent.exe itself the Taskosphere icon and version info.
+      # pkg wraps a Node base binary whose hash it checks when "fetched", but
+      # not when it is a locally "built" one: patch a copy under that name.
+      # Optional: if the branded exe does not pass the smoke test, the plain
+      # one built above is released (its shortcuts still use the Taskosphere icon).
+      - name: Brand TaskosphereAgent.exe with the Taskosphere icon
+        continue-on-error: true
+        run: |
+          $fetched = Get-ChildItem (Join-Path $HOME '.pkg-cache') -Recurse -File -Filter 'fetched-v18*-win-x64' | Select-Object -First 1
+          if (-not $fetched) { throw 'pkg base binary not found' }
+          $built = Join-Path $fetched.DirectoryName ($fetched.Name -replace '^fetched-', 'built-')
+          Copy-Item $fetched.FullName $built -Force
+          node -e "require('rcedit')(process.argv[1], { icon: 'assets/taskosphere.ico', 'file-version': process.argv[2], 'product-version': process.argv[2], 'version-string': { ProductName: 'Taskosphere Agent', FileDescription: 'Taskosphere Agent', CompanyName: 'Taskosphere', OriginalFilename: 'TaskosphereAgent.exe', LegalCopyright: 'Taskosphere' } }).catch((e) => { console.error(e); process.exit(1); })" $built "${{ steps.version.outputs.version }}"
+          if ($LASTEXITCODE -ne 0) { throw 'rcedit failed' }
+          Remove-Item $fetched.FullName -Force
+          npx pkg . --targets node18-win-x64 --output dist/TaskosphereAgent-branded.exe
+          if ($LASTEXITCODE -ne 0) { throw 'branded build failed' }
+          pwsh installer/smoke-test.ps1 -Exe dist\TaskosphereAgent-branded.exe
+          if ($LASTEXITCODE -ne 0) { throw 'branded exe failed the smoke test' }
+          Move-Item dist\TaskosphereAgent-branded.exe dist\TaskosphereAgent.exe -Force
+          Write-Host 'TaskosphereAgent.exe now carries the Taskosphere icon'
 
       - name: Install Inno Setup
         run: |
@@ -77,7 +110,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "agent-v${{ steps.version.outputs.version }}"
-          $notes = "Taskosphere Agent ${{ steps.version.outputs.version }} for Windows. Download TaskosphereAgentSetup.exe and run it; no administrator rights needed."
+          $notes = "Taskosphere Agent ${{ steps.version.outputs.version }} for Windows. Download TaskosphereAgentSetup.exe and run it; no administrator rights needed. The agent runs in the background with a Taskosphere icon in the system tray; the first time it opens your browser to connect this computer (one click, no login in the agent)."
           gh release view $tag 2>$null | Out-Null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag dist\TaskosphereAgentSetup.exe --clobber

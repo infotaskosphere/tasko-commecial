@@ -208,6 +208,7 @@ async def create_desktop_indexes():
         logger.info("[DesktopAgent] Indexes created")
     except Exception as e:
         logger.error(f"[DesktopAgent] Index creation failed: {e}")
+    await _desktop_agent_pairing.create_pairing_indexes()
 
 
 # ── DB reference (injected by dependency) ─────────────────────────────────────
@@ -1098,3 +1099,7 @@ async def export_reports(
         "count": len(docs),
         "data": docs,
     }
+
+
+# Pairing (no-login agent connection) registers its routes on this router.
+from backend import desktop_agent_pairing as _desktop_agent_pairing  # noqa: E402,F401

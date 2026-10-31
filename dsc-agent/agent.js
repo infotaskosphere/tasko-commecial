@@ -51,6 +51,9 @@ if (args.includes('--install-service') || args.includes('--uninstall-service')) 
   }
 }
 
+// No console window in normal use: keep a log file for support.
+require('./modules/logger').install();
+
 const { readCertFromPcSc } = require('./pcscReader');
 const dscWatcher           = require('./dscWatcher');
 const activityTracker      = require('./activityTracker');
@@ -68,6 +71,8 @@ const offlineQueue         = require('./modules/offlineQueue');
 const autoUpdater          = require('./modules/autoUpdater');
 const systemInfo           = require('./modules/systemInfo');
 const tray                 = require('./modules/tray');
+const credentials          = require('./modules/credentials');
+const pairing              = require('./modules/pairing');
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const PORT         = config.AGENT_PORT;
@@ -81,8 +86,144 @@ const AGENT_ID     = crypto
 // ── Auth state (shared across modules) ───────────────────────────────────────
 let authToken = null;
 let authUserId = null;
+// 'device' = this computer's own credential from pairing (survives restarts and
+// new web logins); 'web' = a browser session pushed by the web app (legacy).
+let authSource = null;
+let monitoringStarted = false;
 
 function getToken() { return authToken; }
+
+// What the tray icon shows.
+const connection = {
+  state: 'starting',        // starting | connected | pairing | not_connected
+  userName: null,
+  pairUrl: null,
+  notice: null,             // latest balloon { id, title, text }
+};
+let pairingRun = 0;         // increases to cancel an older pairing poll
+
+function notify(title, text) {
+  connection.notice = { id: String(Date.now()), title, text };
+}
+
+/** Give every module the credential and start the ones that need it. */
+function applyAuth(token, userId, source) {
+  authToken  = token;
+  authUserId = userId;
+  authSource = source;
+
+  activityTracker.setAuth(token, userId);
+  notificationReceiver.setAuth(token, userId);
+  autoUpdater.setAuth(token);
+
+  if (!monitoringStarted) {
+    monitoringStarted = true;
+    try {
+      healthMonitor.start(AGENT_ID, os.hostname(), AGENT_VERSION, getToken, () => authUserId, 30000);
+    } catch (e) {
+      console.warn('[agent] Health monitor could not start:', e.message);
+    }
+    try {
+      notificationReceiver.start(60000);
+    } catch (e) {
+      console.warn('[agent] Notification receiver could not start:', e.message);
+    }
+    try {
+      autoUpdater.start(3600000); // check every hour
+    } catch (e) {
+      console.warn('[agent] Auto updater could not start:', e.message);
+    }
+  }
+
+  try {
+    const sysInfo = systemInfo.getSystemInfo(AGENT_VERSION);
+    apiClient.post('/api/desktop/system', { agent_id: AGENT_ID, ...sysInfo }, token).catch(() => {});
+  } catch {}
+  console.log(`[agent] Connected (${source}) — monitoring active`);
+}
+
+function clearAuth() {
+  authToken = null;
+  authUserId = null;
+  authSource = null;
+  try { activityTracker.setAuth(null, null); } catch {}
+  try { notificationReceiver.setAuth(null, null); } catch {}
+  try { autoUpdater.setAuth(null); } catch {}
+}
+
+/** Use the credential saved by an earlier pairing, if any. */
+function connectFromSavedCredential() {
+  const saved = credentials.load();
+  if (!saved) return false;
+  applyAuth(saved.token, saved.user_id, 'device');
+  connection.state = 'connected';
+  connection.userName = saved.user_name || null;
+  return true;
+}
+
+/**
+ * Connect this computer to a Taskosphere account (no login in the agent):
+ * opens the browser on the confirmation page and waits for the user's click.
+ */
+async function startPairing({ openBrowser }) {
+  if (connection.state === 'pairing' && connection.pairUrl) {
+    if (openBrowser) pairing.openUrl(connection.pairUrl);
+    return;
+  }
+  const run = ++pairingRun;
+  connection.state = 'pairing';
+  connection.pairUrl = null;
+  let started;
+  try {
+    started = await pairing.begin({
+      agentId: AGENT_ID, machineName: os.hostname(), version: AGENT_VERSION,
+      osUser: (() => { try { return os.userInfo().username; } catch { return ''; } })(),
+    });
+  } catch (e) {
+    console.warn('[pairing] Could not reach Taskosphere:', e.message);
+    connection.state = 'not_connected';
+    notify('Taskosphere Agent is not connected', 'Could not reach Taskosphere. Check the internet connection, then click here to try again.');
+    return;
+  }
+  if (run !== pairingRun) return;
+  connection.pairUrl = pairing.pairUrl(started.code);
+  console.log('[pairing] Waiting for approval:', connection.pairUrl);
+  if (openBrowser) {
+    pairing.openUrl(connection.pairUrl);
+    credentials.saveState({ last_auto_open_at: Date.now() });
+  }
+  notify('Connect Taskosphere Agent', 'Click Connect on the Taskosphere page in your browser. Click here if it did not open.');
+
+  const result = await pairing.waitForApproval(started, { isCancelled: () => run !== pairingRun });
+  if (run !== pairingRun) return;
+  if (!result) {
+    connection.state = 'not_connected';
+    connection.pairUrl = null;
+    notify('Taskosphere Agent is not connected', 'The connection link expired. Click here to connect this computer.');
+    return;
+  }
+  credentials.save({ token: result.token, user_id: result.user_id, user_name: result.user_name,
+                     device_id: result.device_id, agent_id: AGENT_ID });
+  applyAuth(result.token, result.user_id, 'device');
+  connection.state = 'connected';
+  connection.userName = result.user_name || null;
+  connection.pairUrl = null;
+  notify('Taskosphere Agent connected', `Running in the background for ${result.user_name || 'your account'}. It starts with Windows from now on.`);
+}
+
+apiClient.setOnUnauthorized(() => onCredentialRejected());
+healthMonitor.setOnUnauthorized(() => onCredentialRejected());
+
+/** The backend no longer accepts this computer's credential (disconnected in Settings). */
+function onCredentialRejected() {
+  if (authSource !== 'device') return;
+  console.warn('[agent] This computer was disconnected from Taskosphere; asking to connect again.');
+  credentials.clear();
+  clearAuth();
+  connection.state = 'not_connected';
+  connection.userName = null;
+  notify('Taskosphere Agent was disconnected', 'This computer is no longer connected to Taskosphere. Click here to connect it again.');
+}
 
 // ── Sync orchestrator ────────────────────────────────────────────────────────
 
@@ -293,111 +434,35 @@ app.get('/read-dsc', async (req, res) => {
   }
 });
 
-// ── Auto-auth endpoint (called by web app automatically) ─────────────────────
-app.post('/api/auth', (req, res) => {
+// ── Web-app auth (optional, legacy) ──────────────────────────────────────────
+// Older web-app builds push the browser session here. A computer connected by
+// pairing keeps its own credential: a browser session is replaced at every
+// login, which used to make the agent stop reporting without any sign.
+function webAuth(req, res, message) {
   const { token, user_id } = req.body || {};
   if (!token || !user_id) return res.status(400).json({ success: false, error: 'token and user_id required' });
-
-  console.log(`[agent] Auto-auth received for user: ${user_id}`);
-
-  authToken  = token;
-  authUserId = user_id;
-
-  // Propagate to all modules
-  activityTracker.setAuth(token, user_id);
-  notificationReceiver.setAuth(token, user_id);
-  autoUpdater.setAuth(token);
-
-  // Start health monitor (with userId for backend linking)
-  try {
-    healthMonitor.start(AGENT_ID, os.hostname(), AGENT_VERSION, getToken, () => authUserId, 30000);
-  } catch (e) {
-    console.warn('[agent] Health monitor could not start:', e.message);
+  if (authSource === 'device') {
+    return res.json({ success: true, message: 'This computer is connected with its own credential', agent_id: AGENT_ID });
   }
+  console.log(`[agent] Session received from the web app for user: ${user_id}`);
+  applyAuth(token, user_id, 'web');
+  connection.state = 'connected';
+  res.json({ success: true, message, agent_id: AGENT_ID });
+}
 
-  // Start notification receiver
-  try {
-    notificationReceiver.start(60000);
-  } catch (e) {
-    console.warn('[agent] Notification receiver could not start:', e.message);
-  }
-
-  // Start auto updater
-  try {
-    autoUpdater.start(3600000); // check every hour
-  } catch (e) {
-    console.warn('[agent] Auto updater could not start:', e.message);
-  }
-
-  // Push system info immediately
-  try {
-    const sysInfo = systemInfo.getSystemInfo(AGENT_VERSION);
-    apiClient.post('/api/desktop/system', {
-      agent_id: AGENT_ID,
-      ...sysInfo,
-    }, authToken).catch(() => {});
-  } catch {}
-
-  console.log('[agent] ✓ All modules started — monitoring active');
-
-  res.json({ success: true, message: 'Agent authenticated and monitoring', agent_id: AGENT_ID });
-});
+app.post('/api/auth', (req, res) => webAuth(req, res, 'Agent authenticated and monitoring'));
+app.post('/activity/auth', (req, res) => webAuth(req, res, 'Auth set for all modules'));
 
 // ── Disconnect (called by the web app on logout) ─────────────────────────────
+// Only drops a browser session; a paired computer stays connected (disconnect
+// it from Settings → Desktop Agent instead).
 app.post('/api/logout', (req, res) => {
-  authToken  = null;
-  authUserId = null;
-  try { activityTracker.setAuth(null, null); } catch {}
-  try { notificationReceiver.setAuth(null, null); } catch {}
-  try { autoUpdater.setAuth(null); } catch {}
-  console.log('[agent] Signed out by the web app');
+  if (authSource === 'web') {
+    clearAuth();
+    connection.state = credentials.load() ? connection.state : 'not_connected';
+    console.log('[agent] Signed out by the web app');
+  }
   res.json({ success: true });
-});
-
-// ── Legacy auth endpoint (backward compatibility) ───────────────────────────
-app.post('/activity/auth', (req, res) => {
-  const { token, user_id } = req.body || {};
-  if (!token || !user_id) return res.status(400).json({ success: false, error: 'token and user_id required' });
-
-  authToken  = token;
-  authUserId = user_id;
-
-  // Propagate to all modules
-  activityTracker.setAuth(token, user_id);
-  notificationReceiver.setAuth(token, user_id);
-  autoUpdater.setAuth(token);
-
-  // Start health monitor (with userId for backend linking)
-  try {
-    healthMonitor.start(AGENT_ID, os.hostname(), AGENT_VERSION, getToken, () => authUserId, 30000);
-  } catch (e) {
-    console.warn('[agent] Health monitor could not start:', e.message);
-  }
-
-  // Start notification receiver
-  try {
-    notificationReceiver.start(60000);
-  } catch (e) {
-    console.warn('[agent] Notification receiver could not start:', e.message);
-  }
-
-  // Start auto updater
-  try {
-    autoUpdater.start(3600000); // check every hour
-  } catch (e) {
-    console.warn('[agent] Auto updater could not start:', e.message);
-  }
-
-  // Push system info immediately
-  try {
-    const sysInfo = systemInfo.getSystemInfo(AGENT_VERSION);
-    apiClient.post('/api/desktop/system', {
-      agent_id: AGENT_ID,
-      ...sysInfo,
-    }, authToken).catch(() => {});
-  } catch {}
-
-  res.json({ success: true, message: 'Auth set for all modules', agent_id: AGENT_ID });
 });
 
 app.get('/activity/report', (req, res) => {
@@ -540,25 +605,7 @@ function startAllModules() {
 
   // 10. System tray
   try {
-    tray.create({
-      onDashboard:     () => console.log('[tray] Dashboard requested'),
-      onSync:          () => syncAll(),
-      onNotifications: () => console.log('[tray] Notifications requested'),
-      onSettings:      () => console.log('[tray] Settings requested'),
-      onAbout:         () => console.log(`[tray] Taskosphere Agent v${AGENT_VERSION}`),
-      onRestart:       () => {
-        console.log('[tray] Restarting agent...');
-        const exe = process.execPath;
-        const { spawn } = require('child_process');
-        spawn(exe, process.argv.slice(1), { detached: true, stdio: 'inherit' }).unref();
-        process.exit(0);
-      },
-      onExit: () => {
-        console.log('[tray] Exiting...');
-        stopAllModules();
-        process.exit(0);
-      },
-    });
+    tray.create({ app, port: PORT, getState: trayState, onCommand: trayCommand });
   } catch (e) {
     console.warn('[agent] System tray could not start:', e.message);
   }
@@ -575,6 +622,91 @@ function startAllModules() {
   } catch {}
 
   console.log('[agent] All modules started');
+
+  // Connect: saved credential from an earlier pairing, otherwise pair now.
+  // The browser opens by itself at most twice a day; after that the tray
+  // balloon offers to connect instead of opening tabs at every Windows login.
+  if (!connectFromSavedCredential()) {
+    const last = Number(credentials.loadState().last_auto_open_at || 0);
+    const openBrowser = Date.now() - last > 12 * 60 * 60 * 1000;
+    startPairing({ openBrowser }).catch((e) => console.error('[pairing] Failed:', e.message));
+  }
+}
+
+// ── Tray icon: what it shows and what its menu does ──────────────────────────
+function trayState() {
+  const name = connection.userName ? ` as ${connection.userName}` : '';
+  const text = {
+    connected:     `Connected${name}`,
+    pairing:       'Waiting for you to click Connect in the browser',
+    not_connected: 'Not connected — click Connect to Taskosphere',
+    starting:      'Starting...',
+  }[connection.state] || 'Running';
+  return {
+    connected:     connection.state === 'connected',
+    status_text:   text,
+    tooltip:       `Taskosphere Agent — ${connection.state === 'connected' ? 'connected' : connection.state === 'pairing' ? 'connecting' : 'not connected'}`,
+    connect_label: connection.state === 'pairing' ? 'Open the connection page' : 'Connect to Taskosphere',
+    notice:        connection.notice,
+    version:       AGENT_VERSION,
+  };
+}
+
+function isWindowsAdmin() {
+  try { require('child_process').execSync('net session', { stdio: 'ignore', windowsHide: true }); return true; } catch { return false; }
+}
+
+function restartAgent() {
+  console.log('[tray] Restarting agent...');
+  const { spawn } = require('child_process');
+  const fs = require('fs');
+  const vbs = path.join(path.dirname(process.execPath), 'start-agent.vbs');
+  stopAllModules();
+  server.close();
+  // Wait for the port to be released, then start the new copy hidden.
+  setTimeout(() => {
+    if (process.platform === 'win32' && fs.existsSync(vbs)) {
+      spawn('wscript.exe', [vbs], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    } else {
+      spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    }
+    process.exit(0);
+  }, 1000);
+}
+
+function trayCommand(cmd) {
+  switch (cmd) {
+    case 'connect':
+      startPairing({ openBrowser: true });
+      break;
+    case 'balloon':
+      if (connection.state === 'connected') pairing.openUrl(config.FRONTEND_URL);
+      else startPairing({ openBrowser: true });
+      break;
+    case 'open':
+      if (connection.state === 'pairing' && connection.pairUrl) pairing.openUrl(connection.pairUrl);
+      else pairing.openUrl(config.FRONTEND_URL);
+      break;
+    case 'sync':
+      syncAll().catch((e) => console.error('[tray] Sync failed:', e.message));
+      break;
+    case 'restart':
+      restartAgent();
+      break;
+    case 'exit':
+      // The agent reports work activity for the company: only a Windows
+      // administrator may stop it from the tray.
+      if (process.platform === 'win32' && !isWindowsAdmin()) {
+        notify('Taskosphere Agent keeps running', 'Only an administrator can exit the Taskosphere Agent.');
+        break;
+      }
+      console.log('[tray] Exiting...');
+      stopAllModules();
+      process.exit(0);
+      break;
+    default:
+      break;
+  }
 }
 
 function stopAllModules() {
@@ -610,7 +742,6 @@ const server = app.listen(PORT, '127.0.0.1', () => {
   console.log('║    ✓ System tray                                             ║');
   console.log('║                                                              ║');
   console.log(`║  Agent ID: ${AGENT_ID}                              ║`);
-  console.log('║  Keep this window open while using Taskosphere.              ║');
   console.log('╚══════════════════════════════════════════════════════════════╝');
   console.log('');
 

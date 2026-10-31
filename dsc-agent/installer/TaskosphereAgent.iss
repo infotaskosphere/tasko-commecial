@@ -25,17 +25,21 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=Taskosphere Agent
-UninstallDisplayIcon={app}\TaskosphereAgent.exe
+UninstallDisplayIcon={app}\taskosphere.ico
+SetupIconFile=..\assets\taskosphere.ico
 CloseApplications=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Files]
 Source: "..\dist\TaskosphereAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\TaskosphereTray.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "start-agent.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\taskosphere.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\assets\tray.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Taskosphere Agent"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\TaskosphereAgent.exe"
+Name: "{group}\Taskosphere Agent"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\taskosphere.ico"
 Name: "{group}\Uninstall Taskosphere Agent"; Filename: "{uninstallexe}"
 
 [Registry]
@@ -43,10 +47,16 @@ Name: "{group}\Uninstall Taskosphere Agent"; Filename: "{uninstallexe}"
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "TaskosphereAgent"; ValueData: """{sys}\wscript.exe"" ""{app}\start-agent.vbs"""; Flags: uninsdeletevalue
 
 [Run]
+; Starts the agent (no window). It shows the Taskosphere icon in the system
+; tray and, the first time, opens the browser to connect this computer.
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\start-agent.vbs"""; WorkingDir: "{app}"; Description: "Start Taskosphere Agent now"; Flags: postinstall nowait
+
+[Messages]
+FinishedLabel=Taskosphere Agent is installed. It runs in the background: look for the Taskosphere icon in the system tray (bottom-right corner, next to the clock; it may be under the ^ arrow).%n%nThe first time, your browser opens a Taskosphere page - click Connect this computer. No login is needed in the agent, and it starts automatically with Windows.
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM TaskosphereAgent.exe"; Flags: runhidden; RunOnceId: "StopAgent"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM TaskosphereTray.exe"; Flags: runhidden; RunOnceId: "StopTray"
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN TaskosphereAgent /F"; Flags: runhidden; RunOnceId: "RemoveOldTask"
 
 [Code]
@@ -58,6 +68,7 @@ var
   ResultCode: Integer;
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM TaskosphereAgent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM TaskosphereTray.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN TaskosphereAgent /F', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;
