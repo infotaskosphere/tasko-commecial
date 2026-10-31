@@ -10,7 +10,7 @@ test("the Zero Touch page and its menu entry are gone, and the old link lands on
   assert.ok(!/path: '\/zero-touch-entry'/.test(src("components/layout/DashboardLayout.jsx")), "no second menu entry");
   const routes = src("AppRoutes.jsx");
   assert.ok(!/ZeroTouchEntry/.test(routes));
-  assert.match(routes, /path="\/zero-touch-entry" element=\{<Navigate to="\/purchase" replace\/>\}/);
+  assert.match(routes, /path="\/zero-touch-entry" element=\{<Navigate to="\/purchase" replace\s*\/>\}/);
   assert.match(src("components/layout/NotificationBell.jsx"), /approved_zte_journal: "\/purchase"/);
 });
 

@@ -190,7 +190,7 @@ test("the AIWeave mark is the product's own icon, not a redrawn one", () => {
   const mark = src("components/aiweave/WeaveMark.jsx");
   assert.match(mark, /\/aiweave-icon\.png/);
   assert.ok(existsSync(new URL("../public/aiweave-icon.png", import.meta.url)));
-  assert.match(src("module-branding.js"), /collapsedLogo: '\/aiweave-icon\.png'/); // same file the app shell shows
+  assert.match(src("components/layout/DashboardLayout.jsx"), /aiweave: \{[^}]*icon: '\/aiweave-icon\.png'/); // same file the app shell shows
   assert.ok(!/<svg/.test(mark), "no hand-drawn logo");
 });
 

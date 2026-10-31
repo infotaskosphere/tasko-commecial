@@ -7,11 +7,11 @@ const src = (p) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8")
 const back = (p) => readFileSync(new URL(`../../backend/${p}`, import.meta.url), "utf8");
 
 test("the page has a route, a menu entry, a permission mapping and branding", () => {
-  assert.match(src("AppRoutes.jsx"), /path="\/accounting-books" element=\{<ModuleGate module="finix"><AccountingBooks\/>/);
+  assert.match(src("AppRoutes.jsx"), /path="\/accounting-books" element=\{<ModuleGate module="finix"><AccountingBooks\s*\/>/);
   assert.match(src("components/layout/DashboardLayout.jsx"), /path: '\/accounting-books'.*can_view_extended_accounts_reports/);
   assert.match(src("components/ModuleGate.jsx"), /'can_view_extended_accounts_reports', '\/accounting-books'/);
   assert.match(src("lib/commercialPermissionMatrix.js"), /"can_view_extended_accounts_reports", "\/accounting-books"/);
-  assert.match(src("module-branding.js"), /path === '\/accounting-books'/);
+  assert.match(src("module-branding.js"), /\|accounting-books\|[^\n]*return 'accounts';/, "branded as Finix");
 });
 
 test("every endpoint the page calls exists on the backend", () => {
