@@ -680,6 +680,27 @@ from backend.company_drive import router as company_drive_router, create_company
 app.include_router(company_drive_router, prefix="/api")
 app.on_event("startup")(create_company_drive_indexes)
 
+# Register the application startup (indexes, bootstrap, APScheduler jobs) on
+# the app itself. It used to be attached only by backend/run.py, so a service
+# started with ``uvicorn backend.server:app`` (the current Render setting)
+# never created its indexes and never ran any scheduled job. backend/run.py
+# checks the same flag, so the hook is registered exactly once either way.
+if not getattr(app.state, "_taskosphere_startup_registered", False):
+    app.on_event("startup")(startup_event)
+    app.state._taskosphere_startup_registered = True
+
+
+async def _startup_licensing_indexes():
+    try:
+        from backend.licensing_api import create_licensing_indexes
+
+        await create_licensing_indexes()
+    except Exception as exc:
+        logger.warning("Commercial licensing index bootstrap skipped: %s", exc)
+
+
+app.on_event("startup")(_startup_licensing_indexes)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLIENT MERGE — merge two or more duplicate clients into one
 # ═══════════════════════════════════════════════════════════════════════════════
