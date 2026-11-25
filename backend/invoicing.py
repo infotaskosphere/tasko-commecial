@@ -41,6 +41,7 @@ from backend.models import User
 # Google Drive is centralized in backend.google_drive_service.
 # Service-account authentication is preferred; legacy OAuth remains only
 # as a migration fallback.
+from collections.abc import Mapping
 from googleapiclient.http import MediaIoBaseUpload
 from backend.google_drive_service import (
     _get_drive_service,
@@ -85,12 +86,37 @@ router = APIRouter(tags=["Invoicing"])
 # DRIVE FOLDERS (MAKE SURE THESE ARE ACCESSIBLE)
 # ═══════════════════════════════════════════════════════════
 
-DRIVE_FOLDERS = {
-    "invoices":     "1NhadvUmWtZ8x37FrJ2oeKTCOvHVyCyPv",
-    "payments":     "1VPtuX6u_L-WPfLk0ZTawHrsyrXSMBfGu",
-    "credit_notes": "1vY1mJexT-NJso6U1HLBeKaOgI6IFw9nc",
-    "backups":      "1pWNDV2Yym3mvWYDQ9WmUiqrmqndT-Z9q",
-}
+class _OrganisationDriveFolders(Mapping):
+    """Drive folders of the organisation on the current request.
+
+    Each licensee connects its own Google Drive; its OneNexa folders are
+    created at connect time (backend/company_drive.py). The Platform Owner's
+    workspace keeps the original folder IDs.
+    """
+
+    _KEYS = ("invoices", "payments", "credit_notes", "backups", "clients")
+
+    def __getitem__(self, key):
+        from backend.google_drive_service import DRIVE_NOT_CONNECTED_DETAIL, drive_folder_id
+
+        folder = drive_folder_id(key)
+        if not folder:
+            raise HTTPException(status_code=503, detail=DRIVE_NOT_CONNECTED_DETAIL)
+        return folder
+
+    def get(self, key, default=None):
+        from backend.google_drive_service import drive_folder_id
+
+        return drive_folder_id(key) or default
+
+    def __iter__(self):
+        return iter(self._KEYS)
+
+    def __len__(self):
+        return len(self._KEYS)
+
+
+DRIVE_FOLDERS = _OrganisationDriveFolders()
 
 
 # ═══════════════════════════════════════════════════════════

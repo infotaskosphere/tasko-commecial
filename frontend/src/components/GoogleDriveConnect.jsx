@@ -9,7 +9,11 @@
  * Routes used:
  *   GET  BACKEND_URL/auth/google/status      → check connection
  *   POST BACKEND_URL/auth/google/disconnect  → remove token
- *   GET  BACKEND_URL/auth/google             → start OAuth (browser redirect)
+ *   POST BACKEND_URL/api/integrations/google-drive/connect → Google sign-in URL
+ *
+ * Each organisation connects its OWN Google Drive. Connecting creates a
+ * "OneNexa" folder (Invoices, Payments, Credit Notes, Backups, Clients) in
+ * that Drive; the app can only see files it created there.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -112,6 +116,7 @@ export default function GoogleDriveConnect({ isDark = false }) {
   const [status,        setStatus]        = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connecting,    setConnecting]    = useState(false);
 
   // ── Fetch status from /auth/google/status (no /api prefix) ──────────
   const fetchStatus = useCallback(async () => {
@@ -163,8 +168,18 @@ export default function GoogleDriveConnect({ isDark = false }) {
   }, []); // eslint-disable-line
 
   // ── Connect: redirect browser to backend OAuth start ────────────────
-  const handleConnect = () => {
-    window.location.href = `${BACKEND_URL}/auth/google`;
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const { auth_url: authUrl } = await authFetch('/api/integrations/google-drive/connect', {
+        method: 'POST',
+        body: JSON.stringify({ return_url: window.location.href }),
+      });
+      window.location.href = authUrl;
+    } catch (err) {
+      setConnecting(false);
+      toast.error('Could not start Google sign-in.', { description: err.message });
+    }
   };
 
   // ── Disconnect ───────────────────────────────────────────────────────
@@ -184,6 +199,7 @@ export default function GoogleDriveConnect({ isDark = false }) {
 
   const D = isDark;
   const connected = status?.connected ?? false;
+  const canManage = status?.can_manage ?? true;
 
   return (
     <div className={`rounded-2xl border overflow-hidden shadow-sm ${D ? 'bg-slate-800/60 border-slate-700/70' : 'bg-white border-slate-200'}`}>
@@ -224,8 +240,14 @@ export default function GoogleDriveConnect({ isDark = false }) {
             <div>
               <p className={`text-sm font-semibold ${D ? 'text-emerald-300' : 'text-emerald-700'}`}>Drive is active and ready</p>
               <p className={`text-xs mt-0.5 ${D ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                {status?.source === 'env' ? 'Token loaded from environment variable.' : 'Token stored securely in database.'}
-                {' '}Invoice uploads and client portal documents are enabled.
+                {status?.google_email ? `Connected as ${status.google_email}. ` : ''}
+                Invoices and client portal documents are saved in your organisation's own Drive.
+                {status?.folder_url && (
+                  <>
+                    {' '}
+                    <a href={status.folder_url} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Open OneNexa folder</a>
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -236,22 +258,23 @@ export default function GoogleDriveConnect({ isDark = false }) {
           <div className={`rounded-xl p-4 mb-5 border flex items-start gap-3 ${D ? 'bg-amber-900/20 border-amber-700/40' : 'bg-amber-50 border-amber-200'}`}>
             <Info className="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" />
             <p className={`text-xs ${D ? 'text-amber-300' : 'text-amber-700'}`}>
-              Connect your Google account to enable invoice auto-save and client portal document browsing.
-              You'll be taken to Google's login page — no passwords are stored by Taskosphere.
+              {canManage
+                ? "Click Connect, choose your organisation's Google account and press Allow. A OneNexa folder is created in your Drive for invoices and client documents. No passwords are stored."
+                : 'Ask an administrator to connect your organisation\'s Google Drive.'}
             </p>
           </div>
         )}
 
         {/* Action buttons */}
         <div className="flex items-center gap-3 flex-wrap">
-          {!connected ? (
+          {!canManage ? null : !connected ? (
             <Button
               onClick={handleConnect}
-              disabled={statusLoading}
+              disabled={statusLoading || connecting}
               className="h-9 px-5 rounded-xl text-sm font-semibold text-white gap-2 shadow-sm"
               style={{ background: 'linear-gradient(135deg,#0D3B66,#1F6FB2)' }}
             >
-              <DriveIcon className="w-4 h-4" />
+              {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <DriveIcon className="w-4 h-4" />}
               Connect Google Drive
             </Button>
           ) : (
@@ -287,8 +310,7 @@ export default function GoogleDriveConnect({ isDark = false }) {
 
         {/* Footer note */}
         <p className={`text-[10px] mt-4 pt-4 border-t ${D ? 'border-slate-700 text-slate-500' : 'border-slate-100 text-slate-400'}`}>
-          After connecting, also set <strong>GOOGLE_REFRESH_TOKEN</strong> in your Render environment variables
-          for persistence across server restarts. The token is saved in the database for immediate use.
+          The app only sees files and folders it creates in your Drive. Disconnecting stops new uploads; files already in your Drive stay there.
         </p>
       </div>
     </div>

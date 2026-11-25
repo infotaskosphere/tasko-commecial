@@ -14,7 +14,9 @@
  * Backend routes consumed (Google Drive):
  *   GET  BACKEND_URL/auth/google/status
  *   POST BACKEND_URL/auth/google/disconnect
- *   GET  BACKEND_URL/auth/google          (browser redirect, OAuth)
+ *   POST BACKEND_URL/api/integrations/google-drive/connect (Google sign-in URL)
+ *
+ * Each organisation connects its OWN Google Drive.
  *   GET  BACKEND_URL/auth/google/files    (list files in Drive)
  *   POST BACKEND_URL/auth/google/share    (create/get shareable link)
  */
@@ -426,7 +428,9 @@ function FileRow({ file, isDark, onShare }) {
 function GoogleDrivePanel({ isDark, expanded, onToggle }) {
   const [statusLoading, setStatusLoading] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [driveInfo, setDriveInfo] = useState({});
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   const [files, setFiles] = useState([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -440,20 +444,45 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
     try {
       const d = await authFetch('/auth/google/status');
       setConnected(!!d.connected);
+      setDriveInfo(d || {});
     } catch {
       setConnected(false);
+      setDriveInfo({});
     } finally {
       setStatusLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    // Result of the Google sign-in round trip (?drive=connected|error|denied).
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get('drive');
+    if (result) {
+      if (result === 'connected') toast.success('Google Drive connected', { description: 'A OneNexa folder was created in your Drive.' });
+      else if (result === 'denied') toast.warning('Google Drive access was not allowed.');
+      else toast.error('Google Drive could not be connected', { description: params.get('reason') || undefined });
+      params.delete('drive');
+      params.delete('reason');
+      const qs = params.toString();
+      window.history.replaceState({}, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+    }
     fetchStatus();
   }, [fetchStatus]);
 
-  const handleConnect = () => {
-    window.location.href = `${BACKEND_URL}/auth/google`;
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const { auth_url: authUrl } = await authFetch('/api/integrations/google-drive/connect', {
+        method: 'POST',
+        body: JSON.stringify({ return_url: window.location.href }),
+      });
+      window.location.href = authUrl;
+    } catch (err) {
+      setConnecting(false);
+      toast.error('Could not start Google sign-in', { description: err.message });
+    }
   };
+  const canManage = driveInfo.can_manage ?? true;
 
   const handleDisconnect = async () => {
     setDisconnecting(true);
@@ -568,21 +597,32 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
                     <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
                     <div>
                       <p className={`text-xs font-semibold ${D ? 'text-emerald-400' : 'text-emerald-700'}`}>Drive is active and ready</p>
-                      <p className={`text-[11px] ${D ? 'text-emerald-500/80' : 'text-emerald-600/80'}`}>Token stored securely. Invoice uploads and file sharing are enabled.</p>
+                      <p className={`text-[11px] ${D ? 'text-emerald-500/80' : 'text-emerald-600/80'}`}>
+                        {driveInfo.google_email ? `Connected as ${driveInfo.google_email}. ` : ''}
+                        Invoices and client documents are saved in your organisation's own Drive.
+                        {driveInfo.folder_url && (
+                          <>
+                            {' '}
+                            <a href={driveInfo.folder_url} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Open OneNexa folder</a>
+                          </>
+                        )}
+                      </p>
                     </div>
                   </div>
                 )}
 
                 {/* Actions */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {!connected ? (
+                  {!connected && !canManage ? (
+                    <p className={`text-xs ${muted}`}>Ask an administrator to connect your organisation's Google Drive.</p>
+                  ) : !connected ? (
                     <Button
                       onClick={handleConnect}
-                      disabled={statusLoading}
+                      disabled={statusLoading || connecting}
                       className="h-9 px-5 rounded-xl text-sm font-semibold text-white gap-2 shadow-sm"
                       style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}
                     >
-                      <GoogleDriveIcon size={16} />
+                      {connecting ? <Loader2 size={16} className="animate-spin" /> : <GoogleDriveIcon size={16} />}
                       Connect Google Drive
                     </Button>
                   ) : (

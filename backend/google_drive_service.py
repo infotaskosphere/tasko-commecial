@@ -219,7 +219,7 @@ def _get_drive_refresh_token() -> Optional[str]:
 # CONFIGURATION CHECK
 # ============================================================================
 
-def _drive_configured() -> bool:
+def _platform_drive_configured() -> bool:
     """
     Return True if Google Drive has at least one usable authentication
     configuration.
@@ -431,7 +431,7 @@ def _other_auth_mode(current_mode: Optional[str]) -> Optional[str]:
 # PUBLIC SERVICE ACCESS
 # ============================================================================
 
-def _get_drive_service():
+def _platform_get_drive_service():
     """
     Return a reusable authenticated Google Drive v3 client.
 
@@ -451,7 +451,7 @@ def _get_drive_service():
         if _DRIVE_SERVICE_CACHE is not None:
             return _DRIVE_SERVICE_CACHE
 
-        if not _drive_configured():
+        if not _platform_drive_configured():
 
             raise HTTPException(
                 status_code=503,
@@ -512,7 +512,7 @@ def get_drive_auth_mode() -> Optional[str]:
 # RESET / RECONNECT
 # ============================================================================
 
-def reset_drive_service_cache() -> None:
+def _platform_reset_drive_service_cache() -> None:
     """
     Clear the cached Drive service.
 
@@ -553,7 +553,7 @@ def _probe_folder_with_service(service, folder_id: str):
     ).execute()
 
 
-def get_drive_service_for_folder(folder_id: str):
+def _platform_drive_service_for_folder(folder_id: str):
     """
     Return the credential that can actually access ``folder_id``.
 
@@ -566,7 +566,7 @@ def get_drive_service_for_folder(folder_id: str):
     folder_id = str(folder_id or "").strip()
     if not folder_id:
         raise ValueError("folder_id is required")
-    if not _drive_configured():
+    if not _platform_drive_configured():
         raise HTTPException(503, "Google Drive is not configured.")
 
     with _DRIVE_SERVICE_LOCK:
@@ -594,12 +594,12 @@ def get_drive_service_for_folder(folder_id: str):
         raise HTTPException(503, "Google Drive folder is not accessible with the configured Google accounts. " + " | ".join(errors))
 
 
-def get_drive_service_for_file(file_id: str):
+def _platform_drive_service_for_file(file_id: str):
     """Return the credential that can access a specific Drive file."""
     file_id=str(file_id or "").strip()
     if not file_id:
         raise ValueError("file_id is required")
-    if not _drive_configured():
+    if not _platform_drive_configured():
         raise HTTPException(503, "Google Drive is not configured.")
 
     with _DRIVE_SERVICE_LOCK:
@@ -622,6 +622,251 @@ def get_drive_service_for_file(file_id: str):
                     globals()["_DRIVE_SERVICE_CACHE"] = None
                     globals()["_DRIVE_AUTH_MODE"] = None
         raise HTTPException(503, "Google Drive file is not accessible with the configured Google accounts. " + " | ".join(errors))
+
+
+# ============================================================================
+# PER-ORGANISATION (LICENSEE) GOOGLE DRIVE
+# ============================================================================
+#
+# Every licensee connects its OWN Google Drive (backend/company_drive.py). The
+# public helpers below (_drive_configured, _get_drive_service,
+# get_drive_service_for_folder, get_drive_service_for_file, drive_folder_id)
+# resolve the Drive of the company on the current request, so every existing
+# caller in invoicing / client portal automatically reads and writes the
+# right organisation's Drive.
+#
+#   * company has a connection        -> that company's Google account
+#   * licensee company, not connected -> "not connected" (never the platform's)
+#   * Platform Owner / internal company,
+#     or no company context (jobs)    -> the legacy platform credentials above
+
+COMPANY_DRIVE_COLLECTION = "company_drive_connections"
+COMPANY_DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+COMPANY_FOLDER_KEYS = ("invoices", "payments", "credit_notes", "backups", "clients")
+
+# Folders of the original single-workspace installation (platform Drive only).
+LEGACY_PLATFORM_FOLDERS = {
+    "invoices": "1NhadvUmWtZ8x37FrJ2oeKTCOvHVyCyPv",
+    "payments": "1VPtuX6u_L-WPfLk0ZTawHrsyrXSMBfGu",
+    "credit_notes": "1vY1mJexT-NJso6U1HLBeKaOgI6IFw9nc",
+    "backups": "1pWNDV2Yym3mvWYDQ9WmUiqrmqndT-Z9q",
+}
+
+DRIVE_NOT_CONNECTED_DETAIL = (
+    "Google Drive is not connected for your organisation. "
+    "An administrator can connect it in Settings → Integrations."
+)
+
+_COMPANY_STATE_TTL_SECONDS = 120
+_COMPANY_STATE_CACHE: dict = {}
+_COMPANY_SERVICE_CACHE: dict = {}
+_COMPANY_LOCK = threading.RLock()
+_SYNC_MONGO_CLIENT = None
+
+# Tests may replace this with ``callable(company_id) -> {"connection": ..., "licensee": bool}``.
+_company_state_loader = None
+
+
+def _drive_token_fernet():
+    import base64 as _b64
+    import hashlib as _hashlib
+    from cryptography.fernet import Fernet
+
+    for name in ("DRIVE_ENCRYPT_KEY", "EMAIL_ENCRYPT_KEY"):
+        key = (os.getenv(name) or "").strip()
+        if len(key) == 44:
+            try:
+                return Fernet(key.encode())
+            except Exception:
+                pass
+    secret = (os.getenv("JWT_SECRET") or "").strip()
+    if not secret:
+        from backend import dependencies as _dependencies
+        secret = _dependencies.JWT_SECRET
+    digest = _hashlib.sha256(("company-drive-token:" + secret).encode()).digest()
+    return Fernet(_b64.urlsafe_b64encode(digest))
+
+
+def encrypt_drive_token(plain: str) -> str:
+    return _drive_token_fernet().encrypt(str(plain or "").encode()).decode()
+
+
+def decrypt_drive_token(cipher: str) -> str:
+    return _drive_token_fernet().decrypt(str(cipher or "").encode()).decode()
+
+
+def _current_company_id() -> Optional[str]:
+    from backend.tenant_runtime import authenticated_company_id
+
+    value = str(authenticated_company_id() or "").strip()
+    return value or None
+
+
+def _sync_central_db():
+    """Synchronous handle on the central database (Drive helpers are sync)."""
+    global _SYNC_MONGO_CLIENT
+    from backend import dependencies as _dependencies
+
+    url = _dependencies.MONGO_URL
+    if not url:
+        return None
+    if _SYNC_MONGO_CLIENT is None:
+        from pymongo import MongoClient
+
+        _SYNC_MONGO_CLIENT = MongoClient(url, serverSelectionTimeoutMS=5000)
+    return _SYNC_MONGO_CLIENT[_dependencies.DB_NAME]
+
+
+def _load_company_state_from_db(company_id: str) -> dict:
+    central = _sync_central_db()
+    if central is None:
+        return {"connection": None, "licensee": False}
+    connection = central[COMPANY_DRIVE_COLLECTION].find_one(
+        {"company_id": company_id, "status": "connected"}, {"_id": 0}
+    )
+    company = central["companies"].find_one(
+        {"id": company_id}, {"_id": 0, "commercial_customer_id": 1, "license_id": 1}
+    ) or {}
+    licensee = bool(
+        company.get("commercial_customer_id")
+        or company.get("license_id")
+        or central["commercial_license_customers"].find_one({"id": company_id}, {"_id": 1})
+        or central["commercial_licenses"].find_one({"customer_id": company_id}, {"_id": 1})
+    )
+    return {"connection": connection, "licensee": licensee}
+
+
+def _company_drive_state(company_id: str) -> dict:
+    now = time.monotonic()
+    with _COMPANY_LOCK:
+        cached = _COMPANY_STATE_CACHE.get(company_id)
+        if cached and cached[0] > now:
+            return cached[1]
+    loader = _company_state_loader or _load_company_state_from_db
+    try:
+        state = loader(company_id) or {"connection": None, "licensee": True}
+    except Exception as exc:
+        # Fail closed: never fall back to the platform Drive for a company
+        # whose status could not be read.
+        logger.warning("Could not read Google Drive connection for company %s: %s", company_id, exc)
+        return {"connection": None, "licensee": True}
+    with _COMPANY_LOCK:
+        _COMPANY_STATE_CACHE[company_id] = (now + _COMPANY_STATE_TTL_SECONDS, state)
+    return state
+
+
+def _drive_scope():
+    """Return (mode, company_id, connection) for the current request."""
+    company_id = _current_company_id()
+    if not company_id:
+        return "platform", None, None
+    state = _company_drive_state(company_id)
+    if state.get("connection"):
+        return "company", company_id, state["connection"]
+    if state.get("licensee"):
+        return "unconnected", company_id, None
+    return "platform", company_id, None
+
+
+def invalidate_company_drive(company_id: Optional[str]) -> None:
+    """Forget cached Drive state/clients for a company (after connect/disconnect)."""
+    with _COMPANY_LOCK:
+        if company_id:
+            _COMPANY_STATE_CACHE.pop(company_id, None)
+            _COMPANY_SERVICE_CACHE.pop(company_id, None)
+        else:
+            _COMPANY_STATE_CACHE.clear()
+            _COMPANY_SERVICE_CACHE.clear()
+
+
+def build_company_drive_service(refresh_token: str):
+    from google.oauth2.credentials import Credentials
+
+    credentials = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=(os.getenv("GOOGLE_CLIENT_ID") or "").strip(),
+        client_secret=(os.getenv("GOOGLE_CLIENT_SECRET") or "").strip(),
+        scopes=COMPANY_DRIVE_SCOPES,
+    )
+    return build("drive", "v3", credentials=credentials, cache_discovery=False)
+
+
+def _company_service(company_id: str, connection: dict):
+    import hashlib as _hashlib
+
+    token_enc = str(connection.get("refresh_token_enc") or "")
+    if not token_enc:
+        raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
+    fingerprint = _hashlib.sha256(token_enc.encode()).hexdigest()
+    with _COMPANY_LOCK:
+        cached = _COMPANY_SERVICE_CACHE.get(company_id)
+        if cached and cached[0] == fingerprint:
+            return cached[1]
+    try:
+        service = build_company_drive_service(decrypt_drive_token(token_enc))
+    except Exception as exc:
+        logger.error("Google Drive client for company %s could not be built: %s", company_id, exc)
+        raise HTTPException(503, "Your organisation's Google Drive connection needs to be reconnected.") from exc
+    with _COMPANY_LOCK:
+        _COMPANY_SERVICE_CACHE[company_id] = (fingerprint, service)
+    return service
+
+
+def _drive_configured() -> bool:
+    mode, _, _ = _drive_scope()
+    if mode == "company":
+        return True
+    if mode == "unconnected":
+        return False
+    return _platform_drive_configured()
+
+
+def _get_drive_service():
+    mode, company_id, connection = _drive_scope()
+    if mode == "company":
+        return _company_service(company_id, connection)
+    if mode == "unconnected":
+        raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
+    return _platform_get_drive_service()
+
+
+def get_drive_service_for_folder(folder_id: str):
+    mode, company_id, connection = _drive_scope()
+    if mode == "company":
+        if not str(folder_id or "").strip():
+            raise ValueError("folder_id is required")
+        return _company_service(company_id, connection)
+    if mode == "unconnected":
+        raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
+    return _platform_drive_service_for_folder(folder_id)
+
+
+def get_drive_service_for_file(file_id: str):
+    mode, company_id, connection = _drive_scope()
+    if mode == "company":
+        if not str(file_id or "").strip():
+            raise ValueError("file_id is required")
+        return _company_service(company_id, connection)
+    if mode == "unconnected":
+        raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
+    return _platform_drive_service_for_file(file_id)
+
+
+def drive_folder_id(key: str) -> Optional[str]:
+    """The current organisation's Drive folder for ``key`` (invoices, clients, ...)."""
+    mode, _, connection = _drive_scope()
+    if mode == "company":
+        return ((connection or {}).get("folders") or {}).get(key) or None
+    if mode == "unconnected":
+        return None
+    return LEGACY_PLATFORM_FOLDERS.get(key)
+
+
+def reset_drive_service_cache() -> None:
+    _platform_reset_drive_service_cache()
+    invalidate_company_drive(None)
 
 
 # ============================================================================

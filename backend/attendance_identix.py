@@ -952,6 +952,8 @@ async def add_device(
     payload: DeviceCreate,
     current_user: User = Depends(require_admin()),
 ):
+    if await _serial_registered_elsewhere(payload.serial_number, str(current_user.company_id or "")):
+        raise HTTPException(status_code=409, detail="This device serial number is already registered to another organisation.")
     device_id = str(uuid.uuid4())
     doc = {
         "id":            device_id,
@@ -979,6 +981,8 @@ async def update_device(
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
     if "serial_number" in updates:
         updates["serial_number"] = _normalize_serial_number(updates["serial_number"])
+        if await _serial_registered_elsewhere(updates["serial_number"], str(current_user.company_id or ""), device_id):
+            raise HTTPException(status_code=409, detail="This device serial number is already registered to another organisation.")
     if not updates:
         raise HTTPException(status_code=400, detail="Nothing to update")
     result = await db.identix_devices.find_one_and_update(
@@ -1708,8 +1712,7 @@ async def _block_queued_clock_commands(sn: str) -> int:
     return blocked
 
 
-@identix_router.api_route("/iclock/getrequest", methods=["GET", "POST"])
-async def iclock_getrequest(request: Request):
+async def _iclock_getrequest_unguarded(request: Request):
     from fastapi.responses import PlainTextResponse
     params = dict(request.query_params)
     sn = _normalize_serial_number(params.get("SN") or params.get("sn", ""))
@@ -1880,8 +1883,7 @@ async def _process_fingerprint_uploads(sn: str, raw: str, params: dict) -> int:
 
 
 # 🔹 Main attendance data endpoint — ADMS cloud push (machine → Render)
-@identix_router.api_route("/iclock/cdata", methods=["GET", "POST"])
-async def iclock_cdata(request: Request):
+async def _iclock_cdata_unguarded(request: Request):
     """Receive Identix X2008 ADMS attendance pushes.
 
     The X2008 normally sends one or more tab-separated lines: 
@@ -2186,8 +2188,7 @@ async def root_test():
 
 
 # 🔹 Device command endpoint
-@identix_router.api_route("/iclock/devicecmd", methods=["GET", "POST"])
-async def iclock_devicecmd(request: Request):
+async def _iclock_devicecmd_unguarded(request: Request):
     """
     Per the ZKTeco PUSH SDK spec, this endpoint has ONE real job: the device
     POSTs here to report the result of a command it already received via
@@ -2333,3 +2334,87 @@ async def iclock_devicecmd(request: Request):
     logger.info(f"📤 Sending command to SN={sn}: {cmd_str[:80]}")
     response_body = f"C:{pending.get('seq_id', 1)}:{cmd_str}\n"
     return PlainTextResponse(response_body, headers={"Pragma": "no-cache", "Cache-Control": "no-store"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMS push endpoints: registered devices only, scoped to the device's company
+# ─────────────────────────────────────────────────────────────────────────────
+# The ADMS protocol has no login: a terminal identifies itself only by its
+# serial number (SN=). These endpoints used to accept punches and hand out the
+# command queue for ANY serial, and matched machine UIDs to employees across
+# every company. Now a request is served only for a registered, active device
+# that belongs to exactly one company, and everything it reads or writes runs
+# inside that company's tenant scope.
+
+async def _registered_push_device(request: Request) -> Optional[dict]:
+    from backend.dependencies import _raw_db
+
+    sn = _normalize_serial_number(
+        request.query_params.get("SN") or request.query_params.get("sn") or ""
+    )
+    if not sn:
+        return None
+    projection = {"_id": 0, "id": 1, "serial_number": 1, "company_id": 1, "is_active": 1, "name": 1}
+    matches = await _raw_db.identix_devices.find({"serial_number": sn}, projection).to_list(5)
+    if not matches:
+        escaped = re.escape(sn)
+        matches = await _raw_db.identix_devices.find(
+            {"serial_number": {"$regex": f"^\\s*{escaped}\\s*$", "$options": "i"}}, projection
+        ).to_list(5)
+    usable = [
+        device for device in matches
+        if device.get("is_active", True) is not False and str(device.get("company_id") or "").strip()
+    ]
+    companies = {str(device["company_id"]).strip() for device in usable}
+    if len(companies) != 1:
+        if len(companies) > 1:
+            logger.error(f"⛔ ADMS serial SN={sn} is registered to more than one company; refusing it")
+        return None
+    return usable[0]
+
+
+async def _serve_registered_device(request: Request, handler):
+    from fastapi.responses import PlainTextResponse
+    from backend.tenant_runtime import reset_authenticated_company, set_authenticated_company
+
+    device = await _registered_push_device(request)
+    if not device:
+        logger.warning(
+            "⛔ ADMS %s rejected: unregistered/inactive device SN=%r from %s",
+            request.url.path,
+            request.query_params.get("SN") or request.query_params.get("sn"),
+            request.client.host if request.client else "unknown",
+        )
+        return PlainTextResponse("Unregistered device\n", status_code=403)
+    token = set_authenticated_company(str(device["company_id"]).strip())
+    try:
+        return await handler(request)
+    finally:
+        reset_authenticated_company(token)
+
+
+@identix_router.api_route("/iclock/getrequest", methods=["GET", "POST"])
+async def iclock_getrequest(request: Request):
+    return await _serve_registered_device(request, _iclock_getrequest_unguarded)
+
+
+@identix_router.api_route("/iclock/cdata", methods=["GET", "POST"])
+async def iclock_cdata(request: Request):
+    return await _serve_registered_device(request, _iclock_cdata_unguarded)
+
+
+@identix_router.api_route("/iclock/devicecmd", methods=["GET", "POST"])
+async def iclock_devicecmd(request: Request):
+    return await _serve_registered_device(request, _iclock_devicecmd_unguarded)
+
+
+async def _serial_registered_elsewhere(serial_number: str, own_company_id: str, exclude_device_id: Optional[str] = None) -> bool:
+    from backend.dependencies import _raw_db
+
+    sn = _normalize_serial_number(serial_number)
+    if not sn:
+        return False
+    query: dict = {"serial_number": sn, "company_id": {"$ne": own_company_id}}
+    if exclude_device_id:
+        query["id"] = {"$ne": exclude_device_id}
+    return bool(await _raw_db.identix_devices.find_one(query, {"_id": 1}))

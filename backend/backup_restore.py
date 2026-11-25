@@ -72,6 +72,8 @@ EXCLUDED_COLLECTIONS = {
     "sessions", "refresh_tokens", "access_tokens", "password_resets",
     "password_reset_tokens", "verification_tokens", "email_verification_tokens", "backup_jobs",
     "oauth_states", "oauth_tokens", "rate_limits",
+    # Per-organisation Google Drive tokens/states are never exported or restored.
+    "company_drive_connections", "company_drive_oauth_states",
     # Internal backup-management data must never be recursively captured by a backup.
     BACKUP_HISTORY_COLLECTION,
     f"{BACKUP_GRIDFS_BUCKET}.files",
@@ -129,6 +131,106 @@ def _require_admin(user: User) -> None:
     if _is_admin(user):
         return
     raise HTTPException(status_code=403, detail="Only an administrator can restore an application backup.")
+
+
+# ---------------------------------------------------------------------------
+# Restore safety rules
+# ---------------------------------------------------------------------------
+# A backup file is encrypted with a password chosen by whoever uploads it, so
+# its contents are fully attacker-controlled. Restore therefore only writes
+# the uploading company's own business collections, never platform/control
+# plane data, and never lets a restored record overwrite another company's
+# record or carry Platform Owner identity.
+
+# Tenant collections that are still never restored from a file: credentials,
+# device registrations (a restored serial could capture another company's
+# attendance device) and per-session/ephemeral data.
+RESTORE_DENYLIST = {
+    "backup_jobs", "client_portal_reset_tokens", "copilot_sessions",
+    "customer_usage", "identix_devices", "company_drive_connections",
+    "company_drive_oauth_states", "session_manager", "desktop_devices",
+    "desktop_pairings", "app_settings",
+}
+
+# Company-registry fields that are server-controlled; restore keeps the live value.
+PROTECTED_COMPANY_FIELDS = {
+    "license_id", "commercial_customer_id", "tenant_database_name", "database_name",
+    "source", "status", "is_platform_owner", "platform_owner_uid", "identity_org_uid",
+    "licensee_uid", "license_key", "licensed_modules", "selected_features", "max_users",
+}
+
+# User fields that grant identity or licence scope; they are re-derived at
+# login/request time and are never taken from a backup file.
+USER_FIELDS_NEVER_RESTORED = {
+    "is_platform_owner", "isPlatformOwner", "platform_owner_uid", "identity_org_uid",
+    "user_uid", "licensee_uid", "identity_type", "licensed_modules", "selected_features",
+    "license_key",
+}
+
+ALLOWED_RESTORED_ROLES = {"admin", "manager", "staff"}
+
+
+def _restorable_collection(name: str) -> bool:
+    from backend import tenant_runtime as _tenant_runtime
+
+    if not name or name in EXCLUDED_COLLECTIONS or name in RESTORE_DENYLIST:
+        return False
+    if name.startswith(RESTORE_SNAPSHOT_PREFIX) or name.startswith("system."):
+        return False
+    return name in {"users", "companies"} or name in _tenant_runtime.TENANT_COLLECTIONS
+
+
+def _split_restorable(collections: list[tuple[str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
+    allowed, skipped = [], []
+    for name, entry in collections:
+        (allowed if _restorable_collection(name) else skipped).append((name, entry))
+    return allowed, sorted({name for name, _ in skipped})
+
+
+def _sanitize_restored_user(doc: dict, *, restorer_is_owner: bool, target_identities: dict[str, set[str]]) -> dict:
+    """Strip identity/licence fields from a restored user and refuse owner identities."""
+    from backend.tenant_runtime import _owner_identity_values
+
+    if not restorer_is_owner:
+        probe = {key: value for key, value in doc.items() if key != "company_id"}
+        blocked = _owner_identity_values(probe)
+        if blocked:
+            raise HTTPException(
+                status_code=400,
+                detail="This backup contains a reserved Platform Owner account and cannot be restored.",
+            )
+    for key in USER_FIELDS_NEVER_RESTORED:
+        doc.pop(key, None)
+    role_value = str(doc.get("role") or "staff").strip().lower()
+    doc["role"] = role_value if role_value in ALLOWED_RESTORED_ROLES else "staff"
+    target_license = next(iter(target_identities.get("license_id") or []), "")
+    target_customer = next(iter(target_identities.get("commercial_customer_id") or []), "")
+    if target_license:
+        doc["license_id"] = target_license
+    else:
+        doc.pop("license_id", None)
+    if target_customer:
+        doc["commercial_customer_id"] = target_customer
+    else:
+        doc.pop("commercial_customer_id", None)
+    return doc
+
+
+def _record_key_query(doc: dict) -> dict | None:
+    """Unscoped lookup for the record a restored document would replace."""
+    if doc.get("_id") is not None:
+        return {"_id": doc["_id"]}
+    if doc.get("id") not in (None, ""):
+        return {"id": doc["id"]}
+    return None
+
+
+async def _belongs_to_other_company(collection, doc: dict, target_company_id: str) -> bool:
+    query = _record_key_query(doc)
+    if not query:
+        return False
+    existing = await collection.find_one(query, {"company_id": 1})
+    return bool(existing) and _s(existing.get("company_id")) != target_company_id
 
 
 def _central_db():
@@ -1152,6 +1254,9 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
         removed += getattr(result, "deleted_count", 0)
 
     restored = 0
+    skipped_users = 0
+    conflicts_rekeyed = 0
+    restorer_is_owner = is_platform_owner(current_user)
     live_admin = await _central_db().users.find_one({"id": current_user.id})
 
     # Process one JSONL document at a time instead of materializing every
@@ -1176,10 +1281,17 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                     if first_doc is None:
                         continue
                     doc = first_doc
+                    if not isinstance(doc, dict):
+                        continue
+                    # Server-controlled registry fields always keep their live value.
+                    for field in PROTECTED_COMPANY_FIELDS:
+                        doc.pop(field, None)
+                        if target_company and field in target_company:
+                            doc[field] = target_company[field]
                     doc["id"] = target_company_id
                     if legacy_migration and source_company_doc:
                         for key, value in source_company_doc.items():
-                            if key not in {"_id", "id", "license_id", "commercial_customer_id"}:
+                            if key not in {"_id", "id"} and key not in PROTECTED_COMPANY_FIELDS:
                                 doc.setdefault(key, value)
                     if target_license:
                         doc["license_id"] = target_license
@@ -1196,45 +1308,79 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                     restored += 1
                     continue
 
+                collection = _collection(raw, name)
                 for raw_line in member:
                     if not raw_line.strip():
                         continue
                     doc = _replace(_load(raw_line.decode("utf-8")), replacements)
+                    if not isinstance(doc, dict):
+                        continue
 
+                    is_restorer = False
                     if name == "users":
-                        if _s(doc.get("id")) == _s(current_user.id):
+                        is_restorer = _s(doc.get("id")) == _s(current_user.id)
+                        if is_restorer:
                             if live_admin:
                                 for field in AUTH_FIELDS_TO_PRESERVE:
                                     if field in live_admin:
                                         doc[field] = live_admin[field]
+                                if live_admin.get("_id") is not None:
+                                    doc["_id"] = live_admin["_id"]
+                                doc["role"] = live_admin.get("role", doc.get("role"))
                             doc["id"] = current_user.id
-                            doc["company_id"] = target_company_id
+                        doc["company_id"] = target_company_id
+                        if is_restorer and restorer_is_owner:
+                            # The owner's own record keeps its live identity fields.
+                            for field in USER_FIELDS_NEVER_RESTORED:
+                                if live_admin and field in live_admin:
+                                    doc[field] = live_admin[field]
                         else:
-                            doc["company_id"] = target_company_id
-                    elif legacy_migration or "company_id" in doc:
+                            _sanitize_restored_user(
+                                doc,
+                                restorer_is_owner=restorer_is_owner,
+                                target_identities=target_identities,
+                            )
+                    else:
+                        # Every restored business record belongs to the target company.
                         doc["company_id"] = target_company_id
 
-                    if legacy_migration and doc.get("_id") is not None:
-                        existing = await _collection(raw, name).find_one({"_id": doc["_id"]}, {"company_id": 1})
-                        if existing and _s(existing.get("company_id")) != target_company_id:
-                            doc.pop("_id", None)
+                    # Never overwrite (or re-key onto) another company's record.
+                    if not is_restorer and await _belongs_to_other_company(collection, doc, target_company_id):
+                        if name == "users":
+                            skipped_users += 1
+                            continue
+                        doc.pop("_id", None)
+                        conflicts_rekeyed += 1
 
-                    query = (
-                        {"id": doc.get("id"), "company_id": target_company_id}
-                        if legacy_migration and doc.get("id") is not None
-                        else (
-                            {"_id": doc["_id"]}
-                            if doc.get("_id") is not None
-                            else {"id": doc.get("id")}
-                        )
-                    )
-                    await _collection(raw, name).replace_one(query, doc, upsert=True)
+                    if name == "users" and not is_restorer:
+                        email = _s(doc.get("email")).lower()
+                        if email:
+                            clash = await collection.find_one(
+                                {"$or": [{"email": email}, {"email_normalized": email}],
+                                 "company_id": {"$ne": target_company_id}},
+                                {"_id": 1},
+                            )
+                            if clash:
+                                skipped_users += 1
+                                continue
+
+                    if doc.get("_id") is not None:
+                        query = {"_id": doc["_id"], "company_id": target_company_id}
+                    elif doc.get("id") not in (None, ""):
+                        query = {"id": doc["id"], "company_id": target_company_id}
+                    else:
+                        await collection.insert_one(doc)
+                        restored += 1
+                        continue
+                    await collection.replace_one(query, doc, upsert=True)
                     restored += 1
 
     return {
         "restored_documents": restored,
         "removed_documents": removed,
         "target_company_id": target_company_id,
+        "skipped_conflicting_users": skipped_users,
+        "rekeyed_conflicting_records": conflicts_rekeyed,
     }
 
 @router.post("/restore")
@@ -1278,6 +1424,14 @@ async def restore_backup(backup: UploadFile = File(...), password: str = Form(..
                 raise HTTPException(status_code=400, detail="Legacy backup is missing the source administrator identity.")
         elif not _s(manifest.get("source_company_id")) or not _s(manifest.get("owner_user_id")):
             raise HTTPException(status_code=400, detail="Backup is missing tenant ownership metadata.")
+        collections, skipped_collections = _split_restorable(collections)
+        if skipped_collections:
+            logger.warning(
+                "Restore by user=%s skipped non-restorable collections: %s",
+                getattr(current_user, "id", None), skipped_collections,
+            )
+        if not collections:
+            raise HTTPException(status_code=400, detail="This backup contains no company data that can be restored.")
         result = await _restore(
             manifest,
             collections,
@@ -1285,7 +1439,12 @@ async def restore_backup(backup: UploadFile = File(...), password: str = Form(..
             zip_path,
             legacy_migration=legacy_migration,
         )
-        return {"success": True, "message": "Application backup restored successfully.", **result}
+        return {
+            "success": True,
+            "message": "Application backup restored successfully.",
+            "skipped_collections": skipped_collections,
+            **result,
+        }
     finally:
         try: os.unlink(source_path)
         except FileNotFoundError: pass

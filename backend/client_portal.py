@@ -147,12 +147,66 @@ async def get_current_portal_client(
     doc = await db.client_portal_users.find_one({"id": portal_id}, {"_id": 0})
     if not doc or not doc.get("is_active", True):
         raise HTTPException(status_code=401, detail="Portal account not found or disabled")
+    _enter_portal_company(doc)
 
     portal_status = await _get_portal_status()
     if portal_status != "live":
         raise _portal_status_error(portal_status)
 
     return doc
+
+
+def _enter_portal_company(portal_user: dict) -> None:
+    """Run the rest of a client-portal request inside the client's organisation.
+
+    Portal users are not staff users, so the staff auth chain never set the
+    tenant company. Without it every query (and Google Drive, which is per
+    organisation) ran unscoped.
+    """
+    from backend.tenant_runtime import set_authenticated_company
+
+    company_id = str((portal_user or {}).get("company_id") or "").strip()
+    if not company_id:
+        raise HTTPException(status_code=401, detail="Portal account is not attached to an organisation")
+    set_authenticated_company(company_id)
+
+
+_FOLDER_MIME = "application/vnd.google-apps.folder"
+_MAX_FOLDER_DEPTH = 25
+
+
+def _is_within_folder_sync(service, item_id: str, root_id: str) -> bool:
+    """True when ``item_id`` is ``root_id`` or lives somewhere below it."""
+    if not item_id or not root_id:
+        return False
+    if item_id == root_id:
+        return True
+    current = item_id
+    for _ in range(_MAX_FOLDER_DEPTH):
+        try:
+            meta = service.files().get(fileId=current, fields="id,parents,trashed", supportsAllDrives=True).execute()
+        except Exception:
+            return False
+        if meta.get("trashed"):
+            return False
+        parents = meta.get("parents") or []
+        if root_id in parents:
+            return True
+        if not parents:
+            return False
+        current = parents[0]
+    return False
+
+
+async def _assert_in_client_folder(portal_user: dict, item_id: str, service=None) -> None:
+    from backend.google_drive_service import get_drive_service_for_folder
+
+    root_id = portal_user.get("google_drive_folder_id")
+    if not root_id:
+        raise HTTPException(403, "You do not have access to this file.")
+    service = service or get_drive_service_for_folder(root_id)
+    if not await asyncio.to_thread(_is_within_folder_sync, service, item_id, root_id):
+        raise HTTPException(403, "You do not have access to this file.")
 
 
 # ── Password Vault sync ────────────────────────────────────────────────────
@@ -1073,7 +1127,7 @@ async def admin_list_drive_files(
 
     loop = asyncio.get_running_loop()
     async with DRIVE_LIST_SEMAPHORE:
-        files = await loop.run_in_executor(None, _fetch_drive_files_raw, browse_id)
+        files = await asyncio.to_thread(_fetch_drive_files_raw, browse_id)
 
     # Load existing visibility config
     vis_doc = await db.client_drive_visibility.find_one(
@@ -1372,7 +1426,9 @@ async def _resolve_settings_root_folder() -> Optional[str]:
     doc = await db.portal_settings.find_one({}, {"_id": 0, "root_drive_folder": 1})
     if doc and doc.get("root_drive_folder"):
         return _extract_folder_id(doc["root_drive_folder"])
-    return None
+    from backend.google_drive_service import drive_folder_id
+
+    return await asyncio.to_thread(drive_folder_id, "clients")
 
 
 async def _resolve_parent_folder_id(explicit: Optional[str] = None) -> Optional[str]:
@@ -1961,6 +2017,11 @@ async def portal_drive_files(
             and f["id"] not in hidden_ids
         }
 
+        if folder_id in visible_folder_ids and validate_parent != root_folder_id:
+            try:
+                await _assert_in_client_folder(portal_user, validate_parent)
+            except HTTPException:
+                visible_folder_ids = set()
         if folder_id in visible_folder_ids:
             browse_id = folder_id
             # Get folder name from parent listing
@@ -2028,7 +2089,7 @@ EXPORT_MIME_MAP = {
 # MIME types the browser can render natively inside an <img>/<iframe> preview.
 PREVIEWABLE_INLINE_MIMES = {
     "application/pdf",
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml", "image/bmp",
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
 }
 
 @router.get("/drive/download")
@@ -2065,9 +2126,16 @@ async def portal_drive_download(
     portal_user = await db.client_portal_users.find_one({"id": portal_id}, {"_id": 0})
     if not portal_user or not portal_user.get("is_active", True):
         raise HTTPException(status_code=401, detail="Portal account not found or disabled")
+    _enter_portal_company(portal_user)
+    portal_status = await _get_portal_status()
+    if portal_status != "live":
+        raise _portal_status_error(portal_status)
 
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
+
+    # The file must be inside this client's own Drive folder.
+    await _assert_in_client_folder(portal_user, file_id)
 
     # Verify this file is not hidden for the client
     vis_doc = await db.client_drive_visibility.find_one(

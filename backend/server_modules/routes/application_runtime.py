@@ -675,6 +675,11 @@ api_router.include_router(reminders_router)
 api_router.include_router(whatsapp_router)
 app.include_router(google_auth_router)
 
+# Per-organisation Google Drive ("Settings → Integrations → Connect Google Drive").
+from backend.company_drive import router as company_drive_router, create_company_drive_indexes
+app.include_router(company_drive_router, prefix="/api")
+app.on_event("startup")(create_company_drive_indexes)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # CLIENT MERGE — merge two or more duplicate clients into one
 # ═══════════════════════════════════════════════════════════════════════════════
