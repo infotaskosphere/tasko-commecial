@@ -401,7 +401,7 @@ export function CompanyManager({ onClose, onSaved, editingCompany }) {
             <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mt-4"><Mail className="h-4 w-4" />SMTP Settings <span className="text-[10px] font-normal text-slate-400">(optional fallback)</span></h4>
             <p className="text-[11px] text-slate-500 -mt-1">
               Emails are sent from your organisation mailbox, connected once in{' '}
-              <a href="/settings/organisation-email" className="font-semibold text-blue-600 underline">Settings → Organisation Email</a>.
+              <a href="/settings/email?tab=organisation" className="font-semibold text-blue-600 underline">Settings → Email Accounts → Organisation Email</a>.
               These fields are only used if no organisation mailbox is connected.
             </p>
             {[

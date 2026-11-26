@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import SendFromSelect from '@/components/SendFromSelect';
+import OrganisationEmail from '@/components/OrganisationEmail';
 import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from "@/hooks/useDark";
 import { useAuth } from "@/contexts/AuthContext";
@@ -3456,7 +3457,7 @@ function LinkedUsersPanel({ conn, isDark, isAdmin, currentUserId }) {
 
 export default function EmailSettings() {
   const isDark = useDark();
-  const { user } = useAuth();
+  const { user, isPlatformOwner } = useAuth();
 
   const [connections,     setConnections]     = useState([]);
   const [loading,         setLoading]         = useState(true);
@@ -3465,7 +3466,12 @@ export default function EmailSettings() {
   const [extractedEvents, setExtractedEvents] = useState([]);
   const [scanning,        setScanning]        = useState(false);
   const [clearing,        setClearing]        = useState(false);
-  const [activeTab,       setActiveTab]       = useState("accounts");
+  const [activeTab,       setActiveTab]       = useState(() => {
+    // ?tab=organisation (also legacy ?tab=sender) opens the Organisation Email tab,
+    // e.g. after a Google/Microsoft sign-in or from a module's "Connect your email" link.
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    return tab === "organisation" || tab === "sender" ? "organisation" : "accounts";
+  });
   // Session-level set of saved event keys — prevents duplicates within the session
   const [savedKeys, setSavedKeys] = useState(() => new Set());
 
@@ -3669,7 +3675,7 @@ export default function EmailSettings() {
     { id: "rules",     label: "Smart Rules",    icon: Tag       },
     { id: "compose",   label: "Compose & Send", icon: Send      },
     { id: "templates", label: "Templates",      icon: FileText  },
-    { id: "sender",    label: "Sender",         icon: Send      },
+    { id: "organisation", label: "Organisation Email", icon: Send },
     { id: "settings",  label: "Settings",       icon: Settings2 },
   ];
 
@@ -3954,19 +3960,25 @@ export default function EmailSettings() {
           </motion.div>
         )}
 
-        {/* ══ SENDER TAB ══ */}
-        {activeTab === "sender" && (
+        {/* ══ ORGANISATION EMAIL TAB ══ */}
+        {activeTab === "organisation" && (
           <motion.div variants={itemVariants} className="space-y-4">
             <div className="px-4 py-3.5 rounded-2xl border flex items-start gap-3"
               style={{ backgroundColor: isDark ? "rgba(59,130,246,0.08)" : "#eff6ff", borderColor: isDark ? "#1d4ed8" : "#bfdbfe" }}>
               <Send className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
               <div className="text-xs" style={{ color: isDark ? "#93c5fd" : "#1e40af" }}>
-                <span className="font-bold">Switch your Brevo sender email on the fly.</span>
-                {" "}No redeploy needed — just click "Use This" to switch. All emails (reminders, birthday wishes, compliance alerts) will immediately send from the selected address.
-                Both emails must be verified in Brevo under Senders, domains &amp; IPs.
+                <span className="font-bold">The mailbox every module sends from.</span>
+                {" "}Invoices, quotations, reminders, compliance emails, client portal codes and EngageX all send from it. The Accounts tab above is for reading inboxes.
               </div>
             </div>
-            <SenderSelectorPanel isDark={isDark} />
+            <OrganisationEmail isDark={isDark} returnPath="/settings/email?tab=organisation" />
+            {isPlatformOwner && (
+              <div className="space-y-2 pt-2">
+                <p className="text-xs font-bold" style={{ color: isDark ? "#cbd5e1" : "#334155" }}>Platform fallback sender (Brevo) — Platform Owner only</p>
+                <p className="text-[11px]" style={{ color: isDark ? "#94a3b8" : "#64748b" }}>Used only when an organisation has not connected a mailbox. Both addresses must be verified in Brevo.</p>
+                <SenderSelectorPanel isDark={isDark} />
+              </div>
+            )}
           </motion.div>
         )}
 

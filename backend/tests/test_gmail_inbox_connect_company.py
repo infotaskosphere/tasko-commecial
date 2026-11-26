@@ -86,3 +86,28 @@ def test_connected_inbox_is_listed_when_user_record_company_is_stale(env):
     assert [c.email_address for c in listed["connections"]] == ["inbox@gmail.com"]
     stored = asyncio.run(raw.email_connections.find_one({"email_address": "inbox@gmail.com"}))
     assert stored["company_id"] == "cus-real"
+
+
+def test_sender_blacklist_saves_and_blocks_senders(env):
+    user = User(id="u1", email="admin@x.example", role="admin", full_name="Admin", company_id="cus-real")
+
+    async def flow():
+        token = set_authenticated_company("cus-real")
+        try:
+            empty = await ei.get_sender_blacklist(current_user=user)
+            saved = await ei.replace_sender_blacklist(
+                body={"senders": [{"email_address": "Spam@Bad.example"}, {"email_address": "@promo.example"},
+                                  {"email_address": "spam@bad.example"}, {"email_address": ""}]},
+                current_user=user)
+            listed = await ei.get_sender_blacklist(current_user=user)
+            blocked = await ei._load_sender_blacklist("u1")
+        finally:
+            reset_authenticated_company(token)
+        return empty, saved, listed, blocked
+
+    empty, saved, listed, blocked = asyncio.run(flow())
+    assert empty == {"senders": []}
+    assert [s["email_address"] for s in listed["senders"]] == ["spam@bad.example", "@promo.example"]
+    kept = ei._drop_blacklisted([{"sender_email": "spam@bad.example"}, {"sender_email": "news@promo.example"},
+                                 {"sender_email": "client@good.example"}], blocked)
+    assert kept == [{"sender_email": "client@good.example"}]

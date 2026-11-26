@@ -24,11 +24,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CheckCircle2, Inbox, Loader2, Mail, Star, Trash2, AlertTriangle } from 'lucide-react';
-import { fetchOrgEmailStatus } from '@/components/SendFromSelect';
+import { Link } from 'react-router-dom';
+import { fetchOrgEmailStatus, ORG_EMAIL_SETTINGS_PATH } from '@/components/SendFromSelect';
 
 // Return to whichever page started the sign-in (Settings → Organisation Email
 // or General Settings → Integrations).
-const RETURN_PATH = () => `${window.location.pathname}${window.location.search}`;
+const currentPath = () => `${window.location.pathname}${window.location.search}`;
 
 const KIND_LABEL = { google: 'Gmail / Google Workspace', microsoft: 'Outlook / Microsoft 365', smtp: 'Email account' };
 
@@ -36,7 +37,11 @@ function errText(err, fallback) {
   return err?.response?.data?.detail || err?.message || fallback;
 }
 
-export default function OrganisationEmail({ isDark = false }) {
+/**
+ * personalOnly: show just "My mailboxes" and a link to the organisation
+ * mailbox in Settings → Email Accounts (used in General Settings).
+ */
+export default function OrganisationEmail({ isDark = false, returnPath, personalOnly = false }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -74,7 +79,7 @@ export default function OrganisationEmail({ isDark = false }) {
   const startOAuth = async (provider, personal) => {
     setBusy(`${provider}-${personal ? 'me' : 'org'}`);
     try {
-      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: RETURN_PATH(), personal: !!personal });
+      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: returnPath || currentPath(), personal: !!personal });
       window.location.href = res.data.auth_url;
     } catch (err) {
       setBusy('');
@@ -215,6 +220,12 @@ export default function OrganisationEmail({ isDark = false }) {
 
   return (
     <div className="space-y-4">
+      {personalOnly ? (
+        <div className={`rounded-2xl border p-4 text-xs ${card} ${muted}`}>
+          The organisation mailbox that every module sends from is in{' '}
+          <Link to={ORG_EMAIL_SETTINGS_PATH} className="font-semibold text-blue-600 hover:underline">Settings → Email Accounts → Organisation Email</Link>.
+        </div>
+      ) : (<>
       {/* Summary */}
       <div className={`rounded-2xl border p-5 ${card}`}>
         <div className="flex items-start gap-3">
@@ -258,6 +269,8 @@ export default function OrganisationEmail({ isDark = false }) {
       ) : (
         <p className={`text-xs ${muted}`}>Only an administrator can connect or change the organisation's email.</p>
       )}
+
+      </>)}
 
       {/* Personal mailboxes */}
       <div className={`rounded-2xl border ${card}`}>

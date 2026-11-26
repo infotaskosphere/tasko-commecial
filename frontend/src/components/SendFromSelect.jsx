@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 import api from '@/lib/api';
 import { Mail } from 'lucide-react';
 
-export const ORG_EMAIL_SETTINGS_PATH = '/settings/organisation-email';
+export const ORG_EMAIL_SETTINGS_PATH = '/settings/email?tab=organisation';
 
 let cached = null;
 let cachedAt = 0;

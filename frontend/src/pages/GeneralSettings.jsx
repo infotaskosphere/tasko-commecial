@@ -64,7 +64,7 @@ function MiniBar({ value, color, isDark }) {
 
 const INT_SECTIONS = [
   { id: 'drives',  label: 'Cloud Drives', icon: HardDrive,  desc: 'Organisation Google Drive used by every module' },
-  { id: 'email',   label: 'Email',        icon: Mail,       desc: 'Organisation and personal mailboxes' },
+  { id: 'email',   label: 'My mailboxes', icon: Mail,       desc: 'Your own mailboxes to send from' },
   { id: 'signin',  label: 'My sign-in',   icon: KeyRound,   desc: 'Emails you can sign in with' },
 ];
 
@@ -506,7 +506,7 @@ export default function GeneralSettings() {
           <IntegrationSidebar active={intSection} onChange={setIntSection} isDark={isDark} />
           <div className="flex-1 min-w-0">
             {intSection === "drives" && <DriveIntegrations isDark={isDark} />}
-            {intSection === "email" && <OrganisationEmail isDark={isDark} />}
+            {intSection === "email" && <OrganisationEmail isDark={isDark} personalOnly />}
             {intSection === "signin" && <SignInEmails isDark={isDark} />}
           </div>
         </div>

@@ -94,6 +94,8 @@ _ADDITIONAL_TENANT_COLLECTIONS = {
     "email_templates",
     "email_scan_settings",
     "email_whitelist",
+    "email_sender_whitelist",
+    "email_sender_blacklist",
     "email_action_center",
     "passwords",
     "password_entries",

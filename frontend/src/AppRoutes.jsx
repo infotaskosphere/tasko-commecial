@@ -78,7 +78,6 @@ const ContactDetails = lazy(() => import('./pages/ContactDetails.jsx'));
 const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const DesktopAgentSettings = lazy(() => import('./pages/DesktopAgentSettings.jsx'));
 const OrganisationDriveSettings = lazy(() => import('./pages/OrganisationDriveSettings.jsx'));
-const OrganisationEmailSettings = lazy(() => import('./pages/OrganisationEmailSettings.jsx'));
 const AgentPair = lazy(() => import('./pages/AgentPair.jsx'));
 const BackupRestore = lazy(() => import('./pages/BackupRestore.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
@@ -185,6 +184,17 @@ function AdminOnly({ children }) {
   const { user } = useAuth();
   if (user?.role?.toLowerCase() !== 'admin') return <Navigate to="/dashboard" replace />;
   return children;
+}
+
+// Organisation Email now lives in Settings → Email Accounts (admins); staff
+// manage their own mailboxes in General Settings → Integrations.
+function OrganisationEmailRedirect() {
+  const { user, loading, isPlatformOwner } = useAuth();
+  if (loading) return <AuthLoading />;
+  const role = String(user?.role?.value || user?.role?.name || user?.role || '').trim().toLowerCase().replace(/[-\s]+/g, '_');
+  const isAdmin = isPlatformOwner || ['admin', 'licensee_admin', 'tenant_admin'].includes(role) || role.endsWith('.admin');
+  const target = isAdmin ? '/settings/email?tab=organisation' : '/settings/general?tab=integrations&section=email';
+  return <Navigate to={`${target}${window.location.search ? `&${window.location.search.slice(1)}` : ''}`} replace />;
 }
 
 function SettingsAdminGate({ children }) {
@@ -338,7 +348,7 @@ export default function AppRoutes() {
           <Route path="/settings/general" element={<GeneralSettings />} />
           <Route path="/settings/desktop-agent" element={<DesktopAgentSettings />} />
           <Route path="/settings/google-drive" element={<OrganisationDriveSettings />} />
-          <Route path="/settings/organisation-email" element={<OrganisationEmailSettings />} />
+          <Route path="/settings/organisation-email" element={<OrganisationEmailRedirect />} />
           <Route path="/admin/backup-restore" element={<AdminOnly><BackupPermission><BackupRestore /></BackupPermission></AdminOnly>} />
           <Route path="/settings/backup" element={<Navigate to="/admin/backup-restore" replace />} />
           <Route path="/settings/email" element={<SettingsAdminGate><EmailSettings /></SettingsAdminGate>} />

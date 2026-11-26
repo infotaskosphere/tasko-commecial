@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Set, Tuple
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from bson import ObjectId
 
@@ -73,6 +73,7 @@ COL_EVENTS           = "email_extracted_events"
 COL_AUTO_PREFS       = "email_auto_save_prefs"
 COL_SCAN_SCHEDULE    = "email_scan_schedule"
 COL_SENDER_WHITELIST = "email_sender_whitelist"
+COL_SENDER_BLACKLIST = "email_sender_blacklist"
 COL_SCAN_SETTINGS    = "email_scan_settings"
 
 # =============================================================================
@@ -813,6 +814,18 @@ def _stable_message_id(email_addr: str, raw: Dict) -> str:
         raw.get("subject") or "",
     ])
     return "fallback-" + hashlib.sha256(fingerprint.encode("utf-8", "ignore")).hexdigest()
+
+async def _load_sender_blacklist(user_id: str) -> List[str]:
+    doc = await db[COL_SENDER_BLACKLIST].find_one({"user_id": str(user_id)}, {"_id": 0})
+    return [s.get("email_address", "") for s in (doc or {}).get("senders", []) if s.get("email_address")]
+
+
+def _drop_blacklisted(raw_emails, blacklist: List[str]):
+    """Blocked senders/domains are never scanned (same matching as the whitelist)."""
+    if not blacklist:
+        return raw_emails
+    return [r for r in (raw_emails or []) if not _sender_matches_whitelist(str(r.get("sender_email") or ""), blacklist)]
+
 
 def _scan_mailbox_sync(
     host: str, port: int, email_addr: str, password: str,
@@ -1748,6 +1761,7 @@ async def _run_full_scan_for_user(user_id: str, prefs: Dict, limit: int = 50):
         if wl_doc else []
     )
     dismissed_titles = await _get_dismissed_titles(user_id)
+    sender_blacklist = await _load_sender_blacklist(user_id)
     loop             = asyncio.get_event_loop()
 
     for conn in conns:
@@ -1759,6 +1773,7 @@ async def _run_full_scan_for_user(user_id: str, prefs: Dict, limit: int = 50):
                 _decrypt(conn["app_password_enc"]), limit,
                 sender_whitelist or None,
             )
+            raw_emails = _drop_blacklisted(raw_emails, sender_blacklist)
             for raw in raw_emails:
                 mid    = _stable_message_id(email_addr, raw)
                 raw["message_id"] = mid
@@ -2190,6 +2205,38 @@ async def replace_sender_whitelist(body: SenderWhitelistOut, current_user=Depend
         {"$set": {"senders": senders, "user_id": str(current_user.id)}}, upsert=True
     )
     return {"message": "Whitelist updated", "senders": senders}
+
+
+# =============================================================================
+# API ROUTES — SENDER BLACKLIST (blocked senders/domains are never scanned)
+# =============================================================================
+
+def _clean_blacklist(senders) -> List[Dict[str, Any]]:
+    out, seen = [], set()
+    for s in senders or []:
+        addr = str((s or {}).get("email_address") or "").strip().lower()
+        if not addr or ("@" not in addr and "." not in addr) or addr in seen:
+            continue
+        seen.add(addr)
+        out.append({"email_address": addr, "label": str(s.get("label") or addr)[:60],
+                    "added_at": s.get("added_at") or datetime.now(timezone.utc).isoformat()})
+    return out[:500]
+
+
+@router.get("/sender-blacklist")
+async def get_sender_blacklist(current_user=Depends(check_module_permission("email_accounts", "view"))):
+    doc = await db[COL_SENDER_BLACKLIST].find_one({"user_id": str(current_user.id)}, {"_id": 0})
+    return {"senders": (doc or {}).get("senders", [])}
+
+
+@router.put("/sender-blacklist")
+async def replace_sender_blacklist(body: Dict[str, Any] = Body(...), current_user=Depends(check_module_permission("email_accounts", "create"))):
+    senders = _clean_blacklist(body.get("senders"))
+    await db[COL_SENDER_BLACKLIST].update_one(
+        {"user_id": str(current_user.id)},
+        {"$set": {"senders": senders, "user_id": str(current_user.id)}}, upsert=True,
+    )
+    return {"message": "Blacklist updated", "senders": senders}
 
 
 # =============================================================================
@@ -2653,6 +2700,7 @@ async def extract_events(
     )
     dismissed_titles = await _get_dismissed_titles(str(current_user.id))
     saved_event_ids  = await _get_saved_event_ids(str(current_user.id))
+    sender_blacklist = await _load_sender_blacklist(str(current_user.id))
 
     async def process_account(conn):
         email_addr = conn["email_address"]
@@ -2715,6 +2763,7 @@ async def extract_events(
             _decrypt(conn["app_password_enc"]), fetch_cap, sender_whitelist or None,
             effective_since, kw_list or None, kw_mode, kw_case,
         )
+        raw_emails = _drop_blacklisted(raw_emails, sender_blacklist)
         acc = []
         for raw in raw_emails:
             mid    = _stable_message_id(email_addr, raw)
