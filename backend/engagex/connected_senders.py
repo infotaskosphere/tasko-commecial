@@ -8,6 +8,22 @@ from .common import SENDERS, company_profile, encrypt_secret, iso, new_id, raw_d
 KIND_LABEL = {"google": "Gmail", "microsoft": "Outlook"}
 
 
+async def ensure_first_mailbox_is_default(company_id: str) -> None:
+    """The first mailbox an organisation connects becomes its default.
+
+    The organisation's default mailbox is what every module sends from
+    (backend/org_mail.py). Once an organisation has picked a default
+    (or several mailboxes exist) nothing is changed.
+    """
+    senders = raw_db()[SENDERS]
+    live = {"company_id": company_id, "deleted": {"$ne": True}}
+    if await senders.count_documents(live) != 1:
+        return
+    if await senders.find_one({**live, "is_default": True}, {"_id": 1}):
+        return
+    await senders.update_one(live, {"$set": {"is_default": True}})
+
+
 async def save_oauth_sender(*, company_id: str, user_id: Optional[str], kind: str, email: str,
                             refresh_token: str, scopes: list[str]) -> None:
     profile = await company_profile(company_id)
@@ -39,6 +55,7 @@ async def save_oauth_sender(*, company_id: str, user_id: Optional[str], kind: st
         },
         upsert=True,
     )
+    await ensure_first_mailbox_is_default(company_id)
 
 
 async def store_rotated_refresh_token(company_id: str, sender_id: str, refresh_token: str) -> None:
@@ -74,10 +91,13 @@ async def save_smtp_sender(*, company_id: str, user_id: str, email: str, passwor
         fields["from_name"] = from_name
     if existing:
         await raw_db()[SENDERS].update_one({"company_id": company_id, "id": existing["id"]}, {"$set": fields})
+        await ensure_first_mailbox_is_default(company_id)
         return {**existing, **fields}
     doc = {
         "id": new_id("exs"), "company_id": company_id, "reply_to": None, "is_default": False,
         "from_name": from_name or profile.get("name") or email, "created_by": user_id, "created_at": now, **fields,
     }
     await raw_db()[SENDERS].insert_one(dict(doc))
+    await ensure_first_mailbox_is_default(company_id)
+    doc["is_default"] = bool(await raw_db()[SENDERS].find_one({"company_id": company_id, "id": doc["id"], "is_default": True}, {"_id": 1}))
     return doc

@@ -38,7 +38,6 @@ from backend.invoicing import (
     _build_invoice_pdf,
     _compute_invoice_totals,
     _next_invoice_no,
-    _send_email,
 )
 
 router = APIRouter(prefix="/telegram", tags=["Telegram"])
@@ -2796,15 +2795,19 @@ async def _send_invoice_email_by_id(chat_id: int, inv_id: str) -> dict:
     safe_no       = inv_no.replace("/", "_").replace("\\", "_")
 
     try:
-        # _send_email is synchronous — run in thread to avoid blocking the event loop
-        await asyncio.to_thread(
-            _send_email,
-            client_email,
-            subject,
-            html_body,
-            pdf_bytes,
-            f"Invoice_{safe_no}.pdf",
-            company_email,
+        # Sent from the organisation's mailbox (Settings → Integrations → Email).
+        from backend.org_mail import attachment, send_org_email
+        from backend.tenant_runtime import authenticated_company_id
+
+        await send_org_email(
+            company_id=str(authenticated_company_id() or inv.get("company_id") or ""),
+            to_email=client_email,
+            subject=subject,
+            html_body=html_body,
+            attachments=[attachment(f"Invoice_{safe_no}.pdf", pdf_bytes, "application/pdf")],
+            from_name=comp_name,
+            fallback_reply_to=company_email or None,
+            email_type="invoice_telegram",
         )
     except Exception as e:
         await send_message(

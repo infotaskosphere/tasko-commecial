@@ -5,6 +5,7 @@ import base64
 import tempfile
 import os
 import smtplib
+from html import escape as html_escape
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -329,6 +330,8 @@ class EmailSendRequest(BaseModel):
     subject: str = ""
     body: str = ""
     pdf_type: str = "quotation"  # "quotation" or "checklist"
+    # Optional: one of the organisation's connected mailboxes ("Send from").
+    sender_id: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2792,13 +2795,19 @@ async def send_quotation_email(
     if not company:
         raise HTTPException(404, "Company profile not found")
 
-    smtp_host = company.get("smtp_host", "").strip()
-    smtp_user = company.get("smtp_user", "").strip()
-    smtp_pass = company.get("smtp_password", "").strip()
-    if not smtp_host or not smtp_user or not smtp_pass:
-        raise HTTPException(
-            400, "SMTP not configured. Please add SMTP settings to the company profile."
-        )
+    # Sender: the organisation mailbox (Settings → Integrations → Email) is used
+    # whenever one is connected or chosen. A company profile's own SMTP login,
+    # from before the organisation mailbox existed, is only a fallback.
+    from backend.engagex.common import workspace_company_id
+    from backend.org_mail import has_connected_mailbox
+
+    org_company_id = workspace_company_id(current_user)
+    smtp_host = (company.get("smtp_host") or "").strip()
+    smtp_user = (company.get("smtp_user") or "").strip()
+    smtp_pass = (company.get("smtp_password") or "").strip()
+    use_org_mailbox = bool(req.sender_id) or await has_connected_mailbox(org_company_id) or not (
+        smtp_host and smtp_user and smtp_pass
+    )
 
     # Company name prefix in filename
     company_prefix = (
@@ -2845,6 +2854,25 @@ async def send_quotation_email(
         f"Validity: {q.get('validity_days', 30)} days\n\n"
         f"Regards,\n{company.get('name', '')}"
     )
+
+    if use_org_mailbox:
+        from backend.org_mail import attachment, send_org_email
+
+        html_body = "<br>".join(html_escape(line) for line in body.split("\n"))
+        result = await send_org_email(
+            company_id=org_company_id,
+            to_email=req.to_email,
+            subject=subject,
+            html_body=f'<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">{html_body}</div>',
+            text_body=body,
+            attachments=[attachment(filename, pdf_buf.getvalue(), "application/pdf")],
+            sender_id=req.sender_id,
+            from_name=company.get("smtp_from_name") or company.get("name") or None,
+            fallback_reply_to=company.get("email") or None,
+            email_type="quotation",
+        )
+        return {"message": f"Email sent successfully to {req.to_email} from {result['from_email']}",
+                "from_email": result["from_email"]}
 
     try:
         _send_email_with_pdf(

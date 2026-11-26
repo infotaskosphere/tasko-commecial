@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DriveIntegrations from "@/components/DriveIntegrations";
+import OrganisationEmail from "@/components/OrganisationEmail";
 import AssignedClientsPanel from "@/components/AssignedClientsPanel";
 
 const COLORS = {
@@ -61,8 +62,8 @@ function MiniBar({ value, color, isDark }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INT_SECTIONS = [
-  { id: 'drives',  label: 'Cloud Drives', icon: HardDrive,  desc: 'Google Drive, OneDrive, Dropbox & more' },
-  { id: 'email',   label: 'Email',        icon: Mail,       desc: 'IMAP email account connections' },
+  { id: 'drives',  label: 'Cloud Drives', icon: HardDrive,  desc: 'Organisation Google Drive used by every module' },
+  { id: 'email',   label: 'Email',        icon: Mail,       desc: 'Organisation mailbox used by every module' },
 ];
 
 function IntegrationSidebar({ active, onChange, isDark }) {
@@ -95,22 +96,6 @@ function IntegrationSidebar({ active, onChange, isDark }) {
   );
 }
 
-// Placeholder for email integrations panel (renders existing EmailSettings component)
-// In production: import EmailSettings from "@/components/EmailSettings";
-function EmailIntegrationsPlaceholder({ isDark }) {
-  const muted = isDark ? 'text-slate-400' : 'text-slate-500';
-  const card  = isDark ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-200';
-  return (
-    <div className={`rounded-2xl border p-6 text-center ${card}`}>
-      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3" style={{ background: 'rgba(13,59,102,0.10)' }}>
-        <Mail size={22} style={{ color: COLORS.mediumBlue }} />
-      </div>
-      <p className={`text-sm font-bold mb-1 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email Accounts</p>
-      <p className={`text-xs ${muted}`}>Manage IMAP email connections from the Email Accounts page in the sidebar.</p>
-    </div>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,8 +105,17 @@ export default function GeneralSettings() {
   const isDark  = useDark();
   const fileRef = useRef(null);
 
-  const [activeTab, setActiveTab] = useState("profile"); // profile | clients | integrations
-  const [intSection, setIntSection] = useState("drives"); // drives | email
+  // Deep links (and Google / Microsoft sign-in returns) open the right place:
+  // ?tab=integrations&section=email|drives, ?drive=…, ?google=… / ?microsoft=…
+  const initialParams = new URLSearchParams(window.location.search);
+  const returnedFromEmail = initialParams.has("google") || initialParams.has("microsoft");
+  const returnedFromDrive = initialParams.has("drive");
+  const [activeTab, setActiveTab] = useState(
+    initialParams.get("tab") === "integrations" || returnedFromEmail || returnedFromDrive ? "integrations" : "profile"
+  ); // profile | clients | integrations
+  const [intSection, setIntSection] = useState(
+    initialParams.get("section") === "email" || returnedFromEmail ? "email" : "drives"
+  ); // drives | email
 
   const [profile, setProfile] = useState({
     full_name: "", phone: "", birthday: "", profile_picture: "",
@@ -509,7 +503,7 @@ export default function GeneralSettings() {
           <IntegrationSidebar active={intSection} onChange={setIntSection} isDark={isDark} />
           <div className="flex-1 min-w-0">
             {intSection === "drives" && <DriveIntegrations isDark={isDark} />}
-            {intSection === "email" && <EmailIntegrationsPlaceholder isDark={isDark} />}
+            {intSection === "email" && <OrganisationEmail isDark={isDark} />}
           </div>
         </div>
       )}

@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import api from "@/lib/api";
+import SendFromSelect from '@/components/SendFromSelect';
 import { normalizeCompanies } from "@/lib/companies";
 import { useDark } from "@/hooks/useDark";
 import { useAuth } from "@/contexts/AuthContext";
@@ -2312,6 +2313,7 @@ function EmailComposePanel({ isDark }) {
   const [templates,    setTemplates]   = React.useState([]);
   const [selCompany,   setSelCompany]  = React.useState('');
   const [sendMethod,   setSendMethod]  = React.useState('auto');
+  const [bulkSenderId, setBulkSenderId] = React.useState('');
   const [subject,      setSubject]     = React.useState('');
   const [body,         setBody]        = React.useState('');
   const [isHtml,       setIsHtml]      = React.useState(false);
@@ -2448,7 +2450,7 @@ function EmailComposePanel({ isDark }) {
       }));
       const r = await api.post('/email/send-bulk-clients', {
         recipients, subject, body_template: body, is_html: isHtml,
-        company_id: selCompany||null, send_method: sendMethod,
+        company_id: selCompany||null, send_method: sendMethod, sender_id: bulkSenderId || null,
         attachment_base64: composeAttachB64 || null,
         attachment_name:   composeAttachName || null,
       });
@@ -2468,46 +2470,23 @@ function EmailComposePanel({ isDark }) {
           title="Sender Identity" subtitle="Company branding and sending method" />
         <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5">Company <span className="font-normal">(for logo &amp; SMTP)</span></label>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5">Company <span className="font-normal">(name &amp; branding)</span></label>
             <select value={selCompany} onChange={e => setSelCompany(e.target.value)}
               className="w-full border rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
               style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
-              <option value="">— Use Brevo default —</option>
+              <option value="">— Organisation default —</option>
               {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             {selComp && (
               <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
                 {selComp.email && <span>📧 {selComp.email}</span>}
                 {selComp.phone && <span>📞 {selComp.phone}</span>}
-                {selComp.smtp_host
-                  ? <span className="font-semibold text-emerald-600">✅ SMTP ready ({selComp.smtp_host})</span>
-                  : <span className="text-amber-600">⚠ No SMTP — will use Brevo</span>}
               </div>
             )}
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-400 mb-1.5">Send Via</label>
-            <div className="space-y-2">
-              {[
-                { v:'auto',  label:'Auto  (SMTP → Brevo fallback)', color:'#7c3aed' },
-                { v:'brevo', label:'Brevo API (environment key)',    color:'#2563eb' },
-                { v:'smtp',  label:'Company SMTP / Gmail',           color:'#16a34a' },
-              ].map(opt => (
-                <label key={opt.v} onClick={() => setSendMethod(opt.v)}
-                  className="flex items-center gap-2.5 cursor-pointer select-none">
-                  <div className="w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-all"
-                    style={{ borderColor: sendMethod===opt.v ? opt.color : '#cbd5e1', background: sendMethod===opt.v ? opt.color : 'transparent' }}>
-                    {sendMethod===opt.v && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <span className="text-xs text-slate-600 dark:text-slate-300">{opt.label}</span>
-                </label>
-              ))}
-            </div>
-            {sendMethod==='smtp' && !selComp?.smtp_host && (
-              <p className="mt-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg">
-                Set up Gmail SMTP in Quotations → Companies → Edit → SMTP Settings
-              </p>
-            )}
+            {/* Sent from the organisation mailbox (Settings → Integrations → Email). */}
+            <SendFromSelect value={bulkSenderId} onChange={setBulkSenderId} />
           </div>
         </div>
       </SectionCard>

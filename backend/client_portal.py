@@ -785,7 +785,7 @@ async def portal_forgot_password(body: PortalForgotPasswordRequest):
             target_email = (client_doc or {}).get("email")
 
         if target_email:
-            otp = str(random.randint(100000, 999999))
+            otp = f"{_secrets.randbelow(1_000_000):06d}"
             expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
 
             await db.client_portal_reset_tokens.delete_many({"portal_user_id": portal_user["id"]})
@@ -797,7 +797,7 @@ async def portal_forgot_password(body: PortalForgotPasswordRequest):
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
 
-            subject = "Taskosphere Client Portal – Your Password Reset Code"
+            subject = "Client Portal – Your Password Reset Code"
             email_body = (
                 f"Hi {portal_user.get('display_name') or ''},\n\n"
                 f"You requested to reset your Client Portal password.\n\n"
@@ -807,11 +807,23 @@ async def portal_forgot_password(body: PortalForgotPasswordRequest):
                 f"This code expires in 10 minutes.\n\n"
                 f"If you did not request this, you can safely ignore this email — "
                 f"your password will not be changed.\n\n"
-                f"— Taskosphere"
+                f"— Client Portal"
             )
 
             try:
-                await _send_otp_email(target_email, subject, email_body)
+                # The client portal belongs to the organisation: the code is sent
+                # from the organisation's mailbox (platform service if none yet).
+                from html import escape as _html_escape
+                from backend.org_mail import send_org_email
+
+                await send_org_email(
+                    company_id=str(portal_user.get("company_id") or ""),
+                    to_email=target_email,
+                    subject=subject,
+                    html_body="<br>".join(_html_escape(line) for line in email_body.split("\n")),
+                    text_body=email_body,
+                    email_type="client_portal_code",
+                )
                 logger.info(f"Client portal reset OTP sent for portal user {portal_user['id']}")
                 await db.client_portal_activity.insert_one({
                     "portal_user_id": portal_user["id"],

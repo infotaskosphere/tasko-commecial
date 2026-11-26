@@ -398,7 +398,12 @@ export function CompanyManager({ onClose, onSaved, editingCompany }) {
               )}
             </div>
 
-            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mt-4"><Mail className="h-4 w-4" />SMTP Settings</h4>
+            <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mt-4"><Mail className="h-4 w-4" />SMTP Settings <span className="text-[10px] font-normal text-slate-400">(optional fallback)</span></h4>
+            <p className="text-[11px] text-slate-500 -mt-1">
+              Emails are sent from your organisation mailbox, connected once in{' '}
+              <a href="/settings/general?tab=integrations&section=email" className="font-semibold text-blue-600 underline">Settings → Integrations → Email</a>.
+              These fields are only used if no organisation mailbox is connected.
+            </p>
             {[
               { label: 'SMTP Host',    name: 'smtp_host',      type: 'text'     },
               { label: 'SMTP Port',    name: 'smtp_port',      type: 'number'   },
@@ -569,7 +574,7 @@ export function CompanyProfilesList({ onRefresh, dense = false, onFormOpenChange
                       </div>
                     )}
                     <div className="flex items-center gap-1 mt-1">
-                      {company.smtp_host ? <Badge className="text-[10px] px-2 py-0 bg-green-50 text-green-700 border-green-200">Email Ready</Badge> : <Badge className="text-[10px] px-2 py-0 bg-amber-50 text-amber-700 border-amber-200">SMTP Not Set</Badge>}
+                      {company.smtp_host ? <Badge className="text-[10px] px-2 py-0 bg-green-50 text-green-700 border-green-200">SMTP fallback set</Badge> : null}
                       {company.logo_base64 && <Badge className="text-[10px] px-2 py-0 bg-blue-50 text-blue-700 border-blue-200">Has Logo</Badge>}
                       {company.tm_logo_base64 && <Badge className="text-[10px] px-2 py-0 bg-violet-50 text-violet-700 border-violet-200">Has TM Logo</Badge>}
                       {(company.bank_name || company.bank_account_no) && <Badge className="text-[10px] px-2 py-0 bg-teal-50 text-teal-700 border-teal-200">Bank Linked</Badge>}

@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import api from '@/lib/api';
+import { fetchOrgEmailStatus } from '@/components/SendFromSelect';
 import { lookupPincode, isInterState } from '@/lib/pincode';
 import { fetchCompanies, normalizeCompanies, recordBelongsToCompany } from "@/lib/companies";
 import { toast } from 'sonner';
@@ -6725,9 +6726,21 @@ const fetchAll = useCallback(async () => {
 
   const handleSendEmail = useCallback(async (inv) => {
     if (!inv.client_email) { toast.error('Client email address is missing'); return; }
-    if (!window.confirm(`Send invoice ${inv.invoice_no} to ${inv.client_email}?`)) return;
-    try { await api.post(`/invoices/${inv.id}/send-email`); toast.success(`Email queued for ${inv.invoice_no}`); fetchAll(); }
-    catch (err) { toast.error(err.response?.data?.detail || 'Failed to queue email'); }
+    // Sent from the organisation mailbox (Settings → Integrations → Email).
+    let fromLine = '';
+    try {
+      const org = await fetchOrgEmailStatus();
+      fromLine = org?.connected
+        ? `\n\nFrom: ${org.default_from_email}`
+        : `\n\nFrom: the platform email service (connect your own email in Settings → Integrations).`;
+    } catch { /* status is informational only */ }
+    if (!window.confirm(`Send invoice ${inv.invoice_no} to ${inv.client_email}?${fromLine}`)) return;
+    try {
+      const res = await api.post(`/invoices/${inv.id}/send-email`);
+      toast.success(res.data?.message || `Email sent for ${inv.invoice_no}`);
+      fetchAll();
+    }
+    catch (err) { toast.error(err.response?.data?.detail || 'Failed to send email'); }
   }, [fetchAll]);
 
   const handleWhatsAppInvoice = useCallback((inv) => {

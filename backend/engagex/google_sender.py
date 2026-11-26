@@ -190,6 +190,9 @@ async def handle_callback(request: Request, *, code: Optional[str], state: str, 
             },
             upsert=True,
         )
+        from .connected_senders import ensure_first_mailbox_is_default
+
+        await ensure_first_mailbox_is_default(company_id)
         return _result(return_url, "connected", email=email)
     except Exception:
         logger.exception("EngageX Google sign-in failed")

@@ -152,6 +152,13 @@ async def platform_sender(company_id: str) -> ResolvedSender:
 
 
 async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedSender:
+    if not sender_id:
+        # No sender chosen: the organisation's default mailbox (Settings →
+        # Integrations → Email), else the platform service.
+        default = await raw_db()[SENDERS].find_one(
+            {"company_id": company_id, "deleted": {"$ne": True}, "is_default": True}, {"_id": 0, "id": 1})
+        if default:
+            sender_id = default["id"]
     if not sender_id or sender_id == PLATFORM_SENDER_ID:
         if (await platform_sender_prefs(company_id)).get("removed"):
             raise HTTPException(

@@ -401,30 +401,7 @@ async def _next_invoice_no(
 # EMAIL SENDER
 # ═══════════════════════════════════════════════════════════
 
-def _send_email(to_email: str, subject: str, html_body: str, pdf_bytes: bytes, filename: str, company_email: str):
-    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_password = os.getenv("SMTP_PASSWORD")
-    from_email = company_email or os.getenv("DEFAULT_FROM_EMAIL", "noreply@yourcompany.com")
-    if not smtp_user or not smtp_password:
-        raise HTTPException(500, "Email service not configured")
-    msg = MIMEMultipart()
-    msg["From"] = from_email
-    msg["To"] = to_email
-    msg["Subject"] = subject
-    msg.attach(MIMEText(html_body, "html"))
-    attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
-    attachment.add_header("Content-Disposition", "attachment", filename=filename)
-    msg.attach(attachment)
-    try:
-        server = smtplib.SMTP(smtp_server, smtp_port)
-        server.starttls()
-        server.login(smtp_user, smtp_password)
-        server.sendmail(from_email, to_email, msg.as_string())
-        server.quit()
-    except Exception as e:
-        raise HTTPException(500, f"Email sending failed: {e}")
+# Invoice emails are sent from the organisation's mailbox: see backend/org_mail.py.
 
 
 # ═══════════════════════════════════════════════════════════
@@ -5847,6 +5824,7 @@ async def convert_proforma_to_invoice(inv_id: str, current_user: User = Depends(
 
 @router.post("/invoices/{inv_id}/send-email")
 async def send_invoice_email(inv_id: str, background_tasks: BackgroundTasks,
+                              sender_id: Optional[str] = None,
                               current_user: User = Depends(check_module_permission("invoicing", "create"))):
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     inv = await db.invoices.find_one({"id": inv_id}, {"_id": 0})
@@ -5864,11 +5842,27 @@ async def send_invoice_email(inv_id: str, background_tasks: BackgroundTasks,
     <p>Please find attached invoice <strong>{inv_no}</strong> for <strong>Rs.{inv.get('grand_total', 0):,.2f}</strong>.</p>
     <p>Due Date: {inv.get('due_date', 'N/A')}</p><br>
     <p>Regards,<br>{company.get('name', 'Your Company')}</p>"""
-    background_tasks.add_task(_send_email, inv["client_email"], subject, html_body,
-                               pdf_bytes, f"Invoice_{inv_no}.pdf", company.get("email", ""))
+    # Sent from the organisation's mailbox (Settings → Integrations → Email).
+    from backend.engagex.common import workspace_company_id
+    from backend.org_mail import attachment, send_org_email
+
+    result = await send_org_email(
+        company_id=workspace_company_id(current_user),
+        to_email=inv["client_email"],
+        subject=subject,
+        html_body=html_body,
+        attachments=[attachment(f"Invoice_{inv_no}.pdf", pdf_bytes, "application/pdf")],
+        sender_id=sender_id,
+        from_name=company.get("name") or None,
+        fallback_reply_to=company.get("email") or None,
+        email_type="invoice",
+    )
     await db.invoices.update_one({"id": inv_id},
-        {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat()}})
-    return {"message": f"Email queued for {inv['client_email']}", "invoice_no": inv_no}
+        {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat(),
+                  "last_emailed_at": datetime.now(timezone.utc).isoformat(),
+                  "last_emailed_from": result["from_email"]}})
+    return {"message": f"Email sent to {inv['client_email']} from {result['from_email']}", "invoice_no": inv_no,
+            "from_email": result["from_email"]}
 
 
 # ═══════════════════════════════════════════════════════════

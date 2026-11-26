@@ -970,16 +970,18 @@ async def send_pending_task_reminders(current_user: User = Depends(get_current_u
             subject, html_body = build_reminder_email(
                 user_name, data["tasks"], user_map=user_map, tpl=tpl
             )
-            sent = await _brevo_send(
-                email,
-                subject,
-                body_plain=f"Hello {user_name},\n\nYou have {len(data['tasks'])} pending tasks. Please log in to Task-O-Sphere to review them.",
-                body_html=html_body,
+            from backend.engagex.common import workspace_company_id
+            from backend.org_mail import send_org_email
+
+            await send_org_email(
+                company_id=workspace_company_id(current_user),
+                to_email=email,
+                subject=subject,
+                html_body=html_body,
+                text_body=f"Hello {user_name},\n\nYou have {len(data['tasks'])} pending tasks. Please log in to review them.",
+                email_type="task_reminder",
             )
-            if sent:
-                success_count += 1
-            else:
-                failed_emails.append(email)
+            success_count += 1
         except Exception as e:
             failed_emails.append(email)
             logger.error(f"Error sending reminder to {email}: {str(e)}")
@@ -1089,6 +1091,7 @@ class ComplianceEmailRequest(BaseModel):
     client_email: str
     subject: Optional[str] = None
     compliance_items: List[dict]  # [{name, category, due_date, status, notes}]
+    sender_id: Optional[str] = None  # one of the organisation's connected mailboxes
 
 
 @api_router.post("/compliance/send-client-email")
@@ -1106,12 +1109,6 @@ async def send_compliance_client_email(
     company = await db.companies.find_one({"id": req.company_id}, {"_id": 0})
     if not company:
         raise HTTPException(404, "Company not found")
-
-    # Check Brevo is configured
-    if not os.getenv("BREVO_API_KEY") or not os.getenv("SENDER_EMAIL"):
-        raise HTTPException(
-            500, "Brevo email not configured (set BREVO_API_KEY and SENDER_EMAIL)"
-        )
 
     tpl_doc = await db.email_templates.find_one(
         {"type": "compliance_reminder"}, {"_id": 0}
@@ -1330,14 +1327,22 @@ async def send_compliance_client_email(
 
     subject = req.subject or f"{tpl['subject_prefix']} — {comp_name}"
 
-    try:
-        await _brevo_send(req.client_email, subject, body_plain=plain, body_html=html)
-    except Exception as e:
-        logger.error(f"Compliance email failed: {e}")
-        raise HTTPException(500, f"Email send failed: {str(e)}")
+    from backend.engagex.common import workspace_company_id
+    from backend.org_mail import send_org_email
 
-    logger.info(f"Compliance email sent to {req.client_email} by {current_user.email}")
-    return {"message": f"Compliance email sent to {req.client_email}"}
+    result = await send_org_email(
+        company_id=workspace_company_id(current_user),
+        to_email=req.client_email,
+        subject=subject,
+        html_body=html,
+        text_body=plain,
+        sender_id=req.sender_id,
+        from_name=comp_name,
+        fallback_reply_to=company.get("email") or None,
+        email_type="compliance_client",
+    )
+    logger.info(f"Compliance email sent to {req.client_email} by {current_user.email} from {result['from_email']}")
+    return {"message": f"Compliance email sent to {req.client_email}", "from_email": result["from_email"]}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1455,6 +1460,7 @@ class BulkClientEmailRequest(BaseModel):
     override_sender_name: Optional[str] = None
     attachment_name: Optional[str] = ""  # optional single attachment for all recipients
     attachment_base64: Optional[str] = ""  # base64 (no data: prefix)
+    sender_id: Optional[str] = None  # one of the organisation's connected mailboxes
 
 
 def _render_body(template: str, variables: dict) -> str:
@@ -1465,7 +1471,7 @@ def _render_body(template: str, variables: dict) -> str:
     return result
 
 
-async def _send_one_smtp(
+def _send_one_smtp(
     smtp_host,
     smtp_port,
     smtp_user,
@@ -1569,7 +1575,17 @@ async def send_bulk_client_emails(
                 }
                 company_name = company_smtp["from_name"]
 
-    use_brevo = (req.send_method == "brevo") or (company_smtp is None)
+    # The organisation mailbox (Settings → Integrations → Email) is used unless
+    # Brevo is explicitly requested; a company profile's own SMTP login is only
+    # a fallback for organisations that have not connected a mailbox yet.
+    from backend.engagex.common import workspace_company_id
+    from backend.org_mail import has_connected_mailbox, send_org_email
+
+    org_company_id = workspace_company_id(current_user)
+    use_org_mailbox = req.send_method != "brevo" and (
+        bool(req.sender_id) or await has_connected_mailbox(org_company_id) or company_smtp is None
+    )
+    use_brevo = req.send_method == "brevo"
 
     if use_brevo:
         brevo_key = os.getenv("BREVO_API_KEY")
@@ -1630,7 +1646,25 @@ async def send_bulk_client_emails(
         )
 
         try:
-            if use_brevo:
+            if use_org_mailbox:
+                await send_org_email(
+                    company_id=org_company_id,
+                    to_email=rec.email,
+                    subject=subject_rendered,
+                    html_body=body_html_r or "<br>".join(
+                        __import__("html").escape(line) for line in body_plain_r.split("\n")
+                    ),
+                    text_body=body_plain_r,
+                    attachments=[
+                        {"name": a["name"], "type": __import__("mimetypes").guess_type(a["name"])[0] or "application/octet-stream",
+                         "content": a["content"]}
+                        for a in (_attachments or [])
+                    ] or None,
+                    sender_id=req.sender_id,
+                    from_name=_override_name or (company_smtp or {}).get("from_name") or req.from_name or None,
+                    email_type="bulk_client",
+                )
+            elif use_brevo:
                 await _brevo_send(
                     rec.email,
                     subject_rendered,
@@ -1639,9 +1673,7 @@ async def send_bulk_client_emails(
                     attachments=_attachments,
                 )
             else:
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(
-                    None,
+                await asyncio.to_thread(
                     lambda: _send_one_smtp(
                         company_smtp["host"],
                         company_smtp["port"],

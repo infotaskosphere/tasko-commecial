@@ -36,6 +36,7 @@ import WhatsAppSendDialog from '@/components/ui/WhatsAppSendDialog';
 import { getWASettings } from '@/hooks/useWhatsApp';
 import { mirrorBankToSettings } from '@/lib/bankSync';
 import { CompanyListModal } from '@/components/CompanyProfiles';
+import SendFromSelect from '@/components/SendFromSelect';
 
 // ─── Brand Colors ─────────────────────────────────────────────────────────────
 const COLORS = {
@@ -239,9 +240,11 @@ function EmailModal({ open, onClose, quotation, company, pdfType = 'quotation' }
   const [subject,  setSubject]  = useState('');
   const [body,     setBody]     = useState('');
   const [sending,  setSending]  = useState(false);
+  const [senderId, setSenderId] = useState('');
 
   useEffect(() => {
     if (!open || !quotation) return;
+    setSenderId('');
     setToEmail(quotation.client_email || '');
     setSubject(`Quotation ${quotation.quotation_no} from ${company?.name || ''}`);
     setBody(
@@ -257,8 +260,8 @@ function EmailModal({ open, onClose, quotation, company, pdfType = 'quotation' }
     if (!toEmail.trim()) { toast.error('Enter recipient email'); return; }
     setSending(true);
     try {
-      await api.post(`/quotations/${quotation.id}/send-email`, { to_email: toEmail, subject, body, pdf_type: pdfType });
-      toast.success(`Email sent to ${toEmail}`); onClose();
+      const res = await api.post(`/quotations/${quotation.id}/send-email`, { to_email: toEmail, subject, body, pdf_type: pdfType, sender_id: senderId || undefined });
+      toast.success(res.data?.message || `Email sent to ${toEmail}`); onClose();
     } catch (err) { toast.error(getErrMsg(err, 'Failed to send email')); }
     finally { setSending(false); }
   };
@@ -272,20 +275,15 @@ function EmailModal({ open, onClose, quotation, company, pdfType = 'quotation' }
           </DialogTitle>
           <DialogDescription>PDF will be generated and attached automatically.</DialogDescription>
         </DialogHeader>
-        {!company?.smtp_host && (
-          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
-            <Settings className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-            <span>SMTP not configured. Add SMTP settings in company profile to enable email.</span>
-          </div>
-        )}
         <div className="space-y-3 py-1">
+          <SendFromSelect value={senderId} onChange={setSenderId} />
           <div className="space-y-1.5"><Label className="text-xs font-semibold">To Email *</Label><Input value={toEmail} onChange={e => setToEmail(e.target.value)} placeholder="client@company.com" className="h-9 rounded-xl text-sm" /></div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold">Subject</Label><Input value={subject} onChange={e => setSubject(e.target.value)} className="h-9 rounded-xl text-sm" /></div>
           <div className="space-y-1.5"><Label className="text-xs font-semibold">Message</Label><Textarea value={body} onChange={e => setBody(e.target.value)} rows={6} className="resize-none rounded-xl text-sm" /></div>
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose} className="rounded-xl">Cancel</Button>
-          <Button onClick={handleSend} disabled={sending || !company?.smtp_host} className="rounded-xl gap-2" style={{ background: COLORS.deepBlue }}>
+          <Button onClick={handleSend} disabled={sending} className="rounded-xl gap-2" style={{ background: COLORS.deepBlue }}>
             {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><Send className="h-4 w-4" />Send Email</>}
           </Button>
         </DialogFooter>

@@ -680,6 +680,10 @@ from backend.company_drive import router as company_drive_router, create_company
 app.include_router(company_drive_router, prefix="/api")
 app.on_event("startup")(create_company_drive_indexes)
 
+# Organisation mailbox ("Settings → Integrations → Email"), used by every module.
+from backend.org_mail import router as org_mail_router
+app.include_router(org_mail_router, prefix="/api")
+
 # Register the application startup (indexes, bootstrap, APScheduler jobs) on
 # the app itself. It used to be attached only by backend/run.py, so a service
 # started with ``uvicorn backend.server:app`` (the current Render setting)
