@@ -39,6 +39,21 @@ def _tenant_targets():
                 targets.append((customer_id, company_id, tenant_database))
         return targets
 
+    # APScheduler calls this from a worker thread, but the Motor client is
+    # bound to the main Uvicorn event loop: ``asyncio.run(load())`` on a new
+    # loop failed every time with "Future attached to a different loop", so no
+    # per-licensee job (auto-absent, punch-out, WhatsApp bulk, automations)
+    # ever ran. Run the lookup on the main loop, like the jobs themselves do.
+    from backend import server as _server
+
+    main_loop = getattr(_server, "app_event_loop", None)
+    if main_loop is not None and not main_loop.is_closed() and main_loop.is_running():
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is not main_loop:
+            return asyncio.run_coroutine_threadsafe(load(), main_loop).result(timeout=60)
     return asyncio.run(load())
 
 
