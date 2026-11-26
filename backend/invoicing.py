@@ -46,6 +46,7 @@ from googleapiclient.http import MediaIoBaseUpload
 from backend.google_drive_service import (
     _get_drive_service,
     _drive_configured,
+    get_drive_service_for_area,
     DRIVE_SCOPES,
 )
 
@@ -146,7 +147,7 @@ async def _upload_to_drive(
     """Upload bytes to Drive using OAuth"""
 
     try:
-        service = _get_drive_service()
+        service = get_drive_service_for_area("billing")
 
         parent_id = custom_parent_id if custom_parent_id else DRIVE_FOLDERS.get(folder_key)
 
@@ -191,7 +192,7 @@ def _get_or_create_client_folder(
         return DRIVE_FOLDERS["invoices"]
 
     try:
-        service = _get_drive_service()
+        service = get_drive_service_for_area("billing")
 
         cn = client_name.strip()
 
@@ -4935,7 +4936,7 @@ async def check_drive_status(current_user: User = Depends(check_module_permissio
     accessible = False
     if configured:
         try:
-            service = _get_drive_service()
+            service = get_drive_service_for_area("billing")
             service.files().list(pageSize=1).execute()
             accessible = True
         except Exception:
@@ -5856,6 +5857,7 @@ async def send_invoice_email(inv_id: str, background_tasks: BackgroundTasks,
         from_name=company.get("name") or None,
         fallback_reply_to=company.get("email") or None,
         email_type="invoice",
+        acting_user_id=str(current_user.id),
     )
     await db.invoices.update_one({"id": inv_id},
         {"$set": {"status": "sent", "updated_at": datetime.now(timezone.utc).isoformat(),

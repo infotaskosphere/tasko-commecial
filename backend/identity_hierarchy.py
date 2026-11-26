@@ -85,8 +85,19 @@ def is_commercial_identity_record(user: Any) -> bool:
 
 
 async def ensure_identity_indexes(db) -> None:
+    # One email may link to several organisations (shared login emails), so
+    # the link is unique per (email, organisation), not per email.
+    try:
+        info = await db.identity_email_links.index_information()
+        for name, spec in (info or {}).items():
+            keys = [k for k, _ in spec.get("key", [])]
+            if keys == ["email_normalized"] and spec.get("unique"):
+                await db.identity_email_links.drop_index(name)
+    except Exception:
+        pass
+    await db.identity_email_links.create_index("email_normalized", background=True)
     await db.identity_email_links.create_index(
-        "email_normalized", unique=True, sparse=True, background=True
+        [("email_normalized", 1), ("identity_uid", 1)], unique=True, background=True
     )
     await db.commercial_license_customers.create_index(
         "licensee_uid", unique=True, sparse=True, background=True
@@ -102,16 +113,18 @@ async def ensure_identity_indexes(db) -> None:
     )
     await db.users.create_index("identity_org_uid", background=True)
     await db.users.create_index("email_normalized", background=True)
+    # Several users of one organisation may share a login email, so this
+    # lookup index is no longer unique.
     try:
-        await db.users.create_index(
-            [("identity_org_uid", 1), ("email_normalized", 1)],
-            unique=True,
-            partialFilterExpression={
-                "identity_org_uid": {"$type": "string"},
-                "email_normalized": {"$type": "string"},
-            },
-            background=True,
-        )
+        info = await db.users.index_information()
+        for name, spec in (info or {}).items():
+            keys = [k for k, _ in spec.get("key", [])]
+            if keys == ["identity_org_uid", "email_normalized"] and spec.get("unique"):
+                await db.users.drop_index(name)
+    except Exception:
+        pass
+    try:
+        await db.users.create_index([("identity_org_uid", 1), ("email_normalized", 1)], background=True)
     except Exception:
         pass
 
@@ -191,27 +204,24 @@ async def ensure_identity_email_link(
     if not _UID_RE.match(uid):
         raise HTTPException(status_code=400, detail="A valid organization identity is required.")
 
+    # Several organisations may share one email (see backend/login_accounts.py);
+    # only Platform Owner emails stay exclusive to the Platform Owner identity.
+    if not uid.startswith("PO-"):
+        from backend.login_accounts import is_reserved_owner_email
+
+        if is_reserved_owner_email(normalized):
+            raise HTTPException(
+                status_code=409,
+                detail="This email is reserved for the Platform Owner and cannot be used by another organisation.",
+            )
     existing = await db[IDENTITY_EMAIL_LINK_COLLECTION].find_one(
-        {"email_normalized": normalized},
+        {"email_normalized": normalized, "identity_uid": uid},
         {"_id": 0},
     )
     if existing:
-        existing_uid = _clean(existing.get("identity_uid")).upper()
-        if existing_uid and existing_uid != uid:
-            released = await release_stale_licensee_email_link(db, email, existing)
-            if not released:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "This email is already linked to another organization identity "
-                        f"({existing_uid}). One email cannot be linked to two unique IDs."
-                    ),
-                )
-            existing = None
-
         if existing:
             await db[IDENTITY_EMAIL_LINK_COLLECTION].update_one(
-                {"email_normalized": normalized},
+                {"email_normalized": normalized, "identity_uid": uid},
                 {
                     "$set": {
                         "email": _clean(email),
@@ -223,8 +233,9 @@ async def ensure_identity_email_link(
             )
             return uid
 
+    first_link = not await db[IDENTITY_EMAIL_LINK_COLLECTION].find_one({"_id": normalized}, {"_id": 1})
     payload = {
-        "_id": normalized,
+        "_id": normalized if first_link else f"{normalized}|{uid}",
         "email": _clean(email),
         "email_normalized": normalized,
         "identity_uid": uid,
@@ -238,7 +249,7 @@ async def ensure_identity_email_link(
         # Race-safe re-read: if another request won the unique-email insert,
         # validate that it points to the same UID rather than silently changing it.
         existing = await db[IDENTITY_EMAIL_LINK_COLLECTION].find_one(
-            {"email_normalized": normalized},
+            {"email_normalized": normalized, "identity_uid": uid},
             {"_id": 0},
         )
         existing_uid = _clean((existing or {}).get("identity_uid")).upper()

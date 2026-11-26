@@ -983,14 +983,9 @@ async def offboard_user(
     # 9. Optionally update the replacement user's email
     if body.update_email and body.update_email.strip():
         new_email = body.update_email.strip().lower()
-        email_exists = await db.users.find_one(
-            {"email": new_email, "id": {"$ne": body.replacement_user_id}},
-            {"_id": 0, "id": 1},
-        )
-        if email_exists:
-            raise HTTPException(
-                status_code=400, detail=f"Email {new_email} is already in use"
-            )
+        from backend.login_accounts import assert_login_email_allowed
+
+        assert_login_email_allowed(new_email)
         await db.users.update_one(
             {"id": body.replacement_user_id}, {"$set": {"email": new_email}}
         )

@@ -16,7 +16,12 @@
  *   POST BACKEND_URL/auth/google/disconnect
  *   POST BACKEND_URL/api/integrations/google-drive/connect (Google sign-in URL)
  *
- * Each organisation connects its OWN Google Drive.
+ * Each organisation connects its OWN Google Drive — one or several. Every
+ * user can also connect personal Drives (only they can browse them).
+ *   POST /api/integrations/google-drive/connect   {personal?}
+ *   POST /api/integrations/google-drive/disconnect {connection_id}
+ *   POST /api/integrations/google-drive/{id}/default
+ *   PUT  /api/integrations/google-drive/routes     {billing, clients, backups}
  *   GET  BACKEND_URL/auth/google/files    (list files in Drive)
  *   POST BACKEND_URL/auth/google/share    (create/get shareable link)
  */
@@ -210,7 +215,7 @@ function fmtDate(d) {
 // SHARE FILE MODAL
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ShareFileModal({ file, onClose, isDark }) {
+function ShareFileModal({ file, onClose, isDark, connectionId }) {
   const [loading, setLoading] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [copied, setCopied] = useState(false);
@@ -223,7 +228,7 @@ function ShareFileModal({ file, onClose, isDark }) {
     try {
       const data = await authFetch('/auth/google/share', {
         method: 'POST',
-        body: JSON.stringify({ file_id: file.id }),
+        body: JSON.stringify({ file_id: file.id, connection_id: connectionId || undefined }),
       });
       setShareUrl(data.share_url || data.web_view_link || data.web_content_link || '');
     } catch (err) {
@@ -233,7 +238,7 @@ function ShareFileModal({ file, onClose, isDark }) {
     } finally {
       setLoading(false);
     }
-  }, [file.id]);
+  }, [file.id, connectionId]);
 
   useEffect(() => {
     generateLink();
@@ -429,7 +434,6 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
   const [statusLoading, setStatusLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [driveInfo, setDriveInfo] = useState({});
-  const [disconnecting, setDisconnecting] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const [files, setFiles] = useState([]);
@@ -438,6 +442,8 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
   const [search, setSearch] = useState('');
   const [showFiles, setShowFiles] = useState(false);
   const [shareFile, setShareFile] = useState(null);
+  const [browseId, setBrowseId] = useState('');
+  const [busyId, setBusyId] = useState('');
 
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -458,7 +464,7 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
     const params = new URLSearchParams(window.location.search);
     const result = params.get('drive');
     if (result) {
-      if (result === 'connected') toast.success('Google Drive connected', { description: 'A OneNexa folder was created in your Drive.' });
+      if (result === 'connected') toast.success('Google Drive connected');
       else if (result === 'denied') toast.warning('Google Drive access was not allowed.');
       else toast.error('Google Drive could not be connected', { description: params.get('reason') || undefined });
       params.delete('drive');
@@ -469,12 +475,12 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
     fetchStatus();
   }, [fetchStatus]);
 
-  const handleConnect = async () => {
-    setConnecting(true);
+  const handleConnect = async (personal = false) => {
+    setConnecting(personal ? 'me' : 'org');
     try {
       const { auth_url: authUrl } = await authFetch('/api/integrations/google-drive/connect', {
         method: 'POST',
-        body: JSON.stringify({ return_url: window.location.href }),
+        body: JSON.stringify({ return_url: window.location.href, personal }),
       });
       window.location.href = authUrl;
     } catch (err) {
@@ -484,26 +490,53 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
   };
   const canManage = driveInfo.can_manage ?? true;
 
-  const handleDisconnect = async () => {
-    setDisconnecting(true);
+  const orgDrives = driveInfo.organisation_drives || [];
+  const myDrives = driveInfo.my_drives || [];
+  const areas = driveInfo.areas || {};
+  const routes = driveInfo.routes || {};
+
+  const handleDisconnect = async (drive) => {
+    if (!window.confirm(`Disconnect ${drive.google_email}?`)) return;
+    setBusyId(drive.id);
     try {
-      await authFetch('/auth/google/disconnect', { method: 'POST' });
-      setConnected(false);
-      setShowFiles(false);
-      setFiles([]);
-      toast.success('Google Drive disconnected');
+      await authFetch('/api/integrations/google-drive/disconnect', { method: 'POST', body: JSON.stringify({ connection_id: drive.id }) });
+      if (browseId === drive.id) { setShowFiles(false); setFiles([]); }
+      toast.success(`${drive.google_email} disconnected`);
+      await fetchStatus();
     } catch (err) {
       toast.error(`Disconnect failed: ${err.message}`);
     } finally {
-      setDisconnecting(false);
+      setBusyId('');
     }
   };
 
-  const loadFiles = useCallback(async () => {
+  const makeDefault = async (drive) => {
+    setBusyId(drive.id);
+    try {
+      await authFetch(`/api/integrations/google-drive/${drive.id}/default`, { method: 'POST' });
+      toast.success(`${drive.google_email} is now the default Drive`);
+      await fetchStatus();
+    } catch (err) {
+      toast.error(err.message || 'Could not change the default');
+    } finally { setBusyId(''); }
+  };
+
+  const saveRoute = async (area, value) => {
+    try {
+      await authFetch('/api/integrations/google-drive/routes', { method: 'PUT', body: JSON.stringify({ [area]: value || null }) });
+      setDriveInfo((d) => ({ ...d, routes: { ...(d.routes || {}), [area]: value || null } }));
+      toast.success(`${areas[area] || area} will be saved to ${value ? (orgDrives.find((d) => d.id === value)?.google_email || 'that Drive') : 'the default Drive'}`);
+    } catch (err) {
+      toast.error(err.message || 'Could not save');
+    }
+  };
+
+  const loadFiles = useCallback(async (connectionId = browseId) => {
     setFilesLoading(true);
     setFilesError('');
     try {
-      const data = await authFetch('/auth/google/files');
+      const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : '';
+      const data = await authFetch(`/auth/google/files${qs}`);
       setFiles(Array.isArray(data.files) ? data.files : []);
     } catch (err) {
       setFilesError(err.message || 'Failed to load files');
@@ -511,11 +544,14 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
     } finally {
       setFilesLoading(false);
     }
-  }, []);
+  }, [browseId]);
 
-  const toggleFiles = () => {
-    if (!showFiles) loadFiles();
-    setShowFiles(v => !v);
+  const browse = (drive) => {
+    if (showFiles && browseId === drive.id) { setShowFiles(false); return; }
+    setBrowseId(drive.id);
+    setSearch('');
+    setShowFiles(true);
+    loadFiles(drive.id);
   };
 
   const filteredFiles = files.filter(f =>
@@ -591,78 +627,93 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
                   ))}
                 </div>
 
-                {/* Status banner */}
-                {connected && (
-                  <div className={`flex items-center gap-2.5 p-3 rounded-xl border ${D ? 'border-emerald-800/40 bg-emerald-900/20' : 'border-emerald-200 bg-emerald-50'}`}>
-                    <CheckCircle2 size={16} className="text-emerald-500 flex-shrink-0" />
-                    <div>
-                      <p className={`text-xs font-semibold ${D ? 'text-emerald-400' : 'text-emerald-700'}`}>Drive is active and ready</p>
-                      <p className={`text-[11px] ${D ? 'text-emerald-500/80' : 'text-emerald-600/80'}`}>
-                        {driveInfo.google_email ? `Connected as ${driveInfo.google_email}. ` : ''}
-                        Invoices and client documents are saved in your organisation's own Drive.
-                        {driveInfo.folder_url && (
-                          <>
-                            {' '}
-                            <a href={driveInfo.folder_url} target="_blank" rel="noopener noreferrer" className="underline font-semibold">Open OneNexa folder</a>
-                          </>
-                        )}
-                      </p>
+                {/* Connected Drives */}
+                {driveInfo.source === 'platform' && orgDrives.length === 0 && (
+                  <p className={`text-xs ${muted}`}>Using the platform's server Drive. Connect your own Drive below to switch to it.</p>
+                )}
+                {[
+                  { title: 'Organisation Drives', hint: 'Company records (invoices, client documents, backups) are saved here.', list: orgDrives, personal: false },
+                  { title: 'My Drives', hint: 'Only you can see and browse these. They are never used for automatic company records.', list: myDrives, personal: true },
+                ].map(({ title, hint, list, personal }) => (
+                  <div key={title} className={`rounded-xl border ${D ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-bold ${text}`}>{title}</p>
+                        <p className={`text-[11px] ${muted}`}>{hint}</p>
+                      </div>
+                      {(personal || canManage) ? (
+                        <Button
+                          onClick={() => handleConnect(personal)}
+                          disabled={statusLoading || !!connecting}
+                          className="h-8 px-3 rounded-lg text-xs font-semibold text-white gap-1.5"
+                          style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}
+                        >
+                          {connecting === (personal ? 'me' : 'org') ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+                          {personal ? 'Connect my Drive' : list.length ? 'Connect another Drive' : 'Connect Google Drive'}
+                        </Button>
+                      ) : (
+                        <p className={`text-[11px] ${muted}`}>Ask an administrator to connect one.</p>
+                      )}
                     </div>
+                    {list.map((drive) => (
+                      <div key={drive.id} className={`flex flex-wrap items-center gap-2 px-3 py-2.5 border-t ${D ? 'border-slate-700' : 'border-slate-100'}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-xs font-semibold truncate ${text}`}>
+                            {drive.google_email}
+                            {drive.is_default && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Default</span>}
+                            {drive.personal && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700">Only you</span>}
+                          </p>
+                          {drive.label && drive.label !== drive.google_email && <p className={`text-[11px] ${muted}`}>{drive.label}</p>}
+                        </div>
+                        <a href={drive.folder_url} target="_blank" rel="noopener noreferrer" className={`text-[11px] font-semibold flex items-center gap-1 ${D ? 'text-blue-400' : 'text-blue-600'}`}>Open <ExternalLink size={10} /></a>
+                        <Button onClick={() => browse(drive)} variant="outline" className={`h-8 px-3 rounded-lg text-xs gap-1.5 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                          <FolderOpen size={13} />{showFiles && browseId === drive.id ? 'Hide files' : 'Browse'}
+                        </Button>
+                        {!personal && canManage && !drive.is_default && (
+                          <Button onClick={() => makeDefault(drive)} disabled={!!busyId} variant="outline" className={`h-8 px-3 rounded-lg text-xs gap-1.5 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
+                            {busyId === drive.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}Make default
+                          </Button>
+                        )}
+                        {(personal || canManage) && (
+                          <Button onClick={() => handleDisconnect(drive)} disabled={!!busyId} variant="outline" className={`h-8 px-3 rounded-lg text-xs gap-1.5 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`} aria-label={`Disconnect ${drive.google_email}`}>
+                            {busyId === drive.id ? <Loader2 size={13} className="animate-spin" /> : <Unplug size={13} />}
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+
+                {/* Save to — which organisation Drive each kind of record goes to */}
+                {canManage && orgDrives.length > 1 && (
+                  <div className={`rounded-xl border p-3 space-y-2 ${D ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <p className={`text-xs font-bold ${text}`}>Save to</p>
+                    {Object.entries(areas).map(([area, label]) => (
+                      <div key={area} className="flex items-center gap-2">
+                        <span className={`text-xs w-40 flex-shrink-0 ${muted}`}>{label}</span>
+                        <select
+                          value={routes[area] || ''}
+                          onChange={(e) => saveRoute(area, e.target.value)}
+                          className={`h-8 flex-1 rounded-lg border px-2 text-xs ${D ? 'bg-slate-800 border-slate-600 text-slate-200' : 'bg-white border-slate-200'}`}
+                          aria-label={`Save ${label} to`}
+                        >
+                          <option value="">Default Drive</option>
+                          {orgDrives.map((d) => <option key={d.id} value={d.id}>{d.google_email}</option>)}
+                        </select>
+                      </div>
+                    ))}
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {!connected && !canManage ? (
-                    <p className={`text-xs ${muted}`}>Ask an administrator to connect your organisation's Google Drive.</p>
-                  ) : !connected ? (
-                    <Button
-                      onClick={handleConnect}
-                      disabled={statusLoading || connecting}
-                      className="h-9 px-5 rounded-xl text-sm font-semibold text-white gap-2 shadow-sm"
-                      style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}
-                    >
-                      {connecting ? <Loader2 size={16} className="animate-spin" /> : <GoogleDriveIcon size={16} />}
-                      Connect Google Drive
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        onClick={toggleFiles}
-                        variant="outline"
-                        className={`h-9 px-4 rounded-xl text-sm gap-2 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
-                      >
-                        <FolderOpen size={14} />
-                        {showFiles ? 'Hide Files' : 'Browse Files'}
-                        {showFiles ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                      </Button>
-                      <Button
-                        onClick={handleDisconnect}
-                        disabled={disconnecting}
-                        variant="outline"
-                        className={`h-9 px-4 rounded-xl text-sm gap-2 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        {disconnecting ? <Loader2 size={14} className="animate-spin" /> : <Unplug size={14} />}
-                        Disconnect
-                      </Button>
-                      <Button
-                        onClick={handleConnect}
-                        variant="outline"
-                        className={`h-9 px-4 rounded-xl text-sm gap-2 ${D ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                      >
-                        <RefreshCw size={14} />
-                        Reconnect
-                      </Button>
-                      <button
-                        onClick={fetchStatus}
-                        disabled={statusLoading}
-                        className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-colors ${D ? 'border-slate-600 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                        title="Refresh status"
-                      >
-                        <RefreshCw size={14} className={statusLoading ? 'animate-spin' : ''} />
-                      </button>
-                    </>
-                  )}
+                <div className="flex justify-end">
+                  <button
+                    onClick={fetchStatus}
+                    disabled={statusLoading}
+                    className={`h-8 px-2 rounded-lg text-[11px] flex items-center gap-1 ${muted}`}
+                    title="Refresh status"
+                  >
+                    <RefreshCw size={12} className={statusLoading ? 'animate-spin' : ''} />Refresh
+                  </button>
                 </div>
 
                 {/* File browser */}
@@ -687,7 +738,7 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
                             className={`flex-1 bg-transparent text-xs outline-none ${D ? 'text-slate-200 placeholder-slate-500' : 'text-slate-700 placeholder-slate-400'}`}
                           />
                           {search && <button onClick={() => setSearch('')}><X size={12} className={muted} /></button>}
-                          <button onClick={loadFiles} title="Refresh files">
+                          <button onClick={() => loadFiles()} title="Refresh files">
                             <RefreshCw size={12} className={`${filesLoading ? 'animate-spin' : ''} ${muted}`} />
                           </button>
                         </div>
@@ -703,7 +754,7 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
                             <div className="flex flex-col items-center justify-center py-8 gap-2">
                               <AlertCircle size={20} className="text-red-400" />
                               <p className={`text-xs ${muted} text-center max-w-[200px]`}>{filesError}</p>
-                              <button onClick={loadFiles} className="text-xs text-blue-500 hover:underline">Retry</button>
+                              <button onClick={() => loadFiles()} className="text-xs text-blue-500 hover:underline">Retry</button>
                             </div>
                           ) : filteredFiles.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-8 gap-2">
@@ -738,10 +789,6 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
                   )}
                 </AnimatePresence>
 
-                {/* Footer note */}
-                <p className={`text-[10px] border-t pt-3 ${D ? 'border-slate-700 text-slate-500' : 'border-slate-100 text-slate-400'}`}>
-                  After connecting, also set <strong>GOOGLE_REFRESH_TOKEN</strong> in your Render environment variables for persistence across server restarts.
-                </p>
               </div>
             </motion.div>
           )}
@@ -753,6 +800,7 @@ function GoogleDrivePanel({ isDark, expanded, onToggle }) {
         <ShareFileModal
           file={shareFile}
           isDark={isDark}
+          connectionId={browseId}
           onClose={() => setShareFile(null)}
         />
       )}

@@ -16,7 +16,8 @@ async def ensure_first_mailbox_is_default(company_id: str) -> None:
     (or several mailboxes exist) nothing is changed.
     """
     senders = raw_db()[SENDERS]
-    live = {"company_id": company_id, "deleted": {"$ne": True}}
+    # Personal mailboxes (owner_user_id set) are never the organisation default.
+    live = {"company_id": company_id, "deleted": {"$ne": True}, "owner_user_id": None}
     if await senders.count_documents(live) != 1:
         return
     if await senders.find_one({**live, "is_default": True}, {"_id": 1}):
@@ -25,13 +26,16 @@ async def ensure_first_mailbox_is_default(company_id: str) -> None:
 
 
 async def save_oauth_sender(*, company_id: str, user_id: Optional[str], kind: str, email: str,
-                            refresh_token: str, scopes: list[str]) -> None:
+                            refresh_token: str, scopes: list[str], owner_user_id: Optional[str] = None) -> None:
+    """``owner_user_id`` set → a personal mailbox usable only by that user."""
     profile = await company_profile(company_id)
     now = iso()
     await raw_db()[SENDERS].update_one(
-        {"company_id": company_id, "kind": kind, "from_email": email},
+        {"company_id": company_id, "kind": kind, "from_email": email, "owner_user_id": owner_user_id},
         {
             "$set": {
+                "owner_user_id": owner_user_id,
+                "visibility": "personal" if owner_user_id else "organisation",
                 "kind": kind,
                 "label": f"{KIND_LABEL.get(kind, kind.title())} · {email}",
                 "from_email": email,
@@ -66,13 +70,19 @@ async def store_rotated_refresh_token(company_id: str, sender_id: str, refresh_t
 
 
 async def save_smtp_sender(*, company_id: str, user_id: str, email: str, password: str, cfg: dict[str, Any],
-                           from_name: Optional[str], label: Optional[str]) -> dict:
-    """Upsert an auto-connected SMTP mailbox (re-adding the same address refreshes it)."""
+                           from_name: Optional[str], label: Optional[str], owner_user_id: Optional[str] = None) -> dict:
+    """Upsert an auto-connected SMTP mailbox (re-adding the same address refreshes it).
+
+    ``owner_user_id`` set → a personal mailbox usable only by that user.
+    """
     profile = await company_profile(company_id)
     now = iso()
     existing = await raw_db()[SENDERS].find_one(
-        {"company_id": company_id, "kind": {"$in": ["smtp", None]}, "from_email": email, "deleted": {"$ne": True}}, {"_id": 0})
+        {"company_id": company_id, "kind": {"$in": ["smtp", None]}, "from_email": email, "deleted": {"$ne": True},
+         "owner_user_id": owner_user_id}, {"_id": 0})
     fields = {
+        "owner_user_id": owner_user_id,
+        "visibility": "personal" if owner_user_id else "organisation",
         "kind": "smtp",
         "label": label or existing and existing.get("label") or f"{cfg.get('provider_label') or 'Email'} · {email}",
         "from_email": email,

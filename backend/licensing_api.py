@@ -308,20 +308,11 @@ async def create_license_record(input_data: Dict[str, Any], created_by: str) -> 
                     detail="This email belongs to an existing commercial customer. Delete that customer or update its contact email before reusing it.",
                 )
 
-            existing_link = await db.identity_email_links.find_one(
-                {"email_normalized": normalized_email},
-                {"_id": 0},
-            )
-            if existing_link:
-                released = await release_stale_licensee_email_link(db, normalized_email, existing_link)
-                if not released:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "This email is still linked to an active organization identity. "
-                            "Delete the user/company or change its contact email before reusing it."
-                        ),
-                    )
+            # One email may be linked to several organisations; only reserved
+            # Platform Owner emails are refused.
+            from backend.login_accounts import assert_login_email_allowed
+
+            assert_login_email_allowed(normalized_email)
         await db.commercial_license_customers.insert_one(dict(customer))
 
     # New licensees receive a dedicated database at issuance. Existing legacy

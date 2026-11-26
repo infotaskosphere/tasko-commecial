@@ -2,7 +2,7 @@
  * SendFromSelect — "Send from" picker used by every screen that emails clients.
  *
  * Lists the organisation's connected mailboxes (Settings → Integrations →
- * Email). The organisation default is pre-selected; with no mailbox
+ * Email) and the signed-in user's own mailboxes. The organisation default is pre-selected; with no mailbox
  * connected, mail goes out through the platform email service under the
  * organisation's name, and a link to connect one is shown.
  *
@@ -64,10 +64,17 @@ export default function SendFromSelect({ value, onChange, className = '', compac
           className="h-9 flex-1 rounded-xl border border-slate-200 bg-white px-3 text-sm dark:bg-slate-800 dark:border-slate-700"
           aria-label="Send from"
         >
-          <option value="">{`${status.default_from_email} (organisation default)`}</option>
-          {mailboxes.filter((m) => !m.is_default).map((m) => (
+          <option value="">{status.default_from_email ? `${status.default_from_email} (organisation default)` : "Platform email service (organisation's name)"}</option>
+          {mailboxes.filter((m) => !m.is_default && !m.personal).map((m) => (
             <option key={m.id} value={m.id}>{m.from_email}</option>
           ))}
+          {mailboxes.some((m) => m.personal) && (
+            <optgroup label="My mailboxes">
+              {mailboxes.filter((m) => m.personal).map((m) => (
+                <option key={m.id} value={m.id}>{`${m.from_email} (only you)`}</option>
+              ))}
+            </optgroup>
+          )}
         </select>
         <Link to={ORG_EMAIL_SETTINGS_PATH} className="text-[11px] font-semibold text-blue-600 hover:underline whitespace-nowrap">Manage</Link>
       </div>

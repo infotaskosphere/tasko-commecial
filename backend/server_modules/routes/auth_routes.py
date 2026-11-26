@@ -607,15 +607,11 @@ async def register(
         )
 
     normalized_email = str(user_data.email or "").strip().lower()
-    existing = await db.users.find_one(
-        {
-            "status": {"$ne": "deleted"},
-            "$or": [{"email": normalized_email}, {"email_normalized": normalized_email}],
-        },
-        {"_id": 0},
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    # Several accounts may share one login email; only reserved Platform
+    # Owner emails are refused (backend/login_accounts.py).
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(normalized_email)
 
     hashed_password = get_password_hash(user_data.password)
 
@@ -713,15 +709,11 @@ async def self_register(user_data: UserCreate, request: Request):
     await _enforce_auth_rate_limit(request, user_data.email, limit_per_minute=5)
 
     normalized_email = str(user_data.email or "").strip().lower()
-    existing = await db.users.find_one(
-        {
-            "status": {"$ne": "deleted"},
-            "$or": [{"email": normalized_email}, {"email_normalized": normalized_email}],
-        },
-        {"_id": 0},
-    )
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    # Several accounts may share one login email; only reserved Platform
+    # Owner emails are refused (backend/login_accounts.py).
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(normalized_email)
 
     hashed_password = get_password_hash(user_data.password)
     default_permissions = DEFAULT_ROLE_PERMISSIONS.get("staff", {})
@@ -774,8 +766,15 @@ async def self_register(user_data: UserCreate, request: Request):
     }
 
 
-@api_router.post("/auth/login", response_model=Token)
+@api_router.post("/auth/login")
 async def login(credentials: UserLogin, request: Request):
+    """Sign in. One email may belong to several accounts (any organisation) and
+    an account may have extra sign-in emails; see backend/login_accounts.py.
+
+    One matching account signs in directly. Several matching accounts return
+    ``{"requires_account_choice": true, "choice_token", "accounts": [...]}``;
+    the client then calls POST /auth/login/choose.
+    """
     normalized_email = str(credentials.email or "").strip().lower()
     await _enforce_auth_rate_limit(request, normalized_email, limit_per_minute=10)
     client_ip = request.client.host if request and request.client else "unknown"
@@ -789,12 +788,118 @@ async def login(credentials: UserLogin, request: Request):
     except Exception:
         logger.exception("SaaS bootstrap password synchronization failed.")
 
-    from backend.identity_hierarchy import resolve_user_for_login, enrich_user_identity
-    user = await resolve_user_for_login(db, normalized_email)
+    from backend import login_accounts
+
+    accounts = await login_accounts.find_login_accounts(db, normalized_email)
+    matching = [a for a in accounts if login_accounts.password_matches(a, credentials.password)]
+    if len(matching) > 1:
+        return await login_accounts.issue_choice(
+            db, matching, email=normalized_email, client_ip=client_ip,
+            user_agent=request.headers.get("user-agent", ""),
+        )
+    user = matching[0] if matching else (accounts[0] if accounts else None)
+    return await _sign_in_account(user, credentials.password, request, normalized_email,
+                                  password_verified=bool(matching))
+
+
+class _ChooseAccountIn(BaseModel):
+    choice_token: str
+    user_id: str
+
+
+@api_router.post("/auth/login/choose")
+async def login_choose_account(body: _ChooseAccountIn, request: Request):
+    """Finish a sign-in after picking one of the accounts behind an email."""
+    from backend import login_accounts
+
+    await _enforce_auth_rate_limit(request, f"choose:{body.user_id}", limit_per_minute=20)
+    client_ip = request.client.host if request and request.client else "unknown"
+    user = await login_accounts.consume_choice(
+        db, body.choice_token, body.user_id,
+        client_ip=client_ip, user_agent=request.headers.get("user-agent", ""),
+    )
+    return await _sign_in_account(user, "", request, str(user.get("email") or "").strip().lower(),
+                                  password_verified=True)
+
+
+class _SwitchAccountIn(BaseModel):
+    password: str
+
+
+@api_router.post("/auth/switch-account/options")
+async def switch_account_options(body: _SwitchAccountIn, request: Request,
+                                 current_user: User = Depends(get_current_user)):
+    """List the caller's other accounts (same sign-in emails, same password)."""
+    from backend import login_accounts
+
+    await _enforce_auth_rate_limit(request, f"switch:{current_user.id}", limit_per_minute=10)
+    me = await db.users.find_one({"id": current_user.id}) or {}
+    if not login_accounts.password_matches(me, body.password):
+        raise HTTPException(status_code=401, detail="Password is not correct.")
+    found: dict = {}
+    for email in await login_accounts.emails_of(me):
+        for account in await login_accounts.find_login_accounts(db, email):
+            found.setdefault(str(account.get("id")), account)
+    matching = [a for a in found.values() if login_accounts.password_matches(a, body.password)]
+    client_ip = request.client.host if request and request.client else "unknown"
+    return await login_accounts.issue_choice(
+        db, matching, email=str(me.get("email") or ""), client_ip=client_ip,
+        user_agent=request.headers.get("user-agent", ""),
+    )
+
+
+class _LoginEmailIn(BaseModel):
+    email: str
+    code: Optional[str] = None
+
+
+@api_router.get("/auth/sign-in-emails")
+async def list_sign_in_emails(current_user: User = Depends(get_current_user)):
+    from backend import login_accounts
+
+    me = await db.users.find_one({"id": current_user.id}) or {}
+    emails = await login_accounts.emails_of(me)
+    return {"primary": emails[0] if emails else None, "emails": emails}
+
+
+@api_router.post("/auth/sign-in-emails")
+async def add_sign_in_email(body: _LoginEmailIn, request: Request,
+                            current_user: User = Depends(get_current_user)):
+    """Step 1: email a code to the new address. Step 2 (with ``code``): add it."""
+    from backend import login_accounts
+
+    me = await db.users.find_one({"id": current_user.id}) or {}
+    if body.code:
+        await _enforce_auth_rate_limit(request, f"alias:{current_user.id}", limit_per_minute=10)
+        emails = await login_accounts.confirm_add_login_email(db, me, body.email, body.code)
+        return {"added": True, "emails": emails}
+    await _enforce_auth_rate_limit(request, f"alias-send:{current_user.id}", limit_per_minute=3)
+    return await login_accounts.start_add_login_email(db, me, body.email)
+
+
+@api_router.delete("/auth/sign-in-emails/{email}")
+async def remove_sign_in_email(email: str, current_user: User = Depends(get_current_user)):
+    from backend import login_accounts
+
+    me = await db.users.find_one({"id": current_user.id}) or {}
+    return {"emails": await login_accounts.remove_login_email(db, me, email)}
+
+
+async def _sign_in_account(user, password: str, request: Request, normalized_email: str,
+                           *, password_verified: bool = False):
+    """Sign in as one specific account (password already checked when
+    ``password_verified``). This is the original login body."""
+    client_ip = request.client.host if request and request.client else "unknown"
+
+    from backend.identity_hierarchy import enrich_user_identity
+
+    from types import SimpleNamespace
+
+    credentials = SimpleNamespace(password=password)  # the original body reads credentials.password
 
     # ── Commercial SaaS account path ────────────────────────────────────────
     if user and user.get("password_hash") and user.get("password_salt"):
-        if not _verify_saas_password(credentials.password, user):
+        if not password_verified and not _verify_saas_password(credentials.password, user):
             try:
                 await AuditSecurity.log_security_event(
                     event_type="login_failed",
@@ -844,9 +949,9 @@ async def login(credentials: UserLogin, request: Request):
         }
 
     # ── Existing legacy account path ────────────────────────────────────────
-    if not user or not user.get("password") or not verify_password(
+    if not user or not user.get("password") or (not password_verified and not verify_password(
         credentials.password, user["password"]
-    ):
+    )):
         try:
             await AuditSecurity.log_security_event(
                 event_type="login_failed",

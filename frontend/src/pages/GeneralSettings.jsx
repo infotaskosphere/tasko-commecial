@@ -12,13 +12,14 @@ import {
   Save, Loader2, CheckCircle2, Mail, Shield,
   Settings, Clock, Hash, Star, Trophy, TrendingUp,
   CheckSquare, Timer, Users as UsersIcon, Link2,
-  HardDrive, Plug, ChevronRight,
+  HardDrive, Plug, ChevronRight, KeyRound,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DriveIntegrations from "@/components/DriveIntegrations";
 import OrganisationEmail from "@/components/OrganisationEmail";
+import SignInEmails from "@/components/SignInEmails";
 import AssignedClientsPanel from "@/components/AssignedClientsPanel";
 
 const COLORS = {
@@ -63,7 +64,8 @@ function MiniBar({ value, color, isDark }) {
 
 const INT_SECTIONS = [
   { id: 'drives',  label: 'Cloud Drives', icon: HardDrive,  desc: 'Organisation Google Drive used by every module' },
-  { id: 'email',   label: 'Email',        icon: Mail,       desc: 'Organisation mailbox used by every module' },
+  { id: 'email',   label: 'Email',        icon: Mail,       desc: 'Organisation and personal mailboxes' },
+  { id: 'signin',  label: 'My sign-in',   icon: KeyRound,   desc: 'Emails you can sign in with' },
 ];
 
 function IntegrationSidebar({ active, onChange, isDark }) {
@@ -114,7 +116,8 @@ export default function GeneralSettings() {
     initialParams.get("tab") === "integrations" || returnedFromEmail || returnedFromDrive ? "integrations" : "profile"
   ); // profile | clients | integrations
   const [intSection, setIntSection] = useState(
-    initialParams.get("section") === "email" || returnedFromEmail ? "email" : "drives"
+    initialParams.get("section") === "email" || returnedFromEmail ? "email"
+      : initialParams.get("section") === "signin" ? "signin" : "drives"
   ); // drives | email
 
   const [profile, setProfile] = useState({
@@ -504,6 +507,7 @@ export default function GeneralSettings() {
           <div className="flex-1 min-w-0">
             {intSection === "drives" && <DriveIntegrations isDark={isDark} />}
             {intSection === "email" && <OrganisationEmail isDark={isDark} />}
+            {intSection === "signin" && <SignInEmails isDark={isDark} />}
           </div>
         </div>
       )}

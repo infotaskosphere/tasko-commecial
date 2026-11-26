@@ -1116,7 +1116,9 @@ async def list_senders(current_user: User = Depends(get_current_user)):
     from backend.email_service.service import email_service
 
     cfg = await email_service.get_raw_config()
-    custom = await raw_db()[SENDERS].find(scoped(company_id, {"deleted": {"$ne": True}}), {"_id": 0}).sort("created_at", 1).to_list(100)
+    # Campaigns send from organisation mailboxes only; personal mailboxes
+    # (Settings → Integrations → Email → My mailboxes) are not listed here.
+    custom = await raw_db()[SENDERS].find(scoped(company_id, {"deleted": {"$ne": True}, "owner_user_id": None}), {"_id": 0}).sort("created_at", 1).to_list(100)
     has_default = any(d.get("is_default") for d in custom)
     profile = await company_profile(company_id)
     platform_entry = {

@@ -175,10 +175,34 @@ def _with_result(url: str, result: str, reason: Optional[str] = None) -> Redirec
     return RedirectResponse(urlunparse(parsed._replace(query=urlencode(query))), status_code=302)
 
 
-def _public(connection: Optional[dict], user) -> Dict[str, Any]:
+AREA_LABELS = {
+    "billing": "Invoices, payments & credit notes",
+    "clients": "Client portal & client folders",
+    "backups": "Backups",
+}
+
+
+def _connection_public(conn: dict) -> Dict[str, Any]:
+    root = (conn.get("folders") or {}).get("root")
+    return {
+        "id": conn.get("id"),
+        "label": conn.get("label") or conn.get("google_email"),
+        "google_email": conn.get("google_email"),
+        "google_name": conn.get("google_name"),
+        "personal": bool(conn.get("owner_user_id")),
+        "is_default": bool(conn.get("is_default")) and not conn.get("owner_user_id"),
+        "connected_at": conn.get("connected_at"),
+        "folder_url": f"https://drive.google.com/drive/folders/{root}" if root else "https://drive.google.com/drive/my-drive",
+    }
+
+
+def _public(connection: Optional[dict], user, *, connections: Optional[list] = None, routes: Optional[dict] = None) -> Dict[str, Any]:
+    """Status payload. The top-level fields describe the default organisation Drive."""
     connection = connection or {}
     connected = connection.get("status") == "connected"
     root = (connection.get("folders") or {}).get("root")
+    org = [c for c in (connections or []) if not c.get("owner_user_id")]
+    mine = [c for c in (connections or []) if c.get("owner_user_id")]
     return {
         "connected": connected,
         "source": "organisation" if connected else "none",
@@ -186,13 +210,66 @@ def _public(connection: Optional[dict], user) -> Dict[str, Any]:
         "google_name": connection.get("google_name") if connected else None,
         "connected_at": connection.get("connected_at") if connected else None,
         "folder_url": f"https://drive.google.com/drive/folders/{root}" if connected and root else None,
+        "default_connection_id": connection.get("id") if connected else None,
+        "organisation_drives": [_connection_public(c) for c in org],
+        "my_drives": [_connection_public(c) for c in mine],
+        "routes": {area: (routes or {}).get(area) for area in AREA_LABELS},
+        "areas": AREA_LABELS,
         "can_manage": _can_manage(user),
         "configured": bool((os.getenv("GOOGLE_CLIENT_ID") or "").strip() and (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()),
     }
 
 
+ROUTES_COLLECTION = "company_drive_routes"
+
+
+async def list_connections(company_id: str, user_id: Optional[str] = None) -> list[dict]:
+    """Connected organisation Drives, plus ``user_id``'s personal Drives."""
+    visible = [{"owner_user_id": None}]
+    if user_id:
+        visible.append({"owner_user_id": user_id})
+    return await _raw()[COMPANY_DRIVE_COLLECTION].find(
+        {"company_id": company_id, "status": "connected", "$or": visible}, {"_id": 0}
+    ).sort("connected_at", 1).to_list(50)
+
+
 async def get_connection(company_id: str) -> Optional[dict]:
-    return await _raw()[COMPANY_DRIVE_COLLECTION].find_one({"company_id": company_id}, {"_id": 0})
+    """The organisation's default Drive connection."""
+    org = [c for c in await list_connections(company_id) if not c.get("owner_user_id")]
+    return next((c for c in org if c.get("is_default")), None) or (org[0] if org else None)
+
+
+async def _ensure_org_default(company_id: str) -> None:
+    raw = _raw()[COMPANY_DRIVE_COLLECTION]
+    live = {"company_id": company_id, "status": "connected", "owner_user_id": None}
+    if await raw.find_one({**live, "is_default": True}, {"_id": 1}):
+        return
+    first = await raw.find_one(live, {"_id": 0, "id": 1}, sort=[("connected_at", 1)])
+    if first:
+        await raw.update_one({"company_id": company_id, "id": first["id"]}, {"$set": {"is_default": True}})
+
+
+async def _connection_for_user(company_id: str, connection_id: str, user, *, manage: bool) -> dict:
+    """Organisation Drives: anyone may use them; admins manage them. Personal Drives: only their owner."""
+    conn = await _raw()[COMPANY_DRIVE_COLLECTION].find_one(
+        {"company_id": company_id, "id": connection_id, "status": "connected"}, {"_id": 0})
+    if not conn:
+        raise HTTPException(status_code=404, detail="Drive connection not found.")
+    owner = conn.get("owner_user_id")
+    if owner:
+        if str(owner) != str(getattr(user, "id", "")):
+            raise HTTPException(status_code=404, detail="Drive connection not found.")
+    elif manage:
+        _require_manager(user)
+    return conn
+
+
+async def service_for_connection(company_id: str, connection_id: str, user):
+    """A Drive client for one specific connection (used by the Drive file browser)."""
+    from backend.google_drive_service import _company_service
+
+    conn = await _connection_for_user(company_id, connection_id, user, manage=False)
+    return _company_service(company_id, conn)
 
 
 # ── Drive folder setup (sync; run in a worker thread) ──────────────────────────
@@ -236,8 +313,10 @@ def _account_profile(service) -> dict:
 
 @router.get("/status")
 async def drive_status(current_user=Depends(get_current_user)):
-    connection = await get_connection(_company_id(current_user))
-    return _public(connection, current_user)
+    company_id = _company_id(current_user)
+    connections = await list_connections(company_id, str(getattr(current_user, "id", "") or ""))
+    routes = await _raw()[ROUTES_COLLECTION].find_one({"company_id": company_id}, {"_id": 0}) or {}
+    return _public(await get_connection(company_id), current_user, connections=connections, routes=routes)
 
 
 @router.post("/connect")
@@ -246,8 +325,14 @@ async def drive_connect(
     payload: Optional[Dict[str, Any]] = Body(default=None),
     current_user=Depends(get_current_user),
 ):
-    """Start "Connect Google Drive": returns the Google sign-in URL."""
-    _require_manager(current_user)
+    """Start "Connect Google Drive": returns the Google sign-in URL.
+
+    ``{"personal": true}`` connects the caller's own Drive (any user); otherwise
+    an organisation Drive (administrators only).
+    """
+    personal = bool((payload or {}).get("personal"))
+    if not personal:
+        _require_manager(current_user)
     company_id = _company_id(current_user)
     state = STATE_PREFIX + secrets.token_urlsafe(32)
     return_url = _safe_return_url((payload or {}).get("return_url"))
@@ -263,6 +348,8 @@ async def drive_connect(
         "state": state,
         "company_id": company_id,
         "user_id": str(getattr(current_user, "id", "") or ""),
+        "owner_user_id": str(current_user.id) if personal else None,
+        "label": str((payload or {}).get("label") or "").strip()[:80] or None,
         "return_url": return_url,
         "code_verifier": getattr(flow, "code_verifier", None),
         "created_at": now,
@@ -272,10 +359,20 @@ async def drive_connect(
 
 
 @router.post("/disconnect")
-async def drive_disconnect(current_user=Depends(get_current_user)):
-    _require_manager(current_user)
+async def drive_disconnect(
+    payload: Optional[Dict[str, Any]] = Body(default=None),
+    current_user=Depends(get_current_user),
+):
+    """Disconnect one Drive (``connection_id``; default: the organisation default)."""
     company_id = _company_id(current_user)
-    connection = await get_connection(company_id)
+    connection_id = str((payload or {}).get("connection_id") or "")
+    if connection_id:
+        connection = await _connection_for_user(company_id, connection_id, current_user, manage=True)
+    else:
+        _require_manager(current_user)
+        connection = await get_connection(company_id)
+    if not connection:
+        return {"ok": True, "message": "Google Drive is not connected."}
     if connection and connection.get("refresh_token_enc"):
         try:
             from backend.google_drive_service import decrypt_drive_token
@@ -286,13 +383,58 @@ async def drive_disconnect(current_user=Depends(get_current_user)):
         except Exception:
             logger.warning("Google token revoke failed for company %s (token removed locally anyway)", company_id)
     await _raw()[COMPANY_DRIVE_COLLECTION].update_one(
-        {"company_id": company_id},
-        {"$set": {"status": "disconnected", "disconnected_at": _now().isoformat(),
+        {"company_id": company_id, "id": connection["id"]},
+        {"$set": {"status": "disconnected", "is_default": False, "disconnected_at": _now().isoformat(),
                   "disconnected_by": str(getattr(current_user, "id", "") or "")},
          "$unset": {"refresh_token_enc": ""}},
     )
+    # Areas that saved to this Drive fall back to the default; promote a new default.
+    routes = await _raw()[ROUTES_COLLECTION].find_one({"company_id": company_id}, {"_id": 0}) or {}
+    stale = {area: "" for area in AREA_LABELS if routes.get(area) == connection["id"]}
+    if stale:
+        await _raw()[ROUTES_COLLECTION].update_one({"company_id": company_id}, {"$unset": stale})
+    await _ensure_org_default(company_id)
     invalidate_company_drive(company_id)
     return {"ok": True, "message": "Google Drive disconnected."}
+
+
+@router.post("/{connection_id}/default")
+async def drive_make_default(connection_id: str, current_user=Depends(get_current_user)):
+    _require_manager(current_user)
+    company_id = _company_id(current_user)
+    conn = await _connection_for_user(company_id, connection_id, current_user, manage=True)
+    if conn.get("owner_user_id"):
+        raise HTTPException(status_code=400, detail="A personal Drive can't be the organisation default.")
+    await _raw()[COMPANY_DRIVE_COLLECTION].update_many({"company_id": company_id}, {"$set": {"is_default": False}})
+    await _raw()[COMPANY_DRIVE_COLLECTION].update_one({"company_id": company_id, "id": connection_id}, {"$set": {"is_default": True}})
+    invalidate_company_drive(company_id)
+    return {"default_connection_id": connection_id}
+
+
+@router.put("/routes")
+async def drive_set_routes(payload: Dict[str, Any] = Body(...), current_user=Depends(get_current_user)):
+    """"Save to": which organisation Drive each area uses (null → the default)."""
+    _require_manager(current_user)
+    company_id = _company_id(current_user)
+    org_ids = {c["id"] for c in await list_connections(company_id) if not c.get("owner_user_id")}
+    updates, unset = {}, {}
+    for area in AREA_LABELS:
+        if area not in payload:
+            continue
+        value = payload.get(area)
+        if value in (None, ""):
+            unset[area] = ""
+        elif value in org_ids:
+            updates[area] = value
+        else:
+            raise HTTPException(status_code=400, detail="Choose one of your organisation's connected Drives (personal Drives can't be used here).")
+    change: Dict[str, Any] = {"$set": {"company_id": company_id, **updates}}
+    if unset:
+        change["$unset"] = unset
+    await _raw()[ROUTES_COLLECTION].update_one({"company_id": company_id}, change, upsert=True)
+    invalidate_company_drive(company_id)
+    routes = await _raw()[ROUTES_COLLECTION].find_one({"company_id": company_id}, {"_id": 0}) or {}
+    return {"routes": {area: routes.get(area) for area in AREA_LABELS}}
 
 
 async def handle_oauth_callback(request: Request) -> RedirectResponse:
@@ -328,20 +470,32 @@ async def handle_oauth_callback(request: Request) -> RedirectResponse:
 
         service = build_company_drive_service(refresh_token)
         profile = await asyncio.to_thread(_account_profile, service)
-        existing = await get_connection(company_id) or {}
-        same_account = existing.get("google_email") and existing.get("google_email") == profile["email"]
-        company = await _raw().companies.find_one({"id": company_id}, {"_id": 0, "name": 1, "company_name": 1}) or {}
-        folders = await asyncio.to_thread(
-            ensure_company_folders,
-            service,
-            existing.get("folders") if same_account else None,
-            company.get("name") or company.get("company_name"),
-        )
+        owner_user_id = state_doc.get("owner_user_id") or None
+        # Re-connecting the same Google account refreshes that connection
+        # (and keeps its folders); a different account adds a new Drive.
+        existing = await _raw()[COMPANY_DRIVE_COLLECTION].find_one(
+            {"company_id": company_id, "google_email": profile["email"], "owner_user_id": owner_user_id},
+            {"_id": 0},
+        ) or {}
+        if owner_user_id:
+            folders = existing.get("folders") or {}  # personal Drives: no company folders
+        else:
+            company = await _raw().companies.find_one({"id": company_id}, {"_id": 0, "name": 1, "company_name": 1}) or {}
+            folders = await asyncio.to_thread(
+                ensure_company_folders,
+                service,
+                existing.get("folders"),
+                company.get("name") or company.get("company_name"),
+            )
         now_iso = _now().isoformat()
+        connection_id = existing.get("id") or f"drv_{secrets.token_hex(8)}"
         await _raw()[COMPANY_DRIVE_COLLECTION].update_one(
-            {"company_id": company_id},
+            {"company_id": company_id, "id": connection_id},
             {"$set": {
+                "id": connection_id,
                 "company_id": company_id,
+                "owner_user_id": owner_user_id,
+                "label": state_doc.get("label") or existing.get("label") or profile["email"],
                 "status": "connected",
                 "provider": "google",
                 "google_email": profile["email"],
@@ -350,11 +504,13 @@ async def handle_oauth_callback(request: Request) -> RedirectResponse:
                 "scopes": list(COMPANY_DRIVE_SCOPES),
                 "folders": folders,
                 "connected_by": state_doc.get("user_id"),
-                "connected_at": now_iso,
+                "connected_at": existing.get("connected_at") or now_iso,
                 "updated_at": now_iso,
-            }},
+            }, "$setOnInsert": {"is_default": False}},
             upsert=True,
         )
+        if not owner_user_id:
+            await _ensure_org_default(company_id)
         invalidate_company_drive(company_id)
         logger.info("Google Drive connected for company %s (%s)", company_id, profile["email"])
         return _with_result(return_url, "connected")
@@ -367,10 +523,32 @@ async def handle_oauth_callback(request: Request) -> RedirectResponse:
         reset_authenticated_company(company_token)
 
 
+async def migrate_single_drive_connections() -> int:
+    """One Drive per company → many: give older connections an id and make them the default."""
+    raw = _raw()[COMPANY_DRIVE_COLLECTION]
+    migrated = 0
+    async for doc in raw.find({"id": {"$exists": False}}, {"_id": 1, "company_id": 1, "status": 1}):
+        await raw.update_one({"_id": doc["_id"]}, {"$set": {
+            "id": f"drv_{secrets.token_hex(8)}",
+            "owner_user_id": None,
+            "is_default": doc.get("status") == "connected",
+        }})
+        migrated += 1
+    return migrated
+
+
 async def create_company_drive_indexes() -> None:
     raw = _raw()
     try:
-        await raw[COMPANY_DRIVE_COLLECTION].create_index("company_id", unique=True)
+        # Several Drives per company now: the old one-per-company rule goes.
+        info = await raw[COMPANY_DRIVE_COLLECTION].index_information()
+        for name, spec in (info or {}).items():
+            if [k for k, _ in spec.get("key", [])] == ["company_id"] and spec.get("unique"):
+                await raw[COMPANY_DRIVE_COLLECTION].drop_index(name)
+        await migrate_single_drive_connections()
+        await raw[COMPANY_DRIVE_COLLECTION].create_index([("company_id", 1), ("id", 1)], unique=True)
+        await raw[COMPANY_DRIVE_COLLECTION].create_index([("company_id", 1), ("status", 1), ("owner_user_id", 1)])
+        await raw[ROUTES_COLLECTION].create_index("company_id", unique=True)
         await raw[STATE_COLLECTION].create_index("state", unique=True)
         await raw[STATE_COLLECTION].create_index("expires_at", expireAfterSeconds=0)
     except Exception as exc:

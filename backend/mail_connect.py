@@ -305,12 +305,13 @@ def _now() -> datetime:
 
 
 async def microsoft_start(request: Request, *, prefix: str, company_id: str, user_id: str, return_url: str,
-                          login_hint: Optional[str] = None) -> str:
+                          login_hint: Optional[str] = None, owner_user_id: Optional[str] = None) -> str:
     client_id, _ = _ms_client()
     redirect_uri = microsoft_redirect_uri(request)
     state = prefix + secrets.token_urlsafe(32)
     await _raw_db()[MS_STATES].insert_one({
-        "state": state, "company_id": company_id, "user_id": user_id, "redirect_uri": redirect_uri,
+        "state": state, "company_id": company_id, "user_id": user_id, "owner_user_id": owner_user_id,
+        "redirect_uri": redirect_uri,
         "return_url": return_url, "created_at": _now().isoformat(), "expires_at": (_now() + STATE_TTL).isoformat(),
     })
     params = {

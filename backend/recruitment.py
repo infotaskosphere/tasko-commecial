@@ -1337,11 +1337,9 @@ async def convert_to_user(
             detail="This candidate has already been converted to a user",
         )
 
-    existing_user = await db.users.find_one({"email": payload.email}, {"_id": 0})
-    if existing_user:
-        raise HTTPException(
-            status_code=400, detail="A user with this email already exists"
-        )
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(payload.email)
 
     # Late imports avoid a circular import with backend.server at module load time
     from backend.server import get_password_hash, DEFAULT_ROLE_PERMISSIONS

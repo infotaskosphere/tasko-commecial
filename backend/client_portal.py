@@ -1078,7 +1078,7 @@ def _fetch_drive_files_raw(folder_id: str, include_subfolders: bool = True) -> l
     Lists files and folders inside a given Drive folder.
     Returns both regular files and subfolders so the client can navigate.
     """
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
 
     if not _drive_configured():
         raise HTTPException(
@@ -1099,7 +1099,7 @@ def _fetch_drive_files_raw(folder_id: str, include_subfolders: bool = True) -> l
 def _get_folder_name(folder_id: str) -> str:
     """Get the display name of a Drive folder by its ID."""
     try:
-        from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+        from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
         if not _drive_configured():
             return folder_id
         service = get_drive_service_for_folder(folder_id)
@@ -1337,7 +1337,7 @@ async def save_portal_settings(
     # should still be saveable in that case.
     if normalised_root:
         try:
-            from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+            from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
             if _drive_configured():
                 service = get_drive_service_for_folder(normalised_root)
                 service.files().get(fileId=normalised_root, fields="id,name").execute()
@@ -1536,7 +1536,7 @@ async def save_folder_template(
     # folder creation and fails with a 404 at creation time instead of here.
     if normalised_parent:
         try:
-            from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+            from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
             if _drive_configured():
                 service = get_drive_service_for_folder(normalised_parent)
                 service.files().get(fileId=normalised_parent, fields="id,name").execute()
@@ -1680,7 +1680,7 @@ async def create_client_drive_folders(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
@@ -1694,7 +1694,7 @@ async def create_client_drive_folders(
     ).strip()
 
     parent_id = await _resolve_parent_folder_id(body.parent_folder_id)
-    service = get_drive_service_for_folder(parent_id) if parent_id else _get_drive_service()
+    service = get_drive_service_for_folder(parent_id) if parent_id else get_drive_service_for_area("clients")
     result = _create_drive_folder_sync(service, folder_name, parent_id, subfolders, force_create=True)
     root_id = result["folder_id"]
     folder_link = result.get("folder_link", "")
@@ -1743,7 +1743,7 @@ async def bulk_create_client_drive_folders(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
@@ -1752,7 +1752,7 @@ async def bulk_create_client_drive_folders(
     # Resolve parent_folder_id: prefer explicit, else fall back to the saved
     # Folder Architect template, else the shared default folder.
     parent_id = await _resolve_parent_folder_id(body.parent_folder_id)
-    service = get_drive_service_for_folder(parent_id) if parent_id else _get_drive_service()
+    service = get_drive_service_for_folder(parent_id) if parent_id else get_drive_service_for_area("clients")
 
     # Fetch clients
     query = {}
@@ -1911,12 +1911,12 @@ async def admin_search_drive_folders(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
 
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
-    service = _get_drive_service()
+    service = get_drive_service_for_area("clients")
     safe_query = query.replace("\\", "\\\\").replace("'", "\\'")
     q = (
         "mimeType = 'application/vnd.google-apps.folder' "
@@ -2119,7 +2119,7 @@ async def portal_drive_download(
     calls) OR a ?token=<jwt> query param (needed when the browser opens the
     URL directly via window.open / <a href> — those cannot set headers).
     """
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
 
     # Resolve JWT from header or query param
     raw_token = credentials.credentials if credentials else token
@@ -2228,7 +2228,7 @@ async def admin_drive_download(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
@@ -2427,7 +2427,7 @@ async def create_individual_folder(
     if subfolders is None:
         subfolders = await _resolve_subfolders()
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
@@ -2441,7 +2441,7 @@ async def create_individual_folder(
 
     loop = asyncio.get_event_loop()
     try:
-        service = get_drive_service_for_folder(parent_id) if parent_id else _get_drive_service()
+        service = get_drive_service_for_folder(parent_id) if parent_id else get_drive_service_for_area("clients")
         result = await loop.run_in_executor(
             None,
             lambda: _create_drive_folder_sync(
@@ -2711,7 +2711,7 @@ async def smart_bulk_upload(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         raise HTTPException(503, "Google Drive not configured.")
 
@@ -2985,7 +2985,7 @@ async def simple_upload_file(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     import mimetypes
 
     if not _drive_configured():
@@ -3097,7 +3097,7 @@ async def simple_create_folder(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     import asyncio
 
     if not _drive_configured():
@@ -3134,7 +3134,7 @@ async def delete_drive_item(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     import asyncio
 
     if not _drive_configured():
@@ -3162,7 +3162,7 @@ async def bulk_delete_drive_items(
     if not _can_manage_portal(current_user):
         raise HTTPException(403, "Insufficient permissions")
 
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     import asyncio
 
     if not _drive_configured():
@@ -3224,7 +3224,7 @@ async def list_client_subfolders(
     root_folder_id = portal_user.get("google_drive_folder_id")
     if not root_folder_id:
         return {"subfolders": [], "root_folder_id": None}
-    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_folder, get_drive_service_for_file
+    from backend.google_drive_service import _get_drive_service, _drive_configured, get_drive_service_for_area, get_drive_service_for_folder, get_drive_service_for_file
     if not _drive_configured():
         return {"subfolders": [], "root_folder_id": root_folder_id}
     all_items = _fetch_drive_files_raw(root_folder_id, include_subfolders=False)

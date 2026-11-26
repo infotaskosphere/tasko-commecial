@@ -59,7 +59,8 @@ async def microsoft_mail_callback(
             from backend.engagex.connected_senders import save_oauth_sender
 
             await save_oauth_sender(company_id=doc["company_id"], user_id=doc.get("user_id"), kind="microsoft",
-                                    email=email, refresh_token=outcome["refresh_token"], scopes=outcome.get("scopes") or [])
+                                    email=email, refresh_token=outcome["refresh_token"], scopes=outcome.get("scopes") or [],
+                                    owner_user_id=doc.get("owner_user_id") or None)
     except Exception:
         mail_connect.logger.exception("Saving the Microsoft mailbox failed")
         return _result(return_url, "error", reason="Signed in, but the mailbox could not be saved. Please try again.")

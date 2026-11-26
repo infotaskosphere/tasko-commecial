@@ -84,16 +84,34 @@ async def reconnect_drive(current_user: User = Depends(require_admin())):
 
 
 # ── 6. List files (caller's organisation Drive) ───────────────────────────────
+async def _browser_service(current_user, connection_id: Optional[str]):
+    """Organisation Drives (administrators) or the caller's own personal Drive."""
+    if connection_id:
+        from backend.company_drive import _company_id, service_for_connection, _connection_for_user
+
+        company_id = _company_id(current_user)
+        conn = await _connection_for_user(company_id, connection_id, current_user, manage=False)
+        if not conn.get("owner_user_id"):
+            from backend.company_drive import _require_manager
+
+            _require_manager(current_user)
+        return await service_for_connection(company_id, connection_id, current_user)
+    from backend.company_drive import _require_manager
+    from backend.google_drive_service import _get_drive_service
+
+    _require_manager(current_user)
+    return _get_drive_service()
+
+
 @router.get("/auth/google/files")
 async def list_drive_files(
-    current_user: User = Depends(require_admin()),
+    current_user: User = Depends(get_current_user),
     page_size: int = Query(50, ge=1, le=100),
     q: Optional[str] = Query(None),
     page_token: Optional[str] = Query(None),
+    connection_id: Optional[str] = Query(None),
 ):
-    from backend.google_drive_service import _get_drive_service
-
-    service = _get_drive_service()
+    service = await _browser_service(current_user, connection_id)
     try:
         drive_query = "trashed = false"
         if q:
@@ -116,13 +134,19 @@ async def list_drive_files(
 # ── 7. Share file ─────────────────────────────────────────────────────────────
 class ShareRequest(BaseModel):
     file_id: str
+    connection_id: Optional[str] = None
 
 
 @router.post("/auth/google/share")
-async def create_share_link(body: ShareRequest, current_user: User = Depends(require_admin())):
-    from backend.google_drive_service import get_drive_service_for_file
+async def create_share_link(body: ShareRequest, current_user: User = Depends(get_current_user)):
+    if body.connection_id:
+        service = await _browser_service(current_user, body.connection_id)
+    else:
+        from backend.company_drive import _require_manager
+        from backend.google_drive_service import get_drive_service_for_file
 
-    service = get_drive_service_for_file(body.file_id)
+        _require_manager(current_user)
+        service = get_drive_service_for_file(body.file_id)
 
     def _share():
         service.permissions().create(

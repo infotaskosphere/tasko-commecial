@@ -571,8 +571,9 @@ async def create_custom_admin(payload: Dict[str, Any]):
             {"status": {"$ne": "deleted"}, "$or": [{"email": email}, {"email_normalized": email}]},
             {"_id": 1},
         )
-        if existing_email_user:
-            raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+        from backend.login_accounts import assert_login_email_allowed
+
+        assert_login_email_allowed(email)
         user_id = str(uuid.uuid4())
         user_doc = {
             "id": user_id,
@@ -635,8 +636,9 @@ async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depe
     full_name = str(payload.get("full_name") or "").strip()
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"status": {"$ne": "deleted"}, "$or": [{"email": email}, {"email_normalized": email}]}):
-        raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(email)
     active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
     max_users = int(license_doc.get("max_users", 1))
     if active_users >= max_users:

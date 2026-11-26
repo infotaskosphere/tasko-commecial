@@ -717,13 +717,25 @@ def _sync_central_db():
     return _SYNC_MONGO_CLIENT[_dependencies.DB_NAME]
 
 
+# Which Drive each part of the app saves to ("Save to" in Settings). Several
+# organisation Drives can be connected; each area uses its chosen Drive, else
+# the organisation default. Personal Drives are never used for these.
+DRIVE_AREAS = ("billing", "clients", "backups")
+AREA_OF_FOLDER = {"invoices": "billing", "payments": "billing", "credit_notes": "billing",
+                  "clients": "clients", "backups": "backups"}
+COMPANY_DRIVE_ROUTES_COLLECTION = "company_drive_routes"
+_ITEM_CONNECTION_CACHE: dict = {}
+_ITEM_CACHE_LIMIT = 5000
+
+
 def _load_company_state_from_db(company_id: str) -> dict:
     central = _sync_central_db()
     if central is None:
-        return {"connection": None, "licensee": False}
-    connection = central[COMPANY_DRIVE_COLLECTION].find_one(
-        {"company_id": company_id, "status": "connected"}, {"_id": 0}
-    )
+        return {"connections": [], "routes": {}, "licensee": False}
+    connections = list(central[COMPANY_DRIVE_COLLECTION].find(
+        {"company_id": company_id, "status": "connected", "owner_user_id": None}, {"_id": 0}
+    ).sort("connected_at", 1))
+    routes = central[COMPANY_DRIVE_ROUTES_COLLECTION].find_one({"company_id": company_id}, {"_id": 0}) or {}
     company = central["companies"].find_one(
         {"id": company_id}, {"_id": 0, "commercial_customer_id": 1, "license_id": 1}
     ) or {}
@@ -733,7 +745,16 @@ def _load_company_state_from_db(company_id: str) -> dict:
         or central["commercial_license_customers"].find_one({"id": company_id}, {"_id": 1})
         or central["commercial_licenses"].find_one({"customer_id": company_id}, {"_id": 1})
     )
-    return {"connection": connection, "licensee": licensee}
+    return {"connections": connections, "routes": routes, "licensee": licensee}
+
+
+def _normalise_state(state: dict) -> dict:
+    # Older loaders (and tests) return a single "connection".
+    if "connections" not in state:
+        single = state.get("connection")
+        state = {**state, "connections": [single] if single else []}
+    state.setdefault("routes", {})
+    return state
 
 
 def _company_drive_state(company_id: str) -> dict:
@@ -744,25 +765,40 @@ def _company_drive_state(company_id: str) -> dict:
             return cached[1]
     loader = _company_state_loader or _load_company_state_from_db
     try:
-        state = loader(company_id) or {"connection": None, "licensee": True}
+        state = _normalise_state(loader(company_id) or {"connections": [], "licensee": True})
     except Exception as exc:
         # Fail closed: never fall back to the platform Drive for a company
         # whose status could not be read.
         logger.warning("Could not read Google Drive connection for company %s: %s", company_id, exc)
-        return {"connection": None, "licensee": True}
+        return {"connections": [], "routes": {}, "licensee": True}
     with _COMPANY_LOCK:
         _COMPANY_STATE_CACHE[company_id] = (now + _COMPANY_STATE_TTL_SECONDS, state)
     return state
 
 
-def _drive_scope():
+def _default_connection(state: dict) -> Optional[dict]:
+    connections = state.get("connections") or []
+    return next((c for c in connections if c.get("is_default")), None) or (connections[0] if connections else None)
+
+
+def _connection_for_area(state: dict, area: Optional[str]) -> Optional[dict]:
+    wanted = (state.get("routes") or {}).get(area) if area else None
+    if wanted:
+        chosen = next((c for c in state.get("connections") or [] if c.get("id") == wanted), None)
+        if chosen:
+            return chosen
+    return _default_connection(state)
+
+
+def _drive_scope(area: Optional[str] = None):
     """Return (mode, company_id, connection) for the current request."""
     company_id = _current_company_id()
     if not company_id:
         return "platform", None, None
     state = _company_drive_state(company_id)
-    if state.get("connection"):
-        return "company", company_id, state["connection"]
+    connection = _connection_for_area(state, area)
+    if connection:
+        return "company", company_id, connection
     if state.get("licensee"):
         return "unconnected", company_id, None
     return "platform", company_id, None
@@ -773,10 +809,14 @@ def invalidate_company_drive(company_id: Optional[str]) -> None:
     with _COMPANY_LOCK:
         if company_id:
             _COMPANY_STATE_CACHE.pop(company_id, None)
-            _COMPANY_SERVICE_CACHE.pop(company_id, None)
+            for key in [k for k in _COMPANY_SERVICE_CACHE if k == company_id or (isinstance(k, tuple) and k[0] == company_id)]:
+                _COMPANY_SERVICE_CACHE.pop(key, None)
+            for key in [k for k in _ITEM_CONNECTION_CACHE if k[0] == company_id]:
+                _ITEM_CONNECTION_CACHE.pop(key, None)
         else:
             _COMPANY_STATE_CACHE.clear()
             _COMPANY_SERVICE_CACHE.clear()
+            _ITEM_CONNECTION_CACHE.clear()
 
 
 def build_company_drive_service(refresh_token: str):
@@ -800,8 +840,9 @@ def _company_service(company_id: str, connection: dict):
     if not token_enc:
         raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
     fingerprint = _hashlib.sha256(token_enc.encode()).hexdigest()
+    cache_key = (company_id, connection.get("id") or "default")
     with _COMPANY_LOCK:
-        cached = _COMPANY_SERVICE_CACHE.get(company_id)
+        cached = _COMPANY_SERVICE_CACHE.get(cache_key)
         if cached and cached[0] == fingerprint:
             return cached[1]
     try:
@@ -810,7 +851,7 @@ def _company_service(company_id: str, connection: dict):
         logger.error("Google Drive client for company %s could not be built: %s", company_id, exc)
         raise HTTPException(503, "Your organisation's Google Drive connection needs to be reconnected.") from exc
     with _COMPANY_LOCK:
-        _COMPANY_SERVICE_CACHE[company_id] = (fingerprint, service)
+        _COMPANY_SERVICE_CACHE[cache_key] = (fingerprint, service)
     return service
 
 
@@ -824,6 +865,7 @@ def _drive_configured() -> bool:
 
 
 def _get_drive_service():
+    """The organisation's default Drive (or the platform Drive)."""
     mode, company_id, connection = _drive_scope()
     if mode == "company":
         return _company_service(company_id, connection)
@@ -832,23 +874,64 @@ def _get_drive_service():
     return _platform_get_drive_service()
 
 
+def get_drive_service_for_area(area: str):
+    """The Drive chosen for one part of the app: "billing", "clients" or "backups"."""
+    mode, company_id, connection = _drive_scope(area)
+    if mode == "company":
+        return _company_service(company_id, connection)
+    if mode == "unconnected":
+        raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
+    return _platform_get_drive_service()
+
+
+def _service_owning_item(company_id: str, item_id: str):
+    """The organisation Drive that holds ``item_id``.
+
+    Each connection uses the drive.file scope, so it can only see files and
+    folders the app created in that Drive: a successful lookup identifies the
+    owning Drive exactly.
+    """
+    state = _company_drive_state(company_id)
+    connections = state.get("connections") or []
+    if len(connections) == 1:
+        return _company_service(company_id, connections[0])
+    for connection in connections:
+        if item_id in set(((connection.get("folders") or {}).values())):
+            return _company_service(company_id, connection)
+    with _COMPANY_LOCK:
+        cached_id = _ITEM_CONNECTION_CACHE.get((company_id, item_id))
+    ordered = sorted(connections, key=lambda c: (c.get("id") != cached_id, not c.get("is_default")))
+    for connection in ordered:
+        service = _company_service(company_id, connection)
+        try:
+            service.files().get(fileId=item_id, fields="id", supportsAllDrives=True).execute()
+        except Exception:
+            continue
+        with _COMPANY_LOCK:
+            if len(_ITEM_CONNECTION_CACHE) > _ITEM_CACHE_LIMIT:
+                _ITEM_CONNECTION_CACHE.clear()
+            _ITEM_CONNECTION_CACHE[(company_id, item_id)] = connection.get("id")
+        return service
+    raise HTTPException(404, "That file or folder is not in any of your organisation's connected Drives.")
+
+
 def get_drive_service_for_folder(folder_id: str):
-    mode, company_id, connection = _drive_scope()
+    mode, company_id, _ = _drive_scope()
     if mode == "company":
         if not str(folder_id or "").strip():
             raise ValueError("folder_id is required")
-        return _company_service(company_id, connection)
+        return _service_owning_item(company_id, folder_id)
     if mode == "unconnected":
         raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
     return _platform_drive_service_for_folder(folder_id)
 
 
 def get_drive_service_for_file(file_id: str):
-    mode, company_id, connection = _drive_scope()
+    mode, company_id, _ = _drive_scope()
     if mode == "company":
         if not str(file_id or "").strip():
             raise ValueError("file_id is required")
-        return _company_service(company_id, connection)
+        return _service_owning_item(company_id, file_id)
     if mode == "unconnected":
         raise HTTPException(503, DRIVE_NOT_CONNECTED_DETAIL)
     return _platform_drive_service_for_file(file_id)
@@ -856,7 +939,7 @@ def get_drive_service_for_file(file_id: str):
 
 def drive_folder_id(key: str) -> Optional[str]:
     """The current organisation's Drive folder for ``key`` (invoices, clients, ...)."""
-    mode, _, connection = _drive_scope()
+    mode, _, connection = _drive_scope(AREA_OF_FOLDER.get(key))
     if mode == "company":
         return ((connection or {}).get("folders") or {}).get(key) or None
     if mode == "unconnected":

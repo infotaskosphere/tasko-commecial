@@ -610,8 +610,10 @@ async def create_custom_admin(payload: Dict[str, Any]):
                 },
                 {"_id": 1},
             )
-            if conflicting_email:
-                raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+            # Shared login emails are allowed; only reserved owner emails are refused.
+            from backend.login_accounts import assert_login_email_allowed
+
+            assert_login_email_allowed(email)
 
         now = _now().isoformat()
         from backend.commercial_licensee_admin import get_all_admin_permissions
@@ -675,8 +677,10 @@ async def create_custom_admin(payload: Dict[str, Any]):
             "status": {"$ne": "deleted"},
         }
     )
-    if existing_staff:
-        raise HTTPException(status_code=409, detail="An account already exists for this email address in this licensee workspace.")
+    # Shared login emails are allowed, even inside one workspace.
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(email)
 
     now = _now().isoformat()
     user_id = str(uuid.uuid4())
@@ -724,8 +728,9 @@ async def create_custom_staff(payload: Dict[str, Any], current_user: User = Depe
     full_name = str(payload.get("full_name") or "").strip()
     if not full_name or not email or len(password) < 8:
         raise HTTPException(status_code=400, detail="Full name, email and a password of at least 8 characters are required.")
-    if await db.users.find_one({"email": email, "status": {"$ne": "deleted"}}):
-        raise HTTPException(status_code=409, detail="An account already exists for this email address.")
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(email)
     active_users = await db.users.count_documents({"company_id": customer.get("id"), "is_active": True})
     max_users = int(license_doc.get("max_users", 1))
     if active_users >= max_users:

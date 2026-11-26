@@ -6,7 +6,8 @@ the real restore path and check that:
   * a restored user can never carry Platform Owner identity;
   * control-plane collections (licences, app settings, ...) are never written;
   * a restored record never overwrites another company's record;
-  * a restored user whose email belongs to another company is skipped.
+  * login emails may be shared, so a restored user may use an email that
+    another company also uses (sign-in checks each account's password).
 """
 import json
 import zipfile
@@ -126,8 +127,9 @@ async def test_restore_never_overwrites_another_companys_records(mongo, tmp_path
     })
     still = await mongo.users.find_one({"id": "victim-user"})
     assert still["password"] == "victim-hash" and still["company_id"] == OTHER
-    assert await mongo.users.find_one({"id": "dup-email"}) is None
-    assert result["skipped_conflicting_users"] == 2
+    shared = await mongo.users.find_one({"id": "dup-email"})
+    assert shared["company_id"] == TARGET  # shared login email allowed, own company only
+    assert result["skipped_conflicting_users"] == 1
 
     victim_rows = await mongo.invoices.find({"company_id": OTHER}).to_list(10)
     assert [row["total"] for row in victim_rows] == [100]

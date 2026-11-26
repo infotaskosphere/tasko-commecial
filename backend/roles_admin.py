@@ -439,8 +439,9 @@ async def create_employee(payload: EmployeeIn, current_user: User = Depends(get_
         raise HTTPException(status_code=400, detail="A valid email is required.")
     if len(payload.password or "") < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=400, detail="That email is already registered.")
+    from backend.login_accounts import assert_login_email_allowed
+
+    assert_login_email_allowed(email)
     role = next((r for r in await _all_roles() if r["key"] == payload.role_key), None)
     if not role:
         raise HTTPException(status_code=404, detail="Role not found.")

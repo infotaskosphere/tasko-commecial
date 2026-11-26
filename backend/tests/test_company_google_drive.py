@@ -257,3 +257,105 @@ def test_portal_file_must_live_under_the_clients_folder():
     assert _is_within_folder_sync(drive, "clientRoot", "clientRoot") is True
     assert _is_within_folder_sync(drive, "theirs.pdf", "clientRoot") is False
     assert _is_within_folder_sync(drive, "missing", "clientRoot") is False
+
+
+# ── several Drives per organisation ───────────────────────────────────────────
+
+def test_each_area_saves_to_its_chosen_drive(states, monkeypatch):
+    built = {}
+    monkeypatch.setattr(gds, "build_company_drive_service", lambda refresh: built.setdefault(refresh, FakeDrive(email=refresh)))
+    states["company-a"] = {"licensee": True, "routes": {"clients": "drv-clients"}, "connections": [
+        {"id": "drv-main", "is_default": True, "status": "connected", "refresh_token_enc": gds.encrypt_drive_token("main"),
+         "folders": {"invoices": "invMain", "clients": "cliMain"}},
+        {"id": "drv-clients", "is_default": False, "status": "connected", "refresh_token_enc": gds.encrypt_drive_token("clients"),
+         "folders": {"invoices": "invOther", "clients": "cliOther"}},
+    ]}
+    token = _scope("company-a")
+    try:
+        assert invoicing.DRIVE_FOLDERS["invoices"] == "invMain"     # billing → default Drive
+        assert gds.drive_folder_id("clients") == "cliOther"         # clients → chosen Drive
+        assert gds.get_drive_service_for_area("billing").email == "main"
+        assert gds.get_drive_service_for_area("clients").email == "clients"
+        # A folder is opened with the Drive that owns it.
+        assert gds.get_drive_service_for_folder("cliOther").email == "clients"
+    finally:
+        reset_authenticated_company(token)
+
+
+def test_items_outside_known_folders_are_found_in_the_drive_that_holds_them(states, monkeypatch):
+    drives = {"main": FakeDrive(email="main"), "second": FakeDrive(email="second", items={"deep-file": {"parents": ["x"]}})}
+    monkeypatch.setattr(gds, "build_company_drive_service", lambda refresh: drives[refresh])
+    states["company-a"] = {"licensee": True, "connections": [
+        {"id": "a", "is_default": True, "status": "connected", "refresh_token_enc": gds.encrypt_drive_token("main"), "folders": {}},
+        {"id": "b", "status": "connected", "refresh_token_enc": gds.encrypt_drive_token("second"), "folders": {}},
+    ]}
+    token = _scope("company-a")
+    try:
+        assert gds.get_drive_service_for_file("deep-file").email == "second"
+        with pytest.raises(HTTPException) as exc:
+            gds.get_drive_service_for_file("nowhere")
+        assert exc.value.status_code == 404
+    finally:
+        reset_authenticated_company(token)
+
+
+@pytest.mark.asyncio
+async def test_second_drive_personal_drive_and_routes(mongo, monkeypatch):
+    from starlette.requests import Request
+
+    await mongo.companies.insert_one({"id": "company-a", "name": "Acme"})
+    request = Request({"type": "http", "headers": [], "method": "POST", "path": "/"})
+
+    class _Creds:
+        refresh_token = "refresh"
+
+    monkeypatch.setattr("google_auth_oauthlib.flow.Flow.fetch_token", lambda self, code: None)
+    monkeypatch.setattr("google_auth_oauthlib.flow.Flow.credentials", property(lambda self: _Creds()))
+    accounts = iter([FakeDrive(email="main@acme.example"), FakeDrive(email="archive@acme.example"),
+                     FakeDrive(email="me@gmail.example")])
+    monkeypatch.setattr(company_drive, "build_company_drive_service", lambda token: next(accounts))
+    client = TestClient(run_module.app)
+
+    async def connect(user, **payload):
+        started = await company_drive.drive_connect(request, payload, user)
+        state = parse_qs(urlparse(started["auth_url"]).query)["state"][0]
+        res = client.get(f"/auth/google/callback?code=c&state={state}", follow_redirects=False)
+        assert "drive=connected" in res.headers["location"], res.headers["location"]
+
+    await connect(_user())
+    await connect(_user())                                   # a second organisation Drive
+    await connect(_user(role="staff"), personal=True)        # a staff member's own Drive
+
+    admin_view = await company_drive.drive_status(_user())
+    assert [d["google_email"] for d in admin_view["organisation_drives"]] == ["main@acme.example", "archive@acme.example"]
+    assert admin_view["organisation_drives"][0]["is_default"] is True
+    assert admin_view["my_drives"] == []
+    staff_view = await company_drive.drive_status(_user(role="staff"))
+    assert [d["google_email"] for d in staff_view["my_drives"]] == ["me@gmail.example"]
+    personal = await mongo.company_drive_connections.find_one({"google_email": "me@gmail.example"})
+    assert personal["folders"] == {}  # no company folders in a personal Drive
+
+    archive_id = admin_view["organisation_drives"][1]["id"]
+    routes = await company_drive.drive_set_routes({"backups": archive_id}, current_user=_user())
+    assert routes["routes"]["backups"] == archive_id
+    with pytest.raises(HTTPException):  # personal Drives can't hold company records
+        await company_drive.drive_set_routes({"billing": personal["id"]}, current_user=_user())
+    with pytest.raises(HTTPException):  # staff can't change "Save to"
+        await company_drive.drive_set_routes({"billing": archive_id}, current_user=_user(role="staff"))
+
+    # Disconnecting the routed Drive sends that area back to the default.
+    await company_drive.drive_disconnect({"connection_id": archive_id}, current_user=_user())
+    assert (await company_drive.drive_status(_user()))["routes"]["backups"] is None
+    # Someone else's personal Drive is invisible to an admin.
+    with pytest.raises(HTTPException):
+        await company_drive.drive_disconnect({"connection_id": personal["id"]}, current_user=_user())
+
+
+@pytest.mark.asyncio
+async def test_old_single_drive_connections_are_migrated(mongo):
+    await mongo.company_drive_connections.insert_one({"company_id": "company-a", "status": "connected",
+                                                     "google_email": "old@acme.example", "folders": {"root": "r"}})
+    assert await company_drive.migrate_single_drive_connections() == 1
+    doc = await mongo.company_drive_connections.find_one({"company_id": "company-a"})
+    assert doc["id"].startswith("drv_") and doc["is_default"] is True
+    assert (await company_drive.drive_status(_user()))["organisation_drives"][0]["google_email"] == "old@acme.example"

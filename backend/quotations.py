@@ -2870,6 +2870,7 @@ async def send_quotation_email(
             from_name=company.get("smtp_from_name") or company.get("name") or None,
             fallback_reply_to=company.get("email") or None,
             email_type="quotation",
+        acting_user_id=str(current_user.id),
         )
         return {"message": f"Email sent successfully to {req.to_email} from {result['from_email']}",
                 "from_email": result["from_email"]}

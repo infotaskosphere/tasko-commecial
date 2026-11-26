@@ -151,12 +151,14 @@ async def platform_sender(company_id: str) -> ResolvedSender:
     )
 
 
-async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedSender:
+async def resolve_sender(company_id: str, sender_id: Optional[str], *, acting_user_id: Optional[str] = None) -> ResolvedSender:
+    """``acting_user_id``: who is sending. A personal mailbox can only be used by its owner."""
     if not sender_id:
         # No sender chosen: the organisation's default mailbox (Settings →
         # Integrations → Email), else the platform service.
         default = await raw_db()[SENDERS].find_one(
-            {"company_id": company_id, "deleted": {"$ne": True}, "is_default": True}, {"_id": 0, "id": 1})
+            {"company_id": company_id, "deleted": {"$ne": True}, "is_default": True, "owner_user_id": None},
+            {"_id": 0, "id": 1})
         if default:
             sender_id = default["id"]
     if not sender_id or sender_id == PLATFORM_SENDER_ID:
@@ -169,6 +171,9 @@ async def resolve_sender(company_id: str, sender_id: Optional[str]) -> ResolvedS
     doc = await raw_db()[SENDERS].find_one({"id": sender_id, "company_id": company_id, "deleted": {"$ne": True}})
     if not doc:
         raise HTTPException(status_code=404, detail="Email sender account not found.")
+    owner = doc.get("owner_user_id")
+    if owner and str(owner) != str(acting_user_id or ""):
+        raise HTTPException(status_code=403, detail="That is someone else's personal mailbox.")
     if doc.get("kind") in ("google", "microsoft"):
         return ResolvedSender(
             id=doc["id"],

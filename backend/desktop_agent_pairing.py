@@ -52,7 +52,9 @@ DEVICE_FORBIDDEN_PREFIXES = ("/api/desktop/pair", "/api/desktop/devices")
 def _raw_db():
     from backend import dependencies
 
-    return getattr(dependencies, "_raw_db", None) or dependencies.db
+    # Database objects refuse bool(); compare with None explicitly.
+    raw = getattr(dependencies, "_raw_db", None)
+    return raw if raw is not None else dependencies.db
 
 
 def _now() -> datetime:

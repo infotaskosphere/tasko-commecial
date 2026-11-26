@@ -680,6 +680,16 @@ from backend.company_drive import router as company_drive_router, create_company
 app.include_router(company_drive_router, prefix="/api")
 app.on_event("startup")(create_company_drive_indexes)
 
+# Shared / extra sign-in emails (backend/login_accounts.py).
+async def _startup_login_account_indexes():
+    from backend.dependencies import _raw_db
+    from backend.login_accounts import create_login_account_indexes
+
+    await create_login_account_indexes(_raw_db)
+
+
+app.on_event("startup")(_startup_login_account_indexes)
+
 # Organisation mailbox ("Settings → Integrations → Email"), used by every module.
 from backend.org_mail import router as org_mail_router
 app.include_router(org_mail_router, prefix="/api")

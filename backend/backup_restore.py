@@ -1352,17 +1352,9 @@ async def _restore(manifest: dict, collections: list[tuple[str, str]], current_u
                         doc.pop("_id", None)
                         conflicts_rekeyed += 1
 
-                    if name == "users" and not is_restorer:
-                        email = _s(doc.get("email")).lower()
-                        if email:
-                            clash = await collection.find_one(
-                                {"$or": [{"email": email}, {"email_normalized": email}],
-                                 "company_id": {"$ne": target_company_id}},
-                                {"_id": 1},
-                            )
-                            if clash:
-                                skipped_users += 1
-                                continue
+                    # Shared login emails are allowed (backend/login_accounts.py):
+                    # sign-in checks the password of each account separately,
+                    # and reserved Platform Owner emails were refused above.
 
                     if doc.get("_id") is not None:
                         query = {"_id": doc["_id"], "company_id": target_company_id}

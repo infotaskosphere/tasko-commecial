@@ -173,3 +173,62 @@ def test_bulk_client_email_uses_the_organisation_mailbox(env, monkeypatch):
         ("accounts@acme.example", "one@x.example", "Hello One"),
         ("accounts@acme.example", "two@x.example", "Hello Two"),
     ]
+
+
+# ── personal mailboxes ────────────────────────────────────────────────────────
+
+def _staff(uid="staff-1", company="org-a"):
+    return User(id=uid, email=f"{uid}@acme.example", role="staff", full_name=uid, company_id=company)
+
+
+def test_personal_mailboxes_belong_to_their_owner(env):
+    raw, sent = env
+    _run(_connect(raw, "org-a", "accounts@acme.example"))
+    _run(connected_senders.save_oauth_sender(company_id="org-a", user_id="staff-1", kind="google",
+                                             email="priya.personal@gmail.example", refresh_token="r",
+                                             scopes=["gmail.send"], owner_user_id="staff-1"))
+    mine = _run(raw.engagex_email_senders.find_one({"from_email": "priya.personal@gmail.example"}))
+    assert mine["visibility"] == "personal" and not mine["is_default"]
+
+    # The owner can send from it; nobody else can.
+    _run(org_mail.send_org_email(company_id="org-a", to_email="c@x.example", subject="s", html_body="b",
+                                 sender_id=mine["id"], acting_user_id="staff-1"))
+    assert sent[-1]["from"] == "priya.personal@gmail.example"
+    with pytest.raises(HTTPException) as exc:
+        _run(org_mail.send_org_email(company_id="org-a", to_email="c@x.example", subject="s", html_body="b",
+                                     sender_id=mine["id"], acting_user_id="someone-else"))
+    assert exc.value.status_code == 403
+    # Background jobs (no sender, no user) keep using the organisation default.
+    _run(org_mail.send_org_email(company_id="org-a", to_email="c@x.example", subject="s", html_body="b"))
+    assert sent[-1]["from"] == "accounts@acme.example"
+
+    # Each user sees the organisation mailboxes plus only their own personal ones.
+    owner_view = _run(org_mail.org_email_status(current_user=_staff("staff-1")))
+    other_view = _run(org_mail.org_email_status(current_user=_staff("staff-2")))
+    assert [m["from_email"] for m in owner_view["my_mailboxes"]] == ["priya.personal@gmail.example"]
+    assert other_view["my_mailboxes"] == []
+    assert [m["from_email"] for m in other_view["organisation_mailboxes"]] == ["accounts@acme.example"]
+
+    # A personal mailbox can't become the organisation default, and others can't remove it.
+    with pytest.raises(HTTPException):
+        _run(org_mail.org_email_set_default(mine["id"], current_user=_admin()))
+    with pytest.raises(HTTPException):
+        _run(org_mail.org_email_remove(mine["id"], current_user=_admin()))
+    _run(org_mail.org_email_remove(mine["id"], current_user=_staff("staff-1")))
+
+
+def test_first_personal_mailbox_does_not_become_the_organisation_default(env):
+    raw, sent = env
+    _run(connected_senders.save_oauth_sender(company_id="org-a", user_id="staff-1", kind="google",
+                                             email="solo@gmail.example", refresh_token="r", scopes=[],
+                                             owner_user_id="staff-1"))
+    _run(org_mail.send_org_email(company_id="org-a", to_email="c@x.example", subject="s", html_body="b"))
+    assert sent[-1]["kind"] == "platform"
+
+
+def test_staff_may_connect_personal_but_not_organisation_mailboxes(env):
+    body = org_mail._StartIn(personal=True)
+    assert org_mail._owner_for(body, _staff()) == "staff-1"
+    with pytest.raises(HTTPException) as exc:
+        org_mail._owner_for(org_mail._StartIn(personal=False), _staff())
+    assert exc.value.status_code == 403

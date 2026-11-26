@@ -1340,6 +1340,7 @@ async def send_compliance_client_email(
         from_name=comp_name,
         fallback_reply_to=company.get("email") or None,
         email_type="compliance_client",
+        acting_user_id=str(current_user.id),
     )
     logger.info(f"Compliance email sent to {req.client_email} by {current_user.email} from {result['from_email']}")
     return {"message": f"Compliance email sent to {req.client_email}", "from_email": result["from_email"]}
@@ -1663,6 +1664,7 @@ async def send_bulk_client_emails(
                     sender_id=req.sender_id,
                     from_name=_override_name or (company_smtp or {}).get("from_name") or req.from_name or None,
                     email_type="bulk_client",
+                    acting_user_id=str(current_user.id),
                 )
             elif use_brevo:
                 await _brevo_send(

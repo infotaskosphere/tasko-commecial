@@ -3,6 +3,7 @@ import { ArrowRight, BarChart3, Bot, CalendarDays, CheckCircle2, CheckSquare2, E
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import AccountChooser from "@/components/AccountChooser";
 import api from "@/lib/api";
 import { getPublicWebsiteConfig } from "@/lib/websiteApi";
 import { lookupLicensedCompany, createLicensedAdmin } from "@/lib/licenseApi";
@@ -37,6 +38,7 @@ const TONES = {
 
 export default function Login() {
   const { login, refreshUser } = useAuth();
+  const [accountChoice, setAccountChoice] = useState(null); // { token, accounts } when one email has several accounts
   const [config, setConfig] = useState(null);
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
@@ -88,16 +90,36 @@ export default function Login() {
       clearTimeout(wakingTimer);
       setServerWaking(false);
       if (keepSignedIn) localStorage.setItem("taskosphere_keep_signed_in", "true"); else localStorage.removeItem("taskosphere_keep_signed_in");
-      const authenticated = login(response.data, keepSignedIn);
-      if (!authenticated) throw new Error("Invalid login response");
-      const authoritativeUser = await refreshUser();
-      if (!authoritativeUser) throw new Error("Unable to load licensed access");
-      try { window.postMessage({ type: "SET_TOKEN", token: response.data.access_token }, window.location.origin); } catch {}
-      toast.success("Welcome back!");
+      if (response.data?.requires_account_choice) {
+        // This email signs in to several accounts: let the person pick one.
+        setAccountChoice({ token: response.data.choice_token, accounts: response.data.accounts || [] });
+        return;
+      }
+      await finishLogin(response.data);
     } catch (error) {
       clearTimeout(wakingTimer); setServerWaking(false);
       toast.error(error?.response?.data?.detail || "Unable to sign in. Please check your credentials.");
     } finally { setLoading(false); }
+  };
+
+  const finishLogin = async (data) => {
+    const authenticated = login(data, keepSignedIn);
+    if (!authenticated) throw new Error("Invalid login response");
+    const authoritativeUser = await refreshUser();
+    if (!authoritativeUser) throw new Error("Unable to load licensed access");
+    try { window.postMessage({ type: "SET_TOKEN", token: data.access_token }, window.location.origin); } catch {}
+    toast.success("Welcome back!");
+  };
+
+  const chooseAccount = async (account) => {
+    try {
+      const response = await api.post("/auth/login/choose", { choice_token: accountChoice.token, user_id: account.user_id });
+      setAccountChoice(null);
+      await finishLogin(response.data);
+    } catch (error) {
+      setAccountChoice(null);
+      toast.error(error?.response?.data?.detail || "Unable to sign in. Please try again.");
+    }
   };
 
   const handleLookup = async (event) => {
@@ -140,6 +162,13 @@ export default function Login() {
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#f6f9fc] text-slate-900">
+      {accountChoice && (
+        <AccountChooser
+          accounts={accountChoice.accounts}
+          onChoose={chooseAccount}
+          onCancel={() => setAccountChoice(null)}
+        />
+      )}
       <div className="mx-auto flex min-h-screen w-full max-w-[1800px] flex-col">
         <header className="flex h-[82px] shrink-0 items-center justify-between border-b border-slate-200/80 bg-white px-6 sm:px-10 xl:px-14">
           <Link to="/" className="inline-flex items-center"><img src="/onenexa-logo.png" alt="ONENEXA" className="h-12 w-auto max-w-[230px] object-contain" /></Link>

@@ -7,6 +7,9 @@
  * the default. Several mailboxes can be connected (e.g. accounts@ and sales@)
  * and each sending screen can pick one under "Send from".
  *
+ * Every user can also connect personal mailboxes (``personal: true``). Only
+ * that user sees them and only that user can send from them.
+ *
  *   GET    /api/organisation-email/status
  *   POST   /api/organisation-email/google/start      → {auth_url}
  *   POST   /api/organisation-email/microsoft/start   → {auth_url}
@@ -38,6 +41,7 @@ export default function OrganisationEmail({ isDark = false }) {
   const [showOther, setShowOther] = useState(false);
   const [form, setForm] = useState({ email: '', password: '', from_name: '', smtp_host: '', smtp_port: '' });
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [scope, setScope] = useState('org');
 
   const card = isDark ? 'bg-slate-800/40 border-slate-700' : 'bg-white border-slate-200';
   const muted = isDark ? 'text-slate-400' : 'text-slate-500';
@@ -65,10 +69,10 @@ export default function OrganisationEmail({ isDark = false }) {
     load();
   }, [load]);
 
-  const startOAuth = async (provider) => {
-    setBusy(provider);
+  const startOAuth = async (provider, personal) => {
+    setBusy(`${provider}-${personal ? 'me' : 'org'}`);
     try {
-      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: RETURN_PATH });
+      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: RETURN_PATH, personal: !!personal });
       window.location.href = res.data.auth_url;
     } catch (err) {
       setBusy('');
@@ -80,7 +84,7 @@ export default function OrganisationEmail({ isDark = false }) {
     if (!form.email.trim() || !form.password) { toast.error('Enter the email address and its app password'); return; }
     setBusy('other');
     try {
-      const payload = { email: form.email.trim(), password: form.password, from_name: form.from_name || undefined };
+      const payload = { email: form.email.trim(), password: form.password, from_name: form.from_name || undefined, personal: scope === 'personal' };
       if (showAdvanced && form.smtp_host.trim()) {
         payload.smtp_host = form.smtp_host.trim();
         payload.smtp_port = Number(form.smtp_port) || 587;
@@ -127,7 +131,85 @@ export default function OrganisationEmail({ isDark = false }) {
   }
   if (!status) return null;
   const canManage = status.can_manage;
-  const mailboxes = status.mailboxes || [];
+  const mailboxes = status.organisation_mailboxes || (status.mailboxes || []).filter((m) => !m.personal);
+  const myMailboxes = status.my_mailboxes || [];
+
+  const mailboxRow = (m, personal) => (
+    <div key={m.id} className="p-4 flex flex-wrap items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm font-semibold truncate ${strong}`}>
+          {m.from_email}
+          {m.is_default && !personal && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 align-middle">Default</span>}
+          {personal && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 align-middle">Only you</span>}
+        </p>
+        <p className={`text-[11px] ${muted}`}>{KIND_LABEL[m.kind] || 'Email account'}{m.from_name ? ` · sends as “${m.from_name}”` : ''}</p>
+        {m.last_error && (
+          <p className="text-[11px] text-red-600 mt-1 flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5" />Last send failed: {m.last_error}</p>
+        )}
+      </div>
+      {(personal || canManage) && (
+        <div className="flex items-center gap-1.5">
+          {m.kind === 'google' && !personal && (
+            <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => connectInbox(m)} title="Optional: also read this inbox in the Email module">
+              <Inbox className="h-3.5 w-3.5" />Also read inbox
+            </Button>
+          )}
+          {!m.is_default && !personal && (
+            <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => makeDefault(m.id)}>
+              {busy === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className="h-3.5 w-3.5" />}Make default
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" className="h-8 rounded-lg text-xs text-red-600" disabled={!!busy} onClick={() => remove(m)} aria-label={`Disconnect ${m.from_email}`}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  const otherForm = showOther && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1"><Label className="text-xs font-semibold">Email address</Label>
+                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="accounts@yourfirm.com" className="h-9 rounded-xl text-sm" /></div>
+              <div className="space-y-1"><Label className="text-xs font-semibold">App password</Label>
+                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mailbox or app password" className="h-9 rounded-xl text-sm" autoComplete="new-password" /></div>
+              <div className="space-y-1"><Label className="text-xs font-semibold">Sender name (optional)</Label>
+                <Input value={form.from_name} onChange={(e) => setForm({ ...form, from_name: e.target.value })} placeholder="Your firm name" className="h-9 rounded-xl text-sm" /></div>
+              <div className="flex items-end">
+                <button type="button" className="text-[11px] font-semibold text-blue-600 hover:underline" onClick={() => setShowAdvanced((v) => !v)}>
+                  {showAdvanced ? 'Hide server settings' : 'Server settings (only if auto-detect fails)'}
+                </button>
+              </div>
+              {showAdvanced && (
+                <>
+                  <div className="space-y-1"><Label className="text-xs font-semibold">SMTP server</Label>
+                    <Input value={form.smtp_host} onChange={(e) => setForm({ ...form, smtp_host: e.target.value })} placeholder="smtp.yourprovider.com" className="h-9 rounded-xl text-sm" /></div>
+                  <div className="space-y-1"><Label className="text-xs font-semibold">Port</Label>
+                    <Input value={form.smtp_port} onChange={(e) => setForm({ ...form, smtp_port: e.target.value })} placeholder="587" className="h-9 rounded-xl text-sm" /></div>
+                </>
+              )}
+              <div className="sm:col-span-2 flex items-center gap-2">
+                <Button onClick={connectOther} disabled={busy === 'other'} className="h-9 rounded-xl text-sm gap-2">
+                  {busy === 'other' && <Loader2 className="h-4 w-4 animate-spin" />}Connect
+                </Button>
+                <p className={`text-[11px] ${muted}`}>Server settings are detected automatically. Some hosting plans block password-based sending; Google or Microsoft sign-in always works.</p>
+              </div>
+            </div>
+          );
+
+  const connectButtons = (personal) => (
+    <div className="flex flex-wrap gap-2">
+      <Button onClick={() => startOAuth('google', personal)} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}>
+        {busy === `google-${personal ? 'me' : 'org'}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Google
+      </Button>
+      <Button onClick={() => startOAuth('microsoft', personal)} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#0078D4,#004E8C)' }}>
+        {busy === `microsoft-${personal ? 'me' : 'org'}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Microsoft
+      </Button>
+      <Button variant="outline" onClick={() => { const next = personal ? 'personal' : 'org'; setShowOther((v) => !(v && scope === next)); setScope(next); }} disabled={!!busy && busy !== 'other'} className="h-9 rounded-xl text-sm">
+        Other email
+      </Button>
+    </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -158,37 +240,7 @@ export default function OrganisationEmail({ isDark = false }) {
       {/* Connected mailboxes */}
       {mailboxes.length > 0 && (
         <div className={`rounded-2xl border divide-y ${card} ${isDark ? 'divide-slate-700' : 'divide-slate-100'}`}>
-          {mailboxes.map((m) => (
-            <div key={m.id} className="p-4 flex flex-wrap items-center gap-3">
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm font-semibold truncate ${strong}`}>
-                  {m.from_email}
-                  {m.is_default && <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 align-middle">Default</span>}
-                </p>
-                <p className={`text-[11px] ${muted}`}>{KIND_LABEL[m.kind] || 'Email account'}{m.from_name ? ` · sends as “${m.from_name}”` : ''}</p>
-                {m.last_error && (
-                  <p className="text-[11px] text-red-600 mt-1 flex items-start gap-1"><AlertTriangle className="h-3 w-3 mt-0.5" />Last send failed: {m.last_error}</p>
-                )}
-              </div>
-              {canManage && (
-                <div className="flex items-center gap-1.5">
-                  {m.kind === 'google' && (
-                    <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => connectInbox(m)} title="Optional: also read this inbox in the Email module">
-                      <Inbox className="h-3.5 w-3.5" />Also read inbox
-                    </Button>
-                  )}
-                  {!m.is_default && (
-                    <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => makeDefault(m.id)}>
-                      {busy === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className="h-3.5 w-3.5" />}Make default
-                    </Button>
-                  )}
-                  <Button size="sm" variant="ghost" className="h-8 rounded-lg text-xs text-red-600" disabled={!!busy} onClick={() => remove(m)} aria-label={`Disconnect ${m.from_email}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
+          {mailboxes.map((m) => mailboxRow(m, false))}
         </div>
       )}
 
@@ -197,51 +249,28 @@ export default function OrganisationEmail({ isDark = false }) {
         <div className={`rounded-2xl border p-5 ${card}`}>
           <p className={`text-sm font-bold ${strong}`}>{mailboxes.length ? 'Connect another mailbox' : 'Connect your organisation email'}</p>
           <p className={`text-xs mt-0.5 mb-3 ${muted}`}>Sign in and click Allow — no password is stored for Google or Microsoft.</p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => startOAuth('google')} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}>
-              {busy === 'google' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Google
-            </Button>
-            <Button onClick={() => startOAuth('microsoft')} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#0078D4,#004E8C)' }}>
-              {busy === 'microsoft' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Microsoft
-            </Button>
-            <Button variant="outline" onClick={() => setShowOther((v) => !v)} disabled={!!busy && busy !== 'other'} className="h-9 rounded-xl text-sm">
-              Other email
-            </Button>
-          </div>
+          {connectButtons(false)}
 
-          {showOther && (
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1"><Label className="text-xs font-semibold">Email address</Label>
-                <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="accounts@yourfirm.com" className="h-9 rounded-xl text-sm" /></div>
-              <div className="space-y-1"><Label className="text-xs font-semibold">App password</Label>
-                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Mailbox or app password" className="h-9 rounded-xl text-sm" autoComplete="new-password" /></div>
-              <div className="space-y-1"><Label className="text-xs font-semibold">Sender name (optional)</Label>
-                <Input value={form.from_name} onChange={(e) => setForm({ ...form, from_name: e.target.value })} placeholder="Your firm name" className="h-9 rounded-xl text-sm" /></div>
-              <div className="flex items-end">
-                <button type="button" className="text-[11px] font-semibold text-blue-600 hover:underline" onClick={() => setShowAdvanced((v) => !v)}>
-                  {showAdvanced ? 'Hide server settings' : 'Server settings (only if auto-detect fails)'}
-                </button>
-              </div>
-              {showAdvanced && (
-                <>
-                  <div className="space-y-1"><Label className="text-xs font-semibold">SMTP server</Label>
-                    <Input value={form.smtp_host} onChange={(e) => setForm({ ...form, smtp_host: e.target.value })} placeholder="smtp.yourprovider.com" className="h-9 rounded-xl text-sm" /></div>
-                  <div className="space-y-1"><Label className="text-xs font-semibold">Port</Label>
-                    <Input value={form.smtp_port} onChange={(e) => setForm({ ...form, smtp_port: e.target.value })} placeholder="587" className="h-9 rounded-xl text-sm" /></div>
-                </>
-              )}
-              <div className="sm:col-span-2 flex items-center gap-2">
-                <Button onClick={connectOther} disabled={busy === 'other'} className="h-9 rounded-xl text-sm gap-2">
-                  {busy === 'other' && <Loader2 className="h-4 w-4 animate-spin" />}Connect
-                </Button>
-                <p className={`text-[11px] ${muted}`}>Server settings are detected automatically. Some hosting plans block password-based sending; Google or Microsoft sign-in always works.</p>
-              </div>
-            </div>
-          )}
+          {scope === 'org' && otherForm}
         </div>
       ) : (
         <p className={`text-xs ${muted}`}>Only an administrator can connect or change the organisation's email.</p>
       )}
+
+      {/* Personal mailboxes */}
+      <div className={`rounded-2xl border ${card}`}>
+        <div className="p-5">
+          <p className={`text-sm font-bold ${strong}`}>My mailboxes</p>
+          <p className={`text-xs mt-0.5 mb-3 ${muted}`}>Connect your own email to send from it yourself. Only you can see and use these; pick one under “Send from” when sending.</p>
+          {connectButtons(true)}
+          {scope === 'personal' && otherForm}
+        </div>
+        {myMailboxes.length > 0 && (
+          <div className={`border-t divide-y ${isDark ? 'border-slate-700 divide-slate-700' : 'border-slate-100 divide-slate-100'}`}>
+            {myMailboxes.map((m) => mailboxRow(m, true))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

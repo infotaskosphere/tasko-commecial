@@ -81,7 +81,7 @@ def _frontend_return_url(request: Request, return_path: Optional[str]) -> str:
 
 
 async def start(request: Request, user: Any, company_id: str, return_path: Optional[str], *, platform: bool = False,
-                login_hint: Optional[str] = None) -> str:
+                login_hint: Optional[str] = None, owner_user_id: Optional[str] = None) -> str:
     from backend.email_google_oauth import _redirect_uri
 
     redirect_uri = _redirect_uri(request)
@@ -103,6 +103,7 @@ async def start(request: Request, user: Any, company_id: str, return_path: Optio
         "state": state,
         "company_id": company_id,
         "user_id": str(getattr(user, "id", "")),
+        "owner_user_id": owner_user_id,
         "redirect_uri": redirect_uri,
         "code_verifier": getattr(flow, "code_verifier", None),
         "return_url": (_frontend_return_url(request, return_path or PLATFORM_RETURN_PATH) if platform
@@ -161,12 +162,15 @@ async def handle_callback(request: Request, *, code: Optional[str], state: str, 
                 "google_oauth", email=email, refresh_token=creds.refresh_token, updated_by=doc.get("user_id") or "oauth")
             return _result(return_url, "connected", email=email)
         company_id = doc["company_id"]
+        owner_user_id = doc.get("owner_user_id") or None
         profile = await company_profile(company_id)
         now = iso()
         await raw_db()[SENDERS].update_one(
-            {"company_id": company_id, "kind": "google", "from_email": email},
+            {"company_id": company_id, "kind": "google", "from_email": email, "owner_user_id": owner_user_id},
             {
                 "$set": {
+                    "owner_user_id": owner_user_id,
+                    "visibility": "personal" if owner_user_id else "organisation",
                     "kind": "google",
                     "label": f"Gmail · {email}",
                     "from_email": email,

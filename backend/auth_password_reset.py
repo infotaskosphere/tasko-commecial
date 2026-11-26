@@ -95,7 +95,12 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
     if not settings.enable_forgot_password:
         return {"message": "If that email is registered, password recovery instructions have been sent."}
 
-    user = await db.users.find_one({"email": email})
+    # One email may sign in to several accounts (backend/login_accounts.py);
+    # the code proves the person owns this mailbox.
+    from backend.login_accounts import find_login_accounts
+
+    accounts = await find_login_accounts(db, email)
+    user = accounts[0] if accounts else None
 
     if user:
         otp = str(secrets.randbelow(900000) + 100000)
@@ -110,7 +115,7 @@ async def forgot_password(data: ForgotPasswordRequest, request: Request):
             "user_id":     str(user.get("id") or user.get("_id")),
         })
 
-        base_url = (request.base_url._url if request and request.base_url else "http://localhost:3000").rstrip("/")
+        base_url = (os.getenv("FRONTEND_URL") or "").strip().rstrip("/") or "http://localhost:3000"
         reset_link = f"{base_url}/forgot-password?email={email}&token={otp}"
 
         try:
@@ -184,41 +189,40 @@ async def reset_password(data: ResetPasswordRequest, request: Request):
             detail="Password must be at least 12 characters."
         )
 
-    user = await db.users.find_one({"email": email})
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
+    # The new password applies to every account that signs in with this email.
+    from backend.login_accounts import find_login_accounts
 
+    accounts = await find_login_accounts(db, email)
+    if not accounts:
+        raise HTTPException(status_code=404, detail="User not found.")
+    user = accounts[0]
     user_id = str(user.get("id") or user.get("_id"))
     hashed = pwd_context.hash(data.new_password)
-
-    # If user has SaaS scrypt hashes, update them as well
-    updates = {"password": hashed}
-    if user.get("password_salt"):
-        salt = secrets.token_hex(16)
-        scrypt_hash = hashlib.scrypt(
-            data.new_password.encode("utf-8"),
-            salt=salt.encode("utf-8"),
-            n=16384,
-            r=8,
-            p=1,
-            maxmem=64 * 1024 * 1024,
-        ).hex()
-        updates["password_hash"] = scrypt_hash
-        updates["password_salt"] = salt
-
-    updates["password_version"] = int(user.get("password_version") or 1) + 1
-    await db.users.update_one({"email": email}, {"$set": updates})
-    await db.password_reset_tokens.delete_many({"email": email})
-
-    # Sign the account out everywhere. (This used to call a method that does
-    # not exist, so every reset answered 500 after saving the new password and
-    # no session was revoked.)
     client_ip = request.client.host if request and request.client else "unknown"
-    try:
-        from backend.security.session_manager import SessionManager
-        await SessionManager.revoke_all_user_sessions(user_id, reason="password_reset")
-    except Exception:
-        logger.exception("Session revocation after password reset failed for %s", email)
+
+    for account in accounts:
+        updates = {"password": hashed}
+        if account.get("password_salt"):
+            # SaaS accounts keep a scrypt record too.
+            salt = secrets.token_hex(16)
+            updates["password_hash"] = hashlib.scrypt(
+                data.new_password.encode("utf-8"),
+                salt=salt.encode("utf-8"),
+                n=16384,
+                r=8,
+                p=1,
+                maxmem=64 * 1024 * 1024,
+            ).hex()
+            updates["password_salt"] = salt
+        updates["password_version"] = int(account.get("password_version") or 1) + 1
+        await db.users.update_one({"id": account.get("id")}, {"$set": updates})
+        # Sign each account out everywhere.
+        try:
+            from backend.security.session_manager import SessionManager
+            await SessionManager.revoke_all_user_sessions(str(account.get("id")), reason="password_reset")
+        except Exception:
+            logger.exception("Session revocation after password reset failed for %s", account.get("id"))
+    await db.password_reset_tokens.delete_many({"email": email})
     try:
         await AuditSecurity.log_security_event(
             event_type="password_reset",
