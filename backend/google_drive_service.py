@@ -654,7 +654,7 @@ LEGACY_PLATFORM_FOLDERS = {
 
 DRIVE_NOT_CONNECTED_DETAIL = (
     "Google Drive is not connected for your organisation. "
-    "An administrator can connect it in Settings → Integrations."
+    "An administrator can connect it in Settings → Google Drive."
 )
 
 _COMPANY_STATE_TTL_SECONDS = 120

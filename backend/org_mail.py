@@ -53,7 +53,7 @@ USED_BY = [
     "Invoices", "Quotations", "Client emails (bulk)", "Compliance client emails",
     "Task reminders", "Client portal codes", "EngageX MailMaster",
 ]
-NOT_CONNECTED_HINT = "Connect your organisation's email in Settings → Integrations."
+NOT_CONNECTED_HINT = "Connect your organisation's email in Settings → Organisation Email."
 
 
 # ── Sending ────────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ async def send_org_email(
             await raw_db()[SENDERS].update_one(
                 {"company_id": company_id, "id": sender.id}, {"$set": {"last_error": reason[:300], "updated_at": iso()}}
             )
-            detail = f"Could not send from {sender.from_email}: {reason}. Check the mailbox in Settings → Integrations."
+            detail = f"Could not send from {sender.from_email}: {reason}. Check the mailbox in Settings → Organisation Email."
         else:
             detail = f"The email could not be sent: {reason}. {NOT_CONNECTED_HINT}"
         logger.warning("Organisation email (%s) for company %s failed via %s: %s", email_type, company_id, sender.kind, reason)

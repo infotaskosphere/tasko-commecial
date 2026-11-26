@@ -374,6 +374,9 @@ export function canAccessPath(user, pathname) {
   // Every signed-in user installs/connects the Desktop Agent on their own PC
   // (DSC reading, activity); it is not an admin setting or a licensed module.
   if (normalizedPath === "/settings/desktop-agent") return true;
+  // Organisation-wide Drive / sending mailbox (admin controls inside) plus
+  // each user's personal Drives and mailboxes.
+  if (normalizedPath === "/settings/google-drive" || normalizedPath === "/settings/organisation-email") return true;
   // Tenant-wide administration pages are not purchased operational modules.
   // Use the shared allowlist here so Settings child pages, including Message
   // Automation, retain consistent access for authenticated licensee admins.

@@ -31,7 +31,7 @@ REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI") or f"{BACKEND_URL}/auth/google/c
 
 _MOVED = (
     "Google Drive is now connected per organisation. "
-    "Open Settings → Integrations and click Connect Google Drive."
+    "Open Settings → Google Drive and click Connect Google Drive."
 )
 
 

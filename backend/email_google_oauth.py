@@ -92,6 +92,22 @@ def _flow(redirect_uri: str, state: Optional[str] = None) -> Flow:
     return flow
 
 
+def _request_company_id(current_user: Any) -> str:
+    from backend.tenant_runtime import authenticated_company_id
+
+    return str(authenticated_company_id() or getattr(current_user, "company_id", "") or "").strip()
+
+
+def _request_customer_id(current_user: Any):
+    try:
+        from backend.commercial_tenant_scope import authenticated_customer_id
+
+        value = authenticated_customer_id()
+    except Exception:
+        value = None
+    return value or getattr(current_user, "commercial_customer_id", None)
+
+
 async def _save_state(*, state: str, current_user: Any, redirect_uri: str, return_url: str, linked_page: str, auto_sync: bool, label: Optional[str]) -> None:
     now = datetime.now(timezone.utc)
     collection = db[GOOGLE_OAUTH_STATE_COLLECTION]
@@ -99,8 +115,10 @@ async def _save_state(*, state: str, current_user: Any, redirect_uri: str, retur
     await collection.insert_one({
         "state": state,
         "user_id": str(current_user.id),
-        "company_id": str(getattr(current_user, "company_id", "") or ""),
-        "commercial_customer_id": getattr(current_user, "commercial_customer_id", None),
+        # The organisation this request is scoped to — the same one the Email
+        # Accounts list reads. The raw user record can carry a stale company.
+        "company_id": _request_company_id(current_user),
+        "commercial_customer_id": _request_customer_id(current_user),
         "redirect_uri": redirect_uri,
         "return_url": return_url,
         "linked_page": linked_page or "all",

@@ -13,7 +13,7 @@ import {
   ScanLine, Lock, Search, Loader2,
   Wallet, CalendarOff, UserPlus, Cake,
   Database, FolderOpen, MessagesSquare, FileBarChart2, Phone,
-  Crown, Globe, Megaphone, Send, MailPlus,
+  Crown, Globe, Megaphone, Send, MailPlus, HardDrive,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import NotificationBell from './NotificationBell';
@@ -68,7 +68,7 @@ const NAV_GROUPS = [
     { path: '/admin-dashboard', icon: LayoutDashboard, label: 'Admin Dashboard', adminOnly: true }, { path: '/admin/backup-restore', icon: Database, label: 'Backup & Restore', adminOnly: true }, { path: '/permission-matrix', icon: ShieldCheck, label: 'Permission Matrix', adminOnly: true }, { path: '/staff-activity', icon: Activity, label: 'Team Activity', adminOnly: true, relatedModule: 'taskosphere' }, { path: '/reports', icon: BarChart3, label: 'Reports', adminOnly: true, relatedModule: 'taskosphere' }, { path: '/task-audit', icon: Activity, label: 'Audit Logs', adminOnly: true, relatedModule: 'taskosphere' }, { path: '/master-data', icon: Database, label: 'Master Data', adminOnly: true }, { path: '/roles', icon: Fingerprint, label: 'Roles', adminOnly: true }, { path: '/contact-details', icon: Phone, label: 'Contact Details', adminOnly: true }, { path: '/whatsapp-hub', icon: MessageCircle, label: 'Unified Inbox', adminOnly: true, relatedModule: 'records' }, { path: '/automation/approvals', icon: Cake, label: 'Automation Approvals', adminOnly: true, relatedModule: 'records' },
   ]},
   { id: 'settings', dividerLabel: 'Settings', items: [
-    { path: '/settings/email', icon: Mail, label: 'Email Accounts' }, { path: '/settings/general', icon: Settings, label: 'General Settings' }, { path: '/settings/desktop-agent', icon: Monitor, label: 'Desktop Agent' }, { path: '/settings/whatsapp', icon: MessageCircle, label: 'Message Automation' },
+    { path: '/settings/email', icon: Mail, label: 'Email Accounts' }, { path: '/settings/organisation-email', icon: Send, label: 'Organisation Email' }, { path: '/settings/google-drive', icon: HardDrive, label: 'Google Drive' }, { path: '/settings/general', icon: Settings, label: 'General Settings' }, { path: '/settings/desktop-agent', icon: Monitor, label: 'Desktop Agent' }, { path: '/settings/whatsapp', icon: MessageCircle, label: 'Message Automation' },
   ]},
 ];
 // Backup & Restore belongs exclusively to Admin, never to Settings.
@@ -301,6 +301,9 @@ const DashboardLayout = ({ children }) => {
   };
 
   const checkNavPermission = (item) => {
+    // Every user can open these: they hold personal mailboxes/Drives; the
+    // organisation controls inside are admin-only.
+    if (['/settings/google-drive', '/settings/organisation-email'].includes(item?.path)) return true;
     // Settings is a shared administration area. Keep all three Settings links visible
     // to the Platform Owner and authenticated licensee admins, independent of the
     // purchased operational-module flags. Backup & Restore is filtered separately below.

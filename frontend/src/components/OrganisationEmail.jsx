@@ -26,7 +26,9 @@ import { Label } from '@/components/ui/label';
 import { CheckCircle2, Inbox, Loader2, Mail, Star, Trash2, AlertTriangle } from 'lucide-react';
 import { fetchOrgEmailStatus } from '@/components/SendFromSelect';
 
-const RETURN_PATH = '/settings/general?tab=integrations&section=email';
+// Return to whichever page started the sign-in (Settings → Organisation Email
+// or General Settings → Integrations).
+const RETURN_PATH = () => `${window.location.pathname}${window.location.search}`;
 
 const KIND_LABEL = { google: 'Gmail / Google Workspace', microsoft: 'Outlook / Microsoft 365', smtp: 'Email account' };
 
@@ -72,7 +74,7 @@ export default function OrganisationEmail({ isDark = false }) {
   const startOAuth = async (provider, personal) => {
     setBusy(`${provider}-${personal ? 'me' : 'org'}`);
     try {
-      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: RETURN_PATH, personal: !!personal });
+      const res = await api.post(`/organisation-email/${provider}/start`, { return_path: RETURN_PATH(), personal: !!personal });
       window.location.href = res.data.auth_url;
     } catch (err) {
       setBusy('');

@@ -77,6 +77,8 @@ const PermissionMatrix = lazy(() => import('./pages/PermissionMatrix.jsx'));
 const ContactDetails = lazy(() => import('./pages/ContactDetails.jsx'));
 const GeneralSettings = lazy(() => import('./pages/GeneralSettings.jsx'));
 const DesktopAgentSettings = lazy(() => import('./pages/DesktopAgentSettings.jsx'));
+const OrganisationDriveSettings = lazy(() => import('./pages/OrganisationDriveSettings.jsx'));
+const OrganisationEmailSettings = lazy(() => import('./pages/OrganisationEmailSettings.jsx'));
 const AgentPair = lazy(() => import('./pages/AgentPair.jsx'));
 const BackupRestore = lazy(() => import('./pages/BackupRestore.jsx'));
 const WhatsAppSettings = lazy(() => import('./pages/WhatsAppSettings.jsx'));
@@ -335,6 +337,8 @@ export default function AppRoutes() {
           <Route path="/settings" element={<Navigate to="/settings/general" replace />} />
           <Route path="/settings/general" element={<GeneralSettings />} />
           <Route path="/settings/desktop-agent" element={<DesktopAgentSettings />} />
+          <Route path="/settings/google-drive" element={<OrganisationDriveSettings />} />
+          <Route path="/settings/organisation-email" element={<OrganisationEmailSettings />} />
           <Route path="/admin/backup-restore" element={<AdminOnly><BackupPermission><BackupRestore /></BackupPermission></AdminOnly>} />
           <Route path="/settings/backup" element={<Navigate to="/admin/backup-restore" replace />} />
           <Route path="/settings/email" element={<SettingsAdminGate><EmailSettings /></SettingsAdminGate>} />
