@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from backend.dependencies import db, get_current_user, require_admin
 from backend.platform_owner_actions import require_platform_owner_action
-from backend.identity_hierarchy import (ensure_identity_email_link, ensure_licensee_uid, ensure_license_uid, release_stale_licensee_email_link)
+from backend.identity_hierarchy import (ensure_identity_email_link, ensure_identity_indexes, ensure_licensee_uid, ensure_license_uid, release_stale_licensee_email_link)
 from backend.platform_owner import platform_owner_emails
 
 

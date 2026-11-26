@@ -789,7 +789,26 @@ async def _migrate_platform_owner_users(db, owner_uid: str) -> int:
     return migrated
 
 
-async def _migrate_licensees(db) -> tuple[int, int]:
+def _mask_email(email: Any) -> str:
+    value = _normalized_email(email)
+    if "@" not in value:
+        return "***"
+    local, domain = value.split("@", 1)
+    return f"{local[:2]}***@{domain}"
+
+
+def _is_platform_owner_account(user: dict) -> bool:
+    """A Platform Owner account must never be re-tagged as a licensee user."""
+    if user.get("is_platform_owner") is True:
+        return True
+    if _clean(user.get("platform_owner_uid")).upper().startswith("PO-"):
+        return True
+    if _clean(user.get("identity_org_uid")).upper().startswith("PO-"):
+        return True
+    return _clean(user.get("identity_type")).lower().startswith("platform_owner")
+
+
+async def _migrate_licensees(db, conflicts: Optional[list] = None) -> tuple[int, int]:
     customers = await db.commercial_license_customers.find(
         {}, {"_id": 0}
     ).sort([("created_at", 1), ("id", 1)]).to_list(10000)
@@ -868,6 +887,10 @@ async def _migrate_licensees(db) -> tuple[int, int]:
         for user in existing_users:
             if str(user.get("status") or "").lower() == "deleted":
                 continue
+            if _is_platform_owner_account(user):
+                # Matched only because it sits in a licensee company; it keeps
+                # its Platform Owner identity.
+                continue
 
             user["licensee_uid"] = licensee_uid
             user["identity_org_uid"] = licensee_uid
@@ -877,12 +900,33 @@ async def _migrate_licensees(db) -> tuple[int, int]:
                 else "licensee_user"
             )
             user["email_normalized"] = _normalized_email(user.get("email"))
-            uid = await ensure_user_uid(
-                db,
-                user,
-                organization_uid=licensee_uid,
-                identity_type=user["identity_type"],
-            )
+            try:
+                uid = await ensure_user_uid(
+                    db,
+                    user,
+                    organization_uid=licensee_uid,
+                    identity_type=user["identity_type"],
+                )
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                # One email can belong to only one organisation. Skip this one
+                # account (and record it) instead of aborting the migration for
+                # every remaining licensee.
+                entry = {
+                    "user_id": user.get("id"),
+                    "licensee_uid": licensee_uid,
+                    "customer_id": customer_id,
+                    "email_masked": _mask_email(user.get("email")),
+                    "reason": str(exc.detail),
+                }
+                logger.warning(
+                    "Identity migration skipped user %s in %s: email already belongs to another organisation (%s)",
+                    entry["user_id"], licensee_uid, entry["email_masked"],
+                )
+                if conflicts is not None:
+                    conflicts.append(entry)
+                continue
             await db.users.update_one(
                 {"id": user.get("id")},
                 {
@@ -1026,6 +1070,12 @@ async def migrate_hierarchical_identities(db) -> dict:
             await migrate_identity_email_links(db)
         except Exception:
             logger.exception("Email identity link bootstrap warning.")
+        for entry in marker.get("conflicts") or []:
+            logger.warning(
+                "Identity conflict still open: user %s in %s uses an email (%s) that belongs to another organisation. "
+                "Change that user's email to give them their own login.",
+                entry.get("user_id"), entry.get("licensee_uid"), entry.get("email_masked"),
+            )
         return {
             "status": "already-completed",
             "platform_owner_uid": marker.get("platform_owner_uid"),
@@ -1041,7 +1091,8 @@ async def migrate_hierarchical_identities(db) -> dict:
         owner_users += await repair_platform_owner_identity_records(db)
     except Exception:
         logger.exception("Platform Owner identity repair warning.")
-    licensees, commercial_users = await _migrate_licensees(db)
+    conflicts: list = []
+    licensees, commercial_users = await _migrate_licensees(db, conflicts)
 
     # Link the already-assigned organization UIDs to their emails only after
     # the hierarchy migration has established the L-* and PO-* identities.
@@ -1059,6 +1110,7 @@ async def migrate_hierarchical_identities(db) -> dict:
                 "platform_owner_users": owner_users,
                 "licensees": licensees,
                 "users": commercial_users,
+                "conflicts": conflicts,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }
         },
@@ -1066,11 +1118,12 @@ async def migrate_hierarchical_identities(db) -> dict:
     )
 
     return {
-        "status": "completed",
+        "status": "completed" if not conflicts else "completed-with-conflicts",
         "platform_owner_uid": owner_uid,
         "platform_owner_users": owner_users,
         "licensees": licensees,
         "users": commercial_users,
+        "conflicts": len(conflicts),
     }
 
 
