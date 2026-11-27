@@ -41,7 +41,7 @@ SEND_LOG = "engagex_send_log"
 
 # Opens recorded this soon after sending are ignored: they come from the
 # sender viewing their own Sent copy (the pixel is in it too), not the recipient.
-OPEN_GRACE_SECONDS = 60
+OPEN_GRACE_SECONDS = 20
 
 
 def campaign_style(settings: Optional[dict]) -> str:

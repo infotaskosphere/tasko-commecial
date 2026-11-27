@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from datetime import timedelta
+from typing import Optional
 
 from .common import CAMPAIGNS, CONTACTS, MEDIA, RECIPIENTS, SUPPRESSIONS, iso, raw_db, utcnow
 from .deliverability import OPEN_GRACE_SECONDS
@@ -92,11 +93,10 @@ async def unsubscribe_confirm(token: str, request: Request):
     return _page("Unsubscribed", f"<h1>You're unsubscribed</h1><p>You will no longer receive marketing emails from {sender}.</p>")
 
 
-@router.get("/o/{token}.gif")
-async def open_pixel(token: str):
+async def _record_open(token: str) -> None:
     try:
         # Ignore loads right after sending: that is the sender viewing their
-        # own Sent copy (the pixel is in it too), not the recipient opening it.
+        # own Sent copy (the image is in it too), not the recipient opening it.
         await raw_db()[RECIPIENTS].update_one(
             {"token": token, "channel": "email", "opened_at": None,
              "sent_at": {"$lte": iso(utcnow() - timedelta(seconds=OPEN_GRACE_SECONDS))}},
@@ -104,6 +104,11 @@ async def open_pixel(token: str):
         )
     except Exception:  # tracking must never break image rendering
         logger.debug("EngageX open tracking failed", exc_info=True)
+
+
+@router.get("/o/{token}.gif")
+async def open_pixel(token: str):
+    await _record_open(token)
     return Response(content=_PIXEL, media_type="image/gif", headers=_NO_STORE)
 
 
@@ -111,7 +116,7 @@ _PUBLIC_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
 @router.get("/a/{token}/{filename}")
-async def public_asset(token: str, filename: str):
+async def public_asset(token: str, filename: str, r: Optional[str] = None):
     """Serve MailMaster banner/inline images to email clients.
 
     Only raster image types uploaded as public email assets are served (never
@@ -125,6 +130,9 @@ async def public_asset(token: str, filename: str):
         )
     if not doc or doc.get("mime_type") not in _PUBLIC_IMAGE_TYPES:
         return Response(status_code=404, headers=_NO_STORE)
+    if r and len(r) <= 64:
+        # Personal-style emails: the recipient's mail app loaded this image.
+        await _record_open(r)
     return Response(
         content=base64.b64decode(doc["base64"]),
         media_type=doc["mime_type"],

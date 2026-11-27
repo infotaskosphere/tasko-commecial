@@ -821,7 +821,7 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
             <p className="text-xs font-semibold text-slate-500">Email style</p>
             <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
               {[
-                { key: 'personal', title: 'Personal (recommended)', text: 'Arrives like a normal email you typed. Best chance of the main Inbox (Primary tab). No open tracking or unsubscribe footer.' },
+                { key: 'personal', title: 'Personal (recommended)', text: 'Arrives like a normal email you typed. Best chance of the main Inbox (Primary tab). No unsubscribe footer. Opens are counted when the reader loads your banner or pictures; text-only emails can’t show opens.' },
                 { key: 'newsletter', title: 'Newsletter', text: 'Designed layout with open tracking and an unsubscribe link. Gmail usually files these under Promotions.' },
               ].map((o) => (
                 <button key={o.key} type="button" onClick={() => set({ style: o.key })} aria-pressed={c.style === o.key}

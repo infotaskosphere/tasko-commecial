@@ -371,8 +371,15 @@ class _MailChannel:
         text_body = html_to_text(body)
         if personal:
             # Letter-style message: none of the bulk-mail signals that make
-            # Gmail file it under Promotions (see deliverability.py).
-            html_body = build_personal_html(body_html=body, banner_markup=banner_html(self.content.get("banner")))
+            # Gmail file it under Promotions (see deliverability.py). Opens are
+            # still counted when the recipient's mail app loads one of the
+            # campaign's own images (banner / uploaded pictures): those URLs
+            # carry this recipient's token. No extra tracking pixel is added.
+            banner = dict(self.content.get("banner") or {})
+            if banner.get("url"):
+                banner["url"] = tag_asset_urls(banner["url"], base, token)
+            body = tag_asset_urls(body, base, token)
+            html_body = build_personal_html(body_html=body, banner_markup=banner_html(banner or None))
             header_unsubscribe, campaign_header = "", ""
         else:
             preview = render_merge(self.content.get("preview_text") or "", variables)
@@ -424,6 +431,17 @@ class _MailChannel:
     async def close(self) -> None:
         if self.session is not None:
             await self.session.close()
+
+
+def tag_asset_urls(html: str, base: str, token: str) -> str:
+    """Add ?r=<recipient token> to this server's hosted email-image URLs so an
+    image load can be counted as an open (personal style)."""
+    if not html or not base or not token:
+        return html
+    import re as _re
+
+    pattern = _re.compile(_re.escape(base) + r"/api/engagex-public/a/[A-Za-z0-9_\-]+/[^\"'\s<>?]+")
+    return pattern.sub(lambda m: f"{m.group(0)}?r={token}", html)
 
 
 # ── Campaign runner ──────────────────────────────────────────────────────────
