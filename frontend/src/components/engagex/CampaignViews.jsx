@@ -1,10 +1,11 @@
 // Campaign list + live detail drawer, shared by WhatsApp Hub and MailMaster.
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Copy, Loader2, Paperclip, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Copy, Loader2, Minimize2, Paperclip, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { minimiseCampaign } from '@/lib/campaignDock';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState, LoadingState } from '@/components/ui/PageKit';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
@@ -154,7 +155,14 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
         {!campaign ? <div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div> : (
           <div className="space-y-5">
             <SheetHeader>
-              <div className="flex items-center gap-2"><StatusBadge status={campaign.status} /><span className="text-xs text-slate-500">Created {fmtDateTime(campaign.created_at)} by {campaign.created_by_name}</span></div>
+              <div className="flex items-center gap-2 pr-8"><StatusBadge status={campaign.status} /><span className="text-xs text-slate-500">Created {fmtDateTime(campaign.created_at)} by {campaign.created_by_name}</span>
+                {campaign.status !== 'draft' && (
+                  <Button size="sm" variant="outline" className="ml-auto h-7 text-xs" title="Keep it sending in the background and show progress in the corner"
+                    onClick={() => { minimiseCampaign({ id: campaign.id, channel, name: campaign.name }); onOpenChange(false); }}>
+                    <Minimize2 className="mr-1 h-3.5 w-3.5" />Minimise
+                  </Button>
+                )}
+              </div>
               <SheetTitle className="text-xl">{campaign.name}</SheetTitle>
               <SheetDescription>
                 {channel === 'email' ? `${campaign.content?.subject || 'No subject'}${campaign.sender_from ? ` · from ${campaign.sender_from}` : ''}` : (campaign.content?.message || '').slice(0, 140)}
@@ -190,7 +198,7 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
             {campaign.status === 'scheduled' && <p className="text-xs text-violet-600 dark:text-violet-300">Scheduled for {fmtDateTime(campaign.scheduled_at)}</p>}
             {campaign.status === 'running' && campaign.throttled_until && new Date(campaign.throttled_until) > new Date() && (
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-                <p className="font-semibold">Waiting for the sending limit — continues automatically at {fmtDateTime(campaign.throttled_until)}</p>
+                <p className="font-semibold">Waiting — continues automatically at {fmtDateTime(campaign.throttled_until)}</p>
                 {campaign.last_error && <p className="mt-0.5">{campaign.last_error}</p>}
               </div>
             )}

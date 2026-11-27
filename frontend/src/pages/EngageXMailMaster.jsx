@@ -21,6 +21,7 @@ import { engagexApi, engagexError } from '@/lib/engagexApi';
 import api from '@/lib/api';
 import { normalizeCompanies } from '@/lib/companies';
 import AudienceBuilder from '@/components/engagex/AudienceBuilder';
+import SpreadOptions, { spreadFromSettings, spreadPayload } from '@/components/engagex/SpreadOptions';
 import EmailEditor, { STARTER_TEMPLATES, previewDocument } from '@/components/engagex/EmailEditor';
 import { CampaignSheet, CampaignTable } from '@/components/engagex/CampaignViews';
 import OptOutPanel from '@/components/engagex/OptOutPanel';
@@ -485,7 +486,7 @@ function TemplatesPanel({ templates, hiddenStarters = [], companyName, reload, o
 // ═════════════════════════════════════════════════════════════════════════════
 const blankCampaign = (senders) => ({
   id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || senders[0]?.id || PLATFORM, from_name: '', subject: '', preview_text: '',
-  html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, style: 'personal', track_opens: true, footer_address: '', template_id: null,
+  html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, pause_every: 0, pause_min: 5, spread: spreadFromSettings(), style: 'personal', track_opens: true, footer_address: '', template_id: null,
   banner: null, attachments: [],
 });
 
@@ -501,6 +502,9 @@ export const campaignFromDoc = (doc, senders) => ({
   list_ids: doc.audience?.list_ids || [],
   recipients: doc.audience?.recipients || [],
   per_minute: doc.settings?.per_minute || 30,
+  pause_every: doc.settings?.pause_every || 0,
+  pause_min: Math.round((doc.settings?.pause_sec || 300) / 60),
+  spread: spreadFromSettings(doc.settings || {}),
   // Campaigns from before email styles were sent as newsletters.
   style: doc.settings?.style || 'newsletter',
   track_opens: doc.settings?.track_opens !== false,
@@ -675,7 +679,7 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
 
   const body = () => ({
     name: c.name.trim() || c.subject.trim() || 'Untitled campaign', sender_id: c.sender_id, from_name: (c.from_name || '').trim(), subject: c.subject, preview_text: c.preview_text, html: c.html,
-    audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), style: c.style, track_opens: c.style === 'newsletter' && c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
+    audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), pause_every: Number(c.pause_every) || 0, pause_sec: (Number(c.pause_min) || 5) * 60, ...spreadPayload(c.spread), style: c.style, track_opens: c.style === 'newsletter' && c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
     banner: c.banner?.url ? { url: c.banner.url, link: c.banner.link || '', alt: c.banner.alt || '', media_id: c.banner.media_id || null } : null,
     attachments: c.attachments.map(({ id, filename, size, mime_type }) => ({ id, filename, size, mime_type })),
   });
@@ -729,9 +733,10 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
   // Gmail/Outlook mailboxes: slower, varied pace and a daily cap (see backend deliverability.py).
   const limits = sender?.limits || null;
   const pace = limits ? Math.min(Number(c.per_minute), limits.per_minute) / 1.2 : Number(c.per_minute);
-  const sendDays = limits && audienceCount > limits.daily ? Math.ceil(audienceCount / limits.daily) : 1;
+  const perDayCap = Math.min(limits ? limits.daily : Infinity, Number(c.spread?.daily_limit) || Infinity);
+  const sendDays = Number.isFinite(perDayCap) && audienceCount > perDayCap ? Math.ceil(audienceCount / perDayCap) : 1;
   const etaSeconds = audienceCount ? (Math.min(audienceCount, limits ? limits.daily : audienceCount) / Math.max(1, pace)) * 60 : 0;
-  const etaLabel = sendDays > 1 ? `about ${sendDays} days (${fmtNumber(limits.daily)} per day)` : fmtDuration(etaSeconds);
+  const etaLabel = sendDays > 1 ? `about ${sendDays} days (${fmtNumber(perDayCap)} per day)` : fmtDuration(etaSeconds);
 
   return (
     <div className="space-y-4">
@@ -834,6 +839,15 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
                 ? `${limits.provider} mailbox: sends at most ${limits.per_minute} per minute at a varied pace and ${fmtNumber(limits.daily)} per 24 hours, so the account is not blocked. Bigger lists continue automatically the next day.`
                 : 'SES, SendGrid and similar services can go higher.'}</span>
             </label>
+            <label className="text-xs font-semibold text-slate-500">Batches: pause after every
+              <div className="mt-1 flex items-center gap-2">
+                <Input type="number" min={0} max={1000} value={c.pause_every || ''} placeholder="off" onChange={(e) => set({ pause_every: Math.max(0, Math.min(1000, Number(e.target.value) || 0)) })} />
+                <span className="whitespace-nowrap font-normal">emails, for</span>
+                <Input type="number" min={1} max={360} value={c.pause_min} onChange={(e) => set({ pause_min: Math.max(1, Math.min(360, Number(e.target.value) || 1)) })} />
+                <span className="font-normal">min</span>
+              </div>
+              <span className="mt-1 block font-normal text-slate-400">Like WhatsApp batches: send a group, rest, then the next group. E.g. 50 emails, then a 10-minute break.</span>
+            </label>
             {c.style === 'newsletter' && (
               <>
                 <label className="text-xs font-semibold text-slate-500">Footer address (recommended)
@@ -843,6 +857,7 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
               </>
             )}
           </div>
+          <SpreadOptions value={c.spread} onChange={(spread) => set({ spread })} unit="emails" total={audienceCount} />
         </div>
       </ChecklistRow>
 

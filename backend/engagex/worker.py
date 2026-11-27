@@ -409,6 +409,10 @@ class _MailChannel:
         return None
 
     def delay(self, sent_in_run: int) -> float:
+        # Batching (as in WhatsApp): a longer pause after every N emails.
+        pause_every = int(self.settings.get("pause_every") or 0)
+        if pause_every and sent_in_run and sent_in_run % pause_every == 0:
+            return float(self.settings.get("pause_sec") or 300)
         per_minute = max(1, min(600, int(self.settings.get("per_minute") or 30)))
         if not self.limits:
             return 60.0 / per_minute
@@ -447,7 +451,9 @@ async def _run_campaign(campaign: dict) -> None:
                 status = await _campaign_status(campaign_id)
                 if status != "running":
                     break
-                wait = await channel.capacity_wait() if hasattr(channel, "capacity_wait") else None
+                wait = await _spread_wait(campaign)
+                if not wait and hasattr(channel, "capacity_wait"):
+                    wait = await channel.capacity_wait()
                 if wait:
                     resume_at, reason = wait
                     await _throttle(campaign_id, resume_at, reason)
@@ -513,6 +519,21 @@ async def _run_campaign(campaign: dict) -> None:
     )
 
 
+async def _spread_wait(campaign: dict) -> Optional[tuple]:
+    """Daily limit / sending hours chosen for this campaign (both channels)."""
+    from .spread import spread_wait
+
+    async def sent_since(since_utc) -> int:
+        return await raw_db()[RECIPIENTS].count_documents(
+            {"campaign_id": campaign["id"], "status": "sent", "sent_at": {"$gte": iso(since_utc)}})
+
+    try:
+        return await spread_wait(campaign, sent_since)
+    except Exception as exc:  # a bad setting must never stop delivery
+        logger.warning("EngageX campaign %s spread settings ignored: %s", campaign.get("id"), exc)
+        return None
+
+
 async def _throttle(campaign_id: str, resume_at, reason: str) -> None:
     """Stop this run and hand the campaign back to the scheduler at resume_at.
 
@@ -560,9 +581,50 @@ async def _tick() -> None:
         _state["lanes"][key] = asyncio.create_task(_lane_task(key, campaign))
 
 
+# ── Keep the server awake while campaigns have work left ─────────────────────
+# Hosts such as Render's free plan put the server to sleep after ~15 minutes
+# without incoming requests, which would stop delivery once everyone logs out.
+# While any campaign is queued, running, waiting for tomorrow's slot or
+# scheduled, the worker requests its own public URL every few minutes; that
+# request counts as traffic, so the server stays up and finishes the job.
+KEEPALIVE_SECONDS = int(os.getenv("ENGAGEX_KEEPALIVE_SECONDS", "540") or 540)
+
+
+def _keepalive_url() -> str:
+    base = (os.getenv("ENGAGEX_KEEPALIVE_URL") or os.getenv("RENDER_EXTERNAL_URL")
+            or os.getenv("PUBLIC_BACKEND_URL") or "").strip().rstrip("/")
+    return f"{base}/health" if base and not base.endswith("/health") else base
+
+
+async def _has_pending_work() -> bool:
+    if await raw_db()[CAMPAIGNS].find_one({"status": {"$in": ["queued", "running", "scheduled"]}}, {"_id": 1}):
+        return True
+    try:  # WhatsApp Hub's older scheduled bulk sends
+        return bool(await raw_db()["whatsapp_scheduled_bulk"].find_one({"status": {"$in": ["scheduled", "pending", "running"]}}, {"_id": 1}))
+    except Exception:
+        return False
+
+
+async def _keepalive() -> None:
+    url = _keepalive_url()
+    if not url or os.getenv("ENGAGEX_KEEPALIVE_DISABLED", "").strip().lower() in {"1", "true", "yes"}:
+        return
+    if not await _has_pending_work():
+        return
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            await client.get(url)
+        logger.info("EngageX keep-alive: campaigns pending, server kept awake")
+    except Exception as exc:
+        logger.warning("EngageX keep-alive request failed: %s", exc)
+
+
 async def _loop() -> None:
     await ensure_indexes()
     logger.info("EngageX delivery worker started (%s).", WORKER_ID)
+    last_keepalive = 0.0
     while not _state["stopping"]:
         try:
             await tick()
@@ -570,6 +632,15 @@ async def _loop() -> None:
             raise
         except Exception:
             logger.exception("EngageX scheduling pass failed")
+        now = asyncio.get_running_loop().time()
+        if now - last_keepalive >= KEEPALIVE_SECONDS:
+            last_keepalive = now
+            try:
+                await _keepalive()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("EngageX keep-alive check failed")
         await asyncio.sleep(POLL_SECONDS)
 
 

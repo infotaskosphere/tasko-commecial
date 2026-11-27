@@ -121,6 +121,12 @@ class WhatsAppCampaignIn(BaseModel):
     # Gap between the parts (text, then each file) sent to one recipient.
     part_gap_sec: float = Field(2, ge=0, le=30)
     scheduled_at: Optional[datetime] = None
+    # Spread over days (both channels): optional per-day cap and sending hours
+    # (local time in ``timezone``). The campaign continues by itself.
+    daily_limit: Optional[int] = Field(None, ge=1, le=100_000)
+    send_start_hour: Optional[int] = Field(None, ge=0, le=23)
+    send_end_hour: Optional[int] = Field(None, ge=1, le=24)
+    timezone: str = Field("Asia/Kolkata", max_length=64)
 
 
 class BannerIn(BaseModel):
@@ -160,6 +166,15 @@ class MailCampaignIn(BaseModel):
     html: str = Field("", max_length=500_000)
     audience: MailAudienceIn = Field(default_factory=MailAudienceIn)
     per_minute: int = Field(30, ge=1, le=600)
+    # Batching: pause for pause_sec after every pause_every emails (0 = off).
+    pause_every: int = Field(0, ge=0, le=1000)
+    pause_sec: int = Field(300, ge=0, le=6 * 3600)
+    # Spread over days (both channels): optional per-day cap and sending hours
+    # (local time in ``timezone``). The campaign continues by itself.
+    daily_limit: Optional[int] = Field(None, ge=1, le=100_000)
+    send_start_hour: Optional[int] = Field(None, ge=0, le=23)
+    send_end_hour: Optional[int] = Field(None, ge=1, le=24)
+    timezone: str = Field("Asia/Kolkata", max_length=64)
     # "personal": plain letter-style email, best chance of the Primary inbox
     # (no tracking pixel / unsubscribe header). "newsletter": tracked marketing.
     style: Literal["personal", "newsletter"] = "personal"
@@ -1062,6 +1077,10 @@ async def create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Request, c
             "pause_every": body.pause_every,
             "pause_sec": body.pause_sec,
             "part_gap_sec": body.part_gap_sec,
+            "daily_limit": body.daily_limit,
+            "send_start_hour": body.send_start_hour,
+            "send_end_hour": body.send_end_hour,
+            "timezone": body.timezone or "Asia/Kolkata",
         },
         "content": {
             "message": body.message,
@@ -1690,6 +1709,12 @@ def _mail_fields(body: MailCampaignIn) -> dict:
             "sender_id": body.sender_id or PLATFORM_SENDER_ID,
             "from_name": clean_text(body.from_name, 120) or None,
             "per_minute": body.per_minute,
+            "pause_every": body.pause_every,
+            "pause_sec": body.pause_sec,
+            "daily_limit": body.daily_limit,
+            "send_start_hour": body.send_start_hour,
+            "send_end_hour": body.send_end_hour,
+            "timezone": body.timezone or "Asia/Kolkata",
             "style": body.style,
             "track_opens": body.track_opens and body.style == "newsletter",
             "footer_address": clean_text(body.footer_address, 300),

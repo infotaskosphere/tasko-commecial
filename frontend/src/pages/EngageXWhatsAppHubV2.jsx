@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CalendarClock, FileAudio, FileText, FileVideo, Gauge, Megaphone, MessageCircle, Paperclip, Plus, RefreshCw, Send, ShieldOff, Smartphone, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import AudienceBuilder from '@/components/engagex/AudienceBuilder';
 import { CampaignSheet, CampaignTable } from '@/components/engagex/CampaignViews';
 import OptOutPanel from '@/components/engagex/OptOutPanel';
 import WhatsAppConnectDialog from '@/components/engagex/WhatsAppConnectDialog';
+import SpreadOptions, { spreadFromSettings, spreadPayload } from '@/components/engagex/SpreadOptions';
 import { BRAND, ExCard, MergeTagBar, insertAtCursor, previewVariables, renderMergePreview } from '@/components/engagex/shared';
 
 const MAX_ATTACHMENTS = 5;
@@ -69,6 +71,7 @@ function Composer({ sessions, onConnect, onDone }) {
   const [minInterval, setMinInterval] = useState(6);
   const [maxInterval, setMaxInterval] = useState(12);
   const [pauseEvery, setPauseEvery] = useState(25);
+  const [spread, setSpread] = useState(spreadFromSettings());
   const [pauseSeconds, setPauseSeconds] = useState(60);
   const [partGap, setPartGap] = useState(2);
   const [when, setWhen] = useState('now');
@@ -147,6 +150,7 @@ function Composer({ sessions, onConnect, onDone }) {
         pause_every: every,
         pause_sec: pauseFor,
         part_gap_sec: gap,
+        ...spreadPayload(spread),
         scheduled_at: scheduled,
       });
       const skipped = res?.summary ? (res.summary.suppressed || 0) + (res.summary.invalid || 0) + (res.summary.duplicates || 0) : 0;
@@ -197,6 +201,7 @@ function Composer({ sessions, onConnect, onDone }) {
             <div className="flex gap-2 mb-3"><button type="button" onClick={() => setIntervalMode('fixed')} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${intervalMode === 'fixed' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200'}`}>Fixed interval</button><button type="button" onClick={() => setIntervalMode('random')} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${intervalMode === 'random' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200'}`}>Random interval</button></div>
             {intervalMode === 'fixed' ? <label className="block text-xs font-semibold text-slate-500">Every (seconds)<Input type="number" min="2" max="600" value={fixedInterval} onChange={e => setFixedInterval(e.target.value)} className="mt-1.5 max-w-xs" /></label> : <div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-slate-500">Minimum seconds<Input type="number" min="2" max="300" value={minInterval} onChange={e => setMinInterval(e.target.value)} className="mt-1.5" /></label><label className="text-xs font-semibold text-slate-500">Maximum seconds<Input type="number" min="2" max="600" value={maxInterval} onChange={e => setMaxInterval(e.target.value)} className="mt-1.5" /></label></div>}
             <div className="mt-3 grid gap-3 sm:grid-cols-3"><label className="text-xs font-semibold text-slate-500">Pause after every N recipients<Input type="number" min="0" max="1000" value={pauseEvery} onChange={e => setPauseEvery(e.target.value)} className="mt-1.5" /></label><label className="text-xs font-semibold text-slate-500">Pause duration (sec)<Input type="number" min="0" max="3600" value={pauseSeconds} onChange={e => setPauseSeconds(e.target.value)} className="mt-1.5" /></label><label className="text-xs font-semibold text-slate-500">Gap between parts (sec)<Input type="number" min="0" max="30" value={partGap} onChange={e => setPartGap(e.target.value)} className="mt-1.5" disabled={partsPerRecipient < 2} /></label></div>
+            <div className="mt-3"><SpreadOptions value={spread} onChange={setSpread} unit="messages" total={recipients.length} /></div>
             <p className="mt-2 text-[11px] text-slate-500">Set “Pause after” to 0 to turn pauses off. The gap between parts applies when one recipient gets several messages (text and files).</p>
             <GuidanceNote icon={Gauge} className="mt-3">The interval is enforced by the background sender on the server, so closing this page does not stop an active broadcast. Pause, resume or cancel it from the Campaigns tab.</GuidanceNote>
           </div>
@@ -224,7 +229,9 @@ export default function EngageXWhatsAppHubV2() {
   const [loading, setLoading] = useState(true);
   const [connectOpen, setConnectOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [openId, setOpenId] = useState(null);
+  const [params, setParams] = useSearchParams();
+  const [openId, setOpenId] = useState(params.get('campaign'));
+  useEffect(() => { const id = params.get('campaign'); if (id) setOpenId(id); }, [params]);
   const [canManage, setCanManage] = useState(true);
   const [bridgeError, setBridgeError] = useState(null);
 
@@ -260,7 +267,7 @@ export default function EngageXWhatsAppHubV2() {
         <TabsContent value="optouts" className="mt-4"><ExCard icon={ShieldOff} title="Opt-out list" color={BRAND.whatsapp}><OptOutPanel channel="whatsapp" /></ExCard></TabsContent>
       </Tabs>
 
-      <CampaignSheet channel="whatsapp" campaignId={openId} open={!!openId} onOpenChange={open => { if (!open) setOpenId(null); }} onChanged={() => setRefreshKey(k => k + 1)} />
+      <CampaignSheet channel="whatsapp" campaignId={openId} open={!!openId} onOpenChange={open => { if (!open) { setOpenId(null); if (params.get('campaign')) { params.delete('campaign'); setParams(params, { replace: true }); } } }} onChanged={() => setRefreshKey(k => k + 1)} />
       <WhatsAppConnectDialog open={connectOpen} onOpenChange={setConnectOpen} sessions={sessions} canManage={canManage} onChanged={loadSessions} />
     </div>
   );
