@@ -1,11 +1,12 @@
 // Campaign list + live detail drawer, shared by WhatsApp Hub and MailMaster.
 import React, { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Ban, ChevronLeft, ChevronRight, Copy, Loader2, Minimize2, Paperclip, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { AlertTriangle, Ban, ChevronLeft, Pencil, ChevronRight, Copy, Loader2, Minimize2, Paperclip, Pause, Play, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { minimiseCampaign } from '@/lib/campaignDock';
+import CampaignLiveEdit, { CampaignPlanCard } from './CampaignLiveEdit';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EmptyState, LoadingState } from '@/components/ui/PageKit';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
@@ -120,6 +121,7 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [busy, setBusy] = useState('');
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!campaignId) return;
@@ -157,6 +159,8 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
   const recipientPages = Math.max(1, Math.ceil((data?.recipients?.total || 0) / 50));
 
   return (
+    <>
+    {campaign && <CampaignLiveEdit open={editing} onOpenChange={setEditing} campaign={campaign} channel={channel} onSaved={() => { load(); onChanged?.(); }} />}
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
         {!campaign ? <div className="flex h-full items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-slate-400" /></div> : (
@@ -202,6 +206,7 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
               ))}
             </div>
             {campaign.status !== 'draft' && <DeliveryBar stats={st} className="h-2.5" />}
+            {campaign.status !== 'draft' && <CampaignPlanCard campaign={campaign} channel={channel} />}
             {campaign.status === 'scheduled' && <p className="text-xs text-violet-600 dark:text-violet-300">Scheduled for {fmtDateTime(campaign.scheduled_at)}</p>}
             {campaign.status === 'running' && campaign.throttled_until && new Date(campaign.throttled_until) > new Date() && (
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
@@ -214,6 +219,8 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
               {campaign.status === 'draft' && onEditDraft && <Button size="sm" onClick={() => onEditDraft(campaign)}>Edit draft</Button>}
               {['queued', 'scheduled', 'running'].includes(campaign.status) && <Button size="sm" variant="outline" disabled={!!busy} onClick={() => act('pause', 'Campaign paused')}><Pause className="h-4 w-4 mr-1.5" />Pause</Button>}
               {campaign.status === 'paused' && <Button size="sm" disabled={!!busy} onClick={() => act('resume', 'Campaign resumed')}><Play className="h-4 w-4 mr-1.5" />Resume</Button>}
+              {['paused', 'scheduled'].includes(campaign.status) && <Button size="sm" variant="outline" disabled={!!busy} onClick={() => setEditing(true)}><Pencil className="h-4 w-4 mr-1.5" />Edit campaign</Button>}
+              {['queued', 'running'].includes(campaign.status) && <span className="self-center text-[11px] text-slate-400">Pause to edit the content or settings.</span>}
               {['paused', 'completed', 'failed', 'cancelled'].includes(campaign.status) && st.failed > 0 && <Button size="sm" variant="outline" disabled={!!busy} onClick={() => act('retry-failed', 'Retrying failed recipients')}><RotateCcw className="h-4 w-4 mr-1.5" />Retry {st.failed} failed</Button>}
               {['queued', 'scheduled', 'running', 'paused'].includes(campaign.status) && <Button size="sm" variant="outline" className="text-rose-600" disabled={!!busy} onClick={() => { if (window.confirm('Cancel this campaign? Remaining recipients will be skipped.')) act('cancel', 'Campaign cancelled'); }}><Ban className="h-4 w-4 mr-1.5" />Cancel</Button>}
               {onDuplicate && <Button size="sm" variant="outline" onClick={() => onDuplicate(campaign)}><Copy className="h-4 w-4 mr-1.5" />Duplicate</Button>}
@@ -264,5 +271,6 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
         )}
       </SheetContent>
     </Sheet>
+    </>
   );
 }

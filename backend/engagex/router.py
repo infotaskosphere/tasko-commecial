@@ -17,6 +17,7 @@ import binascii
 import csv
 import io
 import re
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
@@ -30,6 +31,8 @@ from backend.models import User
 from backend.platform_owner import is_platform_owner
 
 from . import worker
+
+logger = logging.getLogger(__name__)
 from .common import (
     CAMPAIGN_ACTIVE,
     CAMPAIGN_FINAL,
@@ -855,6 +858,149 @@ async def mail_audience(q: Optional[str] = None, client_type: Optional[str] = No
 # ═════════════════════════════════════════════════════════════════════════════
 # Campaign lifecycle (shared by both channels)
 # ═════════════════════════════════════════════════════════════════════════════
+class LiveEditIn(BaseModel):
+    """Fields that may change after a campaign has started (all optional)."""
+    name: Optional[str] = Field(None, max_length=160)
+    # email
+    subject: Optional[str] = Field(None, max_length=300)
+    preview_text: Optional[str] = Field(None, max_length=300)
+    html: Optional[str] = Field(None, max_length=500_000)
+    from_name: Optional[str] = Field(None, max_length=120)
+    sender_id: Optional[str] = None
+    per_minute: Optional[int] = Field(None, ge=1, le=600)
+    # whatsapp
+    message: Optional[str] = Field(None, max_length=4096)
+    min_delay_sec: Optional[float] = Field(None, ge=2, le=300)
+    max_delay_sec: Optional[float] = Field(None, ge=2, le=600)
+    # both
+    pause_every: Optional[int] = Field(None, ge=0, le=1000)
+    pause_sec: Optional[float] = Field(None, ge=0, le=6 * 3600)
+    daily_limit: Optional[int] = Field(None, ge=0, le=100_000)  # 0 = no limit
+    send_start_hour: Optional[int] = Field(None, ge=-1, le=23)  # -1 = any time
+    send_end_hour: Optional[int] = Field(None, ge=1, le=24)
+    scheduled_at: Optional[datetime] = None
+
+
+async def _live_edit_updates(doc: dict, body: LiveEditIn, channel: str) -> dict:
+    data = body.model_dump(exclude_unset=True)
+    settings = dict(doc.get("settings") or {})
+    content = dict(doc.get("content") or {})
+    updates: dict = {}
+    if data.get("name") is not None:
+        if not clean_text(data["name"], 160):
+            raise HTTPException(status_code=400, detail="The campaign needs a name.")
+        updates["name"] = clean_text(data["name"], 160)
+    if channel == "email":
+        for key in ("subject", "preview_text", "html"):
+            if data.get(key) is not None:
+                content[key] = data[key]
+        if not str(content.get("subject") or "").strip():
+            raise HTTPException(status_code=400, detail="The subject cannot be empty.")
+        if not str(content.get("html") or "").replace(" ", "").strip():
+            raise HTTPException(status_code=400, detail="The email content cannot be empty.")
+        content["merge_tags"] = merge_tags_in(content.get("subject") or "", content.get("preview_text") or "", content.get("html") or "")
+        if "from_name" in data:
+            settings["from_name"] = clean_text(data.get("from_name"), 120) or None
+        if data.get("sender_id"):
+            from .mailer import resolve_sender
+
+            sender = await resolve_sender(doc["company_id"], data["sender_id"])
+            settings["sender_id"] = data["sender_id"]
+            updates["sender_label"] = sender.label
+            updates["sender_from"] = f"{settings.get('from_name') or sender.from_name} <{sender.from_email}>"
+        elif "from_name" in data and doc.get("sender_from"):
+            address = str(doc["sender_from"]).rsplit("<", 1)[-1].rstrip(">")
+            if settings.get("from_name"):
+                updates["sender_from"] = f"{settings['from_name']} <{address}>"
+        if data.get("per_minute") is not None:
+            settings["per_minute"] = int(data["per_minute"])
+    else:
+        if data.get("message") is not None:
+            if not data["message"].strip() and not (content.get("attachments") or content.get("media_id")):
+                raise HTTPException(status_code=400, detail="Write a message.")
+            content["message"] = data["message"]
+        lo = float(data.get("min_delay_sec") or settings.get("min_delay_sec") or 6)
+        hi = float(data.get("max_delay_sec") or settings.get("max_delay_sec") or lo)
+        if hi < lo:
+            raise HTTPException(status_code=400, detail="Maximum gap must be at least the minimum gap.")
+        if "min_delay_sec" in data or "max_delay_sec" in data:
+            settings["min_delay_sec"], settings["max_delay_sec"] = lo, hi
+    if data.get("pause_every") is not None:
+        settings["pause_every"] = int(data["pause_every"])
+    if data.get("pause_sec") is not None:
+        settings["pause_sec"] = float(data["pause_sec"])
+    if "daily_limit" in data:
+        settings["daily_limit"] = int(data["daily_limit"]) if data.get("daily_limit") else None
+    if "send_start_hour" in data or "send_end_hour" in data:
+        start, end = data.get("send_start_hour"), data.get("send_end_hour")
+        if start is None or start < 0 or end is None:
+            settings["send_start_hour"] = settings["send_end_hour"] = None
+        elif not (0 <= start < end <= 24):
+            raise HTTPException(status_code=400, detail="The sending hours must start before they end.")
+        else:
+            settings["send_start_hour"], settings["send_end_hour"] = start, end
+    if data.get("scheduled_at") is not None:
+        if doc.get("status") != "scheduled":
+            raise HTTPException(status_code=400, detail="Only a scheduled campaign has a start time to change.")
+        _, when = _launch_status("schedule", data["scheduled_at"])
+        updates["scheduled_at"] = when
+    if settings != (doc.get("settings") or {}):
+        updates["settings"] = settings
+    if content != (doc.get("content") or {}):
+        updates["content"] = content
+    return updates
+
+
+async def _campaign_plan(doc: dict) -> dict:
+    """What the campaign is doing and roughly how long the rest will take."""
+    from .spread import _tz, _window
+
+    settings = doc.get("settings") or {}
+    stats = doc.get("stats") or {}
+    remaining = int(stats.get("pending") or 0) + int(stats.get("sending") or 0)
+    caps: list = []
+    mailbox = None
+    if doc.get("channel") == "email":
+        from .mailer import resolve_sender
+
+        sender = await resolve_sender(doc["company_id"], settings.get("sender_id"))
+        limits = sender.limits()
+        if limits:
+            caps.append(limits.daily)
+            mailbox = {"provider": limits.provider, "daily": limits.daily}
+            per_minute = min(int(settings.get("per_minute") or 30), limits.per_minute) / 1.2
+        else:
+            per_minute = float(settings.get("per_minute") or 30)
+        seconds_each = 60.0 / max(per_minute, 0.1)
+    else:
+        lo = float(settings.get("min_delay_sec") or 6)
+        hi = float(settings.get("max_delay_sec") or lo)
+        seconds_each = (lo + hi) / 2
+    pause_every = int(settings.get("pause_every") or 0)
+    if pause_every:
+        seconds_each += float(settings.get("pause_sec") or 0) / pause_every
+    if settings.get("daily_limit"):
+        caps.append(int(settings["daily_limit"]))
+    window = _window(settings)
+    hours_per_day = (window[1] - window[0]) if window else 24
+    by_pace = int(hours_per_day * 3600 / max(seconds_each, 0.1))
+    per_day = min(caps + [by_pace]) if caps else by_pace
+    days_left = (remaining + per_day - 1) // per_day if remaining and per_day else 0
+    finish = None
+    if remaining and per_day:
+        now_local = utcnow().astimezone(_tz(settings.get("timezone")))
+        finish = (now_local + timedelta(days=max(0, days_left - 1),
+                                        seconds=min(remaining, per_day) * seconds_each)).isoformat()
+    return {
+        "remaining": remaining, "per_day": per_day, "days_left": days_left, "finish_estimate": finish,
+        "seconds_between": round(seconds_each, 1), "mailbox": mailbox,
+        "daily_limit": settings.get("daily_limit"),
+        "window": {"start": window[0], "end": window[1]} if window else None,
+        "pause_every": pause_every or None, "pause_sec": settings.get("pause_sec"),
+        "style": settings.get("style"), "started_at": doc.get("started_at"),
+    }
+
+
 def _register_campaign_routes(channel: str, prefix: str) -> None:
     page = _page_for_channel(channel)
 
@@ -899,7 +1045,29 @@ def _register_campaign_routes(channel: str, prefix: str) -> None:
         total = await coll.count_documents(query)
         recipients = await coll.find(query, {"_id": 0, "token": 0, "variables": 0}).sort("seq", 1) \
             .skip((page_no - 1) * page_size).limit(page_size).to_list(page_size)
-        return {"campaign": _public_campaign(doc), "recipients": {"items": recipients, "total": total, "page": page_no, "page_size": page_size}}
+        out = _public_campaign(doc)
+        if doc.get("status") != "draft":
+            try:
+                out["plan"] = await _campaign_plan(doc)
+            except Exception as exc:  # an estimate must never break the progress view
+                logger.debug("Campaign plan estimate failed: %s", exc)
+        return {"campaign": out, "recipients": {"items": recipients, "total": total, "page": page_no, "page_size": page_size}}
+
+    @router.put(f"{prefix}/campaigns/{{campaign_id}}/live", name=f"{channel}_campaign_live_edit")
+    async def live_edit(campaign_id: str, body: LiveEditIn, current_user: User = Depends(get_current_user)):
+        """Change a paused or scheduled campaign. Messages already sent stay as
+        they were; everything still pending uses the new content and settings."""
+        require_page(current_user, page)
+        company_id = workspace_company_id(current_user)
+        doc = await _campaign_or_404(company_id, campaign_id, channel, light=True)
+        if doc.get("status") not in ("paused", "scheduled"):
+            raise HTTPException(status_code=409, detail="Pause the campaign first, then edit it.")
+        updates = await _live_edit_updates(doc, body, channel)
+        if updates:
+            updates["updated_at"] = iso()
+            await raw_db()[CAMPAIGNS].update_one(scoped(company_id, {"id": campaign_id}), {"$set": updates})
+        return {"campaign": _public_campaign(await _campaign_or_404(company_id, campaign_id, channel, light=True)),
+                "changed": sorted(k for k in updates if k != "updated_at")}
 
     @router.post(f"{prefix}/campaigns/{{campaign_id}}/pause", name=f"{channel}_campaign_pause")
     async def pause(campaign_id: str, current_user: User = Depends(get_current_user)):

@@ -50,6 +50,7 @@ export const engagexApi = {
   audience: (channel, params) => data(api.get(`${channelPrefix(channel)}/audience`, { params: clean(params) })),
   campaigns: (channel, params) => data(api.get(`${channelPrefix(channel)}/campaigns`, { params: clean(params), ...TIMEOUT })),
   campaign: (channel, id, params) => data(api.get(`${channelPrefix(channel)}/campaigns/${id}`, { params: clean(params) })),
+  liveEdit: (channel, id, body) => data(api.put(`${channelPrefix(channel)}/campaigns/${id}/live`, body)),
   campaignAction: (channel, id, action) => data(api.post(`${channelPrefix(channel)}/campaigns/${id}/${action}`)),
   deleteCampaign: (channel, id) => data(api.delete(`${channelPrefix(channel)}/campaigns/${id}`)),
   templates: (channel) => data(api.get(`${channelPrefix(channel)}/templates`, TIMEOUT)),
