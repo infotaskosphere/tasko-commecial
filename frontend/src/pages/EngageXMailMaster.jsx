@@ -314,13 +314,40 @@ function ListContacts({ list, onBack, onChanged }) {
   }, [list.id, q]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
+  const [progress, setProgress] = useState(null); // { done, total }
+  // Large imports are saved in batches (one request each), so 1,00,000+
+  // contacts never hit a request time limit. A failed batch is retried; if it
+  // still fails, the unsaved contacts stay here so "Save" continues from there.
   const save = async () => {
+    const CHUNK = 2000;
+    const all = incoming;
+    const totals = { added: 0, updated: 0, invalid: 0 };
     setSaving(true);
+    setProgress({ done: 0, total: all.length });
+    let done = 0;
     try {
-      const res = await engagexApi.addContacts(list.id, incoming);
-      toast.success(`${fmtNumber(res.added)} added, ${fmtNumber(res.updated)} updated${res.invalid ? `, ${res.invalid} invalid skipped` : ''}`);
-      setIncoming([]); setAdding(false); load(); onChanged();
-    } catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
+      while (done < all.length) {
+        const batch = all.slice(done, done + CHUNK);
+        let res;
+        for (let attempt = 1; ; attempt += 1) {
+          try { res = await engagexApi.addContacts(list.id, batch); break; }
+          catch (error) {
+            if (attempt >= 3) throw error;
+            await new Promise((r) => setTimeout(r, attempt * 4000)); // server may be waking up
+          }
+        }
+        totals.added += res.added || 0; totals.updated += res.updated || 0; totals.invalid += res.invalid || 0;
+        done += batch.length;
+        setProgress({ done, total: all.length });
+      }
+      toast.success(`${fmtNumber(totals.added)} added, ${fmtNumber(totals.updated)} updated${totals.invalid ? `, ${fmtNumber(totals.invalid)} invalid skipped` : ''}`);
+      setIncoming([]); setAdding(false);
+    } catch (error) {
+      setIncoming(all.slice(done));
+      toast.error(`${fmtNumber(done)} of ${fmtNumber(all.length)} saved. ${engagexError(error)} Click Save again to continue with the rest.`, { duration: 10000 });
+    } finally {
+      setSaving(false); setProgress(null); load(); onChanged();
+    }
   };
   const remove = async (c) => { try { await engagexApi.removeContact(list.id, c.id); load(); onChanged(); } catch (error) { toast.error(engagexError(error)); } };
 
@@ -337,7 +364,12 @@ function ListContacts({ list, onBack, onChanged }) {
       {adding && (
         <div className="space-y-3 rounded-xl border border-teal-200 p-4 dark:border-teal-500/30">
           <AudienceBuilder channel="email" value={incoming} onChange={setIncoming} />
-          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => { setAdding(false); setIncoming([]); }}>Cancel</Button><Button disabled={!incoming.length || saving} onClick={save}>{saving ? 'Saving…' : `Save ${fmtNumber(incoming.length)} to list`}</Button></div>
+          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => { setAdding(false); setIncoming([]); }}>Cancel</Button><Button disabled={!incoming.length || saving} onClick={save}>{saving ? (progress ? `Saving ${fmtNumber(progress.done)} / ${fmtNumber(progress.total)}…` : 'Saving…') : `Save ${fmtNumber(incoming.length)} to list`}</Button></div>
+          {progress && (
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800" aria-label="Import progress">
+              <div className="h-full bg-teal-500 transition-all" style={{ width: `${Math.round((progress.done / Math.max(1, progress.total)) * 100)}%` }} />
+            </div>
+          )}
         </div>
       )}
       {state.loading ? <LoadingState /> : state.items.length === 0 ? <EmptyState icon={Contact} title="No contacts" hint="Add clients, paste addresses or import a CSV/Excel file." /> : (
