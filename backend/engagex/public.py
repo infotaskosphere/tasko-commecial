@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from datetime import timedelta
+from collections import OrderedDict
 from typing import Optional
 
 from .common import CAMPAIGNS, CONTACTS, MEDIA, RECIPIENTS, SUPPRESSIONS, iso, raw_db, utcnow
@@ -115,6 +116,31 @@ async def open_pixel(token: str):
 _PUBLIC_IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 
 
+# Decoded email images, kept in memory. Every open of a personal-style email
+# fetches its banner with a per-recipient URL (so the open can be counted),
+# which defeats Gmail's image cache: without this, each open re-read the whole
+# image from the database and base64-decoded it again, and under a steady
+# stream of opens memory climbed until the 512 MB instance was killed.
+_ASSET_CACHE: "OrderedDict[str, tuple[str, bytes]]" = OrderedDict()
+_ASSET_CACHE_MAX_BYTES = 24 * 1024 * 1024
+
+
+def _cache_get(token: str):
+    item = _ASSET_CACHE.get(token)
+    if item is not None:
+        _ASSET_CACHE.move_to_end(token)
+    return item
+
+
+def _cache_put(token: str, mime: str, content: bytes) -> None:
+    if len(content) > _ASSET_CACHE_MAX_BYTES // 2:
+        return
+    _ASSET_CACHE[token] = (mime, content)
+    _ASSET_CACHE.move_to_end(token)
+    while sum(len(v[1]) for v in _ASSET_CACHE.values()) > _ASSET_CACHE_MAX_BYTES:
+        _ASSET_CACHE.popitem(last=False)
+
+
 @router.get("/a/{token}/{filename}")
 async def public_asset(token: str, filename: str, r: Optional[str] = None):
     """Serve MailMaster banner/inline images to email clients.
@@ -122,19 +148,24 @@ async def public_asset(token: str, filename: str, r: Optional[str] = None):
     Only raster image types uploaded as public email assets are served (never
     HTML/SVG), so the endpoint cannot be used to host active content.
     """
-    doc = None
-    if token and len(token) <= 64:
+    if not token or len(token) > 64:
+        return Response(status_code=404, headers=_NO_STORE)
+    cached = _cache_get(token)
+    if cached is None:
         doc = await raw_db()[MEDIA].find_one(
             {"public_token": token, "purpose": {"$in": ["banner", "image"]}},
             {"_id": 0, "base64": 1, "mime_type": 1},
         )
-    if not doc or doc.get("mime_type") not in _PUBLIC_IMAGE_TYPES:
-        return Response(status_code=404, headers=_NO_STORE)
+        if not doc or doc.get("mime_type") not in _PUBLIC_IMAGE_TYPES:
+            return Response(status_code=404, headers=_NO_STORE)
+        cached = (doc["mime_type"], base64.b64decode(doc["base64"]))
+        del doc
+        _cache_put(token, *cached)
     if r and len(r) <= 64:
         # Personal-style emails: the recipient's mail app loaded this image.
         await _record_open(r)
     return Response(
-        content=base64.b64decode(doc["base64"]),
-        media_type=doc["mime_type"],
+        content=cached[1],
+        media_type=cached[0],
         headers={"Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff"},
     )

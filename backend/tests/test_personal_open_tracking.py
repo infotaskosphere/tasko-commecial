@@ -41,3 +41,25 @@ def test_loading_a_tagged_image_records_the_open(monkeypatch):
     assert r1.status_code == 200
     assert opened["opened_at"] is not None
     assert fresh["opened_at"] is None  # loads within seconds of sending are the sender's own copy
+
+
+def test_banner_is_read_from_the_database_once_for_many_opens(monkeypatch):
+    mongomock_motor = pytest.importorskip("mongomock_motor")
+    from backend import dependencies as dep
+    from backend.engagex import public
+
+    raw = mongomock_motor.AsyncMongoMockClient()["opens2"]
+    monkeypatch.setattr(dep, "_raw_db", raw)
+    public._ASSET_CACHE.clear()
+
+    async def run():
+        await raw.engagex_media.insert_one({"public_token": "Tok9", "purpose": "banner", "mime_type": "image/png",
+                                            "base64": "iVBORw0KGgo="})
+        first = await public.public_asset("Tok9", "b.png", r="rcpt0")
+        await raw.engagex_media.delete_many({})  # later opens must not need the database
+        rest = [await public.public_asset("Tok9", "b.png", r=f"rcpt{i}") for i in range(1, 50)]
+        return first, rest
+
+    first, rest = asyncio.run(run())
+    assert first.status_code == 200 and all(o.status_code == 200 for o in rest)
+    assert rest[-1].body == first.body
