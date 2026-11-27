@@ -319,6 +319,8 @@ class _MailChannel:
 
         try:
             self.sender = await resolve_sender(self.campaign["company_id"], self.settings.get("sender_id"))
+            if self.settings.get("from_name"):
+                self.sender.from_name = self.settings["from_name"]
         except Exception as exc:
             return f"Email sender is unavailable: {getattr(exc, 'detail', exc)}"
         try:

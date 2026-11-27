@@ -152,6 +152,9 @@ class MailAudienceIn(BaseModel):
 class MailCampaignIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=160)
     sender_id: str = PLATFORM_SENDER_ID
+    # Name recipients see for this campaign only (e.g. one of the
+    # organisation's other companies). Blank: the mailbox's own name.
+    from_name: str = Field("", max_length=120)
     subject: str = Field("", max_length=300)
     preview_text: str = Field("", max_length=300)
     html: str = Field("", max_length=500_000)
@@ -196,6 +199,7 @@ class SenderIn(BaseModel):
 class TestSendIn(BaseModel):
     to: str
     sender_id: str = PLATFORM_SENDER_ID
+    from_name: str = Field("", max_length=120)
     subject: str = Field("Test email from MailMaster", max_length=300)
     html: str = Field("<p>This is a test email from MailMaster.</p>", max_length=500_000)
     preview_text: str = ""
@@ -1447,6 +1451,8 @@ async def test_send(body: TestSendIn, current_user: User = Depends(get_current_u
     if not to:
         raise HTTPException(status_code=400, detail="Enter a valid email address for the test.")
     sender = await resolve_sender(company_id, body.sender_id)
+    if clean_text(body.from_name, 120):
+        sender.from_name = clean_text(body.from_name, 120)
     variables = merge_variables({"name": getattr(current_user, "full_name", "") or "", "email": to}, sender.from_name)
     content = render_merge(body.html, variables, escape_html=True)
     banner = body.banner.model_dump() if body.banner else None
@@ -1675,6 +1681,7 @@ def _mail_fields(body: MailCampaignIn) -> dict:
         "name": clean_text(body.name, 160),
         "settings": {
             "sender_id": body.sender_id or PLATFORM_SENDER_ID,
+            "from_name": clean_text(body.from_name, 120) or None,
             "per_minute": body.per_minute,
             "style": body.style,
             "track_opens": body.track_opens and body.style == "newsletter",
@@ -1723,6 +1730,8 @@ async def _launch_mail(campaign: dict, action: str, scheduled_at: Optional[datet
     from .mailer import resolve_sender
 
     sender = await resolve_sender(campaign["company_id"], campaign["settings"].get("sender_id"))
+    if campaign["settings"].get("from_name"):
+        sender.from_name = campaign["settings"]["from_name"]
     if sender.kind == "platform" and not sender.from_email:
         raise HTTPException(status_code=400, detail="The platform email service has no From address. Configure it in the Commercial Console or add your own sender.")
     await _check_attachments(campaign["company_id"], (campaign.get("content") or {}).get("attachments"))

@@ -18,6 +18,8 @@ import { EmptyState, GuidanceNote, LoadingState, PageBanner } from '@/components
 import { ConnectAccountButtons, ConnectEmailDialog, GoogleMark, MicrosoftMark, useAccountSignIn } from '@/components/email/ConnectEmailAccount';
 import { useAuth } from '@/contexts/AuthContext.jsx';
 import { engagexApi, engagexError } from '@/lib/engagexApi';
+import api from '@/lib/api';
+import { normalizeCompanies } from '@/lib/companies';
 import AudienceBuilder from '@/components/engagex/AudienceBuilder';
 import EmailEditor, { STARTER_TEMPLATES, previewDocument } from '@/components/engagex/EmailEditor';
 import { CampaignSheet, CampaignTable } from '@/components/engagex/CampaignViews';
@@ -465,7 +467,7 @@ function TemplatesPanel({ templates, companyName, reload, onUse }) {
 // Campaign builder
 // ═════════════════════════════════════════════════════════════════════════════
 const blankCampaign = (senders) => ({
-  id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || senders[0]?.id || PLATFORM, subject: '', preview_text: '',
+  id: null, name: '', sender_id: senders.find((s) => s.is_default)?.id || senders[0]?.id || PLATFORM, from_name: '', subject: '', preview_text: '',
   html: STARTER_TEMPLATES[0].html, list_ids: [], recipients: [], per_minute: 30, style: 'personal', track_opens: true, footer_address: '', template_id: null,
   banner: null, attachments: [],
 });
@@ -475,6 +477,7 @@ export const campaignFromDoc = (doc, senders) => ({
   id: doc.status === 'draft' ? doc.id : null,
   name: doc.name || '',
   sender_id: doc.settings?.sender_id || PLATFORM,
+  from_name: doc.settings?.from_name || '',
   subject: doc.content?.subject || '',
   preview_text: doc.content?.preview_text || '',
   html: doc.content?.html || '',
@@ -624,7 +627,7 @@ function ChecklistRow({ done, title, summary, children }) {
   );
 }
 
-function CampaignBuilder({ initial, senders, lists, templates, companyName, onClose, onLaunched }) {
+function CampaignBuilder({ initial, senders, lists, templates, companyName, onClose, onLaunched, onTemplateSaved }) {
   const { user } = useAuth();
   const [c, setC] = useState(initial);
   const [saving, setSaving] = useState('');
@@ -635,14 +638,26 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
   const [scheduleAt, setScheduleAt] = useState(localDateTimeValue(Date.now() + 60 * 60 * 1000));
   const set = (patch) => setC((x) => ({ ...x, ...patch }));
 
-  const sender = senders.find((s) => s.id === c.sender_id) || senders[0];
+  const baseSender = senders.find((s) => s.id === c.sender_id) || senders[0];
+  // Per-campaign display name (e.g. another of the organisation's companies).
+  const sender = baseSender && c.from_name?.trim() ? { ...baseSender, from_name: c.from_name.trim() } : baseSender;
+  const [companyNames, setCompanyNames] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    api.get('/companies').then((res) => {
+      if (!alive) return;
+      const names = normalizeCompanies(res).map((co) => co?.name || co?.company_name || co?.legal_name).filter(Boolean);
+      setCompanyNames([...new Set(names)]);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const audienceCount = useMemo(() => lists.filter((l) => c.list_ids.includes(l.id)).reduce((n, l) => n + (l.counts?.subscribed || 0), 0) + c.recipients.length, [lists, c.list_ids, c.recipients]);
   const vars = useMemo(() => previewVariables(c.recipients[0] || { name: 'Ravi Sharma', email: 'ravi@example.com', company: 'Sharma Traders' }, sender?.from_name || companyName), [c.recipients, sender, companyName]);
   const ready = { to: audienceCount > 0, from: !!sender && (sender.kind !== PLATFORM || sender.enabled), subject: c.subject.trim().length > 0, content: c.html.replace(/<[^>]+>/g, '').trim().length > 0 };
   const allReady = Object.values(ready).every(Boolean);
 
   const body = () => ({
-    name: c.name.trim() || c.subject.trim() || 'Untitled campaign', sender_id: c.sender_id, subject: c.subject, preview_text: c.preview_text, html: c.html,
+    name: c.name.trim() || c.subject.trim() || 'Untitled campaign', sender_id: c.sender_id, from_name: (c.from_name || '').trim(), subject: c.subject, preview_text: c.preview_text, html: c.html,
     audience: { list_ids: c.list_ids, recipients: c.recipients }, per_minute: Number(c.per_minute), style: c.style, track_opens: c.style === 'newsletter' && c.track_opens, footer_address: c.footer_address, template_id: c.template_id,
     banner: c.banner?.url ? { url: c.banner.url, link: c.banner.link || '', alt: c.banner.alt || '', media_id: c.banner.media_id || null } : null,
     attachments: c.attachments.map(({ id, filename, size, mime_type }) => ({ id, filename, size, mime_type })),
@@ -678,7 +693,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
   const sendTest = async () => {
     try {
       const b = body();
-      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text, banner: b.banner, attachments: b.attachments, style: c.style });
+      await engagexApi.testSend({ to: testTo, sender_id: c.sender_id, from_name: (c.from_name || '').trim(), subject: c.subject || '(no subject)', html: c.html, preview_text: c.preview_text, banner: b.banner, attachments: b.attachments, style: c.style });
       toast.success(`Test sent to ${testTo}`); setTestOpen(false);
     } catch (error) { toast.error(engagexError(error)); }
   };
@@ -686,7 +701,11 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
   const saveAsTemplate = async () => {
     const name = window.prompt('Template name', c.name || c.subject || 'My template');
     if (!name) return;
-    try { await engagexApi.createTemplate('email', { name, subject: c.subject, preview_text: c.preview_text, html: c.html }); toast.success('Saved as template'); }
+    try {
+      await engagexApi.createTemplate('email', { name, subject: c.subject, preview_text: c.preview_text, html: c.html });
+      await onTemplateSaved?.();
+      toast.success(`Saved as template “${name}”`, { description: 'Find it under MailMaster → Templates.' });
+    }
     catch (error) { toast.error(engagexError(error)); }
   };
 
@@ -734,6 +753,14 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
           <SelectTrigger className="max-w-md"><SelectValue /></SelectTrigger>
           <SelectContent>{senders.map((s) => <SelectItem key={s.id} value={s.id}>{s.label} — {s.from_email || 'not configured'}</SelectItem>)}</SelectContent>
         </Select>
+        <label className="mt-3 block max-w-md text-xs font-semibold text-slate-500">
+          Name recipients see
+          <Input className="mt-1" list="mm-company-names" value={c.from_name || ''} maxLength={120}
+            onChange={(e) => set({ from_name: e.target.value })}
+            placeholder={baseSender?.from_name || companyName || 'Your company name'} />
+          <datalist id="mm-company-names">{companyNames.map((n) => <option key={n} value={n} />)}</datalist>
+          <span className="mt-1 block font-normal text-slate-400">For this campaign only — pick one of your companies or type a name. Leave blank to use “{baseSender?.from_name || companyName}”. Change the mailbox’s default name under Senders.</span>
+        </label>
         {sender?.kind === PLATFORM && !sender.enabled && <p className="mt-2 text-xs text-amber-600">The platform email service isn’t configured. Add your own email account under Senders to send.</p>}
         {!senders.some((s) => s.kind !== PLATFORM) && <ConnectGmailInline />}
       </ChecklistRow>
@@ -969,6 +996,7 @@ export default function EngageXMailMaster() {
             lists={lists}
             templates={templates}
             companyName={companyName}
+            onTemplateSaved={loadTemplates}
             onClose={() => { setBuilder(null); setRefreshKey((k) => k + 1); }}
             onLaunched={(id) => { setBuilder(null); setRefreshKey((k) => k + 1); setOpenId(id); }}
           />
