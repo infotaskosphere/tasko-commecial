@@ -301,7 +301,9 @@ async def _build_recipients(company_id: str, channel: str, rows: list[RecipientI
             "name": clean_text(row.name, 160),
             "company": clean_text(row.company, 200),
             "client_id": clean_text(row.client_id, 80) or None,
-            "variables": {str(k)[:40]: clean_text(v, 500) for k, v in (row.variables or {}).items()},
+            # message_body: a whole pre-personalised message from older modules.
+            "variables": {str(k)[:40]: clean_text(v, 4096 if str(k) == "message_body" else 500)
+                          for k, v in (row.variables or {}).items()},
         }
     if len(seen) > MAX_RECIPIENTS:
         raise HTTPException(status_code=400, detail=f"A campaign can have at most {MAX_RECIPIENTS:,} recipients.")
@@ -1017,6 +1019,12 @@ async def whatsapp_sessions(current_user: User = Depends(get_current_user)):
 @router.post("/whatsapp/campaigns")
 async def create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Request, current_user: User = Depends(get_current_user)):
     require_page(current_user, PAGE_WHATSAPP)
+    return await _create_whatsapp_campaign(body, request, current_user)
+
+
+async def _create_whatsapp_campaign(body: WhatsAppCampaignIn, request: Optional[Request], current_user: User):
+    """Shared by EngageX broadcasts and every other module's bulk WhatsApp
+    (Clients, Message Automation), so all bulk sends use one paced engine."""
     company_id = workspace_company_id(current_user)
     from backend.whatsapp_integration import _has_wa_access, resolve_sendable_session
 
@@ -1994,3 +2002,34 @@ async def queue_bulk_email(user: User, *, sender_id: Optional[str], from_name: O
         await raw_db()[CAMPAIGNS].update_one(scoped(company_id, {"id": campaign["id"]}), {"$set": {"last_error": str(exc.detail)}})
         raise
     return {"campaign_id": campaign["id"], **(result or {})}
+
+
+
+def _wa_tags(text: str) -> str:
+    """``{name}`` / ``{Name}`` placeholders → ``{{name}}`` merge tags."""
+    return _SINGLE_BRACE_TAG.sub(lambda m: "{{" + m.group(1).lower() + "}}", text or "")
+
+
+async def queue_whatsapp_bulk(user: User, *, name: str, session_id: Optional[str], message: str,
+                              recipients: list[dict], attachments: Optional[list[dict]] = None,
+                              min_delay_sec: float = 8, max_delay_sec: float = 15, pause_every: int = 20,
+                              pause_sec: float = 120, scheduled_at: Optional[datetime] = None,
+                              daily_limit: Optional[int] = None, send_start_hour: Optional[int] = None,
+                              send_end_hour: Optional[int] = None) -> dict:
+    """Queue bulk WhatsApp from any module as a server-side broadcast: varied
+    gaps, batch pauses, optional per-day cap and sending hours; it keeps going
+    after logout and never sends faster than one message every few seconds."""
+    lo = max(5.0, float(min_delay_sec or 8))
+    hi = max(lo, float(max_delay_sec or lo))
+    body = WhatsAppCampaignIn(
+        name=clean_text(name, 160) or "WhatsApp broadcast",
+        session_id=session_id or "",
+        message=_wa_tags(message)[:4096],
+        attachments=[MediaIn(**a) for a in (attachments or [])][:MAX_WA_ATTACHMENTS],
+        recipients=[RecipientIn(**r) for r in recipients][:MAX_RECIPIENTS],
+        min_delay_sec=min(lo, 300), max_delay_sec=min(hi, 600),
+        pause_every=max(0, min(1000, int(pause_every or 0))), pause_sec=max(0, min(3600, float(pause_sec or 0))),
+        scheduled_at=scheduled_at, daily_limit=daily_limit, send_start_hour=send_start_hour, send_end_hour=send_end_hour,
+    )
+    result = await _create_whatsapp_campaign(body, None, user)
+    return result

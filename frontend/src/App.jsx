@@ -8,8 +8,6 @@ import AppRoutes from "./AppRoutes.jsx";
 import { useLoading } from "./lib/api";
 import GifLoader from "@/components/ui/GifLoader.jsx";
 import ReminderPopupManager from "@/components/layout/ReminderPopupManager.jsx";
-import { BulkWASenderProvider } from "@/contexts/BulkWASenderContext";
-import BulkWASenderWidget from "@/contexts/BulkWASenderWidget";
 import { MinimizedFormsProvider } from "@/contexts/MinimizedFormsContext";
 import MinimizedFormsDock from "@/components/layout/MinimizedFormsDock";
 import { DocumentUploadProvider } from "@/contexts/DocumentUploadContext.jsx";
@@ -137,5 +135,5 @@ function WebsiteSurfaceScope() {
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 export default function App() {
-  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><BackupProvider><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><BulkWASenderProvider><ROCDumpUploadProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><BulkWASenderWidget /><MinimizedFormsDock /><ROCDumpUploadDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></ROCDumpUploadProvider></BulkWASenderProvider></MinimizedFormsProvider></BackupProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><BrowserRouter><BackupProvider><WebsiteSurfaceScope /><BusinessPageDesignScope /><MinimizedFormsProvider><ROCDumpUploadProvider><DocumentUploadProvider><BottomLoadingBar /><RoutePrefetcher /><ReminderPopupManager /><MinimizedFormsDock /><ROCDumpUploadDock /><Suspense fallback={<GifLoader />}><AppRoutes /></Suspense><Toaster position="top-right" richColors /></DocumentUploadProvider></ROCDumpUploadProvider></MinimizedFormsProvider></BackupProvider></BrowserRouter></AuthProvider></QueryClientProvider>;
 }

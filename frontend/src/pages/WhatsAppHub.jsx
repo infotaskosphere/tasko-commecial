@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { FixedSizeList as VList } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import api, { BASE_URL, getToken } from '@/lib/api';
@@ -855,242 +856,6 @@ function ChatItem({ contact, active, onClick, onArchiveToggle, sessionColorMap, 
   );
 }
 
-// ── QR Modal ──────────────────────────────────────────────────────────────────
-function QRModal({ sessionId, label, onClose, isDark }) {
-  const [qr,     setQr]     = useState(null);
-  const [status, setStatus] = useState('loading');
-  const timer = useRef(null);
-  const card = isDark?'#233138':'#fff', muted = isDark?'#8696a0':'#667781';
-
-  const poll = useCallback(async () => {
-    try {
-      const { data } = await api.get(`/whatsapp/sessions/${sessionId}/qr`);
-      if (data.status==='connected') { setStatus('connected'); clearTimeout(timer.current); setTimeout(onClose,1200); return; }
-      if (data.qr)  { setQr(data.qr); setStatus('ready'); }
-      else          { setStatus(data.status||'waiting'); }
-      timer.current = setTimeout(poll, 7000);
-    } catch { setStatus('error'); }
-  }, [sessionId, onClose]);
-
-  useEffect(() => { poll(); return () => clearTimeout(timer.current); }, [poll]);
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(6,78,59,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }} onClick={onClose}>
-      <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} onClick={e=>e.stopPropagation()}
-        style={{ background:card, borderRadius:20, padding:28, maxWidth:350, width:'90%', boxShadow:'0 24px 80px rgba(0,0,0,0.35)' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <div>
-            <div style={{ fontWeight:700, fontSize:16, color:isDark?'#e9edef':'#111b21' }}>Scan QR Code</div>
-            <div style={{ fontSize:12, color:muted, marginTop:2 }}>{label}</div>
-          </div>
-          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:muted }}><X size={18}/></button>
-        </div>
-        <div style={{ background:isDark?'#111b21':'#f0f2f5', borderRadius:14, padding:20, minHeight:240, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
-          {status==='connected' && <motion.div initial={{scale:0}} animate={{scale:1}} style={{textAlign:'center'}}><CheckCheck size={52} color='#22c55e'/><p style={{color:'#22c55e',fontWeight:700,marginTop:8}}>Connected!</p></motion.div>}
-          {status==='ready' && qr && <motion.img key={qr} initial={{opacity:0}} animate={{opacity:1}} src={qr} alt='QR' style={{width:210,height:210,borderRadius:8}}/>}
-          {['loading','waiting','connecting'].includes(status) && <div style={{textAlign:'center'}}><motion.div animate={{rotate:360}} transition={{repeat:Infinity,duration:1,ease:'linear'}}><RefreshCw size={34} color={WA.green}/></motion.div><p style={{color:muted,fontSize:13,marginTop:10}}>Waiting for QR…</p></div>}
-          {status==='error' && <div style={{textAlign:'center'}}><AlertCircle size={34} color='#ef4444'/><p style={{color:'#ef4444',fontSize:13,marginTop:8}}>Failed to load QR</p><button onClick={poll} style={{marginTop:6,background:WA.green,color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',fontSize:12}}>Retry</button></div>}
-        </div>
-        <p style={{textAlign:'center',fontSize:12,color:muted,marginTop:12,lineHeight:1.7}}>Open WhatsApp → Linked Devices → Link a Device → Scan this code</p>
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Pair-Code Modal ───────────────────────────────────────────────────────────
-function PairModal({ sessionId, label, onClose, isDark }) {
-  const [code,   setCode]   = useState(null);
-  const [status, setStatus] = useState('loading');
-  const [copied, setCopied] = useState(false);
-  const timer = useRef(null);
-  const card = isDark?'#233138':'#fff', muted = isDark?'#8696a0':'#667781';
-
-  const poll = useCallback(async () => {
-    try {
-      const { data } = await api.get(`/whatsapp/sessions/${sessionId}/pair-code`);
-      if (data.status==='connected') { setStatus('connected'); clearTimeout(timer.current); setTimeout(onClose,1200); return; }
-      if (data.code) { setCode(data.code); setStatus('ready'); }
-      else           { setStatus(data.status||'waiting'); }
-      timer.current = setTimeout(poll, 7000);
-    } catch { setStatus('error'); }
-  }, [sessionId, onClose]);
-
-  useEffect(() => { poll(); return () => clearTimeout(timer.current); }, [poll]);
-
-  const fmt = code ? `${code.slice(0,4)}-${code.slice(4)}` : null;
-  const copy = () => { if(code){ navigator.clipboard.writeText(code); setCopied(true); setTimeout(()=>setCopied(false),2000); } };
-
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(6,78,59,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(4px)' }} onClick={onClose}>
-      <motion.div initial={{scale:0.9,opacity:0}} animate={{scale:1,opacity:1}} onClick={e=>e.stopPropagation()}
-        style={{ background:card, borderRadius:20, padding:28, maxWidth:380, width:'90%', boxShadow:'0 24px 80px rgba(0,0,0,0.35)' }}>
-        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:18 }}>
-          <div><div style={{ fontWeight:700, fontSize:16, color:isDark?'#e9edef':'#111b21' }}>Phone Pairing Code</div><div style={{ fontSize:12, color:muted, marginTop:2 }}>{label}</div></div>
-          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', color:muted }}><X size={18}/></button>
-        </div>
-        <div style={{ background:isDark?'#111b21':'#f0f2f5', borderRadius:14, padding:24, minHeight:180, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
-          {status==='connected' && <motion.div initial={{scale:0}} animate={{scale:1}} style={{textAlign:'center'}}><CheckCheck size={52} color='#22c55e'/><p style={{color:'#22c55e',fontWeight:700,marginTop:8}}>Connected!</p></motion.div>}
-          {status==='ready' && fmt && (
-            <motion.div initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} style={{textAlign:'center',width:'100%'}}>
-              <div style={{ fontSize:40, fontWeight:900, letterSpacing:'0.14em', color:isDark?'#e9edef':'#111b21', fontFamily:'monospace', marginBottom:16 }}>{fmt}</div>
-              <button onClick={copy} style={{ display:'inline-flex', alignItems:'center', gap:8, background:copied?'#22c55e22':WA.green, color:copied?'#22c55e':'#fff', border:copied?'1.5px solid #22c55e':'none', borderRadius:10, padding:'9px 20px', cursor:'pointer', fontSize:13, fontWeight:700 }}>
-                {copied ? <><Check size={13}/> Copied!</> : <><Copy size={13}/> Copy Code</>}
-              </button>
-            </motion.div>
-          )}
-          {['loading','waiting','awaiting_pairing'].includes(status) && <div style={{textAlign:'center'}}><motion.div animate={{rotate:360}} transition={{repeat:Infinity,duration:1,ease:'linear'}}><RefreshCw size={34} color={WA.green}/></motion.div><p style={{color:muted,fontSize:13,marginTop:10}}>Generating code…</p></div>}
-          {status==='error' && <div style={{textAlign:'center'}}><AlertCircle size={34} color='#ef4444'/><button onClick={poll} style={{marginTop:8,background:WA.green,color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',fontSize:12}}>Retry</button></div>}
-        </div>
-        {status==='ready' && <div style={{marginTop:14,fontSize:12,color:muted,lineHeight:1.8}}>
-          <strong style={{color:isDark?'#e9edef':'#111b21'}}>Steps: </strong>Open WhatsApp → Linked Devices → Link a Device → "Link with phone number" → enter your number → enter this code
-        </div>}
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Manage Numbers Modal ──────────────────────────────────────────────────────
-function ManageModal({ isDark, sessions, onClose, onRefresh }) {
-  const [mode,    setMode]    = useState('list');   // 'list' | 'add'
-  const [authTab, setAuthTab] = useState('qr');
-  const [label,   setLabel]   = useState('');
-  const [phone,   setPhone]   = useState('');
-  const [adding,  setAdding]  = useState(false);
-  const [delId,   setDelId]   = useState(null);
-  const [qrSess,  setQrSess]  = useState(null);
-  const [pairSess,setPairSess]= useState(null);
-
-  const bg   = isDark ? '#111b21' : '#fff';
-  const card = isDark ? '#233138' : '#f0f2f5';
-  const brd  = isDark ? '#3b4a54' : '#e9edef';
-  const txt  = isDark ? '#e9edef' : '#111b21';
-  const muted= isDark ? '#8696a0' : '#667781';
-  const inp  = { width:'100%', border:`1px solid ${brd}`, borderRadius:10, padding:'10px 12px', fontSize:14, outline:'none', background:isDark?'#182229':'#fff', color:txt, boxSizing:'border-box' };
-
-  const handleAdd = async () => {
-    if (!label.trim()) { toast.error('Enter a label'); return; }
-    if (authTab==='phone' && !phone.trim()) { toast.error('Enter phone with country code'); return; }
-    setAdding(true);
-    try {
-      const payload = { label: label.trim() };
-      if (authTab==='phone') payload.pairing_phone = phone.replace(/\D/g,'');
-      const { data } = await api.post('/whatsapp/sessions', payload);
-      toast.success('Session started!');
-      setLabel(''); setPhone('');
-      if (authTab==='phone') setPairSess({ sessionId:data.sessionId, label:label.trim() });
-      else                   setQrSess({ sessionId:data.sessionId, label:label.trim() });
-    } catch(e) {
-      const s = e?.response?.status;
-      if(s===429) toast.error('Rate-limited — wait 30s and try again');
-      else toast.error(e?.response?.data?.detail || 'Failed to start session');
-    } finally { setAdding(false); }
-  };
-
-  const handleDel = async (sid) => {
-    if (!window.confirm('Disconnect and remove this number?')) return;
-    setDelId(sid);
-    try { await api.delete(`/whatsapp/sessions/${sid}`); onRefresh(); toast.success('Removed'); }
-    catch { toast.error('Failed to remove'); } finally { setDelId(null); }
-  };
-
-  return (
-    <>
-      {qrSess   && <QRModal   sessionId={qrSess.sessionId}   label={qrSess.label}   isDark={isDark} onClose={()=>{ setQrSess(null);   onRefresh(); }}/>}
-      {pairSess && <PairModal sessionId={pairSess.sessionId} label={pairSess.label} isDark={isDark} onClose={()=>{ setPairSess(null); onRefresh(); }}/>}
-      <div style={{ position:'fixed', inset:0, background:'rgba(6,78,59,0.55)', zIndex:1500, display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(3px)' }} onClick={onClose}>
-        <motion.div initial={{scale:0.93,opacity:0}} animate={{scale:1,opacity:1}} onClick={e=>e.stopPropagation()}
-          style={{ background:bg, borderRadius:20, width:480, maxWidth:'95vw', maxHeight:'90vh', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 24px 80px rgba(0,0,0,0.4)' }}>
-          {/* Header */}
-          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'18px 20px', borderBottom:`1px solid ${brd}`, flexShrink:0, background:`linear-gradient(135deg,${WA.teal},${WA.green})` }}>
-            <div style={{ width:40, height:40, borderRadius:10, background:'rgba(255,255,255,0.2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <Smartphone size={20} color='#fff'/>
-            </div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:700, fontSize:16, color:'#fff' }}>Connected Numbers</div>
-              <div style={{ fontSize:12, color:'rgba(255,255,255,0.7)', marginTop:1 }}>{sessions.filter(s=>s.status==='connected').length} of {sessions.length} active</div>
-            </div>
-            <button onClick={onClose} style={{ background:'rgba(255,255,255,0.2)', border:'none', cursor:'pointer', borderRadius:8, width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', color:'#fff' }}><X size={16}/></button>
-          </div>
-
-          <div style={{ overflowY:'auto', flex:1, padding:20 }}>
-            {/* Sessions list */}
-            {sessions.length > 0 && (
-              <div style={{ background:card, borderRadius:14, overflow:'hidden', marginBottom:16 }}>
-                {sessions.map((s,i) => (
-                  <div key={s.sessionId} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 16px', borderBottom:i<sessions.length-1?`1px solid ${brd}`:'none' }}>
-                    <div style={{ width:42, height:42, borderRadius:'50%', background:s.status==='connected'?'#dcfce7':(isDark?'#182229':'#f0f2f5'), display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                      {s.status==='connected' ? <Wifi size={18} color='#22c55e'/> : <WifiOff size={18} color={muted}/>}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontWeight:600, fontSize:14, color:txt, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.label||s.sessionId}</div>
-                      <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:2 }}>
-                        <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20,
-                          background:s.status==='connected'?'#dcfce7':(isDark?'#182229':'#f3f4f6'),
-                          color:s.status==='connected'?'#16a34a':muted }}>{s.status}</span>
-                        {s.phoneNumber && <span style={{ fontSize:11, color:muted }}>+{s.phoneNumber}</span>}
-                      </div>
-                    </div>
-                    <div style={{ display:'flex', gap:6 }}>
-                      {s.status!=='connected' && (
-                        <>
-                          <button onClick={()=>setQrSess({sessionId:s.sessionId,label:s.label||s.sessionId})}
-                            style={{ padding:'4px 10px', background:WA.green, color:'#fff', border:'none', borderRadius:8, fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                            <QrCode size={11}/> QR
-                          </button>
-                          <button onClick={()=>setPairSess({sessionId:s.sessionId,label:s.label||s.sessionId})}
-                            style={{ padding:'4px 10px', background:'transparent', color:muted, border:`1px solid ${brd}`, borderRadius:8, fontSize:11, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
-                            <Hash size={11}/> Code
-                          </button>
-                        </>
-                      )}
-                      <button onClick={()=>handleDel(s.sessionId)} disabled={delId===s.sessionId}
-                        style={{ width:30, height:30, borderRadius:8, background:'none', border:'none', cursor:'pointer', color:'#ef4444', display:'flex', alignItems:'center', justifyContent:'center', opacity:delId===s.sessionId?0.4:1 }}>
-                        {delId===s.sessionId ? <Loader2 size={14} style={{animation:'waSpinKf 1s linear infinite'}}/> : <Trash2 size={14}/>}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add new number */}
-            <div style={{ background:card, borderRadius:14, padding:16 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
-                <Plus size={15} color={WA.green}/>
-                <span style={{ fontSize:14, fontWeight:700, color:txt }}>Add a WhatsApp Number</span>
-              </div>
-              {/* Auth mode tabs */}
-              <div style={{ display:'flex', gap:4, background:isDark?'#182229':'#e9edef', padding:4, borderRadius:10, marginBottom:14, width:'fit-content' }}>
-                {[{id:'qr',label:'QR Code',icon:QrCode},{id:'phone',label:'Phone Pairing',icon:Phone}].map(t => (
-                  <button key={t.id} onClick={()=>setAuthTab(t.id)}
-                    style={{ display:'flex', alignItems:'center', gap:6, padding:'6px 14px', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer', border:'none',
-                      background:authTab===t.id?WA.green:'transparent', color:authTab===t.id?'#fff':muted }}>
-                    <t.icon size={12}/>{t.label}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                <input style={inp} placeholder='Label — e.g. "Business", "Personal", "GST Office"' value={label} onChange={e=>setLabel(e.target.value)}/>
-                {authTab==='phone' && (
-                  <div>
-                    <input style={inp} type='tel' placeholder='Phone with country code e.g. 919876543210' value={phone} onChange={e=>setPhone(e.target.value)}/>
-                    <p style={{ fontSize:11, color:muted, marginTop:4 }}>No + or spaces. Example: 91 (India) + 10-digit number</p>
-                  </div>
-                )}
-                <button onClick={handleAdd} disabled={adding}
-                  style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, background:adding?muted:WA.green, color:'#fff', border:'none', borderRadius:10, padding:'11px 20px', fontSize:14, fontWeight:700, cursor:adding?'not-allowed':'pointer' }}>
-                  {adding ? <><Loader2 size={14} style={{animation:'waSpinKf 1s linear infinite'}}/> Starting…</>
-                    : authTab==='phone' ? <><Hash size={14}/> Get Pairing Code</> : <><QrCode size={14}/> Get QR Code</>}
-                </button>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </>
-  );
-}
-
 // ── Contact / Group Info side panel ──────────────────────────────────────────
 function InfoPanel({ jid, contact, sessionLabel, isAdmin, onClose, onArchiveToggle, isDark }) {
   const isGrp = isGroup(jid);
@@ -1317,7 +1082,9 @@ export default function WhatsAppHub() {
   // ── Sessions ───────────────────────────────────────────────────────────────
   const [sessions,    setSessions]    = useState([]);
   const [sessLoading, setSessLoading] = useState(true);
-  const [showManage,  setShowManage]  = useState(false);
+  // WhatsApp numbers are connected in one place: Settings → Message Automation.
+  const navigate = useNavigate();
+  const openWhatsAppSettings = () => navigate('/settings/whatsapp');
 
   const loadSessions = useCallback(async () => {
     setSessLoading(true);
@@ -1777,9 +1544,7 @@ export default function WhatsAppHub() {
 
       {/* ── Manage Numbers Modal ─────────────────────────────────────────────── */}
       <AnimatePresence>
-        {showManage && (
-          <ManageModal isDark={isDark} sessions={sessions} onClose={()=>setShowManage(false)} onRefresh={()=>{ loadSessions(); loadContacts(); }}/>
-        )}
+
       </AnimatePresence>
 
       {/* ── Forward Message Modal ─────────────────────────────────────────────── */}
@@ -1816,7 +1581,7 @@ export default function WhatsAppHub() {
               <RefreshCw size={18} style={{animation:(loadingC||syncing)?'waSpinKf 1s linear infinite':'none'}}/>
             </button>
             {isAdmin && (
-              <button onClick={()=>setShowManage(true)} style={iconBtn} title='Manage Numbers'
+              <button onClick={openWhatsAppSettings} style={iconBtn} title='Manage numbers (Settings → Message Automation)'
                 onMouseEnter={e=>e.currentTarget.style.background=isDark?'rgba(255,255,255,0.1)':'rgba(0,0,0,0.06)'}
                 onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                 <Settings size={18}/>
@@ -1920,7 +1685,7 @@ export default function WhatsAppHub() {
               <p style={{ fontSize:14, fontWeight:600, color:txt, margin:'0 0 6px' }}>No numbers connected</p>
               <p style={{ fontSize:13, color:muted, margin:'0 0 14px', lineHeight:1.5 }}>{isAdmin?'Connect a WhatsApp number to start the Hub.':'Ask your admin to connect a number.'}</p>
               {isAdmin && (
-                <button onClick={()=>setShowManage(true)} style={{ background:WA.green, color:'#fff', border:'none', borderRadius:10, padding:'10px 20px', fontSize:14, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8 }}>
+                <button onClick={openWhatsAppSettings} style={{ background:WA.green, color:'#fff', border:'none', borderRadius:10, padding:'10px 20px', fontSize:14, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8 }}>
                   <Plus size={15}/> Connect a Number
                 </button>
               )}
@@ -1963,12 +1728,12 @@ export default function WhatsAppHub() {
               <h2 style={{ fontSize:28, fontWeight:300, color:isDark?'#e9edef':'#41525d', margin:'0 0 12px', letterSpacing:'-0.3px' }}>WhatsApp Hub</h2>
               <p style={{ fontSize:14, color:muted, margin:'0 0 6px', maxWidth:400, lineHeight:1.6 }}>
                 {sessions.length===0
-                  ? isAdmin ? 'Click the settings icon to connect your first WhatsApp number.' : 'No WhatsApp numbers connected yet.'
+                  ? isAdmin ? 'Connect your first WhatsApp number in Settings → Message Automation.' : 'No WhatsApp numbers connected yet.'
                   : `Select a conversation from the left to view messages. ${contacts.length} chat${contacts.length!==1?'s':''} · ${groups.length} group${groups.length!==1?'s':''}.`}
               </p>
               <p style={{ fontSize:12, color:muted, opacity:0.6, marginTop:4 }}>Messages are end-to-end encrypted</p>
               {sessions.length===0 && isAdmin && (
-                <button onClick={()=>setShowManage(true)} style={{ marginTop:16, background:WA.green, color:'#fff', border:'none', borderRadius:10, padding:'10px 24px', fontSize:14, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8 }}>
+                <button onClick={openWhatsAppSettings} style={{ marginTop:16, background:WA.green, color:'#fff', border:'none', borderRadius:10, padding:'10px 24px', fontSize:14, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:8 }}>
                   <Plus size={15}/> Connect a Number
                 </button>
               )}

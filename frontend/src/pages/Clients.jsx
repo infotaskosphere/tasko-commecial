@@ -39,7 +39,7 @@ import AIDuplicateDialog from '@/components/ui/AIDuplicateDialog';
 import MergeClientsDialog from '@/components/ui/MergeClientsDialog';
 import ClientGroupsPanel from '@/components/ClientGroupsPanel';
 import ClientRenewalsTab from '@/components/ClientRenewalsTab';
-import { useBulkWASender } from '@/components/BulkWASenderContext';
+import { minimiseCampaign } from '@/lib/campaignDock';
 import ClientPortalManager from '@/components/ClientPortalManager';
 import ITRClientDialog from '@/components/ITRClientDialog';
 // Lazy-loaded: ITRBulkImportDialog statically imports the ~430KB `xlsx` library
@@ -402,7 +402,6 @@ const BulkMessageModal = React.memo(({ open, onClose, mode, filteredClients, isD
   const [historySearch, setHistorySearch] = useState('');
   const [historyFilter, setHistoryFilter] = useState('all'); // all | sent | failed
   const [batchName, setBatchName] = useState('');
-  const { startBatch, state: bulkState } = useBulkWASender();
   const [selectedBatchId, setSelectedBatchId] = useState(null); // history batch drill-down
 
   const activeClients = useMemo(() => filteredClients.filter(c => (c?.status || 'active') !== 'inactive'), [filteredClients]);
@@ -597,38 +596,42 @@ const BulkMessageModal = React.memo(({ open, onClose, mode, filteredClients, isD
   }, []);
 
   // Direct send via WA bridge
-  // Hands the job off to the global BulkWASenderProvider, so the batch keeps
-  // sending in the background even if this modal is closed or the user
-  // navigates to another page. A floating widget (bottom-right) shows progress.
+  // Bulk WhatsApp runs on the server as an EngageX broadcast: safe varied
+  // gaps, batch pauses, keeps going after this page is closed or the user
+  // logs out. Progress shows in the corner dock and EngageX → WhatsApp Hub.
+  const waRecipients = (list) => list.map(c => ({
+    phone: c.phone, name: c.company_name || '', client_id: c.id,
+    variables: { name: c.company_name || 'Valued Client', phone: c.phone || '', email: c.email || '', city: c.city || '', gstin: c.gstin || '', services: (c.services || []).join(', ') },
+  }));
+  const queueWhatsApp = useCallback(async (scheduledAt = null) => {
+    const toSend = selectedClients.filter(c => c.phone);
+    if (toSend.length === 0) { toast.error('No selected clients have a phone number'); return null; }
+    const res = await api.post('/whatsapp/bulk-campaign', {
+      name: batchName.trim() || `WhatsApp · ${toSend.length} clients`,
+      session_id: waSelectedSession || null,
+      message,
+      recipients: waRecipients(toSend),
+      attachments: mediaFile ? [{ filename: mediaFile.name, mime_type: mediaFile.mimeType, base64: mediaFile.base64 }] : [],
+      pause_every: pauseEnabled ? Number(pauseAfterCount) || 20 : 20,
+      pause_sec: pauseEnabled ? Number(pauseDurationSec) || 120 : 120,
+      scheduled_at: scheduledAt,
+    });
+    if (res.data?.campaign_id) minimiseCampaign({ id: res.data.campaign_id, channel: 'whatsapp', name: batchName.trim() || 'WhatsApp broadcast' });
+    return res.data;
+  }, [selectedClients, batchName, waSelectedSession, message, mediaFile, pauseEnabled, pauseAfterCount, pauseDurationSec]);
+
   const handleDirectSend = useCallback(async () => {
     if (!message.trim() && !mediaFile) { toast.error('Please write a message or attach a file'); return; }
-    if (bulkState?.active) { toast.error('Another WhatsApp batch is already running. Wait for it to finish or cancel it from the widget.'); return; }
-    const toSend = selectedClients.filter(c => c.phone);
-    if (toSend.length === 0) { toast.error('No selected clients have a phone number'); return; }
-    if (!batchName.trim()) { toast.error('Please give this batch a name (e.g. "Income Tax Reminder") so you can find it later in History.'); return; }
-
-    const recipients = toSend.map(client => ({
-      id: client.id,
-      name: client.company_name,
-      phone: client.phone,
-      message: personalizeMessage(message, client),
-      media: mediaFile ? { base64: mediaFile.base64, mimeType: mediaFile.mimeType, name: mediaFile.name } : null,
-    }));
-
-    // Fire-and-forget: the provider runs the loop independently of this modal.
-    startBatch({
-      batchName: batchName.trim(),
-      recipients,
-      sessionId: waSelectedSession || null,
-      pauseEnabled,
-      pauseAfterCount,
-      pauseDurationSec,
-      messageType: 'bulk_client',
-    });
-
-    // Close the modal so the user can keep working — the widget takes over.
-    onClose?.();
-  }, [message, mediaFile, selectedClients, personalizeMessage, waSelectedSession, pauseEnabled, pauseAfterCount, pauseDurationSec, batchName, startBatch, bulkState, onClose]);
+    if (!batchName.trim()) { toast.error('Please give this batch a name (e.g. "Income Tax Reminder") so you can find it later.'); return; }
+    try {
+      const out = await queueWhatsApp(null);
+      if (!out) return;
+      toast.success(`${out.recipient_count} WhatsApp message(s) queued`, { description: 'Sending safely in the background — it continues even if you log out. Track it in the corner panel.' });
+      onClose?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Could not start the WhatsApp send');
+    }
+  }, [message, mediaFile, batchName, queueWhatsApp, onClose]);
 
   // Schedule bulk send
   const handleScheduleSend = useCallback(async () => {
@@ -638,19 +641,13 @@ const BulkMessageModal = React.memo(({ open, onClose, mode, filteredClients, isD
     if (toSend.length === 0) { toast.error('No selected clients have a phone number'); return; }
     try {
       const scheduledAt = `${scheduleDate}T${scheduleTime}:00`;
-      const recipients = toSend.map(c => ({
-        phone: c.phone.replace(/\D/g, '').length === 10 ? `91${c.phone.replace(/\D/g, '')}` : c.phone.replace(/\D/g, ''),
-        message: personalizeMessage(message, c),
-        client_id: c.id,
-        client_name: c.company_name,
-      }));
-      await api.post('/whatsapp/schedule-bulk', { recipients, scheduled_at: scheduledAt, message_template: message, message_type: 'bulk_scheduled' });
+      await queueWhatsApp(scheduledAt);
       toast.success(`Scheduled ${toSend.length} messages for ${scheduleDate} at ${scheduleTime}`);
       loadScheduledJobs();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Failed to schedule messages');
     }
-  }, [message, selectedClients, scheduleDate, scheduleTime, personalizeMessage, loadScheduledJobs]);
+  }, [message, selectedClients, scheduleDate, scheduleTime, queueWhatsApp, loadScheduledJobs]);
 
   const handleCancelJob = useCallback(async (jobId) => {
     try {

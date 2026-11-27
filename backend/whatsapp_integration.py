@@ -720,18 +720,11 @@ async def send_message(body: WASendMessageRequest, current_user: User = Depends(
 async def send_bulk(body: WABulkSendRequest, current_user: User = Depends(get_current_user)):
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "WhatsApp access not granted")
-    body.session_id = await resolve_sendable_session(current_user, body.session_id)
-    results = []
-    for recipient in body.recipients:
-        try:
-            await _bridge_post("/send", {"to": recipient, "message": body.message, "sessionId": body.session_id})
-            await _store_message(current_user.id, recipient, body.message, body.message_type, body.context_id, "sent", body.session_id, batch_id=body.batch_id, batch_name=body.batch_name)
-            results.append({"to": recipient, "status": "sent"})
-        except Exception as exc:
-            await _store_message(current_user.id, recipient, body.message, body.message_type, body.context_id, "failed", body.session_id, str(exc), batch_id=body.batch_id, batch_name=body.batch_name)
-            results.append({"to": recipient, "status": "failed", "error": str(exc)})
-        await asyncio.sleep(0.8)
-    return {"results": results}
+    # Queued as a paced broadcast (never a burst from one number).
+    result = await _queue_bulk(current_user, WABulkCampaignRequest(
+        name=body.batch_name or "WhatsApp bulk send", session_id=body.session_id, message=body.message,
+        recipients=[WABulkCampaignRecipient(phone=r) for r in body.recipients]))
+    return {"results": [{"to": r, "status": "queued"} for r in body.recipients], **result}
 
 
 @router.post("/send-media")
@@ -1013,32 +1006,91 @@ class WAScheduleBulkRequest(BaseModel):
     session_id: Optional[str] = None
 
 
-@router.post("/schedule-bulk")
-async def schedule_bulk_send(body: WAScheduleBulkRequest, current_user: User = Depends(get_current_user)):
-    """Schedule a bulk personalized WhatsApp send at a future datetime."""
+def _parse_local_time(value: Optional[str]) -> Optional[datetime]:
+    """Schedule times from the app are India time when no offset is given."""
+    if not value:
+        return None
+    from zoneinfo import ZoneInfo
+
+    dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+
+
+class WABulkMedia(BaseModel):
+    filename: str
+    mime_type: str
+    base64: str
+
+
+class WABulkCampaignRecipient(BaseModel):
+    phone: str
+    name: Optional[str] = None
+    client_id: Optional[str] = None
+    variables: Dict[str, Any] = {}
+    message: Optional[str] = None  # already personalised (older screens)
+
+
+class WABulkCampaignRequest(BaseModel):
+    name: str = "WhatsApp broadcast"
+    session_id: Optional[str] = None
+    message: str = ""  # may use {name}, {phone}, {email}, {city}, {gstin}, {services}
+    recipients: List[WABulkCampaignRecipient]
+    attachments: List[WABulkMedia] = []
+    min_delay_sec: float = 8
+    max_delay_sec: float = 15
+    pause_every: int = 20
+    pause_sec: float = 120
+    scheduled_at: Optional[str] = None
+    daily_limit: Optional[int] = None
+    send_start_hour: Optional[int] = None
+    send_end_hour: Optional[int] = None
+
+
+async def _queue_bulk(current_user: User, body: WABulkCampaignRequest) -> Dict[str, Any]:
+    """Every bulk WhatsApp in the app goes through the EngageX broadcast engine:
+    server-side, safe varied gaps and batch pauses, optional per-day cap and
+    sending hours, keeps going after logout, visible in EngageX → WhatsApp Hub."""
     if not await _has_wa_access(current_user):
         raise HTTPException(403, "WhatsApp access not granted")
-    body.session_id = await resolve_sendable_session(current_user, body.session_id)
-    db = _db()
-    company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
-    job_id = f"bulk_{int(_time.time() * 1000)}"
-    job_doc = {
-        "job_id": job_id,
-        "company_id": company_id,
-        "created_by": current_user.id,
-        "created_by_name": current_user.full_name,
-        "scheduled_at": body.scheduled_at,
-        "message_template": body.message_template,
-        "message_type": body.message_type,
-        "session_id": body.session_id,
-        "recipient_count": len(body.recipients),
-        "recipients": [r.dict() for r in body.recipients],
-        "status": "pending",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-    }
-    await db["whatsapp_scheduled_bulk"].insert_one(job_doc)
-    logger.info("Scheduled bulk WA job %s for %s (%d recipients)", job_id, body.scheduled_at, len(body.recipients))
-    return {"job_id": job_id, "scheduled_at": body.scheduled_at, "recipient_count": len(body.recipients)}
+    from backend.engagex.router import queue_whatsapp_bulk
+
+    per_recipient = any(r.message for r in body.recipients)
+    recipients = []
+    for r in body.recipients:
+        variables = {str(k): ("" if v is None else str(v)) for k, v in (r.variables or {}).items()}
+        if per_recipient:
+            variables["message_body"] = r.message or ""
+        recipients.append({"name": r.name, "phone": r.phone, "client_id": r.client_id, "variables": variables})
+    scheduled = _parse_local_time(body.scheduled_at)
+    result = await queue_whatsapp_bulk(
+        current_user, name=body.name, session_id=body.session_id,
+        message="{{message_body}}" if per_recipient else body.message,
+        recipients=recipients, attachments=[a.dict() for a in body.attachments],
+        min_delay_sec=body.min_delay_sec, max_delay_sec=body.max_delay_sec,
+        pause_every=body.pause_every, pause_sec=body.pause_sec, scheduled_at=scheduled,
+        daily_limit=body.daily_limit, send_start_hour=body.send_start_hour, send_end_hour=body.send_end_hour,
+    )
+    campaign = result.get("campaign") or {}
+    return {"campaign_id": campaign.get("id"), "job_id": campaign.get("id"), "status": campaign.get("status"),
+            "scheduled_at": campaign.get("scheduled_at"), "summary": result.get("summary"),
+            "recipient_count": len(body.recipients)}
+
+
+@router.post("/bulk-campaign")
+async def create_bulk_campaign(body: WABulkCampaignRequest, current_user: User = Depends(get_current_user)):
+    return await _queue_bulk(current_user, body)
+
+
+@router.post("/schedule-bulk")
+async def schedule_bulk_send(body: WAScheduleBulkRequest, current_user: User = Depends(get_current_user)):
+    """Schedule a bulk personalised WhatsApp send (queued as a paced broadcast)."""
+    return await _queue_bulk(current_user, WABulkCampaignRequest(
+        name=f"Scheduled WhatsApp · {len(body.recipients)} recipients",
+        session_id=body.session_id,
+        recipients=[WABulkCampaignRecipient(phone=r.phone, name=r.client_name, client_id=r.client_id, message=r.message)
+                    for r in body.recipients],
+        scheduled_at=body.scheduled_at,
+    ))
 
 
 @router.get("/scheduled-bulk")
@@ -1055,12 +1107,35 @@ async def list_scheduled_bulk(current_user: User = Depends(get_current_user)):
     for j in jobs:
         j["id"] = str(j.pop("_id"))
         j.pop("recipients", None)   # don't return full recipient list in listing
+    # Scheduled sends are now EngageX broadcasts; list them the same way.
+    try:
+        from backend.engagex.common import CAMPAIGNS, raw_db as _ex_raw_db, workspace_company_id
+
+        cq = {"company_id": workspace_company_id(current_user), "channel": "whatsapp", "status": "scheduled"}
+        if current_user.role != "admin":
+            cq["created_by"] = str(current_user.id)
+        for c in await _ex_raw_db()[CAMPAIGNS].find(cq, {"_id": 0, "content": 0}).sort("scheduled_at", 1).to_list(100):
+            jobs.append({"id": c["id"], "job_id": c["id"], "scheduled_at": c.get("scheduled_at"), "status": "pending",
+                         "recipient_count": (c.get("stats") or {}).get("total", 0), "message_type": "bulk_scheduled",
+                         "created_by_name": c.get("created_by_name"), "name": c.get("name")})
+    except Exception as exc:
+        logger.warning("Could not list scheduled WhatsApp broadcasts: %s", exc)
     return {"jobs": jobs}
 
 
 @router.delete("/scheduled-bulk/{job_id}")
 async def cancel_scheduled_bulk(job_id: str, current_user: User = Depends(get_current_user)):
-    """Cancel a pending scheduled bulk job."""
+    """Cancel a pending scheduled bulk job (or a scheduled broadcast)."""
+    if job_id.startswith("exc_"):
+        from backend.engagex.common import CAMPAIGNS, iso, raw_db as _ex_raw_db, workspace_company_id
+
+        cq = {"id": job_id, "company_id": workspace_company_id(current_user), "channel": "whatsapp", "status": "scheduled"}
+        if current_user.role != "admin":
+            cq["created_by"] = str(current_user.id)
+        res = await _ex_raw_db()[CAMPAIGNS].update_one(cq, {"$set": {"status": "cancelled", "updated_at": iso()}})
+        if not res.matched_count:
+            raise HTTPException(404, "Job not found or already processed")
+        return {"message": "Job cancelled"}
     db = _db()
     company_id = None if is_platform_owner(current_user) else enforce_company_value(current_user, None)
     query = {"job_id": job_id, "status": "pending"}
@@ -1115,7 +1190,7 @@ async def _run_scheduled_bulk_jobs():
                 results.append({"phone": r["phone"], "status": "sent"})
             except Exception as exc:
                 results.append({"phone": r["phone"], "status": "failed", "error": str(exc)})
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(__import__("random").uniform(8, 15))  # safe pace for jobs scheduled before broadcasts
         sent = sum(1 for r in results if r["status"] == "sent")
         failed = sum(1 for r in results if r["status"] == "failed")
         await db["whatsapp_scheduled_bulk"].update_one(

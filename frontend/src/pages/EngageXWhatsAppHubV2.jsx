@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarClock, FileAudio, FileText, FileVideo, Gauge, Megaphone, MessageCircle, Paperclip, Plus, RefreshCw, Send, ShieldOff, Smartphone, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,6 @@ import { engagexApi, engagexError, readFileBase64 } from '@/lib/engagexApi';
 import AudienceBuilder from '@/components/engagex/AudienceBuilder';
 import { CampaignSheet, CampaignTable } from '@/components/engagex/CampaignViews';
 import OptOutPanel from '@/components/engagex/OptOutPanel';
-import WhatsAppConnectDialog from '@/components/engagex/WhatsAppConnectDialog';
 import SpreadOptions, { spreadFromSettings, spreadPayload } from '@/components/engagex/SpreadOptions';
 import { BRAND, ExCard, MergeTagBar, insertAtCursor, previewVariables, renderMergePreview } from '@/components/engagex/shared';
 
@@ -177,7 +176,7 @@ function Composer({ sessions, onConnect, onDone }) {
                   <option value="">Select WhatsApp number</option>{connected.map(s => <option key={s.session_id} value={s.session_id}>{s.label} {s.phone ? `(+${s.phone})` : ''}</option>)}
                 </select>
               ) : (
-                <Button type="button" variant="outline" className="mt-1.5 h-10 w-full justify-start border-dashed text-emerald-700" onClick={onConnect}><Smartphone className="mr-2 h-4 w-4" />Connect a WhatsApp number</Button>
+                <Button type="button" variant="outline" className="mt-1.5 h-10 w-full justify-start border-dashed text-emerald-700" onClick={onConnect}><Smartphone className="mr-2 h-4 w-4" />Connect a WhatsApp number (Settings → Message Automation)</Button>
               )}
             </label>
           </div>
@@ -227,7 +226,9 @@ export default function EngageXWhatsAppHubV2() {
   const [tab, setTab] = useState('campaigns');
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [connectOpen, setConnectOpen] = useState(false);
+  const navigate = useNavigate();
+  // WhatsApp numbers are connected in one place: Settings → Message Automation.
+  const openConnect = () => navigate('/settings/whatsapp');
   const [refreshKey, setRefreshKey] = useState(0);
   const [params, setParams] = useSearchParams();
   const [openId, setOpenId] = useState(params.get('campaign'));
@@ -257,18 +258,17 @@ export default function EngageXWhatsAppHubV2() {
 
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50/50 px-4 py-3 dark:border-emerald-900/40 dark:bg-emerald-950/20">
         <div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><Smartphone className="h-4 w-4" /></div><div><p className="text-sm font-semibold">WhatsApp connection</p><p className="text-xs text-slate-500">{bridgeError ? 'The WhatsApp service is not reachable right now — try Refresh in a moment.' : connected.length ? `${connected.length} connected number${connected.length > 1 ? 's' : ''}: ${connected.map(s => s.phone ? `+${s.phone}` : s.label).join(', ')}` : 'No number connected yet.'}</p></div></div>
-        <div className="flex gap-2"><Button size="sm" variant="outline" onClick={loadSessions}><RefreshCw className="mr-1.5 h-4 w-4" />Refresh</Button><Button size="sm" onClick={() => setConnectOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="mr-1.5 h-4 w-4" />{connected.length ? 'Manage numbers' : 'Connect WhatsApp'}</Button></div>
+        <div className="flex gap-2"><Button size="sm" variant="outline" onClick={loadSessions}><RefreshCw className="mr-1.5 h-4 w-4" />Refresh</Button>{canManage && <Button size="sm" onClick={openConnect} className="bg-emerald-600 hover:bg-emerald-700 text-white" title="Opens Settings → Message Automation"><Plus className="mr-1.5 h-4 w-4" />{connected.length ? 'Manage numbers' : 'Connect WhatsApp'}</Button>}</div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="h-auto flex-wrap"><TabsTrigger value="campaigns"><Megaphone className="mr-1.5 h-4 w-4" />Campaigns</TabsTrigger><TabsTrigger value="new"><Plus className="mr-1.5 h-4 w-4" />New broadcast</TabsTrigger><TabsTrigger value="optouts"><ShieldOff className="mr-1.5 h-4 w-4" />Opt-outs</TabsTrigger></TabsList>
         <TabsContent value="campaigns" className="mt-4"><ExCard icon={Megaphone} title="Broadcasts" color={BRAND.whatsapp} description="Your existing EngageX campaigns and delivery history."><CampaignTable channel="whatsapp" refreshKey={refreshKey} onOpen={c => setOpenId(c.id)} emptyAction={<Button size="sm" onClick={() => setTab('new')}>New broadcast</Button>} extraActions={<Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setTab('new')}><Plus className="mr-1 h-4 w-4" />New broadcast</Button>} /></ExCard></TabsContent>
-        <TabsContent value="new" className="mt-4"><ExCard icon={Send} title="New broadcast" color={BRAND.whatsapp} description="Background sending, explicit recipient interval and multiple attachments."><Composer sessions={sessions} onConnect={() => setConnectOpen(true)} onDone={(campaign) => { setRefreshKey(k => k + 1); setTab('campaigns'); if (campaign?.id) setOpenId(campaign.id); }} /></ExCard></TabsContent>
+        <TabsContent value="new" className="mt-4"><ExCard icon={Send} title="New broadcast" color={BRAND.whatsapp} description="Background sending, explicit recipient interval and multiple attachments."><Composer sessions={sessions} onConnect={openConnect} onDone={(campaign) => { setRefreshKey(k => k + 1); setTab('campaigns'); if (campaign?.id) setOpenId(campaign.id); }} /></ExCard></TabsContent>
         <TabsContent value="optouts" className="mt-4"><ExCard icon={ShieldOff} title="Opt-out list" color={BRAND.whatsapp}><OptOutPanel channel="whatsapp" /></ExCard></TabsContent>
       </Tabs>
 
       <CampaignSheet channel="whatsapp" campaignId={openId} open={!!openId} onOpenChange={open => { if (!open) { setOpenId(null); if (params.get('campaign')) { params.delete('campaign'); setParams(params, { replace: true }); } } }} onChanged={() => setRefreshKey(k => k + 1)} />
-      <WhatsAppConnectDialog open={connectOpen} onOpenChange={setConnectOpen} sessions={sessions} canManage={canManage} onChanged={loadSessions} />
     </div>
   );
 }
