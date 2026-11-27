@@ -219,6 +219,9 @@ class _StartIn(BaseModel):
     return_path: str = Field(SETTINGS_RETURN_PATH, max_length=300)
     login_hint: Optional[str] = Field(None, max_length=254)
     personal: bool = False  # True → "My mailboxes" (any user); False → organisation (admins)
+    # Google only: the same sign-in also connects the inbox in Email Accounts,
+    # so a mailbox is never connected twice (once to send, once to read).
+    read_inbox: bool = True
 
 
 def _owner_for(body, current_user) -> Optional[str]:
@@ -235,7 +238,8 @@ async def org_email_google_start(body: _StartIn, request: Request, current_user=
     from backend.engagex.google_sender import start
 
     return {"auth_url": await start(request, current_user, _company(current_user), body.return_path,
-                                    login_hint=normalize_email(body.login_hint) or None, owner_user_id=owner)}
+                                    login_hint=normalize_email(body.login_hint) or None, owner_user_id=owner,
+                                    read_inbox=bool(body.read_inbox))}
 
 
 @router.post("/microsoft/start")

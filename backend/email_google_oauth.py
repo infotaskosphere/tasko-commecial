@@ -234,33 +234,15 @@ async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Qu
         # authenticated session in /start.
         customer_id = state_doc.get("commercial_customer_id")
         company_id = state_doc.get("company_id")
-        oauth_secret = _email._encrypt(OAUTH_PASSWORD_PREFIX + refresh_token)
-        now_iso = datetime.now(timezone.utc).isoformat()
-        connection_doc = {
-            "user_id": user_id,
-            "company_id": company_id or None,
-            "commercial_customer_id": customer_id,
-            "email_address": email_address,
-            "auth_type": "google_oauth",
-            "oauth_provider": "google",
-            "oauth_scopes": list(credentials.scopes or [GOOGLE_GMAIL_SCOPE]),
-            "app_password_enc": oauth_secret,
-            "imap_host": GOOGLE_OAUTH_HOST,
-            "imap_port": 443,
-            "label": state_doc.get("label") or (existing or {}).get("label") or f"Gmail ({email_address})",
-            "provider": "gmail",
-            "is_active": True,
-            "connected_at": (existing or {}).get("connected_at") or now_iso,
-            "linked_page": state_doc.get("linked_page") or (existing or {}).get("linked_page") or "all",
-            "auto_sync": bool(state_doc.get("auto_sync")),
-            "keywords": list((existing or {}).get("keywords") or []),
-            "keyword_match_mode": (existing or {}).get("keyword_match_mode") or "or",
-            "keyword_case_sensitive": bool((existing or {}).get("keyword_case_sensitive")),
-            "keyword_auto_save": bool((existing or {}).get("keyword_auto_save", True)),
-            "sync_error": None,
-            "updated_at": now_iso,
-        }
+        connection_doc = _inbox_connection_doc(
+            existing, user_id=user_id, company_id=company_id, customer_id=customer_id,
+            email_address=email_address, refresh_token=refresh_token,
+            scopes=list(credentials.scopes or [GOOGLE_GMAIL_SCOPE]),
+            label=state_doc.get("label"), linked_page=state_doc.get("linked_page"),
+            auto_sync=state_doc.get("auto_sync"),
+        )
         await db[_email.COL_CONNECTIONS].update_one({"user_id": user_id, "email_address": email_address}, {"$set": connection_doc}, upsert=True)
+        logger.info("Gmail inbox connected: user=%s company=%s", user_id, company_id)
         return await _redirect_result(return_url, "connected")
     except HTTPException as exc:
         logger.warning("Gmail OAuth callback rejected: %s", exc.detail)
@@ -268,6 +250,53 @@ async def google_gmail_oauth_callback(request: Request, code: Optional[str] = Qu
     except Exception:
         logger.exception("Gmail OAuth callback failed")
         return await _redirect_result(return_url, "error", "oauth_callback_failed")
+
+
+def _inbox_connection_doc(existing, *, user_id, company_id, customer_id, email_address, refresh_token,
+                          scopes, label=None, linked_page=None, auto_sync=None) -> Dict[str, Any]:
+    existing = existing or {}
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        "user_id": user_id,
+        "company_id": company_id or None,
+        "commercial_customer_id": customer_id,
+        "email_address": email_address,
+        "auth_type": "google_oauth",
+        "oauth_provider": "google",
+        "oauth_scopes": list(scopes or [GOOGLE_GMAIL_SCOPE]),
+        "app_password_enc": _email._encrypt(OAUTH_PASSWORD_PREFIX + refresh_token),
+        "imap_host": GOOGLE_OAUTH_HOST,
+        "imap_port": 443,
+        "label": label or existing.get("label") or f"Gmail ({email_address})",
+        "provider": "gmail",
+        "is_active": True,
+        "connected_at": existing.get("connected_at") or now_iso,
+        "linked_page": linked_page or existing.get("linked_page") or "all",
+        "auto_sync": bool(auto_sync if auto_sync is not None else existing.get("auto_sync")),
+        "keywords": list(existing.get("keywords") or []),
+        "keyword_match_mode": existing.get("keyword_match_mode") or "or",
+        "keyword_case_sensitive": bool(existing.get("keyword_case_sensitive")),
+        "keyword_auto_save": bool(existing.get("keyword_auto_save", True)),
+        "sync_error": None,
+        "updated_at": now_iso,
+    }
+
+
+async def save_gmail_inbox(collection, *, user_id: str, company_id: str, customer_id, email_address: str,
+                           refresh_token: str, scopes) -> None:
+    """Connect a Gmail inbox for Email Accounts from a Google sign-in that was
+    made elsewhere (Organisation Email asks for send + read in one go).
+    ``collection`` is the raw email_connections collection; company_id is
+    always stamped explicitly."""
+    email_address = str(email_address or "").strip().lower()
+    if not user_id or not company_id or "@" not in email_address:
+        return
+    key = {"user_id": user_id, "company_id": company_id, "email_address": email_address}
+    existing = await collection.find_one(key, {"_id": 0})
+    doc = _inbox_connection_doc(existing, user_id=user_id, company_id=company_id, customer_id=customer_id,
+                                email_address=email_address, refresh_token=refresh_token, scopes=scopes)
+    await collection.update_one(key, {"$set": doc}, upsert=True)
+    logger.info("Gmail inbox connected with organisation mailbox: user=%s company=%s", user_id, company_id)
 
 
 def _credentials_from_marker(marker: str) -> Credentials:

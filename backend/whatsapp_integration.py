@@ -117,11 +117,30 @@ _SESSIONS_CACHE_TTL = 15  # seconds
 _sessions_cache: Dict[str, Any] = {"data": None, "ts": 0.0}
 
 
+_sessions_lock: Optional[asyncio.Lock] = None
+
+
 async def _get_cached_sessions() -> List[Dict]:
-    """Return bridge /sessions list, using in-memory cache if fresh."""
+    """Return bridge /sessions list, using in-memory cache if fresh.
+
+    Single-flight: the per-organisation scheduler runs this for several
+    organisations at the same instant; without the lock every caller missed
+    the cache together and the bridge answered the burst with 429s.
+    """
+    global _sessions_lock
     now = _time.monotonic()
     if _sessions_cache["data"] is not None and now - _sessions_cache["ts"] < _SESSIONS_CACHE_TTL:
         return _sessions_cache["data"]
+    if _sessions_lock is None:
+        _sessions_lock = asyncio.Lock()
+    async with _sessions_lock:
+        now = _time.monotonic()
+        if _sessions_cache["data"] is not None and now - _sessions_cache["ts"] < _SESSIONS_CACHE_TTL:
+            return _sessions_cache["data"]
+        return await _refresh_sessions_cache()
+
+
+async def _refresh_sessions_cache() -> List[Dict]:
     try:
         data = await _bridge_get_raw("/sessions")
         result = data.get("sessions", [])

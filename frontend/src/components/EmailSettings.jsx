@@ -3730,11 +3730,11 @@ export default function EmailSettings() {
 
         {/* ══ TAB BAR ══ */}
         <motion.div variants={itemVariants}>
-          <div className="flex items-center gap-1 p-1 rounded-2xl border overflow-x-auto scrollbar-none"
+          <div className="flex flex-wrap items-center gap-1 p-1 rounded-2xl border"
             style={{ backgroundColor: isDark ? D.card : "#ffffff", borderColor: isDark ? D.border : "#e2e8f0" }}>
             {TAB_CONFIG.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className="flex-1 min-w-fit whitespace-nowrap flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                className="flex-auto shrink-0 whitespace-nowrap flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all"
                 style={activeTab === tab.id
                   ? { background: `linear-gradient(135deg, ${COLORS.deepBlue}, ${COLORS.mediumBlue})`, color: "#ffffff", boxShadow: "0 4px 14px rgba(13,59,102,0.25)" }
                   : { color: isDark ? D.muted : "#64748b" }}>
@@ -3815,7 +3815,7 @@ export default function EmailSettings() {
                       iconBg={isDark ? "bg-blue-900/40" : "bg-blue-50"}
                       icon={<Mail className="w-4 h-4 text-blue-500" />}
                       title={connections.length === 0 ? "Choose your email provider" : "Add another account"}
-                      subtitle="Select the provider that matches your email"
+                      subtitle="Select the provider that matches your email. A Gmail connected in the Organisation Email tab is added here automatically — no need to connect it twice."
                       action={showAddOptions && connections.length > 0 && (
                         <button onClick={() => setShowAddOptions(false)}
                           className="w-7 h-7 flex items-center justify-center rounded-xl transition-all"

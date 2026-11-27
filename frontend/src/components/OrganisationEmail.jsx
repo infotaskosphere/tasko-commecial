@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CheckCircle2, Inbox, Loader2, Mail, Star, Trash2, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, Loader2, Mail, Star, Trash2, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchOrgEmailStatus, ORG_EMAIL_SETTINGS_PATH } from '@/components/SendFromSelect';
 
@@ -121,18 +121,6 @@ export default function OrganisationEmail({ isDark = false, returnPath, personal
     finally { setBusy(''); }
   };
 
-  const connectInbox = async (m) => {
-    // Optional: also read this Gmail inbox in the Email module (separate Google permission).
-    setBusy(`inbox-${m.id}`);
-    try {
-      const res = await api.get('/email/oauth/google/start', { params: { label: m.from_email, auto_sync: true } });
-      window.location.href = res.data.auth_url;
-    } catch (err) {
-      setBusy('');
-      toast.error(errText(err, 'Inbox reading is not available yet'));
-    }
-  };
-
   if (loading && !status) {
     return <div className={`rounded-2xl border p-6 flex items-center gap-2 text-sm ${card} ${muted}`}><Loader2 className="h-4 w-4 animate-spin" />Loading email settings…</div>;
   }
@@ -156,11 +144,6 @@ export default function OrganisationEmail({ isDark = false, returnPath, personal
       </div>
       {(personal || canManage) && (
         <div className="flex items-center gap-1.5">
-          {m.kind === 'google' && !personal && (
-            <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => connectInbox(m)} title="Optional: also read this inbox in the Email module">
-              <Inbox className="h-3.5 w-3.5" />Also read inbox
-            </Button>
-          )}
           {!m.is_default && !personal && (
             <Button size="sm" variant="outline" className="h-8 rounded-lg text-xs gap-1" disabled={!!busy} onClick={() => makeDefault(m.id)}>
               {busy === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className="h-3.5 w-3.5" />}Make default
@@ -207,7 +190,7 @@ export default function OrganisationEmail({ isDark = false, returnPath, personal
   const connectButtons = (personal) => (
     <div className="flex flex-wrap gap-2">
       <Button onClick={() => startOAuth('google', personal)} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#4285F4,#0D47A1)' }}>
-        {busy === `google-${personal ? 'me' : 'org'}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Google
+        {busy === `google-${personal ? 'me' : 'org'}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Google <span className="opacity-80 font-normal">(send + read inbox)</span>
       </Button>
       <Button onClick={() => startOAuth('microsoft', personal)} disabled={!!busy} className="h-9 rounded-xl text-sm gap-2 text-white" style={{ background: 'linear-gradient(135deg,#0078D4,#004E8C)' }}>
         {busy === `microsoft-${personal ? 'me' : 'org'}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}Connect Microsoft

@@ -41,6 +41,9 @@ PLATFORM_RETURN_PATH = "/master-console?tab=email-config"
 STATES = "engagex_oauth_states"
 GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
 SCOPES = ["openid", "https://www.googleapis.com/auth/userinfo.email", GMAIL_SEND_SCOPE]
+# Asked for together with sending when an organisation connects its mailbox,
+# so one Google sign-in both sends from it and lets Email Accounts read it.
+GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 GMAIL_SEND_URL = "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media"
@@ -59,13 +62,13 @@ def _client() -> tuple[str, str]:
     return client_id, client_secret
 
 
-def _flow(redirect_uri: str, state: str):
+def _flow(redirect_uri: str, state: str, scopes: Optional[list] = None):
     from google_auth_oauthlib.flow import Flow
 
     client_id, client_secret = _client()
     config = {"web": {"client_id": client_id, "client_secret": client_secret,
                       "auth_uri": "https://accounts.google.com/o/oauth2/auth", "token_uri": TOKEN_URL}}
-    flow = Flow.from_client_config(config, scopes=SCOPES, state=state)
+    flow = Flow.from_client_config(config, scopes=scopes or SCOPES, state=state)
     flow.redirect_uri = redirect_uri
     return flow
 
@@ -81,7 +84,8 @@ def _frontend_return_url(request: Request, return_path: Optional[str]) -> str:
 
 
 async def start(request: Request, user: Any, company_id: str, return_path: Optional[str], *, platform: bool = False,
-                login_hint: Optional[str] = None, owner_user_id: Optional[str] = None) -> str:
+                login_hint: Optional[str] = None, owner_user_id: Optional[str] = None,
+                read_inbox: bool = False) -> str:
     from backend.email_google_oauth import _redirect_uri
 
     redirect_uri = _redirect_uri(request)
@@ -95,7 +99,8 @@ async def start(request: Request, user: Any, company_id: str, return_path: Optio
             "Google will return users to %s. Expected https://%s/api/email/oauth/google/callback",
             redirect_host, this_host, redirect_uri, this_host)
     state = (PLATFORM_STATE_PREFIX if platform else STATE_PREFIX) + secrets.token_urlsafe(32)
-    flow = _flow(redirect_uri, state)
+    scopes = SCOPES + [GMAIL_READ_SCOPE] if (read_inbox and not platform) else SCOPES
+    flow = _flow(redirect_uri, state, scopes) if scopes is not SCOPES else _flow(redirect_uri, state)
     extra = {"login_hint": login_hint} if login_hint else {}
     auth_url, _ = flow.authorization_url(access_type="offline", include_granted_scopes="false",
                                          prompt="consent select_account", state=state, **extra)
@@ -104,6 +109,7 @@ async def start(request: Request, user: Any, company_id: str, return_path: Optio
         "company_id": company_id,
         "user_id": str(getattr(user, "id", "")),
         "owner_user_id": owner_user_id,
+        "scopes": scopes,
         "redirect_uri": redirect_uri,
         "code_verifier": getattr(flow, "code_verifier", None),
         "return_url": (_frontend_return_url(request, return_path or PLATFORM_RETURN_PATH) if platform
@@ -142,7 +148,9 @@ async def handle_callback(request: Request, *, code: Optional[str], state: str, 
     if not code:
         return _result(return_url, "error", reason="Google did not return an authorisation code.")
     try:
-        flow = _flow(doc["redirect_uri"], state)
+        wanted = doc.get("scopes")
+        flow = (_flow(doc["redirect_uri"], state, wanted) if wanted and GMAIL_READ_SCOPE in wanted
+                else _flow(doc["redirect_uri"], state))
         if doc.get("code_verifier"):
             flow.code_verifier = doc["code_verifier"]
         await asyncio.to_thread(flow.fetch_token, code=code)
@@ -197,6 +205,22 @@ async def handle_callback(request: Request, *, code: Optional[str], state: str, 
         from .connected_senders import ensure_first_mailbox_is_default
 
         await ensure_first_mailbox_is_default(company_id)
+        if GMAIL_READ_SCOPE in granted:
+            # Same sign-in also connects the inbox in Email Accounts.
+            try:
+                from backend.email_google_oauth import save_gmail_inbox
+
+                await save_gmail_inbox(
+                    raw_db()["email_connections"],
+                    user_id=str(owner_user_id or doc.get("user_id") or ""),
+                    company_id=company_id,
+                    customer_id=doc.get("commercial_customer_id"),
+                    email_address=email,
+                    refresh_token=creds.refresh_token,
+                    scopes=sorted(granted),
+                )
+            except Exception:
+                logger.exception("Gmail inbox link after mailbox connect failed")
         return _result(return_url, "connected", email=email)
     except Exception:
         logger.exception("EngageX Google sign-in failed")

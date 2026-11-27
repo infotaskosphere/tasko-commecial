@@ -1865,9 +1865,48 @@ async def create_email_indexes():
 # API ROUTES — CONNECTIONS
 # =============================================================================
 
+async def _rehome_own_connections(current_user) -> None:
+    """Move this user's own inbox connections into the organisation they are
+    signed in to.
+
+    Older Gmail connects stored the company from the raw user record rather
+    than the request's organisation, so the connection was saved but never
+    listed. A connection's user_id is one account, so it is safe to bring
+    those records into that account's current organisation.
+    """
+    try:
+        from backend.dependencies import _raw_db
+        from backend.tenant_runtime import authenticated_company_id, in_platform_owner_context
+
+        company_id = str(authenticated_company_id() or "").strip()
+        if not company_id or in_platform_owner_context() or _raw_db is None:
+            return
+        user_id = str(current_user.id)
+        stray = await _raw_db[COL_CONNECTIONS].find(
+            {"user_id": user_id, "company_id": {"$ne": company_id}},
+            {"_id": 1, "email_address": 1, "company_id": 1},
+        ).to_list(50)
+        if not stray:
+            return
+        here = {d.get("email_address") for d in await _raw_db[COL_CONNECTIONS].find(
+            {"user_id": user_id, "company_id": company_id}, {"email_address": 1}).to_list(200)}
+        for doc in stray:
+            if doc.get("email_address") in here:
+                continue  # already connected here; leave the stale copy alone
+            await _raw_db[COL_CONNECTIONS].update_one({"_id": doc["_id"]}, {"$set": {"company_id": company_id}})
+            here.add(doc.get("email_address"))
+        logger.warning(
+            "Email Accounts: moved %d connection(s) of user %s into company %s (were under %s)",
+            len(stray), user_id, company_id, sorted({str(d.get("company_id")) for d in stray}),
+        )
+    except Exception as exc:  # never block the list
+        logger.warning("Email Accounts: could not re-home connections: %s", exc)
+
+
 @router.get("/connections")
 async def list_connections(current_user=Depends(check_module_permission("email_accounts", "view"))):
     # Issue #9: Staff sees own only; Manager sees own + team members' accounts
+    await _rehome_own_connections(current_user)
     if current_user.role == "admin":
         docs = await db[COL_CONNECTIONS].find(
             {}, {"app_password_enc": 0, "_id": 0}
