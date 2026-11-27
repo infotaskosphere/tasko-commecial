@@ -871,15 +871,16 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
                 ? `${limits.provider} mailbox: sends at most ${limits.per_minute} per minute at a varied pace and ${fmtNumber(limits.daily)} per 24 hours, so the account is not blocked. Bigger lists continue automatically the next day.`
                 : 'SES, SendGrid and similar services can go higher.'}</span>
             </label>
-            <label className="text-xs font-semibold text-slate-500">Batches: pause after every
-              <div className="mt-1 flex items-center gap-2">
-                <Input type="number" min={0} max={1000} value={c.pause_every || ''} placeholder="off" onChange={(e) => set({ pause_every: Math.max(0, Math.min(1000, Number(e.target.value) || 0)) })} />
-                <span className="whitespace-nowrap font-normal">emails, for</span>
-                <Input type="number" min={1} max={360} value={c.pause_min} onChange={(e) => set({ pause_min: Math.max(1, Math.min(360, Number(e.target.value) || 1)) })} />
-                <span className="font-normal">min</span>
+            <div className="text-xs font-semibold text-slate-500 sm:col-span-2">Batches (optional)
+              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-2 font-normal text-slate-600 dark:text-slate-300">
+                <span className="shrink-0">Pause after every</span>
+                <Input type="number" min={0} max={1000} className="w-24 shrink-0" aria-label="Emails per batch" value={c.pause_every || ''} placeholder="off" onChange={(e) => set({ pause_every: Math.max(0, Math.min(1000, Number(e.target.value) || 0)) })} />
+                <span className="shrink-0">emails, for</span>
+                <Input type="number" min={1} max={360} className="w-20 shrink-0" aria-label="Pause length in minutes" value={c.pause_min} onChange={(e) => set({ pause_min: Math.max(1, Math.min(360, Number(e.target.value) || 1)) })} />
+                <span className="shrink-0">minutes</span>
               </div>
               <span className="mt-1 block font-normal text-slate-400">Like WhatsApp batches: send a group, rest, then the next group. E.g. 50 emails, then a 10-minute break.</span>
-            </label>
+            </div>
             {c.style === 'newsletter' && (
               <>
                 <label className="text-xs font-semibold text-slate-500">Footer address (recommended)
@@ -889,7 +890,7 @@ function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = 
               </>
             )}
           </div>
-          <SpreadOptions value={c.spread} onChange={(spread) => set({ spread })} unit="emails" total={audienceCount} />
+          <SpreadOptions value={c.spread} onChange={(spread) => set({ spread })} unit="emails" total={audienceCount} mailboxDaily={limits?.daily} mailboxName={limits?.provider} />
         </div>
       </ChecklistRow>
 

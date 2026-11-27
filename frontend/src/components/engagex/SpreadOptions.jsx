@@ -30,15 +30,19 @@ export function spreadFromSettings(st = {}) {
   };
 }
 
-export function spreadDays(total, v) {
-  const perDay = Number(v?.daily_limit) || 0;
+export function spreadDays(total, v, mailboxDaily = 0) {
+  const caps = [Number(v?.daily_limit) || 0, Number(mailboxDaily) || 0].filter((n) => n > 0);
+  const perDay = caps.length ? Math.min(...caps) : 0;
   return perDay && total > perDay ? Math.ceil(total / perDay) : 1;
 }
 
-export default function SpreadOptions({ value, onChange, unit = 'emails', total = 0 }) {
+export default function SpreadOptions({ value, onChange, unit = 'emails', total = 0, mailboxDaily = 0, mailboxName = '' }) {
   const v = value || spreadFromSettings();
   const set = (patch) => onChange({ ...v, ...patch });
-  const days = spreadDays(total, v);
+  const days = spreadDays(total, v, mailboxDaily);
+  // The mailbox's own safe daily limit always applies on top of this setting.
+  const capped = mailboxDaily && Number(v.daily_limit) > mailboxDaily;
+  const perDay = capped ? mailboxDaily : Number(v.daily_limit) || mailboxDaily || 0;
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
       <p className="text-xs font-semibold text-slate-500">Spread over days <span className="font-normal">(optional — keeps going on its own, even after you log out)</span></p>
@@ -47,7 +51,8 @@ export default function SpreadOptions({ value, onChange, unit = 'emails', total 
           <Input type="number" min={1} className="mt-1" value={v.daily_limit} placeholder="No daily limit"
             onChange={(e) => set({ daily_limit: e.target.value ? Math.max(1, Number(e.target.value) || 1) : '' })} />
           <span className="mt-1 block font-normal text-slate-400">
-            {days > 1 ? `${total} ${unit} will go out over about ${days} days.` : 'The rest continues the next day.'}
+            {capped && <span className="block text-amber-600">{mailboxName || 'This mailbox'} sends at most {mailboxDaily} a day to keep the account safe, so {mailboxDaily} a day will be used.</span>}
+            {days > 1 ? `${total.toLocaleString('en-IN')} ${unit} will go out over about ${days} days (${perDay.toLocaleString('en-IN')} a day).` : 'The rest continues the next day.'}
           </span>
         </label>
         <div className="text-xs font-semibold text-slate-500">
