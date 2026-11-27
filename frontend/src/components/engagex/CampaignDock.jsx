@@ -10,7 +10,7 @@ import { engagexApi } from '@/lib/engagexApi';
 import { campaignPagePath, dismissCampaign, minimisedCampaigns, subscribeDock } from '@/lib/campaignDock';
 
 const ACTIVE = 'queued,running,scheduled';
-const POLL_MS = 20000;
+const POLL_MS = 30000;
 
 function statusLine(c) {
   const st = c.stats || {};

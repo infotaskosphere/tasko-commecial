@@ -12,7 +12,7 @@ import { engagexApi, engagexError } from '@/lib/engagexApi';
 import { DeliveryBar, StatusBadge, fmtAgo, fmtDateTime, fmtNumber, isActive, usePolling } from './shared';
 
 export function CampaignTable({ channel, refreshKey, onOpen, emptyAction, extraActions }) {
-  const [state, setState] = useState({ loading: true, items: [], total: 0 });
+  const [state, setState] = useState({ loading: true, items: [], total: 0, error: null });
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('all');
   const [q, setQ] = useState('');
@@ -21,15 +21,16 @@ export function CampaignTable({ channel, refreshKey, onOpen, emptyAction, extraA
     if (!silent) setState((s) => ({ ...s, loading: true }));
     try {
       const data = await engagexApi.campaigns(channel, { page, page_size: 15, status, q });
-      setState({ loading: false, items: data.items || [], total: data.total || 0 });
+      setState({ loading: false, items: data.items || [], total: data.total || 0, error: null });
     } catch (error) {
-      setState((s) => ({ ...s, loading: false }));
+      // Keep showing the last list; never claim "No campaigns" when the server was unreachable.
+      setState((s) => ({ ...s, loading: false, error: engagexError(error) }));
       if (!silent) toast.error(engagexError(error));
     }
   }, [channel, page, status, q]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
-  usePolling(() => load(true), 5000, state.items.some((c) => isActive(c.status)));
+  usePolling(() => load(true), 15000, state.items.some((c) => isActive(c.status)));
 
   const pages = Math.max(1, Math.ceil(state.total / 15));
   return (
@@ -52,7 +53,13 @@ export function CampaignTable({ channel, refreshKey, onOpen, emptyAction, extraA
         {extraActions}
       </div>
 
-      {state.loading ? <LoadingState /> : state.items.length === 0 ? (
+      {state.error && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          <span>Couldn’t reach the server{state.items.length ? ' — showing the last loaded list' : ''}. Campaigns keep sending on the server; this is only the page.</span>
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => load()}>Retry</Button>
+        </div>
+      )}
+      {state.loading ? <LoadingState /> : state.items.length === 0 && state.error ? null : state.items.length === 0 ? (
         <EmptyState title="No campaigns yet" hint={q || status !== 'all' ? 'Try a different filter.' : 'Create your first campaign to see delivery progress here.'} action={emptyAction} />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
@@ -126,7 +133,7 @@ export function CampaignSheet({ channel, campaignId, open, onOpenChange, onChang
 
   useEffect(() => { if (open) { setData(null); setFilter('all'); setQ(''); setPage(1); } }, [open, campaignId]);
   useEffect(() => { if (open) load(); }, [open, load]);
-  usePolling(() => load(true), 3000, open && data && isActive(data.campaign.status));
+  usePolling(() => load(true), 10000, open && data && isActive(data.campaign.status));
 
   const campaign = data?.campaign;
   const st = campaign?.stats || {};

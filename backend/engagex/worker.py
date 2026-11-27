@@ -147,7 +147,7 @@ def lane_key(campaign: dict) -> str:
 
 async def _claim(campaign_id: str) -> Optional[dict]:
     now = utcnow()
-    return await raw_db()[CAMPAIGNS].find_one_and_update(
+    doc = await raw_db()[CAMPAIGNS].find_one_and_update(
         {"id": campaign_id, **_due_query(iso(now))},
         {"$set": {
             "status": "running",
@@ -159,6 +159,11 @@ async def _claim(campaign_id: str) -> Optional[dict]:
         }},
         return_document=ReturnDocument.AFTER,
     )
+    if doc and isinstance(doc.get("audience"), dict):
+        # The worker reads recipients from their own collection; don't keep the
+        # campaign's (possibly 10,000-entry) typed-in list in memory for the run.
+        doc["audience"].pop("recipients", None)
+    return doc
 
 
 async def _renew(campaign_id: str) -> None:

@@ -337,14 +337,26 @@ async def _insert_recipients(campaign: dict, rows: list[dict]) -> None:
         await raw_db()[RECIPIENTS].insert_many(docs[start:start + 1000], ordered=False)
 
 
-async def _campaign_or_404(company_id: str, campaign_id: str, channel: str) -> dict:
-    doc = await raw_db()[CAMPAIGNS].find_one(scoped(company_id, {"id": campaign_id, "channel": channel}), {"_id": 0})
+async def _campaign_or_404(company_id: str, campaign_id: str, channel: str, *, light: bool = False) -> dict:
+    projection = {"_id": 0, **(HEAVY_CAMPAIGN_FIELDS if light else {})}
+    doc = await raw_db()[CAMPAIGNS].find_one(scoped(company_id, {"id": campaign_id, "channel": channel}), projection)
     if not doc:
         raise HTTPException(status_code=404, detail="Campaign not found.")
     return doc
 
 
+# The individual recipients typed or imported straight into a campaign are
+# kept on the campaign document (up to 10,000). Once launched they live in the
+# recipients collection, so progress/list responses never carry them: sending
+# a multi-megabyte document on every progress poll ran the server out of memory.
+HEAVY_CAMPAIGN_FIELDS = {"audience.recipients": 0, "tenant": 0}
+
+
 def _public_campaign(doc: dict) -> dict:
+    audience = doc.get("audience")
+    if isinstance(audience, dict) and doc.get("status") != "draft" and audience.get("recipients"):
+        doc = {**doc, "audience": {**{k: v for k, v in audience.items() if k != "recipients"},
+                                   "recipient_count": len(audience["recipients"])}}
     out = serialize(doc, drop=("tenant", "lease_owner", "lease_until", "public_base_url")) or {}
     content = dict(out.get("content") or {})
     if content.get("html") and len(content["html"]) > 200_000:
@@ -858,7 +870,7 @@ def _register_campaign_routes(channel: str, prefix: str) -> None:
             query["name"] = {"$regex": re.escape(q), "$options": "i"}
         coll = raw_db()[CAMPAIGNS]
         total = await coll.count_documents(query)
-        docs = await coll.find(query, {"_id": 0, "content.html": 0}).sort("created_at", DESCENDING) \
+        docs = await coll.find(query, {"_id": 0, "content.html": 0, **HEAVY_CAMPAIGN_FIELDS}).sort("created_at", DESCENDING) \
             .skip((page_no - 1) * page_size).limit(page_size).to_list(page_size)
         return {"items": [_public_campaign(d) for d in docs], "total": total, "page": page_no, "page_size": page_size}
 
@@ -868,8 +880,12 @@ def _register_campaign_routes(channel: str, prefix: str) -> None:
                               current_user: User = Depends(get_current_user)):
         require_page(current_user, page)
         company_id = workspace_company_id(current_user)
-        doc = await _campaign_or_404(company_id, campaign_id, channel)
-        if doc.get("status") not in ("draft",):
+        # Drafts are edited, so they keep their typed-in recipients; anything
+        # launched is polled for progress and must stay small.
+        doc = await _campaign_or_404(company_id, campaign_id, channel, light=True)
+        if doc.get("status") == "draft":
+            doc = await _campaign_or_404(company_id, campaign_id, channel)
+        else:
             doc["stats"] = await worker.recompute_stats(campaign_id)
         query = scoped(company_id, {"campaign_id": campaign_id})
         if status == "opened":
