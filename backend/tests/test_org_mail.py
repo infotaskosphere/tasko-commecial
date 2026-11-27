@@ -167,12 +167,22 @@ def test_bulk_client_email_uses_the_organisation_mailbox(env, monkeypatch):
     req = dashboard_ops.BulkClientEmailRequest(
         recipients=[{"email": "one@x.example", "name": "One"}, {"email": "two@x.example", "name": "Two"}],
         subject="Hello {name}", body_template="Dear {name},\nThanks")
+    from backend.engagex import worker
+    monkeypatch.setattr(worker, "kick", lambda: None)
+
+    async def fake_profile(company_id):
+        return {"name": "Acme"}
+
+    monkeypatch.setattr("backend.engagex.router.company_profile", fake_profile)
     result = _run(dashboard_ops.send_bulk_client_emails(req, current_user=_admin()))
-    assert result["sent"] == 2
-    assert [(m["from"], m["to"], m["subject"]) for m in sent[-2:]] == [
-        ("accounts@acme.example", "one@x.example", "Hello One"),
-        ("accounts@acme.example", "two@x.example", "Hello Two"),
-    ]
+    # Not sent in a burst: queued as a paced MailMaster campaign from the org mailbox.
+    assert result["queued"] == 2 and result["sent"] == 0 and "accounts@acme.example" in result["message"]
+    mailbox = _run(raw.engagex_email_senders.find_one({"from_email": "accounts@acme.example"}))
+    campaign = _run(raw.engagex_campaigns.find_one({"id": result["campaign_id"]}))
+    assert campaign["settings"]["sender_id"] == mailbox["id"]
+    assert campaign["settings"]["per_minute"] == 6  # one email about every 10 seconds
+    assert campaign["content"]["subject"] == "Hello {{name}}"
+    assert _run(raw.engagex_recipients.count_documents({"campaign_id": result["campaign_id"]})) == 2
 
 
 # ── personal mailboxes ────────────────────────────────────────────────────────

@@ -56,6 +56,7 @@ export const engagexApi = {
   createTemplate: (channel, body) => data(api.post(`${channelPrefix(channel)}/templates`, body)),
   updateTemplate: (channel, id, body) => data(api.put(`${channelPrefix(channel)}/templates/${id}`, body)),
   deleteTemplate: (channel, id) => data(api.delete(`${channelPrefix(channel)}/templates/${id}`)),
+  setHiddenStarters: (channel, ids) => data(api.put(`${channelPrefix(channel)}/templates-hidden`, { ids })),
   suppressions: (channel, q) => data(api.get(`${channelPrefix(channel)}/suppressions`, { params: clean({ q }) })),
   addSuppressions: (channel, addresses, reason) => data(api.post(`${channelPrefix(channel)}/suppressions`, { addresses, reason })),
   removeSuppression: (channel, address) => data(api.delete(`${channelPrefix(channel)}/suppressions/${encodeURIComponent(address)}`)),

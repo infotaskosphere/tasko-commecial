@@ -715,10 +715,11 @@ const BulkMessageModal = React.memo(({ open, onClose, mode, filteredClients, isD
         sender_id: orgSenderId || null,
         attachment_name: mediaFile?.name || '', attachment_base64: mediaFile?.base64 || '',
       });
-      setSendProgress({ done: r.data.sent, total: emailClients.length, results: r.data.failed_list || [] });
-      toast.success(r.data.sent + ' email(s) sent' + (r.data.failed > 0 ? ', ' + r.data.failed + ' failed' : ''));
+      setSendProgress({ done: r.data.queued ? 0 : r.data.sent, total: emailClients.length, results: r.data.failed_list || [] });
+      if (r.data.queued) toast.success(r.data.message, { duration: 9000 });
+      else toast.success(r.data.sent + ' email(s) sent' + (r.data.failed > 0 ? ', ' + r.data.failed + ' failed' : ''));
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Email send failed. Check Settings → Integrations → Email.');
+      toast.error(err.response?.data?.detail || 'Email send failed. Check Settings → Email Accounts → Organisation Email.');
       setSendProgress(null);
     } finally { setSendingBulk(false); }
   }, [message, subjectLine, mediaFile, selectedClients, emailCount, orgSenderId]);

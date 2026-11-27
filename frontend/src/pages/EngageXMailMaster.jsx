@@ -404,7 +404,7 @@ function AudiencePanel({ lists, reload }) {
 // ═════════════════════════════════════════════════════════════════════════════
 // Templates
 // ═════════════════════════════════════════════════════════════════════════════
-function TemplateEditorDialog({ open, onOpenChange, initial, companyName, onSaved }) {
+function TemplateEditorDialog({ open, onOpenChange, initial, companyName, onSaved, onStarterReplaced }) {
   const [form, setForm] = useState({ name: '', subject: '', preview_text: '', html: '' });
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (open) setForm({ name: initial?.name || '', subject: initial?.subject || '', preview_text: initial?.preview_text || '', html: initial?.html || STARTER_TEMPLATES[0].html }); }, [open, initial]);
@@ -412,13 +412,21 @@ function TemplateEditorDialog({ open, onOpenChange, initial, companyName, onSave
   const save = async () => {
     if (!form.name.trim()) return toast.error('Name the template.');
     setSaving(true);
-    try { if (initial?.id) await engagexApi.updateTemplate('email', initial.id, form); else await engagexApi.createTemplate('email', form); toast.success('Template saved'); onSaved(); onOpenChange(false); }
+    try {
+      if (initial?.id && !initial?.starter) await engagexApi.updateTemplate('email', initial.id, form);
+      else {
+        await engagexApi.createTemplate('email', form);
+        // Editing a built-in starter saves your own copy in its place.
+        if (initial?.starter) await onStarterReplaced?.(initial.id);
+      }
+      toast.success('Template saved'); onSaved(); onOpenChange(false);
+    }
     catch (error) { toast.error(engagexError(error)); } finally { setSaving(false); }
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[92vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{initial?.id ? 'Edit template' : 'New email template'}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{initial?.starter ? 'Edit starter template (saved as your own copy)' : initial?.id ? 'Edit template' : 'New email template'}</DialogTitle></DialogHeader>
         <div className="grid gap-3 sm:grid-cols-3">
           <Input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Template name" />
           <Input value={form.subject} onChange={(e) => setForm((f) => ({ ...f, subject: e.target.value }))} placeholder="Default subject" />
@@ -432,13 +440,22 @@ function TemplateEditorDialog({ open, onOpenChange, initial, companyName, onSave
   );
 }
 
-function TemplatesPanel({ templates, companyName, reload, onUse }) {
+function TemplatesPanel({ templates, hiddenStarters = [], companyName, reload, onUse }) {
   const [editing, setEditing] = useState(null);
-  const remove = async (t) => { if (!window.confirm(`Delete “${t.name}”?`)) return; try { await engagexApi.deleteTemplate('email', t.id); reload(); } catch (error) { toast.error(engagexError(error)); } };
-  const cards = [...STARTER_TEMPLATES.filter((t) => t.id !== 'blank').map((t) => ({ ...t, starter: true })), ...templates];
+  const hideStarter = async (id) => { await engagexApi.setHiddenStarters('email', [...new Set([...hiddenStarters, id])]); };
+  const remove = async (t) => {
+    if (!window.confirm(t.starter ? `Remove the starter template “${t.name}” for your organisation?` : `Delete “${t.name}”?`)) return;
+    try { if (t.starter) await hideStarter(t.id); else await engagexApi.deleteTemplate('email', t.id); toast.success('Template deleted'); reload(); }
+    catch (error) { toast.error(engagexError(error)); }
+  };
+  const restoreStarters = async () => { try { await engagexApi.setHiddenStarters('email', []); reload(); } catch (error) { toast.error(engagexError(error)); } };
+  const cards = [...STARTER_TEMPLATES.filter((t) => t.id !== 'blank' && !hiddenStarters.includes(t.id)).map((t) => ({ ...t, starter: true })), ...templates];
   return (
     <div className="space-y-3">
-      <div className="flex justify-end"><Button size="sm" onClick={() => setEditing({})}><Plus className="h-4 w-4 mr-1" />New template</Button></div>
+      <div className="flex justify-end gap-2">
+        {hiddenStarters.length > 0 && <Button size="sm" variant="ghost" onClick={restoreStarters}>Restore starter templates</Button>}
+        <Button size="sm" onClick={() => setEditing({})}><Plus className="h-4 w-4 mr-1" />New template</Button>
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((t) => (
           <div key={t.id} className="flex flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700">
@@ -451,14 +468,14 @@ function TemplatesPanel({ templates, companyName, reload, onUse }) {
               <p className="truncate text-[11px] text-slate-500">{t.subject || 'No default subject'}</p>
               <div className="mt-auto flex gap-1.5 pt-3">
                 <Button size="sm" onClick={() => onUse(t)}>Use</Button>
-                {!t.starter && <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditing(t)}><Pencil className="h-4 w-4" /></Button>}
-                {!t.starter && <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => remove(t)}><Trash2 className="h-4 w-4" /></Button>}
+                <Button size="sm" variant="outline" onClick={() => setEditing(t)}><Pencil className="h-3.5 w-3.5 mr-1" />Edit</Button>
+                <Button size="icon" variant="ghost" className="h-8 w-8 text-rose-600" onClick={() => remove(t)} aria-label={`Delete ${t.name}`} title="Delete"><Trash2 className="h-4 w-4" /></Button>
               </div>
             </div>
           </div>
         ))}
       </div>
-      <TemplateEditorDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} initial={editing} companyName={companyName} onSaved={reload} />
+      <TemplateEditorDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} initial={editing} companyName={companyName} onSaved={reload} onStarterReplaced={hideStarter} />
     </div>
   );
 }
@@ -627,7 +644,7 @@ function ChecklistRow({ done, title, summary, children }) {
   );
 }
 
-function CampaignBuilder({ initial, senders, lists, templates, companyName, onClose, onLaunched, onTemplateSaved }) {
+function CampaignBuilder({ initial, senders, lists, templates, hiddenStarters = [], companyName, onClose, onLaunched, onTemplateSaved }) {
   const { user } = useAuth();
   const [c, setC] = useState(initial);
   const [saving, setSaving] = useState('');
@@ -780,7 +797,7 @@ function CampaignBuilder({ initial, senders, lists, templates, companyName, onCl
       <ChecklistRow done={ready.content} title="Content" summary="Design your email. Personalisation tags are filled in for each recipient.">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-[11px] font-semibold text-slate-500">Start from:</span>
-          {[...STARTER_TEMPLATES, ...templates].map((t) => (
+          {[...STARTER_TEMPLATES.filter((t) => t.id === 'blank' || !hiddenStarters.includes(t.id)), ...templates].map((t) => (
             <button key={t.id} type="button" onClick={() => { if (c.html.replace(/<[^>]+>/g, '').trim().length > 40 && !window.confirm('Replace the current content with this template?')) return; set({ html: t.html, subject: c.subject || t.subject || '', preview_text: c.preview_text || t.preview_text || '', template_id: t.starter === false ? t.id : null }); }}
               className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-600 hover:border-indigo-400 hover:text-indigo-700 dark:border-slate-600 dark:text-slate-300">{t.name}</button>
           ))}
@@ -917,6 +934,7 @@ export default function EngageXMailMaster() {
   const [canConfigurePlatform, setCanConfigurePlatform] = useState(false);
   const [lists, setLists] = useState([]);
   const [templates, setTemplates] = useState([]);
+  const [hiddenStarters, setHiddenStarters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [builder, setBuilder] = useState(null);
@@ -925,7 +943,7 @@ export default function EngageXMailMaster() {
 
   const loadSenders = useCallback(async () => { const d = await engagexApi.senders(); setSenders(d.senders || []); setCanManage(!!d.can_manage); setPlatformRemoved(!!d.platform_removed); setCanConfigurePlatform(!!d.can_configure_platform_service); return d.senders || []; }, []);
   const loadLists = useCallback(async () => { const d = await engagexApi.lists(); setLists(d.items || []); }, []);
-  const loadTemplates = useCallback(async () => { const d = await engagexApi.templates('email'); setTemplates((d.items || []).map((t) => ({ ...t, starter: false }))); }, []);
+  const loadTemplates = useCallback(async () => { const d = await engagexApi.templates('email'); setTemplates((d.items || []).map((t) => ({ ...t, starter: false }))); setHiddenStarters(d.hidden_starters || []); }, []);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -995,6 +1013,7 @@ export default function EngageXMailMaster() {
             senders={senders}
             lists={lists}
             templates={templates}
+            hiddenStarters={hiddenStarters}
             companyName={companyName}
             onTemplateSaved={loadTemplates}
             onClose={() => { setBuilder(null); setRefreshKey((k) => k + 1); }}
@@ -1024,7 +1043,7 @@ export default function EngageXMailMaster() {
           <TabsContent value="audience" className="mt-4"><ExCard icon={Users} title="Audience lists" color={BRAND.email}><AudiencePanel lists={lists} reload={loadLists} /></ExCard></TabsContent>
           <TabsContent value="templates" className="mt-4">
             <ExCard icon={FileText} title="Email templates" color={BRAND.email}>
-              <TemplatesPanel templates={templates} companyName={companyName} reload={loadTemplates}
+              <TemplatesPanel templates={templates} hiddenStarters={hiddenStarters} companyName={companyName} reload={loadTemplates}
                 onUse={(t) => setBuilder({ ...blankCampaign(senders), subject: t.subject || '', preview_text: t.preview_text || '', html: t.html, template_id: t.starter ? null : t.id })} />
             </ExCard>
           </TabsContent>

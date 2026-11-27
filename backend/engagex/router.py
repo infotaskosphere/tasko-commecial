@@ -225,6 +225,13 @@ class TemplateIn(BaseModel):
     message: str = Field("", max_length=4096)
 
 
+class HiddenStartersIn(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=100)
+
+
+TEMPLATE_PREFS = "engagex_template_prefs"
+
+
 class SuppressionIn(BaseModel):
     addresses: list[str] = Field(default_factory=list)
     reason: str = Field("Added manually", max_length=200)
@@ -1815,7 +1822,22 @@ def _register_template_routes(channel: str, prefix: str) -> None:
         require_page(current_user, page)
         company_id = workspace_company_id(current_user)
         docs = await raw_db()[TEMPLATES].find(scoped(company_id, {"channel": channel}), {"_id": 0}).sort("updated_at", DESCENDING).to_list(500)
-        return {"items": docs}
+        prefs = await raw_db()[TEMPLATE_PREFS].find_one({"company_id": company_id, "channel": channel}, {"_id": 0}) or {}
+        return {"items": docs, "hidden_starters": list(prefs.get("hidden_starters") or [])}
+
+    @router.put(f"{prefix}/templates-hidden", name=f"{channel}_template_hidden")
+    async def set_hidden_starters(body: HiddenStartersIn, current_user: User = Depends(get_current_user)):
+        """Built-in starter templates can't be changed, but an organisation can
+        hide (delete) them; editing one saves the organisation's own copy."""
+        require_page(current_user, page)
+        company_id = workspace_company_id(current_user)
+        ids = sorted({clean_text(i, 60) for i in body.ids if clean_text(i, 60)})[:100]
+        await raw_db()[TEMPLATE_PREFS].update_one(
+            {"company_id": company_id, "channel": channel},
+            {"$set": {"hidden_starters": ids, "updated_at": iso()}, "$setOnInsert": {"company_id": company_id, "channel": channel}},
+            upsert=True,
+        )
+        return {"hidden_starters": ids}
 
     @router.post(f"{prefix}/templates", name=f"{channel}_template_create")
     async def create_template(body: TemplateIn, current_user: User = Depends(get_current_user)):
@@ -1889,3 +1911,61 @@ def _register_template_routes(channel: str, prefix: str) -> None:
 
 _register_template_routes("whatsapp", "/whatsapp")
 _register_template_routes("email", "/mail")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Bulk emails from other modules (Email Accounts → Compose & Send, Clients)
+# ═════════════════════════════════════════════════════════════════════════════
+_SINGLE_BRACE_TAG = re.compile(r"(?<!\{)\{([A-Za-z_][\w.]*)\}(?!\})")
+
+
+def to_merge_tags(text: str) -> str:
+    """``{name}`` placeholders (Compose & Send) → MailMaster ``{{name}}`` tags."""
+    return _SINGLE_BRACE_TAG.sub(r"{{\1}}", text or "")
+
+
+async def queue_bulk_email(user: User, *, sender_id: Optional[str], from_name: Optional[str], subject: str,
+                           html: str, recipients: list[dict], attachments: Optional[list[dict]] = None,
+                           per_minute: int = 6, scheduled_at: Optional[datetime] = None,
+                           name: Optional[str] = None) -> dict:
+    """Queue a bulk send as a MailMaster campaign instead of sending in a tight
+    loop. The campaign worker paces it (varied gaps), keeps each mailbox under
+    its daily limit across every module, continues large lists automatically,
+    and stops if the provider reports a limit — so a Gmail account is not
+    blocked for sending too many emails at once."""
+    company_id = workspace_company_id(user)
+    company = await company_profile(company_id)
+    campaign = _base_campaign(user, None, "email", name or f"Bulk email · {clean_text(subject, 80)}", company)
+    media_refs = []
+    for item in attachments or []:
+        try:
+            raw = base64.b64decode(str(item.get("content") or "").split(",")[-1], validate=True)
+        except (binascii.Error, ValueError):
+            raise HTTPException(status_code=400, detail="The attachment could not be read.")
+        if not raw:
+            continue
+        if len(raw) > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(status_code=400, detail="Attachments must be 8 MB or smaller.")
+        filename = re.sub(r"[^\w.\- ()]+", "_", str(item.get("name") or "attachment")).strip() or "attachment"
+        mime = str(item.get("type") or "application/octet-stream")
+        media = {"id": new_id("exm"), "company_id": company_id, "purpose": "attachment", "filename": filename[:180],
+                 "mime_type": mime, "base64": base64.b64encode(raw).decode(), "size": len(raw), "public_token": None,
+                 "created_by": str(user.id), "created_at": iso()}
+        await raw_db()[MEDIA].insert_one(dict(media))
+        media_refs.append(AttachmentRef(id=media["id"], filename=media["filename"], size=media["size"], mime_type=mime))
+    body = MailCampaignIn(
+        name=campaign["name"], sender_id=sender_id or PLATFORM_SENDER_ID, from_name=from_name or "",
+        subject=to_merge_tags(subject)[:300], html=to_merge_tags(html), style="personal",
+        per_minute=max(1, min(600, int(per_minute or 6))),
+        audience=MailAudienceIn(recipients=[RecipientIn(**r) for r in recipients][:MAX_RECIPIENTS]),
+        attachments=media_refs,
+    )
+    campaign.update(_mail_fields(body))
+    await raw_db()[CAMPAIGNS].insert_one(dict(campaign))
+    action = "schedule" if scheduled_at else "send"
+    try:
+        result = await _launch_mail(campaign, action, scheduled_at)
+    except HTTPException as exc:
+        await raw_db()[CAMPAIGNS].update_one(scoped(company_id, {"id": campaign["id"]}), {"$set": {"last_error": str(exc.detail)}})
+        raise
+    return {"campaign_id": campaign["id"], **(result or {})}

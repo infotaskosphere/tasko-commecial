@@ -1462,6 +1462,11 @@ class BulkClientEmailRequest(BaseModel):
     attachment_name: Optional[str] = ""  # optional single attachment for all recipients
     attachment_base64: Optional[str] = ""  # base64 (no data: prefix)
     sender_id: Optional[str] = None  # one of the organisation's connected mailboxes
+    # Pacing & scheduling. Bulk sends from a connected mailbox are queued as a
+    # MailMaster campaign so a Gmail/Outlook account is never blocked for
+    # sending too many emails at once.
+    interval_seconds: Optional[int] = None   # gap between emails (default: safe pace)
+    scheduled_at: Optional[datetime] = None  # send later
 
 
 def _render_body(template: str, variables: dict) -> str:
@@ -1622,6 +1627,43 @@ async def send_bulk_client_emails(
                 "content": req.attachment_base64.strip(),
             }
         ]
+
+    # ── Connected mailbox: queue as a paced MailMaster campaign ────────────
+    if use_org_mailbox and (len(req.recipients) > 1 or req.scheduled_at or req.interval_seconds):
+        from backend.engagex.router import queue_bulk_email
+        from backend.org_mail import resolve_org_sender
+
+        sender = await resolve_org_sender(org_company_id, req.sender_id, str(current_user.id))
+        valid = [r for r in req.recipients if r.email and "@" in r.email]
+        if not valid:
+            raise HTTPException(status_code=400, detail="No valid email addresses to send to.")
+        html_template = req.body_template if req.is_html else "<br>".join(
+            __import__("html").escape(line) for line in (req.body_template or "").split("\n"))
+        interval = max(8, int(req.interval_seconds or 10))  # never faster than one email per 8 s
+        queued = await queue_bulk_email(
+            current_user,
+            sender_id=sender.id,
+            from_name=_override_name or (company_smtp or {}).get("from_name") or req.from_name or None,
+            subject=req.subject,
+            html=html_template,
+            recipients=[{"name": r.name or None, "email": r.email.strip(),
+                         "variables": {k: v for k, v in (r.variables or {}).items() if v is not None}} for r in valid],
+            attachments=[{"name": a["name"], "content": a["content"],
+                          "type": __import__("mimetypes").guess_type(a["name"])[0] or "application/octet-stream"}
+                         for a in (_attachments or [])] or None,
+            per_minute=max(1, 60 // interval),
+            scheduled_at=req.scheduled_at,
+        )
+        when = f"scheduled for {req.scheduled_at:%d %b %Y %H:%M}" if req.scheduled_at else "sending now"
+        logger.info("Bulk client email by %s queued as campaign %s (%d recipients, every %ss)",
+                    current_user.email, queued.get("campaign_id"), len(valid), interval)
+        return {
+            "message": (f"{len(valid)} email(s) queued from {sender.from_email}, {when}, about one every "
+                        f"{interval} seconds. Track progress in EngageX → MailMaster → Campaigns."),
+            "queued": len(valid), "sent": 0, "failed": len(req.recipients) - len(valid),
+            "campaign_id": queued.get("campaign_id"), "status": queued.get("status"),
+            "scheduled_at": queued.get("scheduled_at"), "failed_list": [],
+        }
 
     # ── Send loop ──────────────────────────────────────────────────────────
     sent_count = 0

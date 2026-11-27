@@ -117,6 +117,22 @@ async def send_org_email(
         sender.reply_to = normalize_email(fallback_reply_to) or sender.reply_to
     if from_name:
         sender.from_name = clean_text(from_name, 120) or sender.from_name
+    # Personal mailboxes (Gmail, Outlook…) have daily sending limits. Every
+    # module's mail counts against the same rolling 24-hour budget as
+    # MailMaster campaigns, so together they never push the account over.
+    from backend.engagex.deliverability import mailbox_key, mailbox_limits, record_send, sent_in_window
+
+    limits = None
+    if sender.kind != "platform":
+        limits = mailbox_limits(sender.kind, sender.from_email, (sender.smtp or {}).get("host", ""),
+                                getattr(sender, "daily_limit", None))
+        if limits and await sent_in_window(mailbox_key(sender.from_email)) >= limits.daily:
+            raise HTTPException(
+                status_code=429,
+                detail=(f"{sender.from_email} has reached its safe daily limit of {limits.daily} emails "
+                        f"({limits.provider} allows {limits.provider_daily}). It will send again as the "
+                        "24-hour window frees up; this protects the account from being blocked."),
+            )
     session = open_session(sender)
     try:
         await send_one(
@@ -152,6 +168,8 @@ async def send_org_email(
         await raw_db()[SENDERS].update_one(
             {"company_id": company_id, "id": sender.id}, {"$set": {"last_error": None, "last_sent_at": iso()}}
         )
+        if limits:
+            await record_send(mailbox_key(sender.from_email), company_id, f"module:{email_type}")
     return {"sent": True, "sender_id": sender.id, "from_email": sender.from_email, "kind": sender.kind}
 
 

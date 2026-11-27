@@ -2315,6 +2315,9 @@ function EmailComposePanel({ isDark }) {
   const [selCompany,   setSelCompany]  = React.useState('');
   const [sendMethod,   setSendMethod]  = React.useState('auto');
   const [bulkSenderId, setBulkSenderId] = React.useState('');
+  // Pacing & schedule: protects the Gmail/Outlook account from being blocked.
+  const [intervalSec, setIntervalSec] = React.useState(10);
+  const [scheduleAt, setScheduleAt] = React.useState('');
   const [subject,      setSubject]     = React.useState('');
   const [body,         setBody]        = React.useState('');
   const [isHtml,       setIsHtml]      = React.useState(false);
@@ -2454,9 +2457,16 @@ function EmailComposePanel({ isDark }) {
         company_id: selCompany||null, send_method: sendMethod, sender_id: bulkSenderId || null,
         attachment_base64: composeAttachB64 || null,
         attachment_name:   composeAttachName || null,
+        interval_seconds: Number(intervalSec) || 10,
+        scheduled_at: scheduleAt ? new Date(scheduleAt).toISOString() : null,
       });
-      setProgress({ done: r.data.sent, total: selectedClients.length, failed: r.data.failed });
-      toast.success(`✅ ${r.data.sent} email(s) sent`);
+      if (r.data.queued) {
+        setProgress({ done: 0, total: r.data.queued, failed: r.data.failed });
+        toast.success(r.data.message, { duration: 9000 });
+      } else {
+        setProgress({ done: r.data.sent, total: selectedClients.length, failed: r.data.failed });
+        toast.success(`✅ ${r.data.sent} email(s) sent`);
+      }
     } catch (err) { toast.error(err.response?.data?.detail || 'Send failed'); }
     finally { setSending(false); }
   };
@@ -2488,6 +2498,27 @@ function EmailComposePanel({ isDark }) {
           <div>
             {/* Sent from the organisation mailbox (Settings → Integrations → Email). */}
             <SendFromSelect value={bulkSenderId} onChange={setBulkSenderId} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5">Gap between emails</label>
+            <select value={intervalSec} onChange={e => setIntervalSec(Number(e.target.value))}
+              className="w-full border rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }}>
+              <option value={8}>8 seconds (fastest safe pace)</option>
+              <option value={10}>10 seconds (recommended)</option>
+              <option value={20}>20 seconds</option>
+              <option value={30}>30 seconds</option>
+              <option value={60}>1 minute</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-400">Emails go out one by one at a varied pace and stay under the mailbox's daily limit (Gmail: 400/day), so the account isn't blocked. Large lists continue automatically.</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-400 mb-1.5">Send <span className="font-normal">(leave empty to send now)</span></label>
+            <input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)}
+              min={new Date(Date.now() + 5 * 60000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
+              className="w-full border rounded-xl px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              style={{ borderColor: isDark ? '#334155' : '#e2e8f0' }} />
+            <p className="mt-1 text-[11px] text-slate-400">Scheduled and running sends are listed in EngageX → MailMaster → Campaigns.</p>
           </div>
         </div>
       </SectionCard>
@@ -2703,7 +2734,7 @@ function EmailComposePanel({ isDark }) {
         style={{ background:'linear-gradient(135deg,#0D3B66,#1F6FB2)', boxShadow:'0 4px 20px rgba(13,59,102,0.25)' }}>
         {sending
           ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</>
-          : <><Send className="w-4 h-4" />Send to {selectedClients.length} Client{selectedClients.length!==1?'s':''}</>}
+          : <><Send className="w-4 h-4" />{scheduleAt ? "Schedule for" : "Send to"} {selectedClients.length} Client{selectedClients.length!==1?'s':''}</>}
       </button>
     </div>
   );
