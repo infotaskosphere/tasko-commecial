@@ -129,3 +129,25 @@ def test_manual_receipt_entry_with_its_payment_still_present_stays_locked(env):
             await _in(env, "MDA", lambda: env.ac.delete_journal_entry(pay_entry["id"], ME))
         assert await env.raw.payments.count_documents({}) == 1
     run(go())
+
+
+def test_entry_under_another_of_my_companies_is_found_and_deleted_but_not_another_customers(env):
+    async def go():
+        await _setup(env)
+        await env.raw.invoices.delete_one({"id": "inv1"})
+        sale_entry = await env.raw.journal_entries.find_one({"source": "sale"}, {"_id": 0})
+        assert sale_entry["company_id"] == "PDV"
+        # Logged in to MDA, deleting an entry that lives under PDV (one of my companies).
+        await _in(env, "MDA", lambda: env.ac.delete_journal_entry(sale_entry["id"], ME))
+        assert await env.raw.journal_entries.count_documents({"source": "sale"}) == 0
+
+        # Another customer's entry is never reachable.
+        await env.raw.journal_entries.insert_one({"id": "foreign", "company_id": "OTHER", "source": "manual",
+                                                   "entry_date": "2026-06-01"})
+        with pytest.raises(HTTPException) as e:
+            await _in(env, "MDA", lambda: env.ac.delete_journal_entry("foreign", ME))
+        assert e.value.status_code == 404
+        res = await _in(env, "MDA", lambda: env.ac.bulk_delete_journal_entries({"entry_ids": ["foreign"]}, ME))
+        assert res["deleted_count"] == 0
+        assert await env.raw.journal_entries.count_documents({"id": "foreign"}) == 1
+    run(go())

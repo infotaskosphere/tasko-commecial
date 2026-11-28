@@ -76,3 +76,11 @@ test("bulk delete removes invoices one at a time, shows progress and can be stop
   assert.match(page, /Deleting \$\{bulkDeleteProgress\.done \+ 1\} of \$\{bulkDeleteProgress\.total\}/);
   assert.match(page, /Stop after this one/);
 });
+
+test("journal bulk delete also goes one entry at a time with progress and Stop", () => {
+  const page = readFileSync(new URL("../src/pages/JournalEntries.jsx", import.meta.url), "utf8");
+  assert.match(page, /await api\.delete\(`\/journal-entries\/\$\{id\}`, \{ timeout: 120000 \}\)/);
+  assert.match(page, /setEntries\(\(list\) => list\.filter\(\(e\) => e\.id !== id\)\)/);
+  assert.match(page, /Deleting \{bulkProgress\.done \+ 1\} of \{bulkProgress\.total\}/);
+  assert.ok(!page.includes("api.post('/journal-entries/bulk-delete'"));
+});

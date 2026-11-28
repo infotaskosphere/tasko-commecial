@@ -600,6 +600,41 @@ async def list_journal_entries(
     return {"entries": entries, "total": total, "total_pages": total_pages, "page": page, "page_size": page_size}
 
 
+async def _find_entry_in_my_companies(entry_id: str, current_user: User) -> Optional[dict]:
+    """Find a journal entry in ANY of this login's own companies.
+
+    The scoped collection only looks in the login's active company, so an entry
+    shown under another of the user's companies came back "not found" on delete.
+    Only companies the tenant layer already allows for this request qualify.
+    """
+    from backend import tenant_runtime as tr
+    coll = db.journal_entries
+    raw = getattr(coll, "_collection", coll)
+    entry = await raw.find_one({"id": entry_id}, {"_id": 0})
+    if not entry:
+        return None
+    if not tr.authenticated_company_id() and not tr.in_platform_owner_context():
+        return entry  # no tenant scope on this request (system/legacy context): unchanged behaviour
+    company = str(entry.get("company_id") or "").strip()
+    if not company or not tr.company_in_request_scope(current_user, company):
+        return None
+    return entry
+
+
+async def _delete_entry_in_its_company(entry: dict, current_user: User) -> None:
+    """Run the guarded delete inside the entry's own company scope."""
+    from backend import tenant_runtime as tr
+    company = str(entry.get("company_id") or "").strip()
+    token = None
+    if company and company != str(tr.authenticated_company_id() or "").strip():
+        token = tr.set_authenticated_company(company)
+    try:
+        await _delete_journal_entry_guarded(entry, current_user)
+    finally:
+        if token is not None:
+            tr.reset_authenticated_company(token)
+
+
 async def _delete_journal_entry_guarded(entry: dict, current_user: User) -> None:
     """Hard-delete ONE manual journal entry, safely.
 
@@ -641,11 +676,11 @@ async def bulk_delete_journal_entries(payload: dict, current_user: User = Depend
     deleted_ids, failed = [], []
     for entry_id in dict.fromkeys(str(e) for e in entry_ids):
         try:
-            entry = await db.journal_entries.find_one({"id": entry_id}, {"_id": 0})
+            entry = await _find_entry_in_my_companies(entry_id, current_user)
             if not entry:
                 failed.append({"id": entry_id, "reason": "Not found"})
                 continue
-            await _delete_journal_entry_guarded(entry, current_user)
+            await _delete_entry_in_its_company(entry, current_user)
             deleted_ids.append(entry_id)
         except HTTPException as e:
             failed.append({"id": entry_id, "reason": e.detail})
@@ -786,7 +821,7 @@ async def resync_journal_entries(payload: dict, current_user: User = Depends(get
 @router.delete("/journal-entries/{entry_id}")
 async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_current_user)):
     require_finix_action(current_user, "can_view_journal_entries", "delete")
-    entry = await db.journal_entries.find_one({"id": entry_id})
+    entry = await _find_entry_in_my_companies(entry_id, current_user)
     if not entry:
         raise HTTPException(404, "Journal entry not found.")
     # Ledger history is immutable once it is system-generated or has already
@@ -802,7 +837,7 @@ async def delete_journal_entry(entry_id: str, current_user: User = Depends(get_c
         raise HTTPException(400, "System-generated journal entries are locked and cannot be deleted. Use the source document or an Adjustment Note Override.")
     if entry.get("has_adjustment_history"):
         raise HTTPException(400, "Journal entries with adjustment history cannot be deleted. Raise a further Adjustment Note Override instead.")
-    await _delete_journal_entry_guarded(entry, current_user)
+    await _delete_entry_in_its_company(entry, current_user)
     return {"success": True}
 
 

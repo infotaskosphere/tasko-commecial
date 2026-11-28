@@ -72,6 +72,8 @@ function JournalEntriesInner() {
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null); // { done, total, current }
+  const bulkStopRef = useRef(false);
   const [exportingReport, setExportingReport] = useState(false);
 
   // Edit state — only manual entries can be edited; auto-posted entries
@@ -384,21 +386,47 @@ function JournalEntriesInner() {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) { toast.error('Select at least one entry first'); return; }
     if (!window.confirm(`Delete ${ids.length} journal ${ids.length === 1 ? 'entry' : 'entries'}? This cannot be undone.`)) return;
+    // One entry at a time: every delete runs its own checks on the server; the
+    // row leaves the list as soon as it is gone and Stop ends after the current one.
+    const labelById = new Map(entries.map((e) => [e.id, e.voucher_no || e.narration || '']));
+    bulkStopRef.current = false;
     setBulkDeleting(true);
-    try {
-      const { data } = await api.post('/journal-entries/bulk-delete', { entry_ids: ids });
-      if (data.deleted_count > 0) toast.success(`Deleted ${data.deleted_count} ${data.deleted_count === 1 ? 'entry' : 'entries'}`);
-      if (data.failed?.length) {
-        toast.error(`${data.failed.length} entr${data.failed.length === 1 ? 'y' : 'ies'} couldn't be deleted — ${data.failed[0].reason}`);
+    let deleted = 0;
+    const failed = [];
+    let aborted = null;
+    for (let n = 0; n < ids.length; n++) {
+      if (bulkStopRef.current) break;
+      const id = ids[n];
+      setBulkProgress({ done: n, total: ids.length, current: labelById.get(id) || '' });
+      try {
+        await api.delete(`/journal-entries/${id}`, { timeout: 120000 });
+        deleted += 1;
+        setEntries((list) => list.filter((e) => e.id !== id));
+        setSelectedIds((sel) => { const next = new Set(sel); next.delete(id); return next; });
+      } catch (err) {
+        const status = err?.response?.status;
+        const detail = err?.response?.data?.detail;
+        const reason = typeof detail === 'string' && detail ? detail
+          : err?.code === 'ECONNABORTED' ? 'the server took too long to respond'
+          : status ? `server error ${status}` : 'the server could not be reached';
+        // 400/404/409: this entry is refused (locked, already gone) — skip it and carry on.
+        if ([400, 404, 409].includes(status)) { failed.push({ id, reason }); continue; }
+        aborted = reason;
+        break;
       }
-      exitSelectMode();
-      await fetchAll();
-      fetchFlagged();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || 'Bulk delete failed');
-    } finally {
-      setBulkDeleting(false);
     }
+    const stopped = bulkStopRef.current && deleted + failed.length < ids.length;
+    setBulkProgress(null);
+    setBulkDeleting(false);
+    if (deleted > 0) toast.success(`Deleted ${deleted} ${deleted === 1 ? 'entry' : 'entries'}`);
+    if (stopped) toast.info(`Stopped. ${ids.length - deleted - failed.length} entr${ids.length - deleted - failed.length === 1 ? 'y is' : 'ies are'} still selected.`);
+    if (failed.length) {
+      toast.error(`${failed.length} entr${failed.length === 1 ? 'y' : 'ies'} couldn't be deleted — ${failed[0].reason}`, { duration: 9000 });
+    }
+    if (aborted) toast.error(`Delete stopped: ${aborted}. The remaining entries are still selected.`, { duration: 12000 });
+    if (!aborted && !stopped && !failed.length) exitSelectMode();
+    await fetchAll();
+    fetchFlagged();
   };
 
   const handleDeleteAll = async () => {
@@ -745,8 +773,15 @@ function JournalEntriesInner() {
               className="rounded-lg text-white"
               style={{ background: COLORS.coral }}
             >
-              {bulkDeleting ? <MiniLoader height={16} /> : <><Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete selected</>}
+              {bulkDeleting
+                ? <><MiniLoader height={16} />{bulkProgress && <span className="ml-1.5">Deleting {bulkProgress.done + 1} of {bulkProgress.total}{bulkProgress.current ? ` · ${bulkProgress.current}` : ''}</span>}</>
+                : <><Trash2 className="h-3.5 w-3.5 mr-1.5" /> Delete selected</>}
             </Button>
+            {bulkDeleting && (
+              <Button variant="outline" size="sm" onClick={() => { bulkStopRef.current = true; }} className="rounded-lg text-red-600 border-red-200">
+                Stop after this one
+              </Button>
+            )}
           </div>
         </div>
       )}
