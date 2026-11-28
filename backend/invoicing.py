@@ -2195,27 +2195,41 @@ async def import_backup(
     # 3.  INVOICES  — one pre-fetch of existing numbers → single insert_many
     # ══════════════════════════════════════════════════════════════════════
     if data.invoices:
-        # Pull every existing invoice_no for this company in one query
+        # An invoice is a duplicate only when the same company already has the
+        # same number for the same client on the same date. Some businesses
+        # reuse a number across two series (e.g. INV/26-27/017 for two different
+        # clients); both are real invoices and must both come in. Uploading the
+        # same file twice still skips every row.
+        def _dup_key(no, client, inv_date):
+            return (
+                (no or "").strip(),
+                " ".join((client or "").lower().split()),
+                str(inv_date or "")[:10],
+            )
+
         if data.skip_duplicates:
             existing_inv_docs = await db.invoices.find(
                 {"company_id": data.company_id},
-                {"_id": 0, "invoice_no": 1}
+                {"_id": 0, "invoice_no": 1, "client_name": 1, "invoice_date": 1}
             ).to_list(200_000)
-            existing_inv_nos = {d["invoice_no"] for d in existing_inv_docs if d.get("invoice_no")}
+            existing_keys = {
+                _dup_key(d.get("invoice_no"), d.get("client_name"), d.get("invoice_date"))
+                for d in existing_inv_docs if d.get("invoice_no")
+            }
         else:
-            existing_inv_nos = set()
+            existing_keys = set()
 
         new_invoices = []
         for inv in data.invoices:
             inv_no = (inv.get("invoice_no") or "").strip()
-            if data.skip_duplicates and inv_no and inv_no in existing_inv_nos:
+            key = _dup_key(inv_no, inv.get("client_name"), inv.get("invoice_date"))
+            if data.skip_duplicates and inv_no and key in existing_keys:
                 result.invoices_skipped += 1
                 continue
 
-            # Guard same-batch duplicates (two invoices with the same number sent
-            # in the same payload should not both be inserted)
+            # Guard same-batch duplicates (the very same row sent twice)
             if inv_no:
-                existing_inv_nos.add(inv_no)
+                existing_keys.add(key)
 
             client_name = (inv.get("client_name") or "").strip()
             new_invoices.append({

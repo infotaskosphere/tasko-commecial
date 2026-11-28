@@ -17,6 +17,7 @@ import api from '@/lib/api';
 import { fetchOrgEmailStatus } from '@/components/SendFromSelect';
 import { lookupPincode, isInterState } from '@/lib/pincode';
 import { fetchCompanies, normalizeCompanies, recordBelongsToCompany } from "@/lib/companies";
+import { parseInvoiceRows, matchCompany } from '@/lib/invoiceExcelImport';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { format, parseISO, differenceInDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -519,125 +520,10 @@ function parseExcelInvoices(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb      = XLSX.read(e.target.result, { type: 'array' });
-        const ws      = wb.Sheets[wb.SheetNames[0]];
-        const rows    = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1 });
- 
-        // Find header row (first row containing "Invoice No" or "invoice no")
-        let headerIdx = rows.findIndex(r =>
-          String(r[0] || '').toLowerCase().includes('invoice') ||
-          String(r[1] || '').toLowerCase().includes('invoice')
-        );
-        if (headerIdx === -1) headerIdx = 0;
- 
-        const headers   = (rows[headerIdx] || []).map(h => String(h).trim().toLowerCase());
-        const dataRows  = rows.slice(headerIdx + 1).filter(r => r.some(cell => cell !== ''));
- 
-        const col = (name) => {
-          const idx = headers.findIndex(h => h.includes(name));
-          return idx;
-        };
- 
-        const invoices = dataRows.map((row, i) => {
-          const get = (name, fallback = '') => {
-            const idx = col(name);
-            return idx >= 0 ? String(row[idx] || '').trim() : fallback;
-          };
-          const getNum = (name, fallback = 0) => {
-            const idx = col(name);
-            return idx >= 0 ? (parseFloat(row[idx]) || fallback) : fallback;
-          };
- 
-          const rawDate   = get('date');
-          const invoiceNo = get('invoice no') || get('invoice #') || `IMP-${String(i + 1).padStart(4, '0')}`;
-          const clientName= get('customer') || get('client') || get('party') || 'Unknown';
-          const gstin     = get('gstin') || get('gst');
-          const phone     = get('phone') || get('mobile');
-          const total     = getNum('total') || getNum('amount') || getNum('grand');
-          const paid      = getNum('paid') || getNum('received');
-          const balance   = getNum('balance') || getNum('due') || Math.max(total - paid, 0);
-          const notes     = get('notes') || get('description') || get('remarks');
-          const terms     = get('payment terms') || get('terms');
- 
-          // Normalise date  DD/MM/YYYY → YYYY-MM-DD
-          let invDate = format(new Date(), 'yyyy-MM-dd');
-          if (rawDate) {
-            const parts = rawDate.split(/[\/\-\.]/);
-            if (parts.length === 3) {
-              const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
-              const m = parts[1].padStart(2, '0');
-              const d = parts[0].padStart(2, '0');
-              const parsed = new Date(`${y}-${m}-${d}`);
-              if (!isNaN(parsed)) invDate = format(parsed, 'yyyy-MM-dd');
-            }
-          }
- 
-          const dueDate = format(
-            new Date(new Date(invDate).getTime() + 30 * 86400000),
-            'yyyy-MM-dd'
-          );
- 
-          // Derive status
-          let status = 'draft';
-          if (balance <= 0 && total > 0)            status = 'paid';
-          else if (paid > 0 && balance > 0)          status = 'partially_paid';
-          else if (balance > 0)                      status = 'sent';
- 
-          // Back-calculate taxable assuming 18% GST
-          const gstRate  = 18;
-          const taxable  = Math.round(total / 1.18 * 100) / 100;
-          const gstAmt   = Math.round((total - taxable) * 100) / 100;
-          const cgst     = Math.round(gstAmt / 2 * 100) / 100;
- 
-          return {
-            invoice_type:    'tax_invoice',
-            invoice_no:      invoiceNo,
-            client_name:     clientName,
-            client_email:    get('email') || '',
-            client_phone:    phone,
-            client_gstin:    gstin,
-            client_address:  get('address') || '',
-            client_state:    get('state') || '',
-            invoice_date:    invDate,
-            due_date:        dueDate,
-            reference_no:    get('ref') || get('po') || '',
-            notes:           notes,
-            payment_terms:   terms || 'Due on receipt',
-            is_interstate:   false,
-            items: [{
-              description:    notes || `Import – ${invoiceNo}`,
-              hsn_sac:        '',
-              quantity:       1,
-              unit:           'service',
-              unit_price:     taxable,
-              discount_pct:   0,
-              gst_rate:       gstRate,
-              taxable_value:  taxable,
-              cgst_rate:      9,
-              sgst_rate:      9,
-              igst_rate:      0,
-              cgst_amount:    cgst,
-              sgst_amount:    cgst,
-              igst_amount:    0,
-              total_amount:   total,
-            }],
-            subtotal:        taxable,
-            total_taxable:   taxable,
-            total_cgst:      cgst,
-            total_sgst:      cgst,
-            total_igst:      0,
-            total_gst:       gstAmt,
-            grand_total:     total,
-            amount_paid:     paid,
-            amount_due:      balance,
-            status,
-            discount_amount:  0,
-            shipping_charges: 0,
-            other_charges:    0,
-          };
-        }).filter(inv => (inv.grand_total || 0) > 0);
- 
-        resolve(invoices);
+        const wb   = XLSX.read(e.target.result, { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', header: 1, raw: true });
+        resolve(parseInvoiceRows(rows, format(new Date(), 'yyyy-MM-dd')));
       } catch (err) {
         reject(new Error(`Failed to parse Excel: ${err.message}`));
       }
@@ -2040,13 +1926,15 @@ const ImportModal = ({ open, onClose, isDark, companies, onImportComplete }) => 
   const [importClients, setImportClients] = useState(true);
   const [importInvoices, setImportInvoices] = useState(true);
   const [selectedCompanyId, setSelectedCompanyId] = useState('__none__');
+  // Excel files with a Company column: file value → company id in the app
+  const [companyMap, setCompanyMap] = useState({});
 
   // ── useRef ──
   const dropRef = useRef(null);
 
   // ── Handlers ──
   const reset = () => {
-    setStep('choose'); setImportMode(''); setFile(null); setParsed(null);
+    setStep('choose'); setImportMode(''); setFile(null); setParsed(null); setCompanyMap({});
     setError(''); setLoading(false); setProgress(0);
     setResults({ imported: 0, clients: 0, skipped: 0, errors: [], clients_updated: 0 });
   }; 
@@ -2111,9 +1999,15 @@ const ImportModal = ({ open, onClose, isDark, companies, onImportComplete }) => 
           if (!invoices.length) throw new Error('No valid sale rows found in SaleReport format.');
           setParsed({ invoices, firms: [], clients: [], items: [], mode: 'excel', source_label: 'SaleReport (Auto-detected)' });
         } else {
-          invoices = await parseExcelInvoices(file);
+          const res = await parseExcelInvoices(file);
+          invoices = res.invoices;
           if (!invoices.length) throw new Error('No valid invoice rows found. Check the template format.');
-          setParsed({ invoices, firms: [], clients: [], items: [], mode: 'excel', source_label: 'Excel/CSV' });
+          const labels = [...new Set(invoices.map(i => i.company_label).filter(Boolean))];
+          const map = {};
+          labels.forEach(l => { map[l] = matchCompany(l, companies); });
+          setCompanyMap(map);
+          setParsed({ invoices, firms: [], clients: [], items: [], mode: 'excel', source_label: 'Excel/CSV',
+                      excel_skipped: res.skipped, excel_warnings: res.warnings, company_labels: labels });
         }
       } else {
         const data = await parseBackupViaAPI(file);
@@ -2163,21 +2057,29 @@ const handleImport = async () => {
   const totals = { imported: 0, clients: 0, clients_updated: 0, skipped: 0, errors: [] };
 
   try {
-    // ── Chunk 0: send clients + items + payments + first slice of invoices ──
-    const chunks = [];
-    for (let i = 0; i < allInvToImport.length; i += CHUNK) {
-      chunks.push(allInvToImport.slice(i, i + CHUNK));
+    // Excel rows that name their company go to that company; the rest go to the
+    // company picked below. Each company is sent separately so its duplicate
+    // check only looks at its own invoices.
+    const groups = new Map();
+    for (const inv of allInvToImport) {
+      const target = (parsed.mode === 'excel' && inv.company_label && companyMap[inv.company_label]) || companyId;
+      if (!groups.has(target)) groups.set(target, []);
+      groups.get(target).push(inv);
     }
-    if (chunks.length === 0) chunks.push([]); // at least one request
+    const chunks = [];
+    for (const [cid, list] of groups) {
+      for (let i = 0; i < list.length; i += CHUNK) chunks.push({ cid, invoices: list.slice(i, i + CHUNK) });
+    }
+    if (chunks.length === 0) chunks.push({ cid: companyId, invoices: [] }); // at least one request
 
     const totalChunks = chunks.length;
 
     for (let ci = 0; ci < totalChunks; ci++) {
       const isFirst = ci === 0;
       const payload = {
-        company_id:      companyId,
+        company_id:      chunks[ci].cid,
         source,
-        invoices:        chunks[ci],
+        invoices:        chunks[ci].invoices,
         // Only send clients / items / payments on the first chunk
         clients:         isFirst && importClients && parsed.mode !== 'excel' ? (parsed.clients || []) : [],
         items:           isFirst ? (parsed.items  || []) : [],
@@ -2396,9 +2298,47 @@ const handleImport = async () => {
       </div>
     )}
 
+    {parsed.mode === 'excel' && (parsed.company_labels?.length || 0) > 0 && (
+      <div className={`rounded-xl border p-3 space-y-2 ${isDark ? 'border-slate-600' : 'border-slate-200'}`}>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          Companies in this file — each invoice goes to its own company
+        </p>
+        {parsed.company_labels.map(label => (
+          <div key={label} className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-semibold truncate ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{label}</p>
+              <p className="text-[10px] text-slate-400">
+                {parsed.invoices.filter(i => i.company_label === label).length} invoices
+              </p>
+            </div>
+            <div className="w-56 flex-shrink-0">
+              <Select value={companyMap[label] || '__none__'}
+                onValueChange={v => setCompanyMap(m => ({ ...m, [label]: v === '__none__' ? '' : v }))}>
+                <SelectTrigger className={inputCls}><SelectValue placeholder="Pick company" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">— Pick company —</SelectItem>
+                  {(companies || []).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        ))}
+        {parsed.company_labels.some(l => !companyMap[l]) && (
+          <p className="text-[11px] text-amber-600">Pick a company for every name above to import.</p>
+        )}
+      </div>
+    )}
+
+    {parsed.mode === 'excel' && ((parsed.excel_skipped?.length || 0) + (parsed.excel_warnings?.length || 0)) > 0 && (
+      <div className={`rounded-xl border p-3 max-h-28 overflow-y-auto text-[11px] ${isDark ? 'border-amber-700 bg-amber-900/20 text-amber-200' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+        {(parsed.excel_skipped || []).map(x => <p key={`s${x.row}`}>Row {x.row} not imported: {x.reason}</p>)}
+        {(parsed.excel_warnings || []).map((w, i) => <p key={`w${i}`}>{w}</p>)}
+      </div>
+    )}
+
     <div>
       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5 block">
-        Import Into Company Profile
+        {parsed.mode === 'excel' && (parsed.company_labels?.length || 0) > 0 ? 'Company for rows without a company' : 'Import Into Company Profile'}
       </label>
       <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
         <SelectTrigger className={inputCls}>
@@ -2464,6 +2404,7 @@ const handleImport = async () => {
 
     <Button
       onClick={handleImport}
+      disabled={parsed.mode === 'excel' && (parsed.company_labels || []).some(l => !companyMap[l])}
       className="w-full h-11 rounded-xl text-white font-semibold"
       style={{ background: 'linear-gradient(135deg, #065f46, #059669)' }}
     >
