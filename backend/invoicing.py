@@ -6390,7 +6390,12 @@ async def _delete_invoice_guarded_for_company(inv_id: str, current_user, invoice
                 409, f"Cannot delete invoice {label}: {len(notes)} credit/debit note(s) are issued against it "
                      f"({names}). Delete those notes first, otherwise they stay behind in the books with no invoice.")
 
-    payments = await db.payments.find({"invoice_id": inv_id}, {"_id": 0}).to_list(2000)
+    # Receipts are looked up across all of this customer's companies: an
+    # automatic receipt is sometimes stamped with the login's main company
+    # rather than the invoice's, and a company-scoped lookup left it (and its
+    # journal entry) behind after the invoice was deleted.
+    payments_raw = getattr(db.payments, "_collection", db.payments)
+    payments = await payments_raw.find({"invoice_id": inv_id}, {"_id": 0}).to_list(2000)
     real_payments = [p for p in payments if not p.get("auto_generated")]
     if real_payments:
         total = round(sum(float(p.get("amount") or 0) for p in real_payments), 2)
@@ -6415,10 +6420,20 @@ async def _delete_invoice_guarded_for_company(inv_id: str, current_user, invoice
         "auto_receipts_removed": len(payments),
     }, document_id=inv_id)
 
-    await db.payments.delete_many({"invoice_id": inv_id})
+    await payments_raw.delete_many({"invoice_id": inv_id})
     await db.invoices.delete_one({"id": inv_id})
+    from backend.tenant_runtime import authenticated_company_id, set_authenticated_company, reset_authenticated_company
     for p in payments:
-        await sync_payment_journal_entry(p["id"])
+        # Remove each receipt's entry in the books it was posted to.
+        pay_company = str(p.get("company_id") or "").strip()
+        token = None
+        if pay_company and pay_company != str(authenticated_company_id() or "").strip():
+            token = set_authenticated_company(pay_company)
+        try:
+            await sync_payment_journal_entry(p["id"])
+        finally:
+            if token is not None:
+                reset_authenticated_company(token)
     await sync_invoice_journal_entry(inv_id)
     return {
         "parent_id": inv.get("original_invoice_id") if is_note else None,

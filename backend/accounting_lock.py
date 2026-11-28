@@ -397,6 +397,64 @@ async def is_dangling_reversal(entry: dict) -> bool:
     return await db.journal_entries.find_one({"id": entry["source_id"]}, {"_id": 0, "id": 1}) is None
 
 
+# Source document collection for each system-generated journal source.
+_SOURCE_COLLECTIONS = {
+    "sale": "invoices",
+    "payment": "payments",
+    "purchase": "purchase_invoices",
+    "purchase_payment": "purchase_payments",
+}
+
+
+def _unscoped(collection_name: str):
+    """The tenant-routed collection without the single active-company filter.
+
+    Used only to check whether a document with a given id exists anywhere in
+    this customer's books (any of their legal companies), so an entry is never
+    called orphaned just because its document sits under another company.
+    """
+    coll = db[collection_name]
+    return getattr(coll, "_collection", coll)
+
+
+async def orphaned_auto_payment(entry: dict) -> Optional[dict]:
+    """The automatic receipt behind a payment entry whose invoice no longer exists."""
+    if not entry or entry.get("source") != "payment" or not entry.get("source_id"):
+        return None
+    pay = await _unscoped("payments").find_one({"id": entry["source_id"]}, {"_id": 0})
+    if not pay or not pay.get("auto_generated") or not pay.get("invoice_id"):
+        return None
+    if await _unscoped("invoices").find_one({"id": pay["invoice_id"]}, {"_id": 0, "id": 1}):
+        return None
+    return pay
+
+
+async def is_orphaned_system_entry(entry: dict) -> bool:
+    """A system-generated entry whose source document is gone.
+
+    Such an entry is left over from a document that was deleted (or an
+    automatic receipt whose invoice was deleted). Keeping it leaves sales,
+    receipts or receivables in the books with nothing behind them, so it may be
+    removed; period locks, adjustment history and the audit trail still apply.
+    """
+    if not entry:
+        return False
+    collection = _SOURCE_COLLECTIONS.get(str(entry.get("source") or ""))
+    source_id = entry.get("source_id")
+    if not collection or not source_id:
+        return False
+    if not await _unscoped(collection).find_one({"id": source_id}, {"_id": 0, "id": 1}):
+        return True
+    return await orphaned_auto_payment(entry) is not None
+
+
+async def remove_orphaned_auto_payment(entry: dict) -> None:
+    """After its entry is deleted, drop the automatic receipt whose invoice is gone."""
+    pay = await orphaned_auto_payment(entry)
+    if pay:
+        await _unscoped("payments").delete_one({"id": pay["id"], "auto_generated": True})
+
+
 async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
     """Call this before any hard-delete of a journal entry — raises if deletion
     would erase ledger history.
@@ -419,7 +477,11 @@ async def guard_deletion(entry_id: str, user: Optional[User] = None) -> None:
             "This entry has adjustment-note history and is part of the permanent audit trail — "
             "it cannot be deleted. Raise a further Adjustment Note Override instead.",
         )
-    if entry.get("source") != "manual" and not await is_dangling_reversal(entry):
+    if (
+        entry.get("source") != "manual"
+        and not await is_dangling_reversal(entry)
+        and not await is_orphaned_system_entry(entry)
+    ):
         raise HTTPException(
             400,
             f"This entry was system-generated (source='{entry.get('source')}') and is locked. "
