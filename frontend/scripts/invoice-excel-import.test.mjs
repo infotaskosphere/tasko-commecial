@@ -68,3 +68,11 @@ test("the import screen uses the new reader and sends each company separately", 
   assert.match(page, /Companies in this file/);
   assert.ok(!/Back-calculate taxable assuming 18% GST/.test(page), "old guessing reader is gone");
 });
+
+test("bulk delete removes invoices one at a time, shows progress and can be stopped", () => {
+  const page = readFileSync(new URL("../src/pages/Invoicing.jsx", import.meta.url), "utf8");
+  assert.match(page, /await api\.delete\(`\/invoices\/\$\{id\}`/);
+  assert.match(page, /setInvoices\(\(list\) => list\.filter\(\(i\) => i\.id !== id\)\)/);
+  assert.match(page, /Deleting \$\{bulkDeleteProgress\.done \+ 1\} of \$\{bulkDeleteProgress\.total\}/);
+  assert.match(page, /Stop after this one/);
+});

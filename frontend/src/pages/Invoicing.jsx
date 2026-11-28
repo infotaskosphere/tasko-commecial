@@ -6056,6 +6056,8 @@ function Invoicing() {
   const [toDate, setToDate] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkDeleteLoading, setBulkDeleteLoading] = useState(false);
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(null); // { done, total, current }
+  const bulkDeleteStopRef = useRef(false);
   const [listPage, setListPage] = useState(1);
   const [outstandingPage, setOutstandingPage] = useState(1);
   const [receivedPage, setReceivedPage] = useState(1);
@@ -6386,55 +6388,57 @@ const fetchAll = useCallback(async () => {
     if (!canDeleteSale) { toast.error('Delete permission is required. Ask your admin to grant it in Permission Matrix.'); return; }
     if (!selectedIds.size) return;
     if (!window.confirm(`Permanently delete ${selectedIds.size} invoice${selectedIds.size > 1 ? 's' : ''}? This cannot be undone.`)) return;
-    setBulkDeleteLoading(true);
-    // Each delete runs ledger, lock-period and audit checks on the server, so a
-    // single request for ~100 invoices outlived the 30s client timeout and was
-    // reported as "Nothing was changed" while the server kept deleting.
-    // Delete in small batches, credit/debit notes first (they must go before
-    // the invoice they belong to), and report exactly what happened.
+    // One invoice at a time: each delete runs the full ledger, lock-period and
+    // audit checks on its own, and the row leaves the list as soon as it is gone,
+    // so progress is visible and Stop takes effect after the current invoice.
     const typeById = new Map((invoices || []).map((i) => [i.id, i.invoice_type]));
+    const noById = new Map((invoices || []).map((i) => [i.id, i.invoice_no]));
     const isNote = (id) => ['credit_note', 'debit_note'].includes(typeById.get(id));
     const ids = Array.from(selectedIds).sort((a, b) => Number(!isNote(a)) - Number(!isNote(b)));
-    const BATCH = 15;
+    bulkDeleteStopRef.current = false;
+    setBulkDeleteLoading(true);
+    setBulkDeleteProgress({ done: 0, total: ids.length, current: noById.get(ids[0]) || '' });
     let deletedCount = 0;
     const blocked = [];
     let aborted = null;
-    for (let start = 0; start < ids.length; start += BATCH) {
-      const batch = ids.slice(start, start + BATCH);
+    for (let n = 0; n < ids.length; n++) {
+      if (bulkDeleteStopRef.current) break;
+      const id = ids[n];
+      setBulkDeleteProgress({ done: n, total: ids.length, current: noById.get(id) || '' });
       try {
-        const { data: result } = await api.delete('/invoices/bulk-delete', { data: batch, timeout: 180000 });
-        deletedCount += result?.deleted ?? 0;
-        blocked.push(...(result?.errors || []));
+        await api.delete(`/invoices/${id}`, { timeout: 120000 });
+        deletedCount += 1;
+        setInvoices((list) => list.filter((i) => i.id !== id));
+        setSelectedIds((sel) => { const next = new Set(sel); next.delete(id); return next; });
       } catch (err) {
+        const status = err?.response?.status;
         const detail = err?.response?.data?.detail;
-        aborted = {
-          // A server answer (e.g. 403) means that batch was refused as a whole.
-          // A timeout/network error means the outcome of that batch is unknown.
-          certain: Boolean(err?.response),
-          reason: typeof detail === 'string' && detail ? detail
-            : err?.code === 'ECONNABORTED' ? 'the server took too long to respond'
-            : err?.response ? `server error ${err.response.status}`
-            : 'the server could not be reached',
-        };
+        const reason = typeof detail === 'string' && detail ? detail
+          : err?.code === 'ECONNABORTED' ? 'the server took too long to respond'
+          : status ? `server error ${status}` : 'the server could not be reached';
+        // 404/409: this invoice is refused (already gone, has payments/notes, locked period) — skip it.
+        if (status === 404 || status === 409) { blocked.push({ id, reason }); continue; }
+        aborted = { reason, unknown: !status };
         break;
       }
     }
-    setSelectedIds(new Set());
+    const stopped = bulkDeleteStopRef.current && deletedCount + blocked.length < ids.length;
+    setBulkDeleteProgress(null);
+    setBulkDeleteLoading(false);
     fetchAll();
     if (deletedCount) toast.success(`Deleted ${deletedCount} of ${ids.length} invoice${ids.length > 1 ? 's' : ''}`);
+    if (stopped) toast.info(`Stopped. ${ids.length - deletedCount - blocked.length} invoice(s) were not deleted and are still selected.`);
     if (blocked.length) {
-      // Server refuses deletes that would orphan credit notes, erase payments or touch a locked period.
       toast.error(`${blocked.length} not deleted: ${blocked[0].reason}${blocked.length > 1 ? ` (+${blocked.length - 1} more)` : ''}`, { duration: 9000 });
     }
     if (aborted) {
       toast.error(
-        aborted.certain && !deletedCount
-          ? `Bulk delete failed: ${aborted.reason}. Nothing was deleted.`
-          : `Bulk delete stopped: ${aborted.reason}. The list has been refreshed — check it and retry the remaining invoices.`,
+        aborted.unknown
+          ? `Delete stopped: ${aborted.reason}. The list has been refreshed — check it and retry the rest.`
+          : `Delete stopped: ${aborted.reason}. The remaining invoices are still selected.`,
         { duration: 12000 },
       );
     }
-    setBulkDeleteLoading(false);
   }, [selectedIds, invoices, fetchAll, canDeleteSale]);
 
   const handleEdit = useCallback((inv) => {
@@ -6923,8 +6927,16 @@ const fetchAll = useCallback(async () => {
             {canDeleteSale && <Button size="sm" variant="ghost" onClick={handleBulkDelete} disabled={bulkDeleteLoading}
               className="h-7 px-3 text-xs text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg gap-1.5 font-semibold">
               {bulkDeleteLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-              Delete {selectedIds.size} invoice{selectedIds.size > 1 ? 's' : ''}
+              {bulkDeleteProgress
+                ? `Deleting ${bulkDeleteProgress.done + 1} of ${bulkDeleteProgress.total}${bulkDeleteProgress.current ? ` · ${bulkDeleteProgress.current}` : ''}`
+                : `Delete ${selectedIds.size} invoice${selectedIds.size > 1 ? 's' : ''}`}
             </Button>}
+            {bulkDeleteProgress && (
+              <button onClick={() => { bulkDeleteStopRef.current = true; }}
+                className="text-xs font-semibold px-2.5 py-1 rounded-full border border-red-200 text-red-600 hover:bg-red-50">
+                Stop after this one
+              </button>
+            )}
             <button onClick={() => setSelectedIds(new Set())} className="text-xs text-slate-400 hover:text-slate-600 ml-auto flex items-center gap-1">
               <X className="h-3 w-3" /> Clear selection
             </button>
