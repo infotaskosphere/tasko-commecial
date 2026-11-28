@@ -154,6 +154,10 @@ async def agent_inbox_action(payload: InboxActionRequest, current_user: User = D
     result = await approve_proposal(proposal, current_user, "finix_ai_agent")
     if was_posted:
         return result
+    # The agent inbox keeps its own audit stamp next to the shared posting audit.
+    await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"agent_audit": {
+        "source": "finix_ai_agent", "approved_by": current_user.id,
+        "approved_at": datetime.now(timezone.utc).isoformat(), "document": result.get("document")}}})
     await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("interpretation", {}).get("party_name", ""), proposal, "APPROVED_POSTED", current_user.id)
     return result
 

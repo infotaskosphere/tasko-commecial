@@ -639,6 +639,8 @@ app.include_router(zero_touch_entry_router)     # already has /api/zte prefix
 app.include_router(learning_router)           # Phase 10 Self-Learning Router
 app.include_router(gst_portal_sync_router)       # already has /api/gst-portal prefix
 app.include_router(accounting_lock_router)       # already has /api/accounting-integrity prefix
+from backend.statutory_rules import router as statutory_rules_router  # noqa: E402
+app.include_router(statutory_rules_router)       # Tax rules & law updates (/api/statutory-rules)
 api_router.include_router(bank_accounts_router)
 api_router.include_router(permission_governance_router)
 api_router.include_router(roles_admin_router)   # Admin › Roles: role definitions, per-role permissions, user role assignment

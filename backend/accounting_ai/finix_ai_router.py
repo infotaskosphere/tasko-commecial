@@ -365,7 +365,7 @@ async def approve_proposal(proposal: dict, current_user: User, source_tag: str =
         "audit": {"proposal_created_by": proposal.get("created_by"), "approved_by": current_user.id, "approved_at": now,
                   "accounting_date": proposal.get("accounting_date"),
                   "journal_entry_id": entry.get("id") if isinstance(entry, dict) else None,
-                  "document": document, "source": source_tag}}})
+                  "document": document, "source": "finix_ai", "channel": source_tag}}})
     message = ("Draft sales invoice created: open it in Sales to check and send." if event == "SALE"
                else "Receipt recorded against the invoice." if event == "RECEIPT"
                else "Transaction posted through the governed accounting ledger.")
