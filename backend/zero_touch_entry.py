@@ -777,6 +777,9 @@ async def upload_and_process(
     company_id: str = Form(""),   # leave blank to auto-detect (deterministic, then AI)
     current_user: User = Depends(get_current_user),
 ):
+    # Retired: Zero Touch is merged into Purchase. Bills are read and booked there (one review, one register),
+    # so nothing reaches the books from here, automatically or otherwise.
+    raise HTTPException(410, "Zero Touch has moved into Purchase: upload the bill in Purchase. Pending documents are listed there.")
     if not _perm_post(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
     contents = await file.read()
@@ -865,6 +868,9 @@ async def retry_draft(doc_id: str, current_user: User = Depends(get_current_user
     """Re-attempts drafting the preview (e.g. after seeding missing default
     ledger accounts, or adding a category rule). Still lands on
     pending_approval, not posted — approval is a separate explicit step."""
+    # Retired: Zero Touch is merged into Purchase. Bills are read and booked there (one review, one register),
+    # so nothing reaches the books from here, automatically or otherwise.
+    raise HTTPException(410, "Zero Touch has moved into Purchase: upload the bill in Purchase. Pending documents are listed there.")
     if not _perm_post(current_user):
         raise HTTPException(403, "Access denied.")
     doc = await db.zte_processed_documents.find_one({"id": doc_id}, {"_id": 0})
@@ -915,6 +921,9 @@ async def update_preview(doc_id: str, body: UpdatePreviewBody, current_user: Use
     specific expense head. Only allowed while the document is still
     pending_approval; once posted, corrections go through the Accounting
     Integrity 'Fix this entry' flow instead (source-locked)."""
+    # Retired: Zero Touch is merged into Purchase. Bills are read and booked there (one review, one register),
+    # so nothing reaches the books from here, automatically or otherwise.
+    raise HTTPException(410, "Zero Touch has moved into Purchase: upload the bill in Purchase. Pending documents are listed there.")
     if not _perm_post(current_user):
         raise HTTPException(403, "Access denied.")
     doc = await db.zte_processed_documents.find_one({"id": doc_id}, {"_id": 0})
@@ -942,6 +951,9 @@ async def approve_document(doc_id: str, current_user: User = Depends(get_current
     """The only endpoint in this module that posts to the ledger. A human
     with posting rights reviews the AI-drafted preview and explicitly
     approves it here — nothing reaches the books automatically."""
+    # Retired: Zero Touch is merged into Purchase. Bills are read and booked there (one review, one register),
+    # so nothing reaches the books from here, automatically or otherwise.
+    raise HTTPException(410, "Zero Touch has moved into Purchase: upload the bill in Purchase. Pending documents are listed there.")
     if not _perm_post(current_user):
         raise HTTPException(403, "Access denied. Request access from your admin in Permission Governance.")
     doc = await db.zte_processed_documents.find_one({"id": doc_id}, {"_id": 0})

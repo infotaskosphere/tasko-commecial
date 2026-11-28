@@ -18,7 +18,9 @@ def test_finix_agent_modules_compile():
 
 def test_complete_agent_is_governed():
     text = (ROOT / "accounting_ai" / "finix_agent_complete.py").read_text(encoding="utf-8")
-    assert "post_journal_entry" in text
+    # Posting goes through the shared, status-checked approval (journal, draft invoice or receipt).
+    assert "approve_proposal" in text
+    assert "post_journal_entry" in (ROOT / "accounting_ai" / "finix_ai_router.py").read_text(encoding="utf-8")
     assert "_can_post" in text
     assert "record_learning" in text
     assert "finix_ai_proposals" in text

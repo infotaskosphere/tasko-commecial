@@ -920,10 +920,15 @@ function AccountingReportsInner() {
                   <SelectValue placeholder="All Companies" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All Companies</SelectItem>
+                  <SelectItem value="__all__">All Companies (combined, not for filing)</SelectItem>
                   {companies.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
+              {!companyId && companies.length > 1 && (
+                <p className="mt-1 text-[10px] text-amber-200">
+                  Combined view of separate companies: for review only. Statutory accounts and returns are per company.
+                </p>
+              )}
             </div>
 
             <div className="min-w-0">

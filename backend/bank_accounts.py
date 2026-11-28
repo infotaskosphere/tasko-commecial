@@ -769,22 +769,78 @@ async def learn_transaction_match(description: str, matched_type: str, matched_i
 
 
 # ── Matching + auto journal posting ───────────────────────────────────────
+# ── Matching evidence ────────────────────────────────────────────────────────
+# A bank line is posted against an invoice/bill automatically only when exactly
+# ONE open document has the same amount (within Rs 1) AND the narration names
+# that party or carries its invoice number. Anything weaker (amount only, two or
+# more equal amounts, a short or part payment) is only SUGGESTED for a person to
+# confirm, because identical amounts across clients are common.
+_GENERIC_NAME_WORDS = {
+    "PRIVATE", "PVT", "LIMITED", "LTD", "LLP", "AND", "THE", "COMPANY", "CO", "CORP", "CORPORATION",
+    "INDIA", "ENTERPRISE", "ENTERPRISES", "SERVICES", "SERVICE", "SOLUTIONS", "SOLUTION", "TRADERS",
+    "INDUSTRIES", "GROUP", "INTERNATIONAL", "ASSOCIATES", "AGENCY", "OPC", "HUF", "M/S", "MS",
+}
+
+
+def _norm_text(value) -> str:
+    return " ".join(re.sub(r"[^A-Z0-9]+", " ", str(value or "").upper()).split())
+
+
+def _name_evidence(desc_norm: str, name: str) -> bool:
+    """The narration names this party: two distinctive words of its name (or its only one)."""
+    tokens = [t for t in _norm_text(name).split() if len(t) >= 3 and t not in _GENERIC_NAME_WORDS]
+    if not tokens:
+        return False
+    padded = f" {desc_norm} "
+    hits = sum(1 for t in dict.fromkeys(tokens) if f" {t} " in padded)
+    return hits >= min(2, len(set(tokens)))
+
+
+def _ref_evidence(desc_compact: str, doc_no: str) -> bool:
+    """The narration carries this document's number (separators ignored)."""
+    no = re.sub(r"[^A-Z0-9]", "", str(doc_no or "").upper())
+    return len(no) >= 5 and no in desc_compact
+
+
+def _pick_document(amount: float, desc: str, candidates: List[dict], amount_of, name_of, no_of):
+    """(document, how) where how is "auto" or a suggestion reason; (None, None) if nothing fits."""
+    desc_norm = _norm_text(desc)
+    desc_compact = desc_norm.replace(" ", "")
+    scored = []
+    for c in candidates:
+        due = float(amount_of(c) or 0)
+        if due <= 0:
+            continue
+        diff = abs(due - amount)
+        evidence = _name_evidence(desc_norm, name_of(c)) or _ref_evidence(desc_compact, no_of(c))
+        scored.append({"c": c, "exact": diff <= 1.0, "near": diff <= max(1.0, amount * 0.01),
+                       "part": evidence and amount < due - 1.0, "evidence": evidence})
+    sure = [x for x in scored if x["exact"] and x["evidence"]]
+    if len(sure) == 1:
+        return sure[0]["c"], "auto"
+    for group, why in (
+        (sure, "ambiguous"),
+        ([x for x in scored if x["near"] and x["evidence"]], "short_payment"),
+        ([x for x in scored if x["part"]], "part_payment"),
+        ([x for x in scored if x["exact"]], "amount_only"),
+        ([x for x in scored if x["near"]], "amount_only"),
+    ):
+        if group:
+            return group[0]["c"], why
+    return None, None
+
+
+async def _has_real_receipts(invoice_id: str) -> bool:
+    return bool(await db.payments.find_one({"invoice_id": invoice_id, "auto_generated": {"$ne": True}}, {"_id": 0, "id": 1}))
+
+
 async def _match_transaction(company_id: str, txn: dict) -> Optional[dict]:
-    """Try to match one bank line against:
-      1) a Purchase invoice / Sale invoice (the standalone Purchases/Invoicing
-         modules), or
-      2) an AI Zero-Touch Entry Engine document (Module 1) that already posted
-         an Accounts Payable/Receivable entry and is waiting to be settled —
-    by amount within a small tolerance and date within a window either side
-    of the invoice date, scoped to the bank account's own company so a
-    multi-company setup never matches one company's payment against another
-    company's invoice. Already-settled/paid records are excluded so the same
-    invoice can't be closed twice by two different statement lines. Zero-Touch
-    entries are checked first for a debit line since they carry the
-    AI-extracted vendor name, which gives a better match than the generic
-    purchase_invoices collection when both exist.
-      3) FALLBACK: A learned mapping from machine learning (Module 8) built from
-         prior manual matches on the same description pattern."""
+    """Find the invoice / bill (or a legacy Zero-Touch document) a bank line settles,
+    within +/-30 days of the document date and in the bank account's own company.
+
+    Returns a match dict. A match WITHOUT a "source" key is posted automatically;
+    one WITH "source" is stored as a suggestion for a person to approve (see
+    _pick_document for when each applies). Falls back to learned patterns."""
     txn_date = txn["date"]
     try:
         dt = datetime.strptime(txn_date, "%Y-%m-%d")
@@ -792,66 +848,81 @@ async def _match_transaction(company_id: str, txn: dict) -> Optional[dict]:
         return None
     window_from = (dt - timedelta(days=30)).date().isoformat()
     window_to = (dt + timedelta(days=30)).date().isoformat()
+    desc = txn.get("description") or ""
+
+    def _as_suggestion(match: dict, why: str) -> dict:
+        if why != "auto":
+            match["source"] = why
+        return match
 
     if txn["debit"] > 0:
         amount = txn["debit"]
-
-        zte_candidates = await db.zte_processed_documents.find(
-            {
-                "company_id": company_id, "status": "posted", "settled": {"$ne": True},
-                "extracted.document_type": "PURCHASE",
-                "extracted.invoice_date": {"$gte": window_from, "$lte": window_to},
-            },
+        zte = await db.zte_processed_documents.find(
+            {"company_id": company_id, "status": "posted", "settled": {"$ne": True},
+             "extracted.document_type": "PURCHASE",
+             "extracted.invoice_date": {"$gte": window_from, "$lte": window_to}},
             {"_id": 0},
         ).to_list(2000)
-        for c in zte_candidates:
-            inr_total = c.get("amount_inr") or float((c.get("extracted") or {}).get("total_invoice_value") or 0)
-            if inr_total and abs(inr_total - amount) <= max(1.0, amount * 0.01):
-                vendor = (c.get("extracted") or {}).get("vendor_or_customer_name") or "Zero-Touch purchase"
-                return {"type": "zte_purchase", "id": c["id"], "label": vendor, "ap_amount": inr_total}
+        doc, why = _pick_document(
+            amount, desc, zte,
+            lambda c: c.get("amount_inr") or (c.get("extracted") or {}).get("total_invoice_value"),
+            lambda c: (c.get("extracted") or {}).get("vendor_or_customer_name"),
+            lambda c: (c.get("extracted") or {}).get("invoice_number"))
+        if doc:
+            inr_total = doc.get("amount_inr") or float((doc.get("extracted") or {}).get("total_invoice_value") or 0)
+            vendor = (doc.get("extracted") or {}).get("vendor_or_customer_name") or "Zero-Touch purchase"
+            return _as_suggestion({"type": "zte_purchase", "id": doc["id"], "label": vendor, "ap_amount": inr_total}, why)
 
-        candidates = await db.purchase_invoices.find(
-            {
-                "company_id": company_id, "payment_status": {"$ne": "paid"},
-                "invoice_date": {"$gte": window_from, "$lte": window_to},
-            },
+        bills = await db.purchase_invoices.find(
+            {"company_id": company_id, "payment_status": {"$ne": "paid"}, "status": {"$ne": "cancelled"},
+             "invoice_date": {"$gte": window_from, "$lte": window_to}},
             {"_id": 0},
         ).to_list(2000)
-        for c in candidates:
-            gt = float(c.get("grand_total") or 0)
-            if gt and abs(gt - amount) <= max(1.0, amount * 0.01):
-                return {"type": "purchase", "id": c["id"], "label": c.get("supplier_name") or c.get("invoice_no") or "Purchase invoice", "grand_total": gt}
+        doc, why = _pick_document(amount, desc, bills, lambda c: c.get("grand_total"),
+                                  lambda c: c.get("supplier_name"), lambda c: c.get("invoice_no"))
+        if doc:
+            if why == "auto" and float(doc.get("paid_amount") or 0) > 0:
+                why = "already_part_paid"
+            return _as_suggestion({"type": "purchase", "id": doc["id"],
+                                   "label": doc.get("supplier_name") or doc.get("invoice_no") or "Purchase invoice",
+                                   "grand_total": float(doc.get("grand_total") or 0)}, why)
 
     elif txn["credit"] > 0:
         amount = txn["credit"]
-
-        zte_candidates = await db.zte_processed_documents.find(
-            {
-                "company_id": company_id, "status": "posted", "settled": {"$ne": True},
-                "extracted.document_type": "SALE",
-                "extracted.invoice_date": {"$gte": window_from, "$lte": window_to},
-            },
+        zte = await db.zte_processed_documents.find(
+            {"company_id": company_id, "status": "posted", "settled": {"$ne": True},
+             "extracted.document_type": "SALE",
+             "extracted.invoice_date": {"$gte": window_from, "$lte": window_to}},
             {"_id": 0},
         ).to_list(2000)
-        for c in zte_candidates:
-            inr_total = c.get("amount_inr") or float((c.get("extracted") or {}).get("total_invoice_value") or 0)
-            if inr_total and abs(inr_total - amount) <= max(1.0, amount * 0.01):
-                customer = (c.get("extracted") or {}).get("vendor_or_customer_name") or "Zero-Touch sale"
-                return {"type": "zte_sale", "id": c["id"], "label": customer, "ar_amount": inr_total}
+        doc, why = _pick_document(
+            amount, desc, zte,
+            lambda c: c.get("amount_inr") or (c.get("extracted") or {}).get("total_invoice_value"),
+            lambda c: (c.get("extracted") or {}).get("vendor_or_customer_name"),
+            lambda c: (c.get("extracted") or {}).get("invoice_number"))
+        if doc:
+            inr_total = doc.get("amount_inr") or float((doc.get("extracted") or {}).get("total_invoice_value") or 0)
+            customer = (doc.get("extracted") or {}).get("vendor_or_customer_name") or "Zero-Touch sale"
+            return _as_suggestion({"type": "zte_sale", "id": doc["id"], "label": customer, "ar_amount": inr_total}, why)
 
-        candidates = await db.invoices.find(
-            {
-                "company_id": company_id, "status": {"$nin": ["paid", "cancelled"]},
-                "invoice_date": {"$gte": window_from, "$lte": window_to},
-            },
+        invoices = await db.invoices.find(
+            {"company_id": company_id, "status": {"$nin": ["paid", "cancelled"]},
+             "invoice_type": {"$nin": ["proforma", "estimate", "credit_note"]},
+             "invoice_date": {"$gte": window_from, "$lte": window_to}},
             {"_id": 0},
         ).to_list(2000)
-        for c in candidates:
-            total = float(c.get("grand_total") or c.get("total_amount") or c.get("total") or 0)
+
+        def _due(c):
             due = c.get("amount_due")
-            match_amount = float(due) if due is not None else total
-            if match_amount and abs(match_amount - amount) <= max(1.0, amount * 0.01):
-                return {"type": "sale", "id": c.get("id"), "label": c.get("client_name") or c.get("invoice_no") or "Sale invoice", "grand_total": total}
+            return float(due) if due is not None else float(c.get("grand_total") or c.get("total_amount") or c.get("total") or 0)
+        doc, why = _pick_document(amount, desc, invoices, _due, lambda c: c.get("client_name"), lambda c: c.get("invoice_no"))
+        if doc:
+            if why == "auto" and await _has_real_receipts(doc.get("id")):
+                why = "receipt_already_recorded"
+            total = float(doc.get("grand_total") or doc.get("total_amount") or doc.get("total") or 0)
+            return _as_suggestion({"type": "sale", "id": doc.get("id"),
+                                   "label": doc.get("client_name") or doc.get("invoice_no") or "Sale invoice",
+                                   "grand_total": total}, why)
 
     # ── FALLBACK: Check Machine Learning Learned Mappings ──
     normalized = normalize_description(txn.get("description", ""))
@@ -958,8 +1029,9 @@ async def _revert_match_effects(txn: dict):
         await db.purchase_invoices.update_one(
             {"id": mid},
             {
-                "$set": {"payment_status": prev_status, "updated_at": now},
-                "$unset": {"paid_amount": "", "paid_date": "", "paid_bank_txn_id": "", "journal_entry_id": ""},
+                "$set": {"payment_status": prev_status, "paid_amount": round(float(txn.get("prev_amount_paid") or 0), 2),
+                         "updated_at": now},
+                "$unset": {"paid_date": "", "paid_bank_txn_id": "", "journal_entry_id": ""},
             },
         )
     elif mtype == "sale" and mid:
@@ -967,10 +1039,12 @@ async def _revert_match_effects(txn: dict):
         history_entry = {"status": restored_status, "changed_at": now, "changed_by": "system (bank unmatch)"}
         rec = await db.invoices.find_one({"id": mid}, {"_id": 0, "grand_total": 1, "total_amount": 1, "total": 1})
         due_total = float((rec or {}).get("grand_total") or (rec or {}).get("total_amount") or (rec or {}).get("total") or 0)
+        prev_paid = float(txn.get("prev_amount_paid") or 0)
         await db.invoices.update_one(
             {"id": mid},
             {
-                "$set": {"status": restored_status, "amount_paid": 0.0, "amount_due": round(due_total, 2), "updated_at": now},
+                "$set": {"status": restored_status, "amount_paid": round(prev_paid, 2),
+                         "amount_due": round(max(due_total - prev_paid, 0.0), 2), "updated_at": now},
                 "$unset": {"paid_bank_txn_id": "", "journal_entry_id": ""},
                 "$push": {"status_history": history_entry},
             },
@@ -1090,10 +1164,17 @@ async def _auto_post_for_match(company_id: str, txn: dict, match: dict, created_
             # Close the purchase invoice itself — this is what actually makes
             # it disappear from an "outstanding purchases" view, not just the
             # bank_transactions row.
+            bill = await db.purchase_invoices.find_one({"id": match["id"]}, {"_id": 0, "grand_total": 1, "paid_amount": 1})
+            prev_paid = float((bill or {}).get("paid_amount") or 0)
+            txn["prev_amount_paid"] = prev_paid
+            paid_now = round(prev_paid + float(txn["debit"]), 2)
+            bill_total = float((bill or {}).get("grand_total") or match.get("grand_total") or txn["debit"])
+            # A short payment leaves the bill part-paid, not paid.
+            pay_status = "paid" if paid_now >= bill_total - 1.0 else "partially_paid"
             await db.purchase_invoices.update_one(
                 {"id": match["id"]},
                 {"$set": {
-                    "payment_status": "paid", "paid_amount": txn["debit"], "paid_date": txn["date"],
+                    "payment_status": pay_status, "paid_amount": paid_now, "paid_date": txn["date"],
                     "paid_bank_txn_id": txn["id"], "journal_entry_id": entry["id"],
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }},
@@ -1126,28 +1207,26 @@ async def _auto_post_for_match(company_id: str, txn: dict, match: dict, created_
             )
             return None
 
-        # ── De-duplicate before posting ──────────────────────────────────────
-        # If the invoice already has payment records in db.payments (i.e. the
-        # user manually recorded the receipt before uploading the bank statement),
-        # those payments already posted:  Dr Bank (1010) / Cr AR (1100)
-        # Posting the bank-match journal on top would be a second Dr Bank / Cr AR
-        # — double-crediting AR and double-debiting Bank.
-        #
-        # Fix: wipe any existing payment-source journal entries for this invoice
-        # before posting the bank-match journal, so there is exactly ONE
-        # Dr Bank / Cr AR for this receipt.
-        existing_pmts_for_inv = await db.payments.find(
-            {"invoice_id": match["id"]}, {"_id": 0, "id": 1}
-        ).to_list(100)
-        if existing_pmts_for_inv:
-            pmt_ids = [p["id"] for p in existing_pmts_for_inv]
-            old_pmt_jes = await db.journal_entries.find(
-                {"source": "payment", "source_id": {"$in": pmt_ids}}, {"_id": 0, "id": 1}
-            ).to_list(100)
-            if old_pmt_jes:
-                old_je_ids = [e["id"] for e in old_pmt_jes]
-                await db.journal_lines.delete_many({"entry_id": {"$in": old_je_ids}})
-                await db.journal_entries.delete_many({"id": {"$in": old_je_ids}})
+        # ── A receipt already recorded for this invoice ────────────────────────
+        # A real receipt (entered by hand before the bank line arrived) already
+        # posted Dr Bank / Cr Receivable. Posting the bank line too would count
+        # the money twice, and deleting that receipt's entry (as this used to)
+        # left the receipt without an entry for the clean-up to re-post later.
+        # So: refuse, and let the person link the bank line to that receipt.
+        if await db.payments.find_one({"invoice_id": match["id"], "auto_generated": {"$ne": True}}, {"_id": 0, "id": 1}):
+            raise HTTPException(
+                409,
+                "This invoice already has a receipt recorded by hand, which is already in the books. "
+                "Delete or adjust that receipt first, or mark this bank line as already accounted for.",
+            )
+        # Automatic "marked Paid" receipts were never real money: remove them
+        # through the normal path so their entries go too.
+        auto_pmts = await db.payments.find({"invoice_id": match["id"], "auto_generated": True}, {"_id": 0, "id": 1}).to_list(100)
+        if auto_pmts:
+            from backend.invoicing import sync_payment_journal_entry
+            await db.payments.delete_many({"id": {"$in": [p["id"] for p in auto_pmts]}, "auto_generated": True})
+            for p in auto_pmts:
+                await sync_payment_journal_entry(p["id"])
 
         entry = await try_auto_post(
             company_id, txn["date"], f"Receipt from {match['label']} — settles Invoice {match.get('label')} (bank statement)",
@@ -1161,16 +1240,24 @@ async def _auto_post_for_match(company_id: str, txn: dict, match: dict, created_
             # Same convention as PATCH /invoices/{id}/status when a user
             # manually marks an invoice paid, so reports/status filters agree
             # regardless of which path closed the invoice.
-            grand_total = match.get("grand_total") or txn["credit"]
+            inv_doc = await db.invoices.find_one({"id": match["id"]}, {"_id": 0, "grand_total": 1, "amount_paid": 1})
+            grand_total = float((inv_doc or {}).get("grand_total") or match.get("grand_total") or txn["credit"])
+            # Receipts recorded earlier were automatic ones (removed above), so the
+            # bank money is what has been received; a short receipt is part-paid.
+            prev_paid = 0.0 if auto_pmts else float((inv_doc or {}).get("amount_paid") or 0)
+            txn["prev_amount_paid"] = prev_paid
+            paid_now = round(min(prev_paid + float(txn["credit"]), grand_total), 2)
+            due_now = round(max(grand_total - paid_now, 0.0), 2)
+            new_status = "paid" if due_now <= 1.0 else "partially_paid"
             history_entry = {
-                "status": "paid", "changed_at": datetime.now(timezone.utc).isoformat(),
+                "status": new_status, "changed_at": datetime.now(timezone.utc).isoformat(),
                 "changed_by": "system (bank reconciliation)",
             }
             await db.invoices.update_one(
                 {"id": match["id"]},
                 {
                     "$set": {
-                        "status": "paid", "amount_paid": round(float(grand_total), 2), "amount_due": 0.0,
+                        "status": new_status, "amount_paid": paid_now, "amount_due": 0.0 if new_status == "paid" else due_now,
                         "paid_bank_txn_id": txn["id"], "journal_entry_id": entry["id"],
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     },
@@ -1321,7 +1408,8 @@ async def upload_statement(
                         "matched_type": match["type"],
                         "matched_id": match["id"],
                         "matched_label": match["label"],
-                        "pending_approval": True
+                        "pending_approval": True,
+                        "reason": match.get("source"),
                     }
                 else:
                     doc["matched_type"] = match["type"]
@@ -1475,134 +1563,135 @@ async def run_ai_auto_match(payload: Optional[AIAutoMatchInput] = None, current_
     # NOTE: not pre-filtered by company_id — a multi-company setup mixes
     # every open invoice/bill here, so the per-candidate loop below checks
     # company_id against the transaction's own company before considering it.
-    open_sales = await db.invoices.find({"status": {"$ne": "paid"}}, {"_id": 0}).to_list(5000)
-    open_purchases = await db.purchase_invoices.find({"status": {"$ne": "paid"}}, {"_id": 0}).to_list(5000)
-    coa_items = await db.chart_of_accounts.find({}, {"_id": 0}).to_list(1000)
+    from backend.tenant_runtime import own_companies_filter
+    mine = own_companies_filter()
+    scope = {"company_id": mine} if mine else {}
+    open_sales = await db.invoices.find({**scope, "status": {"$nin": ["paid", "cancelled"]}}, {"_id": 0}).to_list(5000)
+    open_purchases = await db.purchase_invoices.find({**scope, "payment_status": {"$ne": "paid"}}, {"_id": 0}).to_list(5000)
+    coa_items = await db.chart_of_accounts.find(scope, {"_id": 0}).to_list(5000)
 
     matched_count = 0
     posted_count = 0
+    suggested_count = 0
+    taken: set = set()          # a document settled earlier in this same run is not offered again
+
+    async def _suggest(txn_id: str, mtype: str, mid: str, label: str, why: str):
+        await db.bank_transactions.update_one({"id": txn_id}, {"$set": {"suggested_match": {
+            "matched_type": mtype, "matched_id": mid, "matched_label": label,
+            "pending_approval": True, "reason": why}}})
+
     for txn in unmatched:
         txn_id = txn.get("id")
         txn_company = txn.get("company_id", "")
-        desc = (txn.get("description") or "").strip().lower()
+        desc = (txn.get("description") or "").strip()
         debit = float(txn.get("debit") or 0)
         credit = float(txn.get("credit") or 0)
-        amt = credit if credit > 0 else debit
 
-        matched = False
-        # 1. Match Sales (Credits)
+        def _same_company(d):
+            return not txn_company or d.get("company_id", "") == txn_company
+
+        # Same rule as statement upload: post only when exactly one open document
+        # has this amount AND the narration names the party or its number.
         if credit > 0:
-            for s in open_sales:
-                if txn_company and s.get("company_id", "") != txn_company:
-                    continue  # never match a bank line to another company's invoice
-                inv_no = (s.get("invoice_no") or "").lower()
-                client_name = (s.get("client_name") or s.get("party_name") or "").lower()
-                tot = float(s.get("grand_total") or s.get("total_amount") or 0)
+            pool = [s_ for s_ in open_sales if _same_company(s_) and s_.get("id") not in taken
+                    and s_.get("status") != "cancelled"
+                    and s_.get("invoice_type", "tax_invoice") not in ("proforma", "estimate", "credit_note")]
 
-                if (inv_no and inv_no in desc) or (client_name and len(client_name) > 3 and client_name in desc) or (tot > 0 and abs(tot - amt) < 0.01):
-                    # Post the actual Dr Bank / Cr Accounts Receivable entry
-                    # through the shared, audited pipeline — this used to
-                    # only flip invoice.status/amount_due with NO journal
-                    # entry at all, which silently broke Accounts
-                    # Receivable = Outstanding for every invoice matched
-                    # this way. _auto_post_for_match also carries the
-                    # already-settled-by-a-different-transaction guard, so
-                    # a false/duplicate match here is refused instead of
-                    # double-posting.
-                    entry_id = await _auto_post_for_match(
-                        txn_company, txn,
-                        {"type": "sale", "id": s.get("id"),
-                         "label": s.get("client_name") or s.get("invoice_no") or "Sale invoice", "grand_total": tot},
-                        current_user.id,
-                    )
-                    if not entry_id:
-                        continue  # already settled elsewhere, or posting failed — try the next candidate
-                    await db.bank_transactions.update_one(
-                        {"id": txn_id},
-                        {"$set": {
-                            "matched_type": "sale",
-                            "matched_id": s.get("id"),
-                            "matched_label": f"Invoice #{s.get('invoice_no', '')} - {s.get('client_name', '')}",
-                            "confidence_score": 95,
-                            "pending_approval": False,
-                            "journal_entry_id": entry_id,
-                        }}
-                    )
-                    matched_count += 1
-                    posted_count += 1
-                    matched = True
-                    # Stop this invoice being grabbed again by a LATER
-                    # transaction in this same batch — the in-memory list
-                    # never reflected the DB update above, which is exactly
-                    # how the same invoice could be double-matched within
-                    # one "Run AI Auto-Match" click.
-                    open_sales.remove(s)
-                    break
-
-        # 2. Match Purchases (Debits)
-        if not matched and debit > 0:
-            for p in open_purchases:
-                if txn_company and p.get("company_id", "") != txn_company:
-                    continue  # never match a bank line to another company's bill
-                inv_no = (p.get("invoice_no") or "").lower()
-                supplier_name = (p.get("supplier_name") or p.get("vendor_name") or "").lower()
-                tot = float(p.get("grand_total") or p.get("total_amount") or 0)
-
-                if (inv_no and inv_no in desc) or (supplier_name and len(supplier_name) > 3 and supplier_name in desc) or (tot > 0 and abs(tot - amt) < 0.01):
-                    entry_id = await _auto_post_for_match(
-                        txn_company, txn,
-                        {"type": "purchase", "id": p.get("id"),
-                         "label": p.get("supplier_name") or p.get("invoice_no") or "Purchase invoice", "grand_total": tot},
-                        current_user.id,
-                    )
-                    if not entry_id:
+            def _due(c):
+                due = c.get("amount_due")
+                return float(due) if due is not None else float(c.get("grand_total") or c.get("total_amount") or 0)
+            doc, why = _pick_document(credit, desc, pool, _due, lambda c: c.get("client_name") or c.get("party_name"),
+                                      lambda c: c.get("invoice_no"))
+            if doc and why == "auto" and await _has_real_receipts(doc.get("id")):
+                why = "receipt_already_recorded"
+            if doc:
+                label = f"Invoice #{doc.get('invoice_no', '')} - {doc.get('client_name', '')}"
+                if why == "auto":
+                    try:
+                        entry_id = await _auto_post_for_match(
+                            txn_company, txn,
+                            {"type": "sale", "id": doc.get("id"),
+                             "label": doc.get("client_name") or doc.get("invoice_no") or "Sale invoice",
+                             "grand_total": float(doc.get("grand_total") or 0)},
+                            current_user.id)
+                    except HTTPException:
+                        entry_id = None
+                    if entry_id:
+                        await db.bank_transactions.update_one({"id": txn_id}, {"$set": {
+                            "matched_type": "sale", "matched_id": doc.get("id"), "matched_label": label,
+                            "confidence_score": 95, "pending_approval": False, "journal_entry_id": entry_id,
+                            "prev_match_status": txn.get("prev_match_status"),
+                            "prev_amount_paid": txn.get("prev_amount_paid")},
+                            "$unset": {"suggested_match": ""}})
+                        taken.add(doc.get("id"))
+                        matched_count += 1
+                        posted_count += 1
                         continue
-                    await db.bank_transactions.update_one(
-                        {"id": txn_id},
-                        {"$set": {
-                            "matched_type": "purchase",
-                            "matched_id": p.get("id"),
-                            "matched_label": f"Bill #{p.get('invoice_no', '')} - {p.get('supplier_name', '')}",
-                            "confidence_score": 92,
-                            "pending_approval": False,
-                            "journal_entry_id": entry_id,
-                        }}
-                    )
-                    matched_count += 1
-                    posted_count += 1
-                    matched = True
-                    open_purchases.remove(p)
-                    break
+                    why = "needs_review"
+                await _suggest(txn_id, "sale", doc.get("id"), label, why)
+                suggested_count += 1
+                continue
 
-        # 3. Match Chart of Accounts keywords (Salary, Rent, Interest, Taxes, Bank Charges)
-        if not matched:
-            target_coa = None
-            if "salary" in desc or "wage" in desc:
-                target_coa = next((c for c in coa_items if "salary" in c.get("name", "").lower()), None)
-            elif "rent" in desc:
-                target_coa = next((c for c in coa_items if "rent" in c.get("name", "").lower()), None)
-            elif "interest" in desc:
-                target_coa = next((c for c in coa_items if "interest" in c.get("name", "").lower()), None)
-            elif "charge" in desc or "fee" in desc or "tax" in desc:
-                target_coa = next((c for c in coa_items if "bank" in c.get("name", "").lower() or "charge" in c.get("name", "").lower()), None)
+        if debit > 0:
+            pool = [p_ for p_ in open_purchases if _same_company(p_) and p_.get("id") not in taken
+                    and p_.get("payment_status") != "paid" and p_.get("status") != "cancelled"]
+            doc, why = _pick_document(debit, desc, pool, lambda c: c.get("grand_total") or c.get("total_amount"),
+                                      lambda c: c.get("supplier_name") or c.get("vendor_name"), lambda c: c.get("invoice_no"))
+            if doc and why == "auto" and float(doc.get("paid_amount") or 0) > 0:
+                why = "already_part_paid"
+            if doc:
+                label = f"Bill #{doc.get('invoice_no', '')} - {doc.get('supplier_name', '')}"
+                if why == "auto":
+                    try:
+                        entry_id = await _auto_post_for_match(
+                            txn_company, txn,
+                            {"type": "purchase", "id": doc.get("id"),
+                             "label": doc.get("supplier_name") or doc.get("invoice_no") or "Purchase invoice",
+                             "grand_total": float(doc.get("grand_total") or 0)},
+                            current_user.id)
+                    except HTTPException:
+                        entry_id = None
+                    if entry_id:
+                        await db.bank_transactions.update_one({"id": txn_id}, {"$set": {
+                            "matched_type": "purchase", "matched_id": doc.get("id"), "matched_label": label,
+                            "confidence_score": 92, "pending_approval": False, "journal_entry_id": entry_id,
+                            "prev_match_status": txn.get("prev_match_status"),
+                            "prev_amount_paid": txn.get("prev_amount_paid")},
+                            "$unset": {"suggested_match": ""}})
+                        taken.add(doc.get("id"))
+                        matched_count += 1
+                        posted_count += 1
+                        continue
+                    why = "needs_review"
+                await _suggest(txn_id, "purchase", doc.get("id"), label, why)
+                suggested_count += 1
+                continue
 
-            if target_coa:
-                await db.bank_transactions.update_one(
-                    {"id": txn_id},
-                    {"$set": {
-                        "matched_type": "expense" if debit > 0 else "income",
-                        "matched_id": target_coa.get("id"),
-                        "matched_label": target_coa.get("name"),
-                        "confidence_score": 88,
-                        "pending_approval": False
-                    }}
-                )
-                matched_count += 1
+        # Salary / rent / interest / bank charges: only a SUGGESTED head, never a
+        # silent match (a match with no journal entry used to leave the bank
+        # ledger short of the real statement).
+        low = desc.lower()
+        target_coa = None
+        company_coa = [c for c in coa_items if _same_company(c)]
+        if "salary" in low or "wage" in low:
+            target_coa = next((c for c in company_coa if "salary" in c.get("name", "").lower()), None)
+        elif "rent" in low:
+            target_coa = next((c for c in company_coa if "rent" in c.get("name", "").lower()), None)
+        elif "interest" in low:
+            target_coa = next((c for c in company_coa if "interest" in c.get("name", "").lower()), None)
+        elif "bank charge" in low or "charges" in low or " fee" in f" {low}":
+            target_coa = next((c for c in company_coa if "bank charge" in c.get("name", "").lower()), None)
+        if target_coa:
+            await _suggest(txn_id, "expense" if debit > 0 else "revenue", target_coa.get("id"),
+                           target_coa.get("name"), "keyword")
+            suggested_count += 1
 
     return {
         "success": True,
-        "message": f"AI Auto-matching complete. Matched {matched_count} transaction(s).",
-        "matchedCount": matched_count
+        "message": (f"Auto-match complete: {posted_count} posted (one clear match each), "
+                    f"{suggested_count} suggested for you to confirm."),
+        "matchedCount": matched_count,
+        "suggestedCount": suggested_count,
     }
 
 
@@ -1637,6 +1726,7 @@ async def manual_match_transaction(txn_id: str, payload: ManualMatchInput, curre
             {"type": payload.matched_type, "id": payload.matched_id, "label": payload.matched_label}, current_user.id,
         )
         update["prev_match_status"] = txn.get("prev_match_status")
+        update["prev_amount_paid"] = txn.get("prev_amount_paid")
         if entry_id:
             update["journal_entry_id"] = entry_id
     await db.bank_transactions.update_one({"id": txn_id}, {"$set": update, "$unset": {"suggested_match": ""}})

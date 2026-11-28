@@ -27,7 +27,19 @@ from datetime import date, datetime
 from io import BytesIO, StringIO
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-STANDARD_GST_RATES = (0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+STANDARD_GST_RATES_BUILTIN = (0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+
+def _gst_rates(on_date=None):
+    """GST rates in use on a date, from Tax rules & law updates (falls back to the built-in list)."""
+    try:
+        from backend.statutory_rules import rule
+        rates = rule("gst.valid_rates", on_date)
+        if rates:
+            return tuple(float(r) for r in rates)
+    except Exception:
+        pass
+    return tuple(float(r) for r in STANDARD_GST_RATES_BUILTIN)
+
 
 GST_STATE_NAMES = {
     "01": "Jammu & Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh", "05": "Uttarakhand",
@@ -107,7 +119,7 @@ def _std_rate(tax: float, taxable: float, parts: int) -> Optional[float]:
     if taxable <= 0 or tax <= 0:
         return None
     rate = tax / taxable * 100 * parts
-    for r in STANDARD_GST_RATES:
+    for r in _gst_rates():
         if abs(rate - r) <= 0.2:
             return r
     return None

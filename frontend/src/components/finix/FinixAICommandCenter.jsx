@@ -1,4 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import InvoicePreviewDialog from '@/components/purchase/InvoicePreviewDialog.jsx';
+import { fetchCompanies } from '@/lib/companies';
 import {
   Sparkles, Paperclip, Send, UploadCloud, AlertTriangle, CheckCircle2,
   XCircle, Scale, RefreshCw, FileText, Receipt, Landmark, TrendingUp,
@@ -17,6 +20,16 @@ const QUICK_PROMPTS = [
   { label: 'Customer Receipt', icon: Receipt, prompt: 'Received ₹75,000 from customer against outstanding invoice' },
 ];
 
+// Server errors may carry { code, message, open_invoices } (e.g. "use Purchase for a bill").
+const errText = (err, fallback) => {
+  const d = err?.response?.data?.detail;
+  if (typeof d === 'string') return d;
+  if (d && typeof d === 'object') return d.message || fallback;
+  return fallback;
+};
+// Photos and PDFs of bills are read by the same AI reader as Purchase and saved as purchase bills.
+const BILL_FILE = /\.(pdf|png|jpe?g|webp|heic|heif|tiff?)$/i;
+
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 export default function FinixAICommandCenter({ companyId, isDark = false }) {
@@ -24,6 +37,10 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [billPreview, setBillPreview] = useState(null);   // { data, file } for the Purchase review
+  const [companies, setCompanies] = useState([]);
+  const navigate = useNavigate();
+  useEffect(() => { fetchCompanies().then(setCompanies).catch(() => {}); }, []);
 
   const submit = async (value) => {
     const prompt = String(value ?? text).trim();
@@ -44,7 +61,7 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
       if (data?.success) toast.success('Finix prepared a governed double-entry proposal.');
       else toast.info('Finix needs clarification before preparing the voucher.');
     } catch (err) {
-      setResult({ error: err?.response?.data?.detail || 'Finix AI could not process this transaction.' });
+      setResult({ error: errText(err, 'Finix AI could not process this transaction.') });
       toast.error('Finix AI transaction processing failed.');
     } finally {
       setLoading(false);
@@ -58,6 +75,26 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
     }
     setLoading(true);
     setResult(null);
+    if (BILL_FILE.test(file.name || '')) {
+      // A supplier bill: read it with the Purchase AI reader and open the same review dialog,
+      // so it is saved as a purchase bill (register, GST input credit, vendor ledger).
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('company_id', companyId);
+        const { data } = await api.post('/purchase-invoices/preview', form, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 130000,
+        });
+        setBillPreview({ data, file });
+      } catch (err) {
+        setResult({ error: errText(err, 'Finix could not read this bill.') });
+        toast.error('Finix could not read this bill.');
+      } finally {
+        setLoading(false);
+        if (fileRef.current) fileRef.current.value = '';
+      }
+      return;
+    }
     try {
       const form = new FormData();
       form.append('file', file);
@@ -69,7 +106,7 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
       setResult({ ...data, source_filename: file.name });
       toast.success(`Finix analyzed ${file.name}.`);
     } catch (err) {
-      setResult({ error: err?.response?.data?.detail || 'Finix could not read the uploaded document.' });
+      setResult({ error: errText(err, 'Finix could not read the uploaded document.') });
       toast.error('Finix document analysis failed.');
     } finally {
       setLoading(false);
@@ -86,11 +123,16 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
         action: actionName,
       });
       setResult((current) => ({ ...current, ...data }));
-      if (actionName === 'APPROVE') toast.success('Approved and posted through the Finix accounting ledger.');
+      if (actionName === 'APPROVE') toast.success(data?.message || 'Approved and posted.');
       else toast.info('AI proposal rejected. Nothing was posted.');
     } catch (err) {
-      setResult((current) => ({ ...current, error: err?.response?.data?.detail || 'Finix could not complete the requested action.' }));
-      toast.error('Finix accounting action failed.');
+      const d = err?.response?.data?.detail;
+      setResult((current) => ({
+        ...current,
+        error: errText(err, 'Finix could not complete the requested action.'),
+        open_invoices: (d && typeof d === 'object' && d.open_invoices) || null,
+      }));
+      toast.error(errText(err, 'Finix accounting action failed.'));
     } finally {
       setLoading(false);
     }
@@ -197,6 +239,12 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
             </div>
 
             {result.error && <div className="mt-3 text-sm text-red-500">{result.error}</div>}
+            {Array.isArray(result.open_invoices) && result.open_invoices.length > 0 && (
+              <div className="mt-2 text-xs text-slate-500">
+                Open invoices: {result.open_invoices.map((i) => `${i.invoice_no} (${money(i.amount_due)} due)`).join(', ')}.{' '}
+                <button type="button" className="underline text-blue-600" onClick={() => navigate('/invoicing')}>Record it in Sales</button>
+              </div>
+            )}
 
             {!result.error && (
               <>
@@ -274,17 +322,30 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
                       <CheckCircle2 className="w-4 h-4" /> Posted to General Ledger
                     </div>
                   ) : (
-                    <div className="text-[11px] text-slate-400">Nothing is posted until you approve this proposal.</div>
+                    <div className="text-[11px] text-slate-400 max-w-md">{result.on_approve || 'Nothing is posted until you approve this proposal.'}</div>
+                  )}
+                  {result.status === 'POSTED' && result.document?.type === 'sales_invoice' && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => navigate('/invoicing')}>
+                      Open draft invoice {result.document.invoice_no} in Sales
+                    </Button>
                   )}
                   {result.proposal_id && result.status !== 'POSTED' && result.status !== 'REJECTED' && balanced && (
+                    ['PURCHASE', 'FIXED_ASSET'].includes(String(result.event || '').toUpperCase()) ? (
+                      <Button type="button" size="sm" onClick={() => navigate('/purchase')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
+                        Open Purchase to upload the bill
+                      </Button>
+                    ) : (
                     <div className="flex items-center gap-2">
                       <Button type="button" size="sm" variant="outline" onClick={() => action('REJECT')} disabled={loading} className="text-red-600 border-red-300">
                         <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
                       </Button>
                       <Button type="button" size="sm" onClick={() => action('APPROVE')} disabled={loading} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve &amp; Post
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                        {String(result.event || '').toUpperCase() === 'SALE' ? 'Create draft invoice'
+                          : String(result.event || '').toUpperCase() === 'RECEIPT' ? 'Record receipt' : 'Approve & Post'}
                       </Button>
                     </div>
+                    )
                   )}
                 </div>
               </>
@@ -292,6 +353,23 @@ export default function FinixAICommandCenter({ companyId, isDark = false }) {
           </div>
         )}
       </div>
+      {billPreview && (
+        <InvoicePreviewDialog
+          open
+          preview={billPreview.data}
+          file={billPreview.file}
+          queue={null}
+          companies={companies}
+          clients={[]}
+          isDark={isDark}
+          onClose={() => setBillPreview(null)}
+          onSkip={() => setBillPreview(null)}
+          onSaved={(bill) => {
+            setBillPreview(null);
+            setResult({ status: 'POSTED', message: `Purchase bill ${bill?.invoice_no || ''} saved`, lines: [], source_filename: billPreview.file?.name });
+          }}
+        />
+      )}
     </section>
   );
 }

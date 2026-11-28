@@ -47,6 +47,7 @@ export function previewToForm(preview) {
     igst_amount: n(e.igst_amount), cess_amount: n(e.cess_amount), total_gst: n(e.total_gst),
     round_off: e.round_off ? String(e.round_off) : '', grand_total: n(e.grand_total),
     currency: s(e.currency) || 'INR', place_of_supply: s(e.place_of_supply), document_type: s(e.document_type) || 'tax_invoice',
+    reverse_charge: !!e.reverse_charge,
   };
 }
 
@@ -300,6 +301,15 @@ export default function InvoicePreviewDialog({
                   )}
                 </label>
               )}
+              <label className="mt-2 flex items-start gap-1.5 text-xs" data-testid="reverse-charge">
+                <input type="checkbox" className="mt-0.5" checked={!!form.reverse_charge}
+                  onChange={(e) => setForm((f) => ({ ...f, reverse_charge: e.target.checked }))} />
+                <span>
+                  Reverse charge <span className="opacity-70">(we pay the GST to the government, e.g. legal/GTA services or an
+                  unregistered/foreign supplier). Enter the GST we owe in the tax fields; the supplier is paid the bill value only.
+                  Shown in GSTR-3B 3.1(d) and claimed as input credit.</span>
+                </span>
+              </label>
               <fieldset className="mt-2 text-xs" data-testid="treatment">
                 <legend className="opacity-80 mb-1">Treat this bill as</legend>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1">

@@ -10,7 +10,19 @@ logger = logging.getLogger("gst_validator")
 GSTIN_REGEX = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$", re.I)
 HSN_REGEX = re.compile(r"^\d{2,8}$")
 
-VALID_GST_RATES = {0.0, 0.1, 0.25, 1.0, 3.0, 5.0, 12.0, 18.0, 28.0}
+VALID_GST_RATES_BUILTIN = {0.0, 0.1, 0.25, 1.0, 3.0, 5.0, 12.0, 18.0, 28.0}
+
+def _gst_rates(on_date=None):
+    """GST rates in use on a date, from Tax rules & law updates (falls back to the built-in list)."""
+    try:
+        from backend.statutory_rules import rule
+        rates = rule("gst.valid_rates", on_date)
+        if rates:
+            return tuple(float(r) for r in rates)
+    except Exception:
+        pass
+    return tuple(float(r) for r in VALID_GST_RATES_BUILTIN)
+
 
 class GSTValidator:
     @staticmethod
@@ -101,7 +113,7 @@ class GSTValidator:
         cess = float(invoice.get("cess") or 0.0)
         rate = float(invoice.get("rate") or invoice.get("tax_rate") or 0.0)
 
-        checks["tax_rate_slabs_valid"] = rate in VALID_GST_RATES
+        checks["tax_rate_slabs_valid"] = rate in _gst_rates()
         if not checks["tax_rate_slabs_valid"] and rate > 0:
             warnings.append(f"GST Tax Rate {rate}% is not a standard statutory GST rate.")
 

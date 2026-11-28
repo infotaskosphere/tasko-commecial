@@ -50,7 +50,19 @@ logger = logging.getLogger(__name__)
 # Small helpers
 # ═════════════════════════════════════════════════════════════════════════════
 
-STANDARD_GST_RATES = (0.0, 0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+STANDARD_GST_RATES_BUILTIN = (0.0, 0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+
+def _gst_rates(on_date=None):
+    """GST rates in use on a date, from Tax rules & law updates (falls back to the built-in list)."""
+    try:
+        from backend.statutory_rules import rule
+        rates = rule("gst.valid_rates", on_date)
+        if rates:
+            return tuple(float(r) for r in rates)
+    except Exception:
+        pass
+    return tuple(float(r) for r in STANDARD_GST_RATES_BUILTIN)
+
 
 _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 GSTIN_RE = re.compile(r"(?<![A-Z0-9])\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z](?![A-Z0-9])")
@@ -556,7 +568,7 @@ def reconcile_amounts(lab: Dict[str, List[Tuple[float, int, int]]], pool: List[f
                     if _near(list(pool_set), round(x / 2, 2), 0.011):
                         s += 2.0
                     rate = x / t * 100 if t > 0 else 999
-                    if any(abs(rate - sr) <= 0.15 for sr in STANDARD_GST_RATES):
+                    if any(abs(rate - sr) <= 0.15 for sr in _gst_rates()):
                         s += 3.0
                     elif rate > 30:
                         s -= 4.0
@@ -1174,7 +1186,7 @@ def validate_extraction(r: Dict[str, Any], today: Optional[date] = None) -> List
     t = to_num(r.get("taxable_amount"))
     if t > 0 and gst > 0:
         rate = gst / t * 100
-        if not any(abs(rate - sr) <= 0.6 for sr in STANDARD_GST_RATES):
+        if not any(abs(rate - sr) <= 0.6 for sr in _gst_rates()):
             out.append(_w("total_gst", "odd_rate", "info", f"GST works out to {rate:.1f}% of taxable value (mixed-rate bill or a misread amount)."))
 
     sg_, bg_ = (r.get("supplier_gstin") or "").upper(), (r.get("buyer_gstin") or "").upper()

@@ -437,6 +437,49 @@ def _blank_company_filter(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+# Keys that are company/tenant markers, not record references.
+_NON_RECORD_ID_KEYS = frozenset({
+    COMPANY_FIELD, "tenant_id", "customer_id", "commercial_customer_id", "license_id",
+    "workspace_id", "org_id", "organization_id",
+})
+
+
+def _targets_specific_records(query: dict) -> bool:
+    """True when a query names records by id (``id``, ``_id`` or a ``*_id`` reference).
+
+    Such a lookup is unambiguous, so for a login that owns several legal
+    companies it may cover all of them: opening, editing or paying a Prodigist
+    invoice while the login's main company is another one must find it. Broad
+    queries (no id) keep the login company as before, so settings, counters and
+    summaries are never mixed between companies.
+    """
+    for key, value in (query or {}).items():
+        if not isinstance(key, str) or key.startswith("$"):
+            continue
+        if key in ("id", "_id") or (key.endswith("_id") and key not in _NON_RECORD_ID_KEYS):
+            if isinstance(value, str) and value.strip():
+                return True
+            if isinstance(value, dict) and value and set(value) <= {"$in", "$eq"}:
+                return True
+    return False
+
+
+def own_companies_filter() -> Any:
+    """company_id filter covering every company this request may operate, or None.
+
+    Server-resolved only (owner company list or licensee Master Data list), so
+    it never reaches another customer. Use it for "All companies" views.
+    """
+    if in_platform_owner_context():
+        ids = sorted(
+            v for v in platform_owner_company_ids()
+            if v and _owner_company_value_allowed(v)
+        )
+    else:
+        ids = sorted(_tenant_allowed_ids()) if authenticated_company_id() else []
+    return {"$in": ids} if len(ids) > 1 else None
+
+
 def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, Any]:
     company_id = authenticated_company_id()
     base = dict(query or {}) if isinstance(query, dict) else {}
@@ -462,6 +505,11 @@ def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, An
             )
         if requested is not None:
             base[COMPANY_FIELD] = _normalize_owner_company_filter(requested)
+        if requested is None and _targets_specific_records(base):
+            owner_scope = own_companies_filter()
+            if owner_scope:
+                base[COMPANY_FIELD] = owner_scope
+                return base
         if requested is None:
             if _bank_master_scope.get() and collection_name in BANKING_MULTI_COMPANY_COLLECTIONS:
                 bank_company_ids = platform_owner_company_ids()
@@ -499,6 +547,9 @@ def _scope_query(query: Any, collection_name: str | None = None) -> dict[str, An
     ):
         base[COMPANY_FIELD] = {"$in": sorted(allowed)}
     elif collection_name in SHARED_TENANT_MASTER_COLLECTIONS and len(allowed) > 1:
+        base[COMPANY_FIELD] = {"$in": sorted(allowed)}
+    elif len(allowed) > 1 and _targets_specific_records(base):
+        # A record named by id may sit under any of this licensee's companies.
         base[COMPANY_FIELD] = {"$in": sorted(allowed)}
     else:
         base[COMPANY_FIELD] = company_id
@@ -613,6 +664,12 @@ def _scope_update(update: Any, query: Any = None) -> Any:
             )
         # The query is already company-scoped. Do not overwrite its selected
         # owner company with the login's default company during an update.
+        if not has_company_update and isinstance(query_company, dict) and company_id \
+                and _owner_company_value_allowed(company_id):
+            # Multi-company lookup: existing records keep their company; an upsert lands in the login company.
+            set_on_insert_values[COMPANY_FIELD] = company_id
+            result["$setOnInsert"] = set_on_insert_values
+            return result
         if not has_company_update and query_company is None and company_id:
             if _owner_company_value_allowed(company_id):
                 set_values[COMPANY_FIELD] = company_id
@@ -659,6 +716,13 @@ def _scope_update(update: Any, query: Any = None) -> Any:
     ):
         # Multi-company ({"$in": ...}) updates keep each record's own company.
         set_values[COMPANY_FIELD] = target_company
+    elif (
+        isinstance(query_company, dict)
+        and COMPANY_FIELD not in set_on_insert_values
+        and COMPANY_FIELD not in set_values
+    ):
+        # ...and if the update upserts a new record, it belongs to the login company.
+        set_on_insert_values[COMPANY_FIELD] = company_id
 
     if set_values:
         result["$set"] = set_values
@@ -915,6 +979,7 @@ class TenantAwareCollection:
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
             query = _scope_query(query, self._name)
+            replacement = await self._keep_record_company(query, replacement)
             replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
@@ -939,6 +1004,7 @@ class TenantAwareCollection:
         enabled = self._enabled(); registry = self._company_registry_enabled()
         if enabled:
             query = _scope_query(query, self._name)
+            replacement = await self._keep_record_company(query, replacement)
             replacement = _scope_replacement(replacement, query)
         elif registry:
             query = _scope_company_registry_query(query)
@@ -968,6 +1034,20 @@ class TenantAwareCollection:
         result = await self._collection.delete_many(query, *args, **kwargs)
         _report_cache.bump(self._name)
         return result
+
+    async def _keep_record_company(self, query, replacement):
+        """A replacement found through a multi-company lookup keeps the record's own company."""
+        if (
+            isinstance(replacement, dict)
+            and not replacement.get(COMPANY_FIELD)
+            and isinstance(query, dict)
+            and isinstance(query.get(COMPANY_FIELD), dict)
+        ):
+            existing = await self._collection.find_one(query, {COMPANY_FIELD: 1})
+            company = (existing or {}).get(COMPANY_FIELD) or authenticated_company_id()
+            if company:
+                replacement = {**replacement, COMPANY_FIELD: company}
+        return replacement
 
     def aggregate(self, pipeline, *args, **kwargs):
         if self._enabled():

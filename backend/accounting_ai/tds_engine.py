@@ -60,6 +60,23 @@ def _result(**kwargs):
     return base
 
 
+def _policy_on(tx_date: date) -> Optional[Dict[str, Dict[str, Any]]]:
+    """TDS sections in force on the transaction date, from Tax rules & law updates.
+
+    A new limit or rate added there (with its "applies from" date) is used for
+    transactions on or after that date; earlier ones keep the old values."""
+    try:
+        from backend.statutory_rules import rule
+    except Exception:
+        return None
+    policy: Dict[str, Dict[str, Any]] = {}
+    for section in ("194C", "194J", "194I"):
+        cfg = rule(f"tds.{section}", tx_date)
+        if cfg:
+            policy[section] = {k: (v if k == "name" else Decimal(str(v))) for k, v in cfg.items()}
+    return policy or None
+
+
 class TDSEngine:
     @staticmethod
     def evaluate_tds(account_code: str, taxable_value: float, cumulative_vendor_annual_spend: float = 0.0,
@@ -85,7 +102,7 @@ class TDSEngine:
             tx_date = date.fromisoformat(str(transaction_date)[:10]) if isinstance(transaction_date, str) else transaction_date
         except Exception:
             return _result(requires_review=True, reason="Invalid transaction date.")
-        policy = POLICIES.get(fy)
+        policy = _policy_on(tx_date) or POLICIES.get(fy)
         if policy is None:
             return _result(requires_review=True, financial_year=fy, reason="No configured statutory TDS policy exists for this transaction date.")
 

@@ -40,6 +40,7 @@ from backend.accounting_inventory import router as accounting_inventory_router
 from backend.accounting_standards import router as accounting_standards_router
 from backend.accounting_standards_obligations import router as accounting_obligations_router
 from backend.accounting_notes import router as accounting_notes_router
+from backend.statutory_rules import router as statutory_rules_router
 from backend.reminders_router import router as reminders_router
 from backend.quotations import router as quotation_router
 from backend.purchases import router as purchases_router
@@ -375,6 +376,7 @@ register_legacy_router_mounts(
         accounting_standards_router,
         accounting_obligations_router,
         accounting_notes_router,
+        statutory_rules_router,
         ai_document_reader_router,
         aiweave_router,
         trademark_portals_router,

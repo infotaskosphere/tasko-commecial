@@ -2905,9 +2905,14 @@ def _build_purchase_query(
         clauses.append({"cgst_amount": {"$gt": 0}})
     elif gst_type == "none":
         clauses.append({"$or": [{"total_gst": {"$lte": 0}}, {"total_gst": {"$exists": False}}]})
-    if not clauses:
-        return {}
-    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
+    q = {} if not clauses else (clauses[0] if len(clauses) == 1 else {"$and": clauses})
+    if not company_id and "company_id" not in vis and "company_id" not in q:
+        # "All companies": every company of this login, not only its main one.
+        from backend.tenant_runtime import own_companies_filter
+        scope = own_companies_filter()
+        if scope:
+            q = {"company_id": scope, **({"$and": [q]} if q else {})}
+    return q
 
 
 def _totals_mismatch(doc: dict) -> float:
@@ -3604,7 +3609,8 @@ def _validate_purchase_payload(p: dict, acknowledge_mismatch: bool = False) -> T
     if p["supplier_gstin"] and p["supplier_gstin"] == p["buyer_gstin"]:
         e("buyer_gstin", "same_gstin", "Supplier and buyer GSTIN are the same.")
     if p["grand_total"] > 0:
-        diff = round(p["grand_total"] - (p["taxable_amount"] + p["total_gst"] + p["round_off"]), 2)
+        bill_gst = 0 if p.get("reverse_charge") else p["total_gst"]     # reverse charge: no GST on the supplier's bill
+        diff = round(p["grand_total"] - (p["taxable_amount"] + bill_gst + p["round_off"]), 2)
         if abs(diff) > 1.0:
             if acknowledge_mismatch:
                 warns.append({"field": "grand_total", "code": "totals_mismatch",
@@ -3655,7 +3661,9 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
 
     now = datetime.now(timezone.utc).isoformat()
     fm = file_meta or {}
-    mismatch = abs(round(p["grand_total"] - (p["taxable_amount"] + p["total_gst"] + p["round_off"]), 2)) > 1.0
+    rcm = bool(p.get("reverse_charge"))
+    # Reverse charge: the supplier's bill carries no GST, so it totals taxable + round-off.
+    mismatch = abs(round(p["grand_total"] - (p["taxable_amount"] + (0 if rcm else p["total_gst"]) + p["round_off"]), 2)) > 1.0
     doc = {
         "id": str(uuid.uuid4()),
         "company_id": company_id, "company_name": (company_doc or {}).get("name", ""),
@@ -3667,6 +3675,7 @@ async def _save_purchase_invoice(p: dict, user: User, *, source: str, file_meta:
         "igst_amount": p["igst_amount"], "cess_amount": p["cess_amount"], "total_gst": p["total_gst"],
         "round_off": p["round_off"], "grand_total": p["grand_total"], "currency": p["currency"],
         "place_of_supply": p.get("place_of_supply", ""), "document_type": p["document_type"],
+        "reverse_charge": rcm,
         "file_name": fm.get("name", ""), "file_size": int(fm.get("size") or 0),
         "content_type": fm.get("content_type", "") or "", "parse_confidence": float(p.get("parse_confidence") or (1.0 if source == "manual" else 0)),
         "extraction_method": p.get("extraction_method", "manual" if source == "manual" else ""),
@@ -3774,6 +3783,7 @@ class PurchaseInvoiceConfirm(BaseModel):
     raw_text_excerpt: Optional[str] = ""
     zte_doc_id: Optional[str] = None      # set when the bill came from the pending-review list (a document read earlier)
     treat_as: Optional[str] = "expense"   # "expense" (charged to profit) or "capital" (fixed asset, depreciated)
+    reverse_charge: bool = False          # RCM: the GST fields hold the tax WE pay; the supplier is paid taxable + round-off
     asset_category: Optional[str] = "other"
     useful_life_years: Optional[int] = None
     edited_fields: List[str] = Field(default_factory=list)
@@ -3963,6 +3973,7 @@ class PurchaseInvoiceCreate(BaseModel):
     round_off: float = 0.0
     currency: Optional[str] = "INR"
     place_of_supply: Optional[str] = ""
+    reverse_charge: bool = False
     raw_text_excerpt: Optional[str] = "Manually created"
 
 
@@ -4244,6 +4255,7 @@ class PurchaseInvoiceUpdate(BaseModel):
     currency: Optional[str] = None
     place_of_supply: Optional[str] = None
     document_type: Optional[str] = None
+    reverse_charge: Optional[bool] = None
     expense_ledger_code: Optional[str] = None
     acknowledge_mismatch: bool = False
     force_duplicate: bool = False
@@ -4252,7 +4264,7 @@ class PurchaseInvoiceUpdate(BaseModel):
 _PURCHASE_EDITABLE = (
     "client_id", "client_name", "company_id", "supplier_name", "supplier_gstin", "buyer_name", "buyer_gstin", "invoice_no",
     "invoice_date", "due_date", "taxable_amount", "cgst_amount", "sgst_amount", "igst_amount", "cess_amount", "total_gst",
-    "round_off", "grand_total", "currency", "place_of_supply", "document_type",
+    "round_off", "grand_total", "currency", "place_of_supply", "document_type", "reverse_charge",
 )
 
 
@@ -5218,6 +5230,7 @@ async def reconcile_paid_receipts(
         payment_id = str(uuid.uuid4())
         await db.payments.insert_one({
             "id": payment_id, "invoice_id": inv_id, "amount": shortfall,
+            "company_id": inv.get("company_id") or "",
             "payment_date": inv.get("invoice_date") or date.today().isoformat(), "payment_mode": "bank",
             "reference_no": "", "notes": "Auto-recorded receipt — backfilled for invoice already marked Paid",
             "auto_generated": True,
@@ -6750,13 +6763,35 @@ async def sync_purchase_journal_entry(invoice_id: str) -> str:
             "purchase", invoice_id, None, company_id=company_id,
             failure="The company's chart of accounts is missing 2000 / 1200 / 5000, so the bill could not be posted.")
 
-    purchase_amount = round(grand_total - total_gst, 2)
-    lines = [
-        {"account_id": purchases_id, "account_name": expense_name, "debit": purchase_amount, "credit": 0.0, "memo": f"Purchase Bill {invoice_no} from {supplier_name}"},
-        {"account_id": payable_id, "account_name": "Accounts Payable", "debit": 0.0, "credit": grand_total, "memo": f"Bill {invoice_no} payable to {supplier_name}"},
-    ]
-    if total_gst > 0:
-        lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
+    if inv.get("reverse_charge"):
+        # Reverse charge (CGST Act s.9(3)/(4), IGST Act s.5(3)/(4)): the supplier is owed the bill value
+        # only; WE owe the GST to the government (paid in cash through GSTR-3B 3.1(d)) and may claim the
+        # same amount as input credit. Dr Expense, Dr GST Input / Cr Supplier, Cr GST payable (RCM).
+        output_id = await get_default_account_id(company_id, "2100")
+        if not output_id:
+            return await _apply_source_journal(
+                "purchase", invoice_id, None, company_id=company_id,
+                failure="The company's chart of accounts is missing 2100 (GST payable), so the reverse-charge bill could not be posted.")
+        payable_amount = grand_total
+        lines = [
+            {"account_id": purchases_id, "account_name": expense_name, "debit": round(payable_amount, 2), "credit": 0.0,
+             "memo": f"Purchase Bill {invoice_no} from {supplier_name} (reverse charge)"},
+            {"account_id": payable_id, "account_name": "Accounts Payable", "debit": 0.0, "credit": payable_amount,
+             "memo": f"Bill {invoice_no} payable to {supplier_name}"},
+        ]
+        if total_gst > 0:
+            lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0,
+                          "memo": f"Input credit on reverse-charge tax, Bill {invoice_no}"})
+            lines.append({"account_id": output_id, "account_name": "GST Payable (reverse charge)", "debit": 0.0, "credit": total_gst,
+                          "memo": f"Reverse-charge GST payable on Bill {invoice_no}"})
+    else:
+        purchase_amount = round(grand_total - total_gst, 2)
+        lines = [
+            {"account_id": purchases_id, "account_name": expense_name, "debit": purchase_amount, "credit": 0.0, "memo": f"Purchase Bill {invoice_no} from {supplier_name}"},
+            {"account_id": payable_id, "account_name": "Accounts Payable", "debit": 0.0, "credit": grand_total, "memo": f"Bill {invoice_no} payable to {supplier_name}"},
+        ]
+        if total_gst > 0:
+            lines.append({"account_id": gst_input_id, "account_name": "GST Input Credit", "debit": total_gst, "credit": 0.0, "memo": f"GST Input on Purchase {invoice_no}"})
     return await _apply_source_journal("purchase", invoice_id, {
         "company_id": company_id, "entry_date": invoice_date,
         "narration": f"Purchase Bill {invoice_no} from {supplier_name}" + (
@@ -6820,34 +6855,71 @@ async def sync_purchase_payment_journal_entry(payment_id: str) -> str:
 # all-company scans only exist as a backfill safety net (e.g. for bills that
 # existed before auto-posting was added). It's safe to skip a re-scan if one
 # already ran for this company very recently.
-_RECONCILE_TTL_SECONDS = 300
+# The full books clean-up (re-check every invoice, bill and receipt against the ledger)
+# is a safety net: every document already posts its own entry when it is saved. It
+# runs nightly (scheduler), on the "Resync" button, and from a report only when it
+# has not run for this company in the last day. The last run is kept in the
+# database so a server restart (frequent on the free plan) does not trigger it again.
+_RECONCILE_TTL_SECONDS = 24 * 3600
 _reconcile_last_run: Dict[str, float] = {}
 _reconcile_locks: Dict[str, "asyncio.Lock"] = {}
+_RECONCILE_STATE = "books_reconcile_state"
+
+
+async def _reconcile_ran_recently(cache_key: str) -> bool:
+    if time.monotonic() - _reconcile_last_run.get(cache_key, -_RECONCILE_TTL_SECONDS) < _RECONCILE_TTL_SECONDS:
+        return True
+    try:
+        row = await db[_RECONCILE_STATE].find_one({"key": cache_key}, {"_id": 0, "at": 1})
+        if row and row.get("at"):
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(row["at"])).total_seconds()
+            if age < _RECONCILE_TTL_SECONDS:
+                _reconcile_last_run[cache_key] = time.monotonic() - age
+                return True
+    except Exception:
+        pass
+    return False
+
+
+async def _mark_reconciled(cache_key: str) -> None:
+    _reconcile_last_run[cache_key] = time.monotonic()
+    try:
+        await db[_RECONCILE_STATE].update_one(
+            {"key": cache_key}, {"$set": {"key": cache_key, "at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    except Exception:
+        pass
 
 
 async def _run_reconcile_debounced(cache_key: str, fn, *args):
     lock = _reconcile_locks.setdefault(cache_key, asyncio.Lock())
     if lock.locked():
-        # A reconciliation is already in progress. Bypass to avoid blocking.
-        return
-
-    last = _reconcile_last_run.get(cache_key, 0.0)
-    if time.monotonic() - last < _RECONCILE_TTL_SECONDS:
+        return                                   # already running
+    if await _reconcile_ran_recently(cache_key):
         return
 
     async def run_bg():
         async with lock:
-            inner_last = _reconcile_last_run.get(cache_key, 0.0)
-            if time.monotonic() - inner_last < _RECONCILE_TTL_SECONDS:
+            if await _reconcile_ran_recently(cache_key):
                 return
             try:
                 await fn(*args)
-                _reconcile_last_run[cache_key] = time.monotonic()
+                await _mark_reconciled(cache_key)
             except Exception as e:
                 import logging
                 logging.error(f"Background reconciliation failed for {cache_key}: {e}")
 
     asyncio.create_task(run_bg())
+
+
+async def run_books_reconcile_now(company_id: str) -> None:
+    """Resync button / nightly job: run the full clean-up for one company now."""
+    await _reconcile_and_sync_all_sales_and_payments_impl(company_id)
+    await _reconcile_and_sync_all_purchases_and_payments_impl(company_id)
+    await _ensure_payment_journal_entries(company_id, db.payments, sync_payment_journal_entry, "payment")
+    await _ensure_payment_journal_entries(company_id, db.purchase_payments, sync_purchase_payment_journal_entry, "purchase_payment")
+    for key in (f"sales:{company_id}", f"purchases:{company_id}", f"payment-backfill:{company_id}",
+                f"purchase-payment-backfill:{company_id}"):
+        await _mark_reconciled(key)
 
 
 async def reconcile_and_sync_all_sales_and_payments(company_id: str):
@@ -6898,7 +6970,7 @@ async def _ensure_payment_journal_entries(company_id: str, collection, sync_fn, 
     two queries total regardless of how many payments there are.
     """
     q = {"company_id": company_id} if company_id else {}
-    docs = await collection.find(q, {"_id": 0, "id": 1}).to_list(20000)
+    docs = await collection.find(q, {"_id": 0, "id": 1}).to_list(None)
     if not docs:
         return 0
     doc_ids = [d["id"] for d in docs]
@@ -6947,7 +7019,7 @@ async def _dedupe_journal_entries(company_id: str, source: str):
     entries = await db.journal_entries.find(
         {"company_id": company_id, "source": source, "source_id": {"$ne": None}},
         {"_id": 0, "id": 1, "source_id": 1, "created_at": 1},
-    ).to_list(20000)
+    ).to_list(None)
     by_src: Dict[str, list] = {}
     for e in entries:
         sid = e.get("source_id")
@@ -6976,7 +7048,7 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
         await _dedupe_journal_entries(company_id, "bank")
 
         # 1. Fetch all invoices for this company from the database
-        invoices = await db.invoices.find({"company_id": company_id}).to_list(10000)
+        invoices = await db.invoices.find({"company_id": company_id}, {"items": 0, "status_history": 0, "line_items": 0, "extracted": 0, "raw_text": 0}).to_list(None)  # all of them: a cap would mark the rest's entries stale
         invoice_ids = {inv["id"] for inv in invoices}
         # Drafts (renamed "Invoiced" in the UI) are now considered active for
         # journal-entry purposes — only cancelled invoices are skipped.
@@ -6993,7 +7065,7 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
         active_invoice_ids = {inv["id"] for inv in active_invoices}
         
         # 2. Fetch all existing journal entries with source "sale" for this company
-        existing_sale_entries = await db.journal_entries.find({"company_id": company_id, "source": "sale"}).to_list(10000)
+        existing_sale_entries = await db.journal_entries.find({"company_id": company_id, "source": "sale"}).to_list(None)
         sale_entry_by_source_id = {se["source_id"]: se for se in existing_sale_entries if se.get("source_id")}
         
         # 3. Clean up stale sale entries (deleted, draft, or cancelled invoices)
@@ -7130,7 +7202,7 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                 )
                 
         # 5. Fetch all payments for this company
-        payments = await db.payments.find({"company_id": company_id}).to_list(10000)
+        payments = await db.payments.find({"company_id": company_id}).to_list(None)
         if invoice_ids:
             missing_payments = await db.payments.find({
                 "invoice_id": {"$in": list(invoice_ids)},
@@ -7139,7 +7211,7 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
                     {"company_id": ""},
                     {"company_id": None}
                 ]
-            }).to_list(10000)
+            }).to_list(None)
             pay_id_set = {p["id"] for p in payments}
             for mp in missing_payments:
                 if mp["id"] not in pay_id_set:
@@ -7158,7 +7230,7 @@ async def _reconcile_and_sync_all_sales_and_payments_impl(company_id: str):
         payment_ids = {p["id"] for p in payments}
         
         # 6. Fetch existing payment journal entries
-        existing_pay_entries = await db.journal_entries.find({"company_id": company_id, "source": "payment"}).to_list(10000)
+        existing_pay_entries = await db.journal_entries.find({"company_id": company_id, "source": "payment"}).to_list(None)
         pay_entry_by_source_id = {pe["source_id"]: pe for pe in existing_pay_entries if pe.get("source_id")}
         
         # 7. Clean up stale payment entries (deleted payments)
@@ -7217,12 +7289,12 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
         # server restarts mid-reconcile or two report loads race each other.
         await _dedupe_journal_entries(company_id, "bank")
 
-        invoices = await db.purchase_invoices.find({"company_id": company_id}).to_list(10000)
+        invoices = await db.purchase_invoices.find({"company_id": company_id}, {"items": 0, "status_history": 0, "line_items": 0, "extracted": 0, "raw_text": 0}).to_list(None)
         invoice_ids = {inv["id"] for inv in invoices}
         active_invoices = [inv for inv in invoices if inv.get("status", "outstanding") != "cancelled"]
         active_invoice_ids = {inv["id"] for inv in active_invoices}
 
-        existing_purchase_entries = await db.journal_entries.find({"company_id": company_id, "source": "purchase"}).to_list(10000)
+        existing_purchase_entries = await db.journal_entries.find({"company_id": company_id, "source": "purchase"}).to_list(None)
         entry_by_source_id = {e["source_id"]: e for e in existing_purchase_entries if e.get("source_id")}
 
         stale_ids = [e["id"] for source_id, e in entry_by_source_id.items() if source_id not in active_invoice_ids]
@@ -7289,7 +7361,7 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
         # second Dr AP / Cr Bank and double-credit the bank account.
         bank_settled_ids = {inv["id"] for inv in bank_settled_inv}
 
-        payments = await db.purchase_payments.find({"company_id": company_id}).to_list(10000)
+        payments = await db.purchase_payments.find({"company_id": company_id}).to_list(None)
         if invoice_ids:
             missing_payments = await db.purchase_payments.find({
                 "purchase_invoice_id": {"$in": list(invoice_ids)},
@@ -7298,7 +7370,7 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
                     {"company_id": ""},
                     {"company_id": None}
                 ],
-            }).to_list(10000)
+            }).to_list(None)
             pay_id_set = {p["id"] for p in payments}
             for mp in missing_payments:
                 if mp["id"] not in pay_id_set:
@@ -7311,7 +7383,7 @@ async def _reconcile_and_sync_all_purchases_and_payments_impl(company_id: str):
 
         payment_ids = {p["id"] for p in payments}
 
-        existing_pay_entries = await db.journal_entries.find({"company_id": company_id, "source": "purchase_payment"}).to_list(10000)
+        existing_pay_entries = await db.journal_entries.find({"company_id": company_id, "source": "purchase_payment"}).to_list(None)
         pay_entry_by_source_id = {pe["source_id"]: pe for pe in existing_pay_entries if pe.get("source_id")}
 
         stale_pay_ids = [pe["id"] for source_id, pe in pay_entry_by_source_id.items() if source_id not in payment_ids]
@@ -7476,3 +7548,143 @@ async def delete_unprepared_income(income_id: str, current_user: User = Depends(
 # Purchase Returns (supplier returns) post their own reversing entries.
 from backend.purchase_returns import router as _purchase_returns_router  # noqa: E402
 router.include_router(_purchase_returns_router)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GSTR-3B for ONE company (one GSTIN) and one month
+# ═══════════════════════════════════════════════════════════════════════════════
+# Built from the books' own documents:
+#   3.1(a) outward taxable supplies  = tax invoices + debit notes − credit notes (with tax)
+#   3.1(c) nil / exempt              = documents in the month carrying no tax
+#   3.1(d) inward supplies on reverse charge = purchase bills marked reverse charge
+#   4(A)(3) ITC on reverse charge, 4(A)(5) all other ITC = purchase bills of the month
+#   4(D)   ineligible ITC            = bills GSTR-2B marked ineligible
+# Set-off follows CGST Act s.49 / s.49A / s.49B and rule 88A: IGST credit is used first for
+# IGST, then CGST and SGST; CGST credit for CGST then IGST; SGST credit for SGST then IGST;
+# CGST and SGST credit are never used against each other. Reverse-charge tax is paid in cash.
+_HEADS = ("igst", "cgst", "sgst", "cess")
+
+
+def _zero_heads() -> dict:
+    return {"taxable": 0.0, **{h: 0.0 for h in _HEADS}}
+
+
+def _add(acc: dict, sign: float, taxable: float, igst: float, cgst: float, sgst: float, cess: float) -> None:
+    acc["taxable"] += sign * taxable
+    acc["igst"] += sign * igst
+    acc["cgst"] += sign * cgst
+    acc["sgst"] += sign * sgst
+    acc["cess"] += sign * cess
+
+
+def _round_heads(d: dict) -> dict:
+    return {k: round(v, 2) for k, v in d.items()}
+
+
+def gst_set_off(liability: dict, credit: dict) -> dict:
+    """Use input credit against output tax by the statutory order; returns what is left to pay in cash."""
+    liab = {h: max(round(liability.get(h, 0.0), 2), 0.0) for h in _HEADS}
+    cred = {h: max(round(credit.get(h, 0.0), 2), 0.0) for h in _HEADS}
+    used = {f"{c}->{t}": 0.0 for c, t in (("igst", "igst"), ("igst", "cgst"), ("igst", "sgst"),
+                                          ("cgst", "cgst"), ("cgst", "igst"), ("sgst", "sgst"), ("sgst", "igst"),
+                                          ("cess", "cess"))}
+
+    def use(c: str, t: str) -> None:
+        amt = round(min(cred[c], liab[t]), 2)
+        if amt > 0:
+            cred[c] = round(cred[c] - amt, 2)
+            liab[t] = round(liab[t] - amt, 2)
+            used[f"{c}->{t}"] = amt
+
+    for c, t in (("igst", "igst"), ("igst", "cgst"), ("igst", "sgst"),
+                 ("cgst", "cgst"), ("cgst", "igst"), ("sgst", "sgst"), ("sgst", "igst"), ("cess", "cess")):
+        use(c, t)
+    return {"credit_used": used, "cash_payable": liab, "credit_carried_forward": cred}
+
+
+@router.get("/gst-returns/gstr3b")
+async def gstr3b_summary(
+    company_id: str = Query(..., description="One company: a GST return is filed per GSTIN"),
+    month: str = Query(..., description="YYYY-MM"),
+    current_user: User = Depends(check_module_permission("invoicing", "view")),
+):
+    if not _perm(current_user) and not _perm_purchase(current_user):
+        raise HTTPException(403, "Access denied")
+    company_id = (company_id or "").strip()
+    if not company_id or company_id == "all":
+        raise HTTPException(400, "Pick one company: GST returns are filed separately for each GSTIN.")
+    if not re.match(r"^\d{4}-\d{2}$", month or ""):
+        raise HTTPException(400, "Month must be YYYY-MM.")
+    y, m = int(month[:4]), int(month[5:7])
+    start = f"{month}-01"
+    end = (date(y + (m // 12), (m % 12) + 1, 1) - timedelta(days=1)).isoformat()
+    in_month = {"$gte": start, "$lte": end}
+
+    outward, credit_notes, debit_notes, nil_exempt = _zero_heads(), _zero_heads(), _zero_heads(), _zero_heads()
+    async for inv in db.invoices.find(
+        {"company_id": company_id, "invoice_date": in_month, "status": {"$ne": "cancelled"},
+         "invoice_type": {"$in": ["tax_invoice", "credit_note", "debit_note"]}},
+        {"_id": 0, "invoice_type": 1, "total_taxable": 1, "total_igst": 1, "total_cgst": 1, "total_sgst": 1,
+         "total_cess": 1, "total_gst": 1},
+    ):
+        vals = [float(inv.get(k) or 0) for k in ("total_taxable", "total_igst", "total_cgst", "total_sgst", "total_cess")]
+        kind = inv.get("invoice_type")
+        if kind == "tax_invoice" and float(inv.get("total_gst") or 0) <= 0:
+            _add(nil_exempt, 1, *vals)
+            continue
+        _add({"credit_note": credit_notes, "debit_note": debit_notes}.get(kind, outward), 1, *vals)
+
+    out_a = _zero_heads()
+    for h in out_a:
+        out_a[h] = outward[h] + debit_notes[h] - credit_notes[h]
+
+    rcm_inward, itc_rcm, itc_other, itc_ineligible = _zero_heads(), _zero_heads(), _zero_heads(), _zero_heads()
+    bills = 0
+    async for b in db.purchase_invoices.find(
+        {"company_id": company_id, "invoice_date": in_month, "status": {"$ne": "cancelled"}},
+        {"_id": 0, "taxable_amount": 1, "igst_amount": 1, "cgst_amount": 1, "sgst_amount": 1, "cess_amount": 1,
+         "reverse_charge": 1, "itc_eligible": 1, "gstr2b_itc_eligible": 1, "document_type": 1},
+    ):
+        bills += 1
+        sign = -1.0 if str(b.get("document_type") or "").lower() == "credit_note" else 1.0
+        vals = [float(b.get(k) or 0) for k in ("taxable_amount", "igst_amount", "cgst_amount", "sgst_amount", "cess_amount")]
+        if b.get("reverse_charge"):
+            _add(rcm_inward, sign, *vals)
+            _add(itc_rcm, sign, 0.0, *vals[1:])
+        elif b.get("itc_eligible") is False or b.get("gstr2b_itc_eligible") is False:
+            _add(itc_ineligible, sign, 0.0, *vals[1:])
+        else:
+            _add(itc_other, sign, 0.0, *vals[1:])
+
+    itc_total = {h: itc_rcm[h] + itc_other[h] for h in _HEADS}
+    setoff = gst_set_off({h: out_a[h] for h in _HEADS}, itc_total)
+    cash = {h: round(setoff["cash_payable"][h] + max(rcm_inward[h], 0.0), 2) for h in _HEADS}
+
+    comp = await db.companies.find_one({"id": company_id}, {"_id": 0, "name": 1, "gstin": 1})
+    return {
+        "company_id": company_id, "company_name": (comp or {}).get("name", ""), "gstin": (comp or {}).get("gstin", ""),
+        "month": month, "period": {"from": start, "to": end},
+        "t31": {
+            "a_outward_taxable": _round_heads(out_a),
+            "a_breakup": {"invoices": _round_heads(outward), "debit_notes": _round_heads(debit_notes),
+                          "credit_notes": _round_heads(credit_notes)},
+            "c_nil_exempt": _round_heads(nil_exempt),
+            "d_inward_reverse_charge": _round_heads(rcm_inward),
+        },
+        "t4": {
+            "a3_reverse_charge": _round_heads(itc_rcm), "a5_all_other": _round_heads(itc_other),
+            "c_net_itc": _round_heads({"taxable": 0.0, **itc_total}),
+            "d_ineligible": _round_heads(itc_ineligible),
+        },
+        "set_off": setoff,
+        "cash_payable": cash,
+        "cash_payable_total": round(sum(cash.values()), 2),
+        "purchase_bills": bills,
+        "notes": [
+            "Input credit is taken from purchase bills in the books for this month. Before filing, match it with "
+            "GSTR-2B (Purchase → upload GSTR-2B); credit not in GSTR-2B cannot be claimed.",
+            "Reverse-charge tax (3.1(d)) is paid in cash and is not reduced by input credit.",
+            "Tax invoices carrying no GST are shown under 3.1(c) nil-rated / exempt; move any that are "
+            "zero-rated exports or non-GST supplies to 3.1(b) / 3.1(e) when filing.",
+        ],
+    }

@@ -14,7 +14,19 @@ def normalize_intent(text:str)->str:
   m=re.search(pattern,value,flags=re.I)
   if m and len(m.group(0))>best_len: best,best_len=event,len(m.group(0))
  return best or "JOURNAL"
-VALID_GST_RATES = (0.0, 0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+VALID_GST_RATES_BUILTIN = (0.0, 0.1, 0.25, 1.5, 3.0, 5.0, 12.0, 18.0, 28.0)
+
+def _gst_rates(on_date=None):
+    """GST rates in use on a date, from Tax rules & law updates (falls back to the built-in list)."""
+    try:
+        from backend.statutory_rules import rule
+        rates = rule("gst.valid_rates", on_date)
+        if rates:
+            return tuple(float(r) for r in rates)
+    except Exception:
+        pass
+    return tuple(float(r) for r in VALID_GST_RATES_BUILTIN)
+
 _MONTHS = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
 _AMOUNT_TOKEN = r"[0-9][0-9,]*(?:\.[0-9]+)?"
 _UNIT_AFTER = r"(?:months?|days?|years?|yrs?|weeks?|hours?|hrs?|units?|pcs|pieces|nos|items?|kgs?|kg|qty|installments?|emis?)\b"
@@ -109,9 +121,9 @@ def parse_gst(text: str, amount: Optional[Decimal]) -> Dict[str, Any]:
             rate = float(m.group(1)); break
     result["rate"] = rate
     if rate is None:
-        result["clarification"] = "A GST mention was found without a rate. What GST rate applies (5%, 12%, 18% or 28%)?"
+        result["clarification"] = "A GST mention was found without a rate. What GST rate applies (5%, 18% or 40%; 12% / 28% only where still notified)?"
         return result
-    if rate not in VALID_GST_RATES:
+    if rate not in _gst_rates():
         result["clarification"] = f"{rate:g}% is not a standard GST rate. Which GST rate applies?"
         return result
     inclusive = bool(re.search(r"\b(?:incl(?:uding|usive|uded)?|inc\.?|gst\s+included|inclusive\s+of)\b", low))

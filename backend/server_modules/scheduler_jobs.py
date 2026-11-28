@@ -217,6 +217,20 @@ def register_scheduler_jobs(
         replace_existing=True,
     )
 
+    def _nightly_books():
+        from backend.accounting_core import nightly_books_reconcile
+        return nightly_books_reconcile()
+    _nightly_books.__name__ = "nightly_books_reconcile"
+    scheduler.add_job(
+        _per_tenant(_nightly_books),
+        "cron",
+        hour=2,
+        minute=37,
+        timezone=ist,
+        id="nightly_books_reconcile",
+        replace_existing=True,
+    )
+
     scheduler.add_job(
         wa_bridge_keepalive_job,
         "interval",

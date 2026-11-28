@@ -64,20 +64,28 @@ def _next_month_day(d: date, day: int) -> date:
     return first_next.replace(day=day)
 
 
+def _rule_day(key: str, on: date, default: int) -> int:
+    try:
+        from backend.statutory_rules import rule
+        return int(rule(key, on, default) or default)
+    except Exception:
+        return default
+
+
 def gst_due_dates(period_month: date) -> dict:
-    """GSTR-1 (11th) and GSTR-3B (20th) of the month after the return period."""
+    """GSTR-1 and GSTR-3B due days of the month after the return period (Tax rules & law updates; 11th / 20th)."""
     return {
         "period": period_month.strftime("%B %Y"),
-        "gstr1_due": _next_month_day(period_month, 11).isoformat(),
-        "gstr3b_due": _next_month_day(period_month, 20).isoformat(),
+        "gstr1_due": _next_month_day(period_month, _rule_day("gst.gstr1_due_day", period_month, 11)).isoformat(),
+        "gstr3b_due": _next_month_day(period_month, _rule_day("gst.gstr3b_due_day", period_month, 20)).isoformat(),
     }
 
 
 def tds_challan_due(period_month: date) -> str:
-    """TDS deducted in a month is due on the 7th of the next month (30 April for March)."""
+    """TDS deducted in a month is due on the rule's day of the next month (7th; 30 April for March)."""
     if period_month.month == 3:
         return date(period_month.year, 4, 30).isoformat()
-    return _next_month_day(period_month, 7).isoformat()
+    return _next_month_day(period_month, _rule_day("tds.challan_due_day", period_month, 7)).isoformat()
 
 
 # ── ledger loading ───────────────────────────────────────────────────────────

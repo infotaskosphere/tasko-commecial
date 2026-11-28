@@ -56,6 +56,7 @@ const AccountingReports = lazy(() => import('./pages/AccountingReports.jsx'));
 const AccountingBooks = lazy(() => import('./pages/AccountingBooks.jsx'));
 const GSTPortalSync = lazy(() => import('./pages/GSTPortalSync.jsx'));
 const AccountingIntegrity = lazy(() => import('./pages/AccountingIntegrity.jsx'));
+const TaxRules = lazy(() => import('./pages/TaxRules.jsx'));
 const ExtendedReports = lazy(() => import('./pages/ExtendedReports.jsx'));
 const DueDates = lazy(() => import('./pages/DueDates.jsx'));
 const ImportInvoices = lazy(() => import('./pages/ImportInvoices.jsx'));
@@ -302,6 +303,7 @@ export default function AppRoutes() {
           <Route path="/zero-touch-entry" element={<Navigate to="/purchase" replace />} />
           <Route path="/gst-portal-sync" element={<ModuleGate module="finix"><GSTPortalSync /></ModuleGate>} />
           <Route path="/accounting-integrity" element={<ModuleGate module="finix"><AccountingIntegrity /></ModuleGate>} />
+          <Route path="/tax-rules" element={<ModuleGate module="finix"><TaxRules /></ModuleGate>} />
           <Route path="/day-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
           <Route path="/cash-bank-book" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />
           <Route path="/cash-flow" element={<ModuleGate module="finix"><ExtendedReports /></ModuleGate>} />

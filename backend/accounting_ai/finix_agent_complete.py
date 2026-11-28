@@ -142,40 +142,20 @@ async def agent_inbox_action(payload: InboxActionRequest, current_user: User = D
     if proposal.get("created_by") != current_user.id and not is_admin:
         raise HTTPException(403, "Only the proposal owner or an admin can action this proposal.")
     if payload.action == "REJECT":
+        if proposal.get("status") == "POSTED":
+            raise HTTPException(409, "This proposal is already posted; reverse it from its document or entry instead.")
         await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {"status": "REJECTED", "updated_at": datetime.now(timezone.utc).isoformat()}})
         await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("interpretation", {}).get("party_name", ""), proposal, "REJECTED", current_user.id)
         return {"success": True, "status": "REJECTED"}
     if not _can_post(current_user):
         raise HTTPException(403, "Posting requires journal-posting permission.")
-    if proposal.get("status") == "POSTED":
-        return {"success": True, "status": "POSTED", "journal_entry": proposal.get("journal_entry")}
-    from backend import accounting_core as ac
-    try:
-        entry = await ac.post_journal_entry(proposal["company_id"], proposal["accounting_date"], proposal["narration"], proposal["lines"], "ai_zero_touch", proposal["id"], current_user.id)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc))
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(500, f"Finix posting was blocked: {type(exc).__name__}: {exc}")
-    now = datetime.now(timezone.utc).isoformat()
-    await db.finix_ai_proposals.update_one({"id": proposal["id"]}, {"$set": {
-        "status": "POSTED",
-        "journal_entry": entry,
-        "posted_by": current_user.id,
-        "posted_at": now,
-        "updated_at": now,
-        "audit": {
-            "proposal_created_by": proposal.get("created_by"),
-            "approved_by": current_user.id,
-            "approved_at": now,
-            "accounting_date": proposal.get("accounting_date"),
-            "journal_entry_id": entry.get("id") if isinstance(entry, dict) else None,
-            "source": "finix_ai_agent",
-        },
-    }})
+    from backend.accounting_ai.finix_ai_router import approve_proposal
+    was_posted = proposal.get("status") == "POSTED"
+    result = await approve_proposal(proposal, current_user, "finix_ai_agent")
+    if was_posted:
+        return result
     await record_learning(proposal.get("company_id", ""), proposal.get("event", ""), proposal.get("interpretation", {}).get("party_name", ""), proposal, "APPROVED_POSTED", current_user.id)
-    return {"success": True, "status": "POSTED", "journal_entry": entry}
+    return result
 
 
 async def _extract_upload(upload: UploadFile) -> dict:
@@ -238,15 +218,26 @@ async def agent_ask(payload: AskRequest, current_user: User = Depends(get_curren
     cid = _company(current_user, payload.company_id)
     q = payload.question.lower()
     result: dict[str, Any] = {"question": payload.question, "company_id": cid, "source": "live accounting data"}
+    today = date.today()
+    fy_start = date(today.year if today.month >= 4 else today.year - 1, 4, 1)
+    fy_label = f"FY {fy_start.year}-{str(fy_start.year + 1)[-2:]}"
     if any(x in q for x in ("profit", "loss", "p&l", "p and l")):
-        entries = await db.journal_lines.find({"company_id": cid}, {"_id": 0}).to_list(100000)
-        account_ids = {a.get("id"): a for a in await db.chart_of_accounts.find({"company_id": cid}, {"_id": 0}).to_list(5000)}
+        # Current financial year (1 April to today), summed inside the database.
+        sums = await db.journal_lines.aggregate([
+            {"$match": {"company_id": cid, "entry_date": {"$gte": fy_start.isoformat(), "$lte": today.isoformat()}}},
+            {"$group": {"_id": "$account_id", "debit": {"$sum": "$debit"}, "credit": {"$sum": "$credit"}}},
+        ]).to_list(None)
+        types = {a.get("id"): a.get("type") for a in await db.chart_of_accounts.find(
+            {"company_id": cid, "type": {"$in": ["income", "expense"]}}, {"_id": 0, "id": 1, "type": 1}).to_list(None)}
         income = expense = 0.0
-        for line in entries:
-            acct = account_ids.get(line.get("account_id"), {})
-            if acct.get("type") == "income": income += _safe_float(line.get("credit")) - _safe_float(line.get("debit"))
-            elif acct.get("type") == "expense": expense += _safe_float(line.get("debit")) - _safe_float(line.get("credit"))
-        result.update({"income": round(income, 2), "expenses": round(expense, 2), "profit": round(income-expense, 2)})
+        for row in sums:
+            t = types.get(row["_id"])
+            if t == "income":
+                income += _safe_float(row.get("credit")) - _safe_float(row.get("debit"))
+            elif t == "expense":
+                expense += _safe_float(row.get("debit")) - _safe_float(row.get("credit"))
+        result.update({"period": f"{fy_label} (1 Apr {fy_start.year} to {today.isoformat()})",
+                       "income": round(income, 2), "expenses": round(expense, 2), "profit": round(income - expense, 2)})
     elif any(x in q for x in ("receivable", "customer outstanding", "debtors")):
         from backend.accounting_ai import finix_metrics
         ledger = await finix_metrics.load_ledger(cid)
@@ -266,9 +257,12 @@ async def agent_ask(payload: AskRequest, current_user: User = Depends(get_curren
         result.update({"tds_payable_balance": ledger.balance("2200", "cr"),
                        "challan_due": finix_metrics.tds_challan_due(date.today().replace(day=1))})
     elif any(x in q for x in ("health", "score", "audit", "trial balance")):
-        lines = await db.journal_lines.find({"company_id": cid}, {"_id": 0, "debit": 1, "credit": 1}).to_list(100000)
-        dr = sum(_safe_float(l.get("debit")) for l in lines)
-        cr = sum(_safe_float(l.get("credit")) for l in lines)
+        tot = await db.journal_lines.aggregate([
+            {"$match": {"company_id": cid}},
+            {"$group": {"_id": None, "debit": {"$sum": "$debit"}, "credit": {"$sum": "$credit"}}},
+        ]).to_list(1)
+        dr = _safe_float((tot[0] if tot else {}).get("debit"))
+        cr = _safe_float((tot[0] if tot else {}).get("credit"))
         result.update({"trial_balance_debits": round(dr, 2), "trial_balance_credits": round(cr, 2), "balanced": abs(dr - cr) < 0.05})
     elif any(x in q for x in ("cash flow", "forecast", "runway")):
         from backend.accounting_ai import finix_metrics
@@ -333,8 +327,7 @@ async def agent_resync(company_id: str = "", current_user: User = Depends(get_cu
         raise HTTPException(403, "Re-syncing the books requires journal-posting permission.")
     cid = _company(current_user, company_id)
     from backend import invoicing
-    await invoicing._reconcile_and_sync_all_sales_and_payments_impl(cid)
-    await invoicing._reconcile_and_sync_all_purchases_and_payments_impl(cid)
+    await invoicing.run_books_reconcile_now(cid)
     from backend.accounting_ai import finix_metrics
     return {"success": True, "remaining_findings": (await finix_metrics.ledger_diagnostics(cid))["count"]}
 

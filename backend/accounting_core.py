@@ -370,6 +370,16 @@ async def get_default_account_id(company_id: str, code: str) -> Optional[str]:
     return result
 
 
+def _book_filter(company_id: str) -> dict:
+    """One company's book, or for "All companies" every company of this login
+    (not only its main one). The combined view is for review, not for filing."""
+    if company_id:
+        return {"company_id": company_id}
+    from backend.tenant_runtime import own_companies_filter
+    scope = own_companies_filter()
+    return {"company_id": scope} if scope else {}
+
+
 async def _all_book_ids() -> List[str]:
     """Every distinct book: each real company plus the "" default book (used
     by manual Journal Entries, which have no company selector). Used for the
@@ -379,6 +389,9 @@ async def _all_book_ids() -> List[str]:
     async for c in db.companies.find({}, {"_id": 0, "id": 1}):
         if c.get("id"):
             ids.add(c["id"])
+    scope = _book_filter("").get("company_id")
+    if isinstance(scope, dict):
+        ids.update(scope.get("$in") or [])
     return list(ids)
 
 
@@ -394,6 +407,20 @@ async def _reconcile_all_books(book_ids: List[str]):
     await asyncio.gather(*(_reconcile_one_book(cid) for cid in book_ids))
 
 
+async def nightly_books_reconcile() -> None:
+    """Scheduler job (per tenant): full books clean-up for every company, once a night."""
+    from backend import invoicing as inv
+    from backend import tenant_runtime as tr
+    for cid in [c for c in await _all_book_ids() if c]:
+        token = tr.set_authenticated_company(cid)
+        try:
+            await inv.run_books_reconcile_now(cid)
+        except Exception:
+            logging.getLogger("accounting_core").exception("Nightly books clean-up failed for %s", cid)
+        finally:
+            tr.reset_authenticated_company(token)
+
+
 async def _validate_best_effort(company_id: str):
     """Fire-and-forget consistency check (Revenue=Collections+Outstanding,
     TB Debits=Credits, AR=Outstanding, Customer Ledger=AR, Sales
@@ -407,7 +434,7 @@ async def _validate_best_effort(company_id: str):
         logging.getLogger("accounting_core").exception("validation engine failed")
 
 
-_VALIDATION_MIN_INTERVAL = 300.0
+_VALIDATION_MIN_INTERVAL = 6 * 3600.0   # self-healing validation from report loads: at most every 6 hours
 _validation_last_started: Dict[str, float] = {}
 
 
@@ -487,7 +514,7 @@ async def list_journal_entries(
         raise HTTPException(403, "Access denied.")
 
     all_companies = not company_id
-    q: dict = {} if all_companies else {"company_id": company_id}
+    q: dict = _book_filter(company_id)   # "All companies" = every company of this login
     if date_from or date_to:
         q["entry_date"] = {}
         if date_from:
@@ -1057,7 +1084,7 @@ async def _trial_balance_impl(company_id: str, as_of: Optional[str], date_from: 
         # adding validator latency to this report's response time.
         _schedule_validation(company_id)
 
-    acct_q = {} if all_companies else {"company_id": company_id}
+    acct_q = _book_filter(company_id)
     accounts = await db.chart_of_accounts.find(acct_q, {"_id": 0}).sort("code", 1).to_list(20000)
 
     # ── Split accounts into Balance-Sheet vs P&L ─────────────────────────────
@@ -1083,7 +1110,7 @@ async def _trial_balance_impl(company_id: str, as_of: Optional[str], date_from: 
     pl_ids = [aid for e in by_key.values() if e["type"] in PL_TYPES for aid in e["account_ids"]]
 
     upper = date_to or as_of
-    base_q: dict = {} if all_companies else {"company_id": company_id}
+    base_q: dict = _book_filter(company_id)
 
     # Balance-sheet query: all history up to date_to (no lower bound).
     bs_q = dict(base_q)
@@ -1121,7 +1148,7 @@ async def _trial_balance_impl(company_id: str, as_of: Optional[str], date_from: 
     # posted to journal_lines unless the user explicitly runs "Add Opening Balance".
     # Without this injection the Trial Balance bank figure is lower than the bank
     # page balance by exactly the opening balance amount.
-    ob_bank_q = {} if all_companies else {"company_id": company_id}
+    ob_bank_q = _book_filter(company_id)
     bank_acct_docs = await db.bank_accounts.find(ob_bank_q, {"_id": 0, "company_id": 1, "opening_balance": 1}).to_list(500)
     for ba in bank_acct_docs:
         ob = float(ba.get("opening_balance") or 0)
@@ -1367,9 +1394,9 @@ async def _load_statements(company_id: str, lower: str, upper: str, tax_rate: fl
     else:
         await _reconcile_one_book(company_id)
         await ensure_default_chart_of_accounts(company_id, "system")
-    acct_q = {} if all_companies else {"company_id": company_id}
+    acct_q = _book_filter(company_id)
     accounts = await db.chart_of_accounts.find(acct_q, {"_id": 0}).to_list(20000)
-    line_q = {"entry_date": {"$lte": upper}} if all_companies else {"company_id": company_id, "entry_date": {"$lte": upper}}
+    line_q = {**_book_filter(company_id), "entry_date": {"$lte": upper}}
     lines = await db.journal_lines.find(line_q, {"_id": 0}).to_list(500000)
     assets = await db.fixed_assets.find(acct_q, {"_id": 0}).to_list(5000)
     return build_statements(accounts, lines, assets, lower, upper, tax_rate=tax_rate)
@@ -1537,7 +1564,7 @@ async def _compute_party_ledger(
     else:
         await _reconcile_one_book(company_id)
 
-    base_q: dict = {} if all_companies else {"company_id": company_id}
+    base_q: dict = _book_filter(company_id)
 
     name_q = _name_match_query(party_name)
     if party_type == "vendor":

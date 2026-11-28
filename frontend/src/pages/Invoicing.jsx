@@ -762,6 +762,27 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
   const [month, setMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [companyFilter, setCompanyFilter] = useState('all');
   const [exporting, setExporting] = useState(null);
+  // Limits in force for the return month (Tax rules & law updates) and the server-built GSTR-3B.
+  const [b2clLimit, setB2clLimit] = useState(100000);
+  const [g3b, setG3b] = useState(null);
+  const [g3bError, setG3bError] = useState('');
+  // A GST return is filed per GSTIN: with several companies one must be picked.
+  const needsOneCompany = companyFilter === 'all' && (companies || []).length > 1;
+  useEffect(() => {
+    if (!open) return;
+    api.get('/statutory-rules/effective', { params: { on: `${month}-28` } })
+      .then(({ data }) => { const v = Number(data?.rules?.['gst.b2cl_threshold']); if (v > 0) setB2clLimit(v); })
+      .catch(() => {});
+  }, [open, month]);
+  useEffect(() => {
+    if (!open) return;
+    setG3b(null); setG3bError('');
+    const cid = companyFilter === 'all' ? ((companies || []).length === 1 ? companies[0].id : '') : companyFilter;
+    if (!cid) return;
+    api.get('/gst-returns/gstr3b', { params: { company_id: cid, month } })
+      .then(({ data }) => setG3b(data))
+      .catch((e) => setG3bError(e?.response?.data?.detail || 'Could not build GSTR-3B'));
+  }, [open, month, companyFilter, companies]);
 
   // ── Base filtered data ──────────────────────────────────────────────────
   const baseInvoices = useMemo(() => {
@@ -793,9 +814,12 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
       const isCDN = ['credit_note', 'debit_note'].includes(inv.invoice_type);
       const total = inv.grand_total || 0;
 
+      // B2C Large: an INTER-state sale to an unregistered buyer above the limit in force
+      // (Rs 1 lakh from 1 Aug 2024, Notification 12/2024-CT; see Tax rules & law updates).
+      const interState = !!inv.is_interstate || (inv.total_igst || 0) > 0;
       if (isCDN && hasGstin) cdnr.push({ ...inv, client_gstin: gstin });
       else if (hasGstin) b2b.push({ ...inv, client_gstin: gstin });
-      else if (total > 250000) b2cL.push(inv);
+      else if (!isCDN && interState && total > b2clLimit) b2cL.push(inv);
       else b2cS.push(inv);
 
       for (const item of (inv.items || [])) {
@@ -821,7 +845,7 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
     }), { taxable: 0, igst: 0, cgst: 0, sgst: 0 });
 
     return { b2b, b2cL, b2cS, b2cSTotal, cdnr, hsnSummary: Object.values(hsnMap) };
-  }, [baseInvoices]);
+  }, [baseInvoices, clients, b2clLimit]);
 
   // ── GSTR-3B data ────────────────────────────────────────────────────────
   const gstr3b = useMemo(() => {
@@ -923,6 +947,8 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
 
   // ── Export helpers ──────────────────────────────────────────────────────
   const handleExport = async (exportFormat = 'excel') => {
+    if (needsOneCompany) { toast.error('Pick one company first: a GST return is filed separately for each GSTIN.'); return; }
+    if (tab !== 'gstr1' && !g3b) { toast.error(g3bError || 'GSTR-3B is still loading.'); return; }
     setExporting(exportFormat);
     try {
       if (exportFormat !== 'json') XLSX = await getXLSX();
@@ -1339,16 +1365,22 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
       const [yy, mm] = month.split('-');
       const fpDisp = `${mm}/${yy}`;
 
+      const t31 = g3b.t31, t4 = g3b.t4;
+      const row = (label, d, withTaxable = true) => withTaxable
+        ? [label, d.taxable, d.igst, d.cgst, d.sgst, d.cess]
+        : [label, d.igst, d.cgst, d.sgst, d.cess];
+      const zero = { taxable: 0, igst: 0, cgst: 0, sgst: 0, cess: 0 };
       const r31 = [
+        ['GSTIN', g3b.gstin || '', 'Legal name', g3b.company_name || ''],
         ['From', fpDisp],
         ['To',   fpDisp],
         ['Nature of Supplies','Total Taxable Value','Integrated Tax','Central Tax','State/UT Tax','Cess'],
         [],
-        ['(a) Outward taxable supplies (other than zero rated, nil rated and exempted', gstr3b.outward.taxable, gstr3b.outward.igst, gstr3b.outward.cgst, gstr3b.outward.sgst, 0],
-        ['(b) Outward taxable supplies (zero rated)', 0, 0, 0, 0, 0],
-        ['(c) Other outward supplies (nil rated, exempted)', 0, 0, 0, 0, 0],
-        ['(d) Inward supplies (liable to reverse charge)', 0, 0, 0, 0, 0],
-        ['(e) Non-GST outward supplies', 0, 0, 0, 0, 0],
+        row('(a) Outward taxable supplies (other than zero rated, nil rated and exempted)', t31.a_outward_taxable),
+        row('(b) Outward taxable supplies (zero rated)', zero),
+        row('(c) Other outward supplies (nil rated, exempted)', t31.c_nil_exempt),
+        row('(d) Inward supplies (liable to reverse charge)', t31.d_inward_reverse_charge),
+        row('(e) Non-GST outward supplies', zero),
       ];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(r31), '3.1 Report');
 
@@ -1361,16 +1393,26 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
         ['Details','Integrated Tax','Central Tax','State/UT Tax','Cess'],
         [],
-        ['(A) ITC Available (Whether in full or part)', 0, 0, 0, 0],
-        ['(1) Import of goods', 0, 0, 0, 0],
-        ['(2) Import of services', 0, 0, 0, 0],
-        ['(3) Inward supplies liable to reverse charge', 0, 0, 0, 0],
-        ['(4) Inward supplies from ISD', 0, 0, 0, 0],
-        ['(5) All other ITC', 0, 0, 0, 0],
-        ['(B) ITC Reversed', 0, 0, 0, 0],
-        ['(C) Net ITC available (A-B)', 0, 0, 0, 0],
-        ['(D) Other Details', 0, 0, 0, 0],
+        row('(A) ITC Available (Whether in full or part)', t4.c_net_itc, false),
+        row('(1) Import of goods', zero, false),
+        row('(2) Import of services', zero, false),
+        row('(3) Inward supplies liable to reverse charge', t4.a3_reverse_charge, false),
+        row('(4) Inward supplies from ISD', zero, false),
+        row('(5) All other ITC', t4.a5_all_other, false),
+        row('(B) ITC Reversed', zero, false),
+        row('(C) Net ITC available (A-B)', t4.c_net_itc, false),
+        row('(D) Other Details (ineligible ITC)', t4.d_ineligible, false),
       ]), '4 Report');
+
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ['Payment of tax','Integrated Tax','Central Tax','State/UT Tax','Cess'],
+        ['Paid through ITC: IGST credit', g3b.set_off.credit_used['igst->igst'], g3b.set_off.credit_used['igst->cgst'], g3b.set_off.credit_used['igst->sgst'], 0],
+        ['Paid through ITC: CGST credit', g3b.set_off.credit_used['cgst->igst'], g3b.set_off.credit_used['cgst->cgst'], 0, 0],
+        ['Paid through ITC: SGST credit', g3b.set_off.credit_used['sgst->igst'], 0, g3b.set_off.credit_used['sgst->sgst'], 0],
+        ['Paid through ITC: Cess credit', 0, 0, 0, g3b.set_off.credit_used['cess->cess']],
+        ['Tax payable in cash (incl. reverse charge)', g3b.cash_payable.igst, g3b.cash_payable.cgst, g3b.cash_payable.sgst, g3b.cash_payable.cess],
+        ['Credit carried forward', g3b.set_off.credit_carried_forward.igst, g3b.set_off.credit_carried_forward.cgst, g3b.set_off.credit_carried_forward.sgst, g3b.set_off.credit_carried_forward.cess],
+      ]), '6.1 Payment');
 
       XLSX.writeFile(wb, `GSTR3B_Report_${mm}_${yy.slice(2)}_to_${mm}_${yy.slice(2)}.xlsx`);
       toast.success('GSTR-3B (official format) exported!');
@@ -1484,7 +1526,13 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
-          {baseInvoices.length === 0 ? (
+          {needsOneCompany && (
+            <div className="rounded-xl border border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-900/20 dark:text-amber-200 px-4 py-2.5 text-xs">
+              <b>Combined view, not for filing.</b> GST returns are filed separately for each GSTIN — pick one company
+              above to export or file.
+            </div>
+          )}
+          {baseInvoices.length === 0 && tab === 'gstr1' ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
               <FileSpreadsheet className="h-10 w-10 opacity-20" />
               <p className="text-sm font-medium">No invoices for {month}{companyFilter !== 'all' ? ' · selected company' : ''}</p>
@@ -1496,8 +1544,8 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {[
                   { label: 'B2B Invoices',      value: gstr1.b2b.length,  color: COLORS.mediumBlue,   desc: 'Registered buyers (GSTIN)' },
-                  { label: 'B2C Large',          value: gstr1.b2cL.length, color: COLORS.amber,        desc: 'Unregistered > ₹2.5L' },
-                  { label: 'B2C Small',          value: gstr1.b2cS.length, color: COLORS.emeraldGreen, desc: 'Unregistered ≤ ₹2.5L' },
+                  { label: 'B2C Large',          value: gstr1.b2cL.length, color: COLORS.amber,        desc: `Unregistered, inter-state > ${fmtC(b2clLimit)}` },
+                  { label: 'B2C Small',          value: gstr1.b2cS.length, color: COLORS.emeraldGreen, desc: 'Other unregistered sales' },
                   { label: 'Credit/Debit Notes', value: gstr1.cdnr.length, color: COLORS.coral,        desc: 'CDNR' },
                 ].map(s => (
                   <div key={s.label} className={`${cardCls} p-3`}>
@@ -1635,59 +1683,70 @@ const GSTReportsModal = ({ open, onClose, invoices = [], companies = [], clients
               )}
             </div>
           ) : (
-            // GSTR-3B
+            // GSTR-3B (built on the server for ONE company: output tax, input credit, reverse charge, set-off)
             <div className="space-y-5">
-              {/* Net Tax Summary cards */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {[
-                  { label: 'Net IGST',           value: gstr3b.netIGST,  color: COLORS.coral },
-                  { label: 'Net CGST',           value: gstr3b.netCGST,  color: COLORS.mediumBlue },
-                  { label: 'Net SGST',           value: gstr3b.netSGST,  color: COLORS.teal },
-                  { label: 'Total Tax Liability', value: gstr3b.netTotal, color: COLORS.deepBlue },
-                ].map(s => (
-                  <div key={s.label} className={`${cardCls} p-3`}>
-                    <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{s.label}</p>
-                    <p className="text-xl font-black" style={{ color: s.color }}>{fmtC(s.value)}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* 3.1 Outward Supplies */}
-              <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
-                <div className={`px-4 py-2.5 border-b ${isDark ? 'bg-slate-700/60 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">3.1 — Outward Taxable Supplies</p>
+              {!g3b ? (
+                <div className={`${cardCls} p-4 text-sm`}>
+                  {needsOneCompany ? 'Pick one company above to build its GSTR-3B: a return is filed separately for each GSTIN.'
+                    : (g3bError || 'Building GSTR-3B…')}
                 </div>
-                <table className="w-full">
-                  <thead>
-                    <tr className={isDark ? 'bg-slate-700/30' : 'bg-slate-50/60'}>
-                      {['Description','Taxable Value','IGST','CGST','SGST','Total Tax'].map(h=><th key={h} className={thCls}>{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                     {[
-                      ['Outward Taxable Supplies (Tax Invoice)', gstr3b.outward],
-                      ['Credit Note Adjustments (−)',           gstr3b.credits],
-                    ].map(([label, d]) => (
-                      <tr key={label} className={trCls}>
-                        <td className={`${tdCls} font-semibold`}>{label}</td>
-                        <td className={`${tdCls} text-right`}>{fmtC(d.taxable)}</td>
-                        <td className={`${tdCls} text-right`}>{fmtC(d.igst)}</td>
-                        <td className={`${tdCls} text-right`}>{fmtC(d.cgst)}</td>
-                        <td className={`${tdCls} text-right`}>{fmtC(d.sgst)}</td>
-                        <td className={`${tdCls} text-right font-bold`}>{fmtC(d.igst + d.cgst + d.sgst)}</td>
-                      </tr>
+                      { label: 'IGST to pay in cash', value: g3b.cash_payable.igst, color: COLORS.coral },
+                      { label: 'CGST to pay in cash', value: g3b.cash_payable.cgst, color: COLORS.mediumBlue },
+                      { label: 'SGST to pay in cash', value: g3b.cash_payable.sgst, color: COLORS.teal },
+                      { label: 'Input credit used', value: Object.values(g3b.set_off.credit_used).reduce((a, x) => a + x, 0), color: COLORS.emeraldGreen },
+                      { label: 'Total cash payable', value: g3b.cash_payable_total, color: COLORS.deepBlue },
+                    ].map(c => (
+                      <div key={c.label} className={`${cardCls} p-3`}>
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1">{c.label}</p>
+                        <p className="text-xl font-black" style={{ color: c.color }}>{fmtC(c.value)}</p>
+                      </div>
                     ))}
-                    <tr className={`border-t-2 ${isDark ? 'border-slate-600 bg-slate-700/40' : 'border-slate-200 bg-emerald-50/60'}`}>
-                      <td className={`${tdCls} font-black`} style={{ color: COLORS.emeraldGreen }}>Net Tax Payable</td>
-                      <td className={`${tdCls} text-right font-bold`}>{fmtC(gstr3b.outward.taxable - gstr3b.credits.taxable)}</td>
-                      <td className={`${tdCls} text-right font-bold`} style={{ color: COLORS.coral }}>{fmtC(gstr3b.netIGST)}</td>
-                      <td className={`${tdCls} text-right font-bold`} style={{ color: COLORS.mediumBlue }}>{fmtC(gstr3b.netCGST)}</td>
-                      <td className={`${tdCls} text-right font-bold`} style={{ color: COLORS.teal }}>{fmtC(gstr3b.netSGST)}</td>
-                      <td className="px-3 py-2 text-right text-sm font-black" style={{ color: COLORS.deepBlue }}>{fmtC(gstr3b.netTotal)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                  {[
+                    ['3.1 — Outward and reverse-charge supplies', true, [
+                      ['(a) Outward taxable supplies (invoices + debit notes − credit notes)', g3b.t31.a_outward_taxable],
+                      ['(c) Nil rated / exempt (invoices without tax)', g3b.t31.c_nil_exempt],
+                      ['(d) Inward supplies liable to reverse charge', g3b.t31.d_inward_reverse_charge],
+                    ]],
+                    ['4 — Input tax credit (from purchase bills)', false, [
+                      ['(A)(3) On reverse-charge purchases', g3b.t4.a3_reverse_charge],
+                      ['(A)(5) All other ITC', g3b.t4.a5_all_other],
+                      ['(C) Net ITC available', g3b.t4.c_net_itc],
+                      ['(D) Ineligible (per GSTR-2B), not claimed', g3b.t4.d_ineligible],
+                    ]],
+                  ].map(([title, withTaxable, rows]) => (
+                    <div key={title} className={`rounded-xl border overflow-hidden ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <div className={`px-4 py-2.5 border-b ${isDark ? 'bg-slate-700/60 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{title}</p>
+                      </div>
+                      <table className="w-full">
+                        <thead><tr className={isDark ? 'bg-slate-700/30' : 'bg-slate-50/60'}>
+                          {['Description', ...(withTaxable ? ['Taxable Value'] : []), 'IGST', 'CGST', 'SGST', 'Cess'].map(h => <th key={h} className={thCls}>{h}</th>)}
+                        </tr></thead>
+                        <tbody>
+                          {rows.map(([label, d]) => (
+                            <tr key={label} className={trCls}>
+                              <td className={`${tdCls} font-semibold`}>{label}</td>
+                              {withTaxable && <td className={`${tdCls} text-right`}>{fmtC(d.taxable)}</td>}
+                              <td className={`${tdCls} text-right`}>{fmtC(d.igst)}</td>
+                              <td className={`${tdCls} text-right`}>{fmtC(d.cgst)}</td>
+                              <td className={`${tdCls} text-right`}>{fmtC(d.sgst)}</td>
+                              <td className={`${tdCls} text-right`}>{fmtC(d.cess)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                  <div className={`${cardCls} p-3 text-[11px] space-y-1 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {(g3b.notes || []).map((n) => <p key={n}>• {n}</p>)}
+                  </div>
+                </>
+              )}
 
               {/* Invoice list for the month */}
               <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-slate-700' : 'border-slate-200'}`}>

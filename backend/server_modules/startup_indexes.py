@@ -60,6 +60,12 @@ async def initialize_startup_indexes(
         except Exception as _mis_idx_err:
             logger.warning(f"MIS index creation skipped: {_mis_idx_err}")
         await create_zte_indexes()
+        try:
+            from backend.statutory_rules import create_statutory_rule_indexes, refresh as _refresh_rules
+            await create_statutory_rule_indexes()
+            await _refresh_rules(force=True)
+        except Exception as _rules_err:
+            logger.warning(f"Statutory rules startup skipped: {_rules_err}")
         
         # --- PHASE 10 SELF-LEARNING INDEXES ---
         try:

@@ -570,6 +570,16 @@ async def create_accounting_integrity_indexes():
 _original_try_auto_post = ac.try_auto_post
 
 
+_TXN_UNSUPPORTED = False
+
+
+def _is_txn_unsupported(exc: Exception) -> bool:
+    text = str(exc)
+    return (getattr(exc, "code", None) == 20 or "IllegalOperation" in text
+            or "Transaction numbers are only allowed on a replica set member or mongos" in text
+            or "does not support transactions" in text.lower())
+
+
 async def _safe_post_journal_entry(
     company_id: str, entry_date: str, narration: str, lines: List[dict],
     source: str, source_id: Optional[str], created_by: str,
@@ -708,7 +718,8 @@ async def _safe_post_journal_entry(
     # not the underlying Motor client. Use the raw client for sessions/transactions.
     transaction_client = mongo_client
     transaction_written = False
-    if transaction_client is not None and hasattr(transaction_client, "start_session"):
+    global _TXN_UNSUPPORTED
+    if transaction_client is not None and hasattr(transaction_client, "start_session") and not _TXN_UNSUPPORTED:
         try:
             session = await transaction_client.start_session()
             try:
@@ -722,7 +733,14 @@ async def _safe_post_journal_entry(
                 raise
             # Unsupported transactions fall through to the safe compensating
             # write below. Other failures are also cleaned up before raising.
-            logger.warning("Mongo transaction unavailable/failed; using rollback-safe journal write: %s", exc)
+            if _is_txn_unsupported(exc):
+                # A standalone MongoDB (not a replica set) can never run transactions: remember it
+                # for this process so every later posting goes straight to the rollback-safe write.
+                _TXN_UNSUPPORTED = True
+                logger.warning("MongoDB transactions are not available on this server (standalone, not a replica set); "
+                               "journal postings use the rollback-safe write from now on.")
+            else:
+                logger.warning("Mongo transaction unavailable/failed; using rollback-safe journal write: %s", exc)
             try:
                 await db.journal_entries.delete_one({"id": entry_id, "company_id": company_id})
                 await db.journal_lines.delete_many({"entry_id": entry_id, "company_id": company_id})

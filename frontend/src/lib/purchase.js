@@ -208,7 +208,10 @@ export function gstComponentsTotal(f) {
 export function computeChecks(f) {
   const comps = gstComponentsTotal(f);
   const gst = comps > 0 ? comps : r2(num(f.total_gst));
-  const sum = r2(num(f.taxable_amount) + gst + num(f.round_off));
+  // Reverse charge: the supplier's bill has no GST; the GST fields hold the tax WE pay,
+  // so the amount payable to the supplier is taxable + round-off only.
+  const billGst = f.reverse_charge ? 0 : gst;
+  const sum = r2(num(f.taxable_amount) + billGst + num(f.round_off));
   const total = r2(num(f.grand_total));
   const diff = r2(total - sum);
   return {
@@ -216,8 +219,8 @@ export function computeChecks(f) {
     ok: total > 0 && Math.abs(diff) <= 1.0,
     // one-click repairs, each only offered when it is plausible
     fixTotal: sum > 0 ? sum : null,
-    fixTaxable: r2(total - gst - num(f.round_off)) > 0 ? r2(total - gst - num(f.round_off)) : null,
-    fixRound: Math.abs(r2(total - num(f.taxable_amount) - gst)) <= 1.0 ? r2(total - num(f.taxable_amount) - gst) : null,
+    fixTaxable: r2(total - billGst - num(f.round_off)) > 0 ? r2(total - billGst - num(f.round_off)) : null,
+    fixRound: Math.abs(r2(total - num(f.taxable_amount) - billGst)) <= 1.0 ? r2(total - num(f.taxable_amount) - billGst) : null,
     ratePct: num(f.taxable_amount) > 0 ? r2((gst / num(f.taxable_amount)) * 100) : null,
   };
 }

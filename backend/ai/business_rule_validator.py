@@ -5,7 +5,19 @@ from backend.dependencies import db
 logger = logging.getLogger("business_rule_validator")
 
 # Standard GST percentage rates in India
-VALID_GST_RATES = {0.0, 5.0, 12.0, 18.0, 28.0}
+VALID_GST_RATES_BUILTIN = {0.0, 5.0, 12.0, 18.0, 28.0}
+
+def _gst_rates(on_date=None):
+    """GST rates in use on a date, from Tax rules & law updates (falls back to the built-in list)."""
+    try:
+        from backend.statutory_rules import rule
+        rates = rule("gst.valid_rates", on_date)
+        if rates:
+            return tuple(float(r) for r in rates)
+    except Exception:
+        pass
+    return tuple(float(r) for r in VALID_GST_RATES_BUILTIN)
+
 
 async def validate_business_rules(
     extracted_data: Dict[str, Any],
@@ -101,7 +113,7 @@ async def validate_business_rules(
     if taxable > 0.0 and total_tax > 0.0:
         estimated_rate = round((total_tax / taxable) * 100.0, 1)
         # Find closest valid rate
-        closest_rate = min(VALID_GST_RATES, key=lambda x: abs(x - estimated_rate))
+        closest_rate = min(_gst_rates(), key=lambda x: abs(x - estimated_rate))
         if abs(estimated_rate - closest_rate) > 1.5:
             msg = f"Suspicious calculated GST rate: {estimated_rate}%. Standard Indian GST rates are 0%, 5%, 12%, 18%, 28%."
             warnings.append(msg)

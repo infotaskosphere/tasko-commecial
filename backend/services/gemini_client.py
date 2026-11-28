@@ -222,3 +222,27 @@ async def gemini_extract_json(
 def _b64_to_bytes(image_b64: str) -> bytes:
     import base64
     return base64.b64decode(image_b64)
+
+
+async def gemini_text_json(prompt: str, *, model: Optional[str] = None, max_output_tokens: int = 1024) -> dict:
+    """Text-only Gemini call in strict-JSON mode (same client, model and error handling as above)."""
+    client = get_gemini_client()
+    model_name = (model or _GEMINI_MODEL_NAME or "gemini-2.5-flash").strip()
+    import asyncio
+    from google.genai import types as genai_types  # type: ignore
+
+    def _call():
+        cfg = genai_types.GenerateContentConfig(temperature=0, max_output_tokens=max_output_tokens,
+                                                response_mime_type="application/json")
+        return client.models.generate_content(model=model_name, contents=[prompt], config=cfg)
+
+    try:
+        response = await asyncio.to_thread(_call)
+    except Exception as e:
+        logger.exception("Gemini text call failed")
+        raise HTTPException(status_code=503, detail=f"Gemini API error: {e}") from e
+    raw_text = getattr(response, "text", None) or ""
+    try:
+        return json.loads(_strip_json_fence(raw_text))
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=502, detail="Gemini did not return valid JSON.") from e
