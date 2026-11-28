@@ -101,3 +101,41 @@ def test_file_values_are_saved_as_given(inv):
         assert (doc["total_taxable"], doc["total_gst"], doc["grand_total"]) == (32150, 5670, 37820)
         assert doc["status"] == "partially_paid" and doc["company_id"] == "coA"
     run(go())
+
+
+# ── The invoice list shows every company of the login, not just its own ──────
+
+@pytest.fixture
+def scoped(monkeypatch):
+    import backend.dependencies as dep
+    import backend.invoicing as invoicing
+    from backend import tenant_runtime as tr
+
+    client = AsyncMongoMockClient()
+    raw = client["invoice_scope_test"]
+    tdb = tr.TenantAwareDatabase(raw, mongo_client=client)
+    old = dep.db
+    for name, mod in list(sys.modules.items()):
+        if name.startswith("backend") and getattr(mod, "db", None) is old:
+            monkeypatch.setattr(mod, "db", tdb)
+    monkeypatch.setattr(dep, "db", tdb)
+    return types.SimpleNamespace(raw=raw, m=invoicing, tr=tr)
+
+
+@pytest.mark.parametrize("owner", [True, False])
+def test_list_shows_invoices_of_all_my_companies_and_no_one_elses(scoped, owner):
+    tr, m = scoped.tr, scoped.m
+    me = types.SimpleNamespace(id="u1", role="admin", company_id="MDA", permissions={}, email="a@b.c", username="a")
+
+    async def go():
+        await scoped.raw.invoices.insert_one({"id": "x", "company_id": "OTHER", "invoice_no": "Z", "created_at": "1"})
+        t1 = tr.set_authenticated_company("MDA")
+        t2 = tr.set_platform_owner(True) if owner else tr.set_tenant_company_ids({"MDA", "PDV", "MSA"})
+        t3 = tr.set_platform_owner_company_ids({"MDA", "PDV", "MSA"}) if owner else None
+        for cid in ("MDA", "PDV", "MSA"):
+            await m.import_backup(m.ImportBackupRequest(company_id=cid, invoices=[_row("INV/26-27/017", cid, "2026-06-03", 100)]), me)
+        res = await m.list_invoices(page=1, page_size=100, status=None, search=None, company_id=None, current_user=me)
+        assert sorted(i["company_id"] for i in res["invoices"]) == ["MDA", "MSA", "PDV"]
+        one = await m.list_invoices(page=1, page_size=100, status=None, search=None, company_id="PDV", current_user=me)
+        assert [i["company_id"] for i in one["invoices"]] == ["PDV"]
+    run(go())

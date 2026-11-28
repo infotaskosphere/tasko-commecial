@@ -4682,6 +4682,34 @@ async def create_invoice(data: InvoiceCreate, current_user: User = Depends(check
     return raw
 
 
+async def _all_visible_companies_filter(current_user) -> Optional[dict]:
+    """company_id filter covering every legal company this login may see.
+
+    Without it, a list with no company chosen falls back to the login's own
+    company only, so invoices saved under the user's other companies (Master
+    Data) are stored but never shown. Only ids the tenant layer itself would
+    accept are used, so this never widens access.
+    """
+    from backend import tenant_runtime as tr
+    ids: set[str] = set()
+    try:
+        ids |= await _invoice_delete_visible_company_ids(current_user)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.warning("visible company lookup failed; using session companies", exc_info=True)
+    ids |= set(tr.platform_owner_company_ids()) | set(tr.tenant_company_ids())
+    current = str(tr.authenticated_company_id() or "").strip()
+    if current:
+        ids.add(current)
+    if tr.in_platform_owner_context():
+        ok = sorted(i for i in ids if i and tr._owner_company_value_allowed(i))
+    else:
+        allowed = tr._tenant_allowed_ids()
+        ok = sorted(i for i in ids if i and i in allowed)
+    return {"$in": ok} if len(ok) > 1 else None
+
+
 @router.get("/invoices")
 async def list_invoices(
     page: int = Query(1, ge=1, description="Page number (1-based)"),
@@ -4701,6 +4729,10 @@ async def list_invoices(
 
     if company_id:
         q["company_id"] = company_id
+    elif "company_id" not in q:
+        scope = await _all_visible_companies_filter(current_user)
+        if scope:
+            q["company_id"] = scope
     if status and status in INV_STATUS:
         q["status"] = status
     if search:
@@ -4732,6 +4764,8 @@ async def invoice_stats(year: Optional[int] = None, month: Optional[int] = None,
     if not _perm(current_user): raise HTTPException(403, "Access denied")
     q: dict = {"invoice_type": "tax_invoice", "status": {"$ne": "cancelled"}}
     if current_user.role != "admin": q["created_by"] = current_user.id
+    scope = await _all_visible_companies_filter(current_user)
+    if scope: q["company_id"] = scope
     every_inv = await db.invoices.find(q, {"_id": 0, "grand_total": 1, "amount_paid": 1,
         "amount_due": 1, "status": 1, "invoice_date": 1, "client_name": 1, "total_gst": 1}).to_list(5000)
     # Revenue/outstanding/trend figures now include draft invoices as well —
